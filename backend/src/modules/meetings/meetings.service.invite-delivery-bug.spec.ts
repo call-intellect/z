@@ -79,6 +79,8 @@ function makeService(personRow: Record<string, unknown>) {
     mail as never,
     conversational as never,
     { assertCanView: vi.fn(async () => ({})) } as never,
+    {} as never,
+    {} as never,
   );
 
   return { svc, mail, conversational, personFindUnique };

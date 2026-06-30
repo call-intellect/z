@@ -143,13 +143,6 @@ enum RecordingStatus {
   deleted
 }
 
-enum TaskStatus {
-  open
-  in_progress
-  done
-  cancelled
-}
-
 enum RenderStatus {
   none
   queued
@@ -1124,6 +1117,8 @@ model User {
   isSuperAdmin          Boolean          @default(false)
   signupSource          UserSignupSource @default(crossmark)
   signupRef             String?          @db.VarChar(255)
+  kind                  String           @default("member")
+  verified              Boolean          @default(false)
   // argon2id (standalone) или bcrypt (admin local login). Опционально для Crossmark-провижененных юзеров.
   passwordHash          String?
   mustChangePassword    Boolean          @default(false)
@@ -1144,10 +1139,6 @@ model User {
   webhookSubscriptions WebhookSubscription[]
   destinations         IntegrationDestination[]
   tags                 Tag[]
-  tasks                Task[]
-  /// ТЗ 2026-05-25 hard-participant-identification — задачи, где этот User
-  /// сопоставлен как assignee через AI/manual (`Task.assigneeUserId`).
-  assignedTasks        Task[]                   @relation("TaskAssignee")
   chatMessages         MeetingChatMessage[]
   userTemplates        UserTemplate[]
   exports              Export[]
@@ -1170,6 +1161,9 @@ model User {
   // ── SBA α-1 — Conversational Channels Foundation ──
   channelBindings      ChannelBinding[]
   notifications        Notification[]           @relation("NotificationRecipient")
+  pushTokens           PushToken[]
+  userBlocksGiven      UserBlock[]              @relation("UserBlockBlocker")
+  userBlocksReceived   UserBlock[]              @relation("UserBlockBlocked")
 
   // ── Фаза A.1 — Prompt Registry ──
   createdPromptTemplates   PromptTemplate[]        @relation("PromptTemplateCreatedBy")
@@ -1370,7 +1364,6 @@ model Meeting {
   /// Фаза C — one-to-one с MeetingQualityScore (AI-оценка качества).
   qualityScore     MeetingQualityScore?
   events           MeetingEvent[]
-  tasks            Task[]
   chapters         MeetingChapter[]
   highlights       MeetingHighlight[]
   shares           MeetingShare[]
@@ -1418,6 +1411,11 @@ model Meeting {
   /// ТЗ-5 Ф1 — спикеры диаризации загруженной встречи (для ручной разметки).
   uploadSpeakers MeetingUploadSpeaker[]
 
+  /// Ф7b unified-chat (R26) — созвон («huddle»), запущенный из разговора единого
+  /// чата. NULL для обычных встреч. При закрытии встречи (ai_ready/ai_failed)
+  /// запись+резюме постятся системным сообщением в этот разговор.
+  huddleConversationId String?
+
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
   @@index([deletedAt])
@@ -1426,6 +1424,7 @@ model Meeting {
   @@index([linkedIssueId])
   @@index([linkedCycleId])
   @@index([tenantId, source, createdAt])
+  @@index([huddleConversationId])
 }
 
 /// ТЗ 2026-06-10 meeting-visibility — явный грант доступа к встрече (scope='custom').
@@ -1758,71 +1757,12 @@ model AdminAuditLog {
 
 // ──────────────────────────── ai-workspace: tasks / chapters / highlights ────────────────────────────
 
-model Task {
-  id                  String       @id @default(cuid())
-  /// tenant: Org, к которой принадлежит задача. После backfill — NOT NULL.
-  tenantId            String?
-  tenant              Org?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  /// D5 (ТЗ 2026-06-11 chatbox-tasks): задача может быть из переписки, не только
-  /// из встречи → nullable. FK сохраняется (теперь nullable). Backfill: существующие → sourceType='meeting'.
-  meetingId           String?
-  meeting             Meeting?     @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  /// meeting | chatbox (расширяемо строкой, не enum).
-  sourceType          String       @default("meeting")
-  /// ChatboxChatSession.id — если задача из переписки.
-  sourceChatSessionId String?
-  /// ChatboxChat.id (денорм, для drill-down/ссылки на чат).
-  sourceChatId        String?
-  userId              String
-  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title               String
-  description         String?      @db.Text
-  status              TaskStatus   @default(open)
-  assigneeRaw         String?
-  /// ТЗ 2026-05-25 hard-participant-identification: жёсткая связь с User,
-  /// заполняется AI-pipeline (через resolve по participants встречи).
-  /// onDelete=SetNull: при удалении User'а assigneeUserId сбрасывается,
-  /// но Task остаётся (assigneeRaw сохраняет историческую строку).
-  assigneeUserId      String?
-  assignee            User?        @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
-  dueDate             DateTime?
-  sourceStartMs       Int?
-  sourceEndMs         Int?
-  sourceQuote         String?      @db.Text
-  confidence          Float?
-  createdManually     Boolean      @default(false)
-  /// Фаза 5 knowledge-core: какие IdeaBlock'и породили задачу (для drill-down).
-  /// Пустой массив = legacy задача, не связана с блоками.
-  evidenceBlockIds    String[]     @default([])
-  /// Денорм deepLink/attribution провенанса (Task уже несёт sourceQuote/sourceStartMs).
-  previewSourceRef    Json?
-  /// Фаза 5: метка генератора. NULL = legacy `tasks-extract.worker`,
-  /// 'v2' = `meeting-analyze-v2.worker` (knowledge-core поверх блоков).
-  /// Используется для A/B-сравнения и для последующего скимаринга legacy.
-  extractorVersion    String?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
-  /// D5/Р-2 — дополнительные источники задачи (межисточниковый дедуп).
-  sources             TaskSource[]
-
-  @@index([userId, status])
-  @@index([meetingId])
-  @@index([dueDate])
-  @@index([tenantId])
-  /// Индекс для фильтра «мои задачи» по assigneeUserId.
-  @@index([assigneeUserId])
-  @@index([tenantId, sourceType])
-  @@index([sourceChatSessionId])
-}
-
 /// D5/Р-2 (ТЗ 2026-06-11 chatbox-tasks) — дополнительные источники задачи.
 /// Первичный источник остаётся на Task.*; сюда пишем КАЖДУЮ привязку при
 /// межисточниковом дедупе (след не теряем). Идемпотентность — @@unique.
 model TaskSource {
   id          String   @id @default(cuid())
   tenantId    String
-  taskId      String?
-  task        Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
   issueId     String?
   issue       Issue?   @relation(fields: [issueId], references: [id], onDelete: Cascade)
   /// meeting | chatbox
@@ -1835,7 +1775,6 @@ model TaskSource {
   quote       String?  @db.Text
   createdAt   DateTime @default(now())
 
-  @@unique([taskId, sourceType, sourceRefId])
   @@unique([issueId, sourceType, sourceRefId])
   @@index([tenantId, sourceType, sourceRefId])
   @@index([tenantId, issueId])
@@ -2420,7 +2359,10 @@ model Card {
   // опциональная ссылка на Theme, из которой пользователь сохранил карточку
   // через `POST /themes/:id/save-as-card`.
   entityId         String?
-  entity           Entity?  @relation("CardEntity", fields: [entityId], references: [id], onDelete: SetNull)
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK на партиционированную Entity. Совпадает с tenantId сущности.
+  entityTenantId   String?
+  entity           Entity?  @relation("CardEntity", fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
   relatedEntityIds String[] @default([])
   bornFromThemeId  String?
   bornFromTheme    Theme?   @relation("CardBornFromTheme", fields: [bornFromThemeId], references: [id], onDelete: SetNull)
@@ -2579,7 +2521,6 @@ model Org {
   invitations            OrgInvitation[]
   meetings               Meeting[]
   cards                  Card[]
-  tasks                  Task[]
   chapters               MeetingChapter[]
   highlights             MeetingHighlight[]
   chatMessages           MeetingChatMessage[]
@@ -2599,6 +2540,16 @@ model Org {
   entityLinks            EntityLink[]
   entityAliases          EntityAlias[]
   themes                 Theme[]
+  /// Ф1 партиционирование — backrefs для tenantId-связей join/child-моделей
+  /// партиционированных IdeaBlock/Entity.
+  ideaBlockEvidence      IdeaBlockEvidence[]
+  ideaBlockAccess        IdeaBlockAccess[]
+  ideaBlockEntities      IdeaBlockEntity[]
+  themeIdeaBlocks        ThemeIdeaBlock[]
+  themeEntities          ThemeEntity[]
+  sourceEpisodes         SourceEpisode[]
+  sourceParticipants     SourceParticipant[]
+  sourceEntities         SourceEntity[]
   goals                  Goal[]
   goalAlignmentSnapshots GoalAlignmentSnapshot[]
   retentionPolicy        OrgRetentionPolicy?
@@ -2679,6 +2630,9 @@ model Org {
 
   // ── SBA β-8.3 — Daily operations digest (ежедневный отчёт COO) ──
   dailyOperationsDigests DailyOperationsDigest[]
+
+  // ── «Месяц компании» — месячный operations digest (executive-брифинг) ──
+  monthlyOperationsDigests MonthlyOperationsDigest[]
 
   // ── Goals OKR v2 Фаза 4 — еженедельный пульс целей ──
   weeklyGoalsPulseDigests WeeklyGoalsPulseDigest[]
@@ -2996,15 +2950,20 @@ model KnowledgeGroupMember {
 
 /// M:N блок ↔ группа. Блок может быть и «логистика», и «совет» одновременно.
 model IdeaBlockAccess {
+  /// Ф1 партиционирование — tenantId-компаньон для составного Cascade-FK на
+  /// партиционированный IdeaBlock. Совпадает с tenantId блока.
+  tenantId  String
   blockId   String
   groupId   String
   via       String         @db.VarChar(12) /// 'department' (горизонталь) | 'closed' (вертикаль)
   createdAt DateTime       @default(now())
-  block     IdeaBlock      @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  block     IdeaBlock      @relation(fields: [blockId, tenantId], references: [id, tenantId], onDelete: Cascade)
   group     KnowledgeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  org       Org            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@id([blockId, groupId])
+  @@id([blockId, groupId, tenantId])
   @@index([groupId])
+  @@index([tenantId])
 }
 
 /// Направленная матрица «отдел-субъект видит отдел-объект». Образец — DepartmentDomainLink.
@@ -3360,8 +3319,83 @@ model RawEvent {
   source   Source              @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   evidence IdeaBlockEvidence[]
 
+  sourceEpisodes     SourceEpisode[]
+  sourceParticipants SourceParticipant[]
+  sourceEntities     SourceEntity[]
+
   @@index([tenantId, sourceId, occurredAt])
   @@index([tenantId, processingStatus])
+}
+
+// ──────────────────────────── слой источника: SourceEpisode / SourceParticipant / SourceEntity (Ф2) ────────────────────────────
+
+/// Эпизод-источник как первоклассный объект поиска (встреча / документ / чат-тред).
+/// Один на RawEvent. Несёт human-резюме + собственный вектор для семантического
+/// поиска ПО ИСТОЧНИКУ (класс К2/К4), отдельно от поблочного IdeaBlock.embedding.
+/// Ф1-стиль: HASH-партиционирован по tenantId, составной PK (id, tenantId);
+/// HNSW на embedding — в postgres-init.sql (Prisma 7 их не описывает).
+model SourceEpisode {
+  id                    String                       @default(cuid())
+  tenantId              String
+  rawEventId            String
+  /// 'meeting' | 'document' | 'chat'.
+  kind                  String                       @db.VarChar(16)
+  title                 String
+  occurredAt            DateTime
+  summary               String?                      @db.Text
+  embedding             Unsupported("vector(1536)")?
+  /// Версия embedding-модели для безопасной смены без слепого бэкфилла.
+  embeddingModelVersion String?                      @db.VarChar(40)
+  branch                ThemeBranch?
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+
+  org      Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rawEvent RawEvent @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+
+  @@id([id, tenantId])
+  @@unique([rawEventId, tenantId])
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, kind, occurredAt])
+}
+
+/// Ребро «человек присутствовал в источнике» на УРОВНЕ ИСТОЧНИКА (не блока).
+/// Детерминированный фундамент К1 «все встречи/чаты с человеком X».
+/// FK на Person — простой (Person PK простой).
+model SourceParticipant {
+  rawEventId    String
+  personId      String
+  tenantId      String
+  /// 'host' | 'guest' | 'author' | 'member' — роль в источнике.
+  role          String   @db.VarChar(16)
+  /// Доля реплик (0..1), null для не-встреч. Для ранжирования, не фильтра.
+  speakingShare Decimal? @db.Decimal(4, 3)
+  createdAt     DateTime @default(now())
+
+  org      Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rawEvent RawEvent @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+  person   Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@id([rawEventId, personId])
+  @@index([tenantId, personId, createdAt])
+}
+
+/// Ребро «компания/сущность упомянута в источнике» — агрегат на уровне источника
+/// (НЕ дубль IdeaBlockEntity, который mention на уровне блока). Для К1/К4.
+/// FK на Entity — составной (Entity PK составной).
+model SourceEntity {
+  rawEventId    String
+  entityId      String
+  tenantId      String
+  mentionsCount Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  org      Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rawEvent RawEvent @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+  entity   Entity   @relation(fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@id([rawEventId, entityId])
+  @@index([tenantId, entityId, createdAt])
 }
 
 // ──────────────────────────── knowledge-core: IdeaBlock + Entity (Фаза 2) ────────────────────────────
@@ -3380,7 +3414,7 @@ model RawEvent {
 ///   - merged_into: блок-дубликат, его mergedIntoId указывает на canonical
 ///   - archived: устарел / явно скрыт
 model IdeaBlock {
-  id                          String                       @id @default(cuid())
+  id                          String                       @default(cuid())
   tenantId                    String
   /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
   /// null для боевых. Фильтр в `resetDemoWorkspace`.
@@ -3393,8 +3427,12 @@ model IdeaBlock {
   confidence                  Decimal                      @default(0.5) @db.Decimal(4, 3)
   dataClass                   DataClass                    @default(internal)
   embedding                   Unsupported("vector(1536)")?
+  contextHeaderVersion        String?                      @db.VarChar(16)
   status                      IdeaBlockStatus              @default(draft)
   mergedIntoId                String?
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK self-merge (mergedInto). Совпадает с tenantId родителя.
+  mergedIntoTenantId          String?
   evidenceCount               Int                          @default(0)
   /// Динамический рейтинг: пересчитывается ретеншеном; влияет на ранжирование в поиске.
   dynamicScore                Decimal                      @default(1.0) @db.Decimal(8, 4)
@@ -3448,6 +3486,9 @@ model IdeaBlock {
   supersededAt                DateTime?
   /// KC-Temporal W1.1 — id нового блока, который заменил этот.
   supersededById              String?
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK self-supersede (supersedes). Совпадает с tenantId родителя.
+  supersededByTenantId        String?
   /// KC-Temporal W1.4 (2026-05-25) — спан-уровневые свидетельства.
   /// Структура: `Array<{ field, refId?, evidenceId, startMs, endMs }>`.
   /// `field ∈ {'name'|'criticalQuestion'|'trustedAnswer'|'mentionedEntity'}`.
@@ -3457,10 +3498,10 @@ model IdeaBlock {
   updatedAt                   DateTime                     @updatedAt
 
   org                 Org                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  mergedInto          IdeaBlock?           @relation("BlockMerges", fields: [mergedIntoId], references: [id])
+  mergedInto          IdeaBlock?           @relation("BlockMerges", fields: [mergedIntoId, mergedIntoTenantId], references: [id, tenantId])
   mergedFrom          IdeaBlock[]          @relation("BlockMerges")
   /// KC-Temporal W1.1 — supersede chain (новый блок → старый).
-  supersedes          IdeaBlock?           @relation("IdeaBlockSupersedes", fields: [supersededById], references: [id])
+  supersedes          IdeaBlock?           @relation("IdeaBlockSupersedes", fields: [supersededById, supersededByTenantId], references: [id, tenantId])
   supersedeChain      IdeaBlock[]          @relation("IdeaBlockSupersedes")
   evidence            IdeaBlockEvidence[]
   entities            IdeaBlockEntity[]
@@ -3483,6 +3524,7 @@ model IdeaBlock {
   /// Ф2 knowledge-access — группы доступа блока (m:n). Пусто = открыт всем (дефолт).
   blockAccess         IdeaBlockAccess[]
 
+  @@id([id, tenantId])
   @@index([tenantId, status])
   @@index([tenantId, signalType])
   @@index([tenantId, mergedIntoId])
@@ -3523,7 +3565,7 @@ model IdeaBlockAxisLabel {
   source     String   @db.VarChar(20)
   createdAt  DateTime @default(now())
 
-  block  IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  block  IdeaBlock @relation(fields: [blockId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, blockId, axis, label])
@@ -3537,6 +3579,9 @@ model IdeaBlockAxisLabel {
 /// quote — текстовая цитата, startMs/endMs — таймкоды (если применимо к источнику).
 model IdeaBlockEvidence {
   id                      String     @id @default(cuid())
+  /// Ф1 партиционирование — tenantId-компаньон для составного Cascade-FK на
+  /// партиционированный IdeaBlock. Совпадает с tenantId блока.
+  tenantId                String
   blockId                 String
   rawEventId              String
   sourceType              SourceType
@@ -3549,11 +3594,13 @@ model IdeaBlockEvidence {
   authorLabel             String?
   createdAt               DateTime   @default(now())
 
-  block    IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  block    IdeaBlock @relation(fields: [blockId, tenantId], references: [id, tenantId], onDelete: Cascade)
   rawEvent RawEvent  @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+  org      Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([blockId])
   @@index([rawEventId])
+  @@index([tenantId])
 }
 
 /// Entity — сущность (клиент, человек, проект, продукт, тема, локация, custom).
@@ -3567,7 +3614,7 @@ model IdeaBlockEvidence {
 /// `@@unique` не поддерживает WHERE-условия, а делать full-unique нельзя —
 /// большинство сущностей не имеют этих идентификаторов).
 model Entity {
-  id             String                       @id @default(cuid())
+  id             String                       @default(cuid())
   tenantId       String
   /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
   /// null для боевых. Фильтр в `resetDemoWorkspace`.
@@ -3576,6 +3623,9 @@ model Entity {
   canonicalName  String
   aliases        String[]                     @default([])
   mergedIntoId   String?
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK self-merge (mergedInto). Совпадает с tenantId родителя.
+  mergedIntoTenantId String?
   mentionsCount  Int                          @default(0)
   embedding      Unsupported("vector(1536)")?
   metadata       Json?
@@ -3590,7 +3640,7 @@ model Entity {
   updatedAt      DateTime                     @updatedAt
 
   org           Org               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  mergedInto    Entity?           @relation("EntityMerges", fields: [mergedIntoId], references: [id])
+  mergedInto    Entity?           @relation("EntityMerges", fields: [mergedIntoId, mergedIntoTenantId], references: [id, tenantId])
   mergedFrom    Entity[]          @relation("EntityMerges")
   blockMentions IdeaBlockEntity[]
   // ↓ С Фазы 0 EntityLink — полиморфная модель без FK на Entity. Обратные
@@ -3618,7 +3668,9 @@ model Entity {
   /// TZ-1 Фаза 1 (daily-value-engine) — дневные снимки риска клиента
   /// (только для Entity{type=customer}).
   customerRiskSnapshots CustomerRiskSnapshot[] @relation("CustomerRiskSnapshotEntity")
+  sourceEntities        SourceEntity[]
 
+  @@id([id, tenantId])
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
   @@index([tenantId, canonicalName])
@@ -3636,7 +3688,7 @@ model Vendor {
   tenantId          String
   /// Связка с Entity{type=vendor}. Уникальна (1:1).
   entityId          String         @unique
-  entity            Entity         @relation("VendorEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  entity            Entity         @relation("VendorEntity", fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
   org               Org            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name              String         @db.VarChar(300)
   inn               String?        @db.VarChar(20)
@@ -3656,6 +3708,7 @@ model Vendor {
   /// (Project.vendorId). См. plans/tz/2026-05-27-sprints.md §1.1.
   scopedProjects Project[] @relation("ProjectVendor")
 
+  @@unique([entityId, tenantId])
   @@index([tenantId, status])
   @@index([tenantId, segment])
   @@index([tenantId, deletedAt])
@@ -3668,7 +3721,7 @@ model Customer {
   id                  String         @id @default(cuid())
   tenantId            String
   entityId            String         @unique
-  entity              Entity         @relation("CustomerEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  entity              Entity         @relation("CustomerEntity", fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
   org                 Org            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name                String         @db.VarChar(300)
   inn                 String?        @db.VarChar(20)
@@ -3686,6 +3739,7 @@ model Customer {
   responsible      Person?           @relation("CustomerResponsible", fields: [responsiblePersonId], references: [id], onDelete: SetNull)
   chatboxCustomers ChatboxCustomer[]
 
+  @@unique([entityId, tenantId])
   @@index([tenantId, status])
   @@index([tenantId, externalCrmId])
   @@index([tenantId, responsiblePersonId])
@@ -3709,7 +3763,7 @@ model Event {
   tenantId              String
   /// Связка с Entity{type=event}.
   entityId              String    @unique
-  entity                Entity    @relation("EventEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  entity                Entity    @relation("EventEntity", fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
   org                   Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   kind                  EventKind @default(other)
   title                 String    @db.VarChar(300)
@@ -3761,6 +3815,7 @@ model Event {
   participants EventParticipant[]
   reminders    EventReminder[]
 
+  @@unique([entityId, tenantId])
   @@index([tenantId, startAt])
   @@index([tenantId, kind])
   @@index([tenantId, deletedAt])
@@ -3820,7 +3875,7 @@ model Market {
   tenantId    String
   /// Связка с Entity{type=market}. Уникальна (1:1).
   entityId    String    @unique
-  entity      Entity    @relation("MarketEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  entity      Entity    @relation("MarketEntity", fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
   org         Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name        String    @db.VarChar(300)
   /// Географический scope (например «РФ», «СНГ», «Europe»). NULL — global.
@@ -3834,6 +3889,7 @@ model Market {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
+  @@unique([entityId, tenantId])
   @@index([tenantId, geography])
   @@index([tenantId, industry])
   @@index([tenantId, deletedAt])
@@ -3851,7 +3907,7 @@ model OrgUnit {
   tenantId           String
   /// Связка с Entity{type=org_unit}. Уникальна (1:1).
   entityId           String    @unique
-  entity             Entity    @relation("OrgUnitEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  entity             Entity    @relation("OrgUnitEntity", fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
   org                Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name               String    @db.VarChar(300)
   /// Тип единицы: 'department' (формальный отдел) | 'team' (команда) |
@@ -3870,6 +3926,7 @@ model OrgUnit {
   updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?
 
+  @@unique([entityId, tenantId])
   @@index([tenantId, unitKind])
   @@index([tenantId, parentDepartmentId])
   @@index([tenantId, deletedAt])
@@ -4153,17 +4210,22 @@ model CompletenessSlot {
 /// IdeaBlockEntity — M:M связь block ↔ entity с ролью и контекстом упоминания.
 /// role — subject (главное действующее), object (на что направлено), mentioned (вскользь).
 model IdeaBlockEntity {
+  /// Ф1 партиционирование — tenantId-компаньон для составных Cascade-FK на
+  /// партиционированные IdeaBlock и Entity. Совпадает с tenantId блока/сущности.
+  tenantId       String
   blockId        String
   entityId       String
   mentionContext String              @db.Text
   role           IdeaBlockEntityRole @default(mentioned)
   createdAt      DateTime            @default(now())
 
-  block  IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
-  entity Entity    @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  block  IdeaBlock @relation(fields: [blockId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  entity Entity    @relation(fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  org    Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@id([blockId, entityId])
+  @@id([blockId, entityId, tenantId])
   @@index([entityId])
+  @@index([tenantId])
 }
 
 /// IdeaBlockLink — типизированная связь между двумя IdeaBlock.
@@ -4201,10 +4263,10 @@ model IdeaBlockLink {
   validUntil   DateTime?         @db.Timestamptz
 
   org       Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  fromBlock IdeaBlock @relation("BlockLinkFrom", fields: [fromBlockId], references: [id], onDelete: Cascade)
-  toBlock   IdeaBlock @relation("BlockLinkTo", fields: [toBlockId], references: [id], onDelete: Cascade)
+  fromBlock IdeaBlock @relation("BlockLinkFrom", fields: [fromBlockId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  toBlock   IdeaBlock @relation("BlockLinkTo", fields: [toBlockId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
-  @@unique([fromBlockId, toBlockId, relationType])
+  @@unique([fromBlockId, toBlockId, relationType, tenantId])
   @@index([tenantId, status])
   @@index([fromBlockId, status])
   @@index([toBlockId, status])
@@ -4385,14 +4447,19 @@ model Theme {
 model ThemeIdeaBlock {
   themeId   String
   blockId   String
+  /// Ф1 партиционирование — tenantId-компаньон для составного Cascade-FK на
+  /// партиционированный IdeaBlock. Совпадает с tenantId блока/темы.
+  tenantId  String
   weight    Decimal  @default(1.0) @db.Decimal(4, 3)
   createdAt DateTime @default(now())
 
   theme Theme     @relation(fields: [themeId], references: [id], onDelete: Cascade)
-  block IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  block IdeaBlock @relation(fields: [blockId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  org   Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@id([themeId, blockId])
+  @@id([themeId, blockId, tenantId])
   @@index([blockId])
+  @@index([tenantId])
 }
 
 /// ThemeEntity — denormalized связь Theme ↔ Entity (через блоки темы).
@@ -4401,14 +4468,19 @@ model ThemeIdeaBlock {
 model ThemeEntity {
   themeId       String
   entityId      String
+  /// Ф1 партиционирование — tenantId-компаньон для составного Cascade-FK на
+  /// партиционированную Entity. Совпадает с tenantId сущности/темы.
+  tenantId      String
   mentionsCount Int      @default(0)
   createdAt     DateTime @default(now())
 
   theme  Theme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
-  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  entity Entity @relation(fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  org    Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@id([themeId, entityId])
+  @@id([themeId, entityId, tenantId])
   @@index([entityId])
+  @@index([tenantId])
 }
 
 // ──────────────────────────── Z-Admin: SuperAdminAccessLog (Фаза 7) ────────────────────────────
@@ -4502,7 +4574,10 @@ model Goal {
   /// SBA α-3 — линковка с Entity{type=goal} для графа знаний. Заполняется
   /// patch-backfill-entity-id-goal.ts и поддерживается knowledge-core.
   entityId String? @unique
-  entity   Entity? @relation("GoalEntity", fields: [entityId], references: [id], onDelete: SetNull)
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK на партиционированную Entity. Совпадает с tenantId сущности.
+  entityTenantId String?
+  entity   Entity? @relation("GoalEntity", fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
 
   themes    GoalTheme[]
   snapshots GoalAlignmentSnapshot[]
@@ -4553,6 +4628,7 @@ model Goal {
   @@index([tenantId, ownerPersonId])
   /// ТЗ-B (2026-06-05) — дешёвый findFirst(where isPrimary) для «севера» компаса.
   @@index([tenantId, isPrimary])
+  @@unique([entityId, entityTenantId])
 }
 
 /// ТЗ-2 Ф6.A (daily-value-dashboards) — недельный снимок здоровья портфеля
@@ -4819,6 +4895,9 @@ model Department {
   completeness       Decimal?  @db.Decimal(4, 3)
   /// Опц. линковка с Entity{type=org_unit} (для участия в графе знаний).
   entityId           String?   @unique
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK на партиционированную Entity. Совпадает с tenantId сущности.
+  entityTenantId     String?
   /// IdeaBlock-источники последнего извлечения отдела (provenance).
   sourceBlockIds     String[]  @default([])
   /// Confidence от extraction-LLM (для агентских записей).
@@ -4841,7 +4920,7 @@ model Department {
   org                       Org                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   parent                    Department?            @relation("DepartmentParent", fields: [parentDepartmentId], references: [id])
   children                  Department[]           @relation("DepartmentParent")
-  entity                    Entity?                @relation("DepartmentEntity", fields: [entityId], references: [id], onDelete: SetNull)
+  entity                    Entity?                @relation("DepartmentEntity", fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
   /// ТЗ 2026-05-25 Фаза 3 — глава отдела (см. headPersonId).
   headPerson                Person?                @relation("DepartmentHead", fields: [headPersonId], references: [id], onDelete: SetNull)
   roles                     Role[]
@@ -4859,6 +4938,7 @@ model Department {
   scopedProjects            Project[]              @relation("ProjectDepartment")
 
   @@unique([tenantId, name, deletedAt])
+  @@unique([entityId, entityTenantId])
   @@index([tenantId])
   @@index([tenantId, parentDepartmentId])
   @@index([tenantId, headPersonId])
@@ -4886,13 +4966,16 @@ model Role {
   maturityScore    Decimal?  @db.Decimal(4, 3)
   /// Опц. линковка с Entity{type=role} (если нужна для графа знаний).
   entityId         String?   @unique
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK на партиционированную Entity. Совпадает с tenantId сущности.
+  entityTenantId   String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
   org               Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   department        Department?      @relation(fields: [departmentId], references: [id])
-  entity            Entity?          @relation("RoleEntity", fields: [entityId], references: [id], onDelete: SetNull)
+  entity            Entity?          @relation("RoleEntity", fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
   jobDescriptions   JobDescription[]
   roleProfile       RoleProfile?
   personRoles       PersonRole[]
@@ -4922,6 +5005,7 @@ model Role {
   interactionsAsCounterpart Interaction[]           @relation("InteractionCounterpartRole")
 
   @@unique([tenantId, name, deletedAt])
+  @@unique([entityId, entityTenantId])
   @@index([tenantId, departmentId])
   @@map("roles")
 }
@@ -4949,6 +5033,9 @@ model Person {
   primaryDepartmentId         String?
   /// Линковка с Entity{type=person} (см. EntityResolutionService, Фаза 0b §8.3).
   entityId                    String?
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK на партиционированную Entity. Совпадает с tenantId сущности.
+  entityTenantId              String?
   /// SBA α-3 (2026-05-21) §4.3 — отношение Person ↔ Org. По умолчанию
   /// `external` (создан как контакт); patch-script проставит `employee`
   /// тем, у кого есть активный Membership.
@@ -5020,7 +5107,7 @@ model Person {
   org                         Org                                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user                        User?                              @relation("UserPersons", fields: [userId], references: [id], onDelete: SetNull)
   primaryDepartment           Department?                        @relation("PersonPrimaryDepartment", fields: [primaryDepartmentId], references: [id])
-  entity                      Entity?                            @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  entity                      Entity?                            @relation(fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
   personRoles                 PersonRole[]
   /// SBA α-8 wave 3 — Appointment[] (replacement для PersonRole).
   appointments                Appointment[]
@@ -5079,6 +5166,7 @@ model Person {
   /// ТЗ-5 Ф1 (meeting-upload-diarization) — спикеры загруженных встреч,
   /// сопоставленные с этим Person (assignment=employee).
   uploadSpeakers              MeetingUploadSpeaker[]
+  sourceParticipations        SourceParticipant[]
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -5278,7 +5366,10 @@ model Document {
   /// SBA α-3 — линковка с Entity{type=document} для графа знаний. Заполняется
   /// patch-backfill-entity-id-document.ts.
   entityId String? @unique
-  entity   Entity? @relation("DocumentEntity", fields: [entityId], references: [id], onDelete: SetNull)
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK на партиционированную Entity. Совпадает с tenantId сущности.
+  entityTenantId String?
+  entity   Entity? @relation("DocumentEntity", fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
 
   /// SBA β-7 — multi-faceted назначение документа. Один документ может одновременно
   /// быть «опорным материалом процесса» (use_in_process), «генерационным
@@ -5301,6 +5392,7 @@ model Document {
   @@index([tenantId, contentHash])
   @@index([tenantId, attachedThemeId])
   @@index([importBatchId])
+  @@unique([entityId, entityTenantId])
   @@map("documents")
 }
 
@@ -6313,6 +6405,9 @@ model Decision {
   sourceMeetingId   String?
   /// Legacy: один блок-источник. В β-3 — `sourceBlockIds[]` (массив).
   sourceIdeaBlockId String? @unique
+  /// Ф1 партиционирование — nullable-компаньон tenantId для составного
+  /// SetNull-FK на партиционированный IdeaBlock. Совпадает с tenantId блока.
+  sourceIdeaBlockTenantId String?
 
   // ── SBA β-3 — Specialist 3.3 (Decisions Registry) ──
   /// Связка с графом (создаётся при canonical). Уникален — один Entity на Decision.
@@ -6400,13 +6495,16 @@ model Decision {
   /// раз проверял внедрение решения.
   implementationCheckedAt DateTime?
 
+  impliesAction     Boolean   @default(false)
+  actionExtractedAt DateTime?
+
   deletedAt   DateTime?
   deletedById String?
 
   org               Org                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   decidedBy         Person?            @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)
   sourceMeeting     Meeting?           @relation("DecisionSourceMeeting", fields: [sourceMeetingId], references: [id], onDelete: SetNull)
-  sourceIdeaBlock   IdeaBlock?         @relation(fields: [sourceIdeaBlockId], references: [id], onDelete: SetNull)
+  sourceIdeaBlock   IdeaBlock?         @relation(fields: [sourceIdeaBlockId, sourceIdeaBlockTenantId], references: [id, tenantId], onDelete: SetNull)
   // SBA β-3: self-relation supersede + CardVersion-current.
   supersedes        Decision?          @relation("DecisionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
   supersededBy      Decision[]         @relation("DecisionSupersedes")
@@ -6427,6 +6525,7 @@ model Decision {
   // SBA β-3 — для currentVersionId.
   @@index([currentVersionId])
   @@index([tenantId, deletedAt])
+  @@unique([sourceIdeaBlockId, sourceIdeaBlockTenantId])
   @@map("decisions")
 }
 
@@ -6582,6 +6681,14 @@ enum ProbeStatus {
   /// SubjectMemory Ф2 — висящий дубль-probe погашен выводом/активацией
   /// правила той же Org (sweepPendingDuplicates) — вопрос уже не задаём.
   suppressed_by_memory
+  /// Probe-clarify Ф2 — диалог: задан уточняющий/подтверждающий ход, ждём ответ человека.
+  awaiting_dialog
+  /// Probe-clarify Ф4 — диалог: ответ применён в данные после echo-back подтверждения.
+  applied
+  /// Probe-clarify Ф3 — диалог: не доразобрали за лимит ходов → отдано человеку (owner/admin).
+  escalated_to_human
+  /// Probe-clarify Ф6 — диалог: человек не довёл уточнение до конца (истёк TTL/бросил).
+  abandoned
 }
 
 /// Idea — карточка идеи / запроса. SBA β-5 §4.1.
@@ -6708,10 +6815,39 @@ model ProbeEvent {
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  probeDialogState ProbeDialogState?
+
   @@index([tenantId, status])
   @@index([tenantId, emittedByService])
   @@index([contentHash])
   @@map("probe_events")
+}
+
+/// Probe-clarify Ф2 — состояние одного диалогового probe-уточнения: собранное намерение + фаза.
+/// Один ProbeEvent → ровно одна строка (probeEventId @unique), проходит фазы до resolved.
+model ProbeDialogState {
+  id              String           @id @default(cuid())
+  tenantId        String
+  probeEventId    String           @unique
+  recipientUserId String
+  phase           ProbeDialogPhase @default(awaiting_answer)
+  outcome         String?
+  collectedValue  String?
+  confidence      Float?
+  turnCount       Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  probeEvent      ProbeEvent       @relation(fields: [probeEventId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, probeEventId])
+  @@index([tenantId, recipientUserId, phase])
+}
+
+enum ProbeDialogPhase {
+  awaiting_answer
+  awaiting_clarification
+  awaiting_confirmation
+  resolved
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -6971,6 +7107,7 @@ enum ChannelKind {
   email_imap
   telegram_bot
   max_bot
+  push
 }
 
 /// Направление канала. Большинство каналов — bidirectional. Outbound-only
@@ -7349,7 +7486,7 @@ model CustomerRiskSnapshot {
   snapshotAt          DateTime  @default(now())
 
   org            Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customerEntity Entity  @relation("CustomerRiskSnapshotEntity", fields: [customerEntityId], references: [id], onDelete: Cascade)
+  customerEntity Entity  @relation("CustomerRiskSnapshotEntity", fields: [customerEntityId, tenantId], references: [id, tenantId], onDelete: Cascade)
   responsible    Person? @relation("CustomerRiskSnapshotResponsible", fields: [responsiblePersonId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, customerEntityId, dateLocal])
@@ -7803,6 +7940,15 @@ model WeeklyOperationsDigest {
   /// Идентификатор маршрута/модели LLM (или `prompt-v1+<model>`), который
   /// реально отработал. NULL если LLM упал и сохранён «сухой» вариант.
   llmTaskRouteId String?
+  /// Вердикт недели: { overall:{state,emoji,title,oneLiner}, axes:[{key,state,label,why}] }.
+  /// state ∈ 'ok'|'warn'|'risk'; key ∈ 'team'|'clients'|'execution'|'overall'. NULL для legacy/сухого fallback.
+  verdictJson           Json?
+  /// Письмо «как прошла неделя»: [{ key, title, prose, cites:[{label,ref}] }] — чистая проза (TTS-friendly).
+  letterJson            Json?
+  /// Недельный компас к цели: { direction:'to_goal'|'drift'|'against', score, weekDelta, why, pro:[], contra:[], goalId, goalName }.
+  goalAlignmentWeekJson Json?
+  /// Тренд осей по дням пн–пт: [{ key:'team'|'clients'|'execution'|'overall', days:[{dateLocal, state}] }] (детерминированно из 5 дневных вердиктов).
+  dayTrendJson          Json?
   createdAt      DateTime @default(now())
 
   tenant         Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -7853,6 +7999,14 @@ model DailyOperationsDigest {
   shortSummary   String?   @db.Text
   /// Telegram-доставка прошла. NULL — ещё не доставлено или выключено.
   deliveredAt    DateTime?
+  /// Вердикт дня: { overall:{state,emoji,title,oneLiner}, axes:[{key,state,label,why}] }.
+  /// state ∈ 'ok'|'warn'|'risk'; key ∈ 'team'|'clients'|'execution'|'overall'. NULL для legacy/сухого fallback.
+  verdictJson          Json?
+  /// Письмо «как прошёл день»: [{ key, title, prose, cites:[{label,ref}] }] — чистая проза (TTS-friendly).
+  /// key ∈ 'main'|'done'|'not_done'|'reporting'|'blocked'|'decisions'|'clients'|'ideas'|'reflection'|'actions'|'delta'.
+  letterJson           Json?
+  /// Дневной компас к цели: { direction:'to_goal'|'drift'|'against', score, todayDelta, why, pro:[], contra:[], goalId, goalName }.
+  goalAlignmentDayJson Json?
   createdAt      DateTime  @default(now())
 
   tenant         Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -7863,6 +8017,48 @@ model DailyOperationsDigest {
   @@unique([tenantId, dateLocal])
   @@index([tenantId, dateLocal])
   @@map("daily_operations_digests")
+}
+
+/// «Месяц компании» — месячный executive-дайджест операционного директора.
+/// Зеркало WeeklyOperationsDigest с окном «прошлый календарный месяц». Генерируется
+/// глобальным OperationsMonthlyDigestCron 1-го числа ~06:00. MonthlyDigestService.generate
+/// сводит 4 недельных WeeklyOperationsDigest месяца одним LLM-вызовом operations-monthly-digest.
+/// Идемпотентность — @@unique([tenantId, periodYm]).
+model MonthlyOperationsDigest {
+  id             String   @id @default(cuid())
+  tenantId       String
+  /// YYYY-MM — месяц отчёта (например 2026-05).
+  periodYm       String   @db.VarChar(7)
+  /// Связный текст от LLM (markdown). «Сухой» вариант при падении LLM.
+  bodyMarkdown   String   @db.Text
+  /// Структурированные показатели месяца для виджетов. Свободный JSON.
+  metricsJson    Json
+  /// Провенанс: id недельных снапшотов/целей/решений, использованных в дайджесте.
+  sourcesJson    Json
+  /// Маршрут/модель LLM (`<promptVersion>+<model>`). NULL при сухом fallback.
+  llmTaskRouteId String?
+  /// Вердикт месяца: { overall:{state,emoji,title,oneLiner}, axes:[{key,state,label,why}] }.
+  /// state ∈ 'ok'|'warn'|'risk'; key ∈ 'team'|'clients'|'execution'|'overall'. NULL для сухого fallback.
+  verdictJson           Json?
+  /// Письмо «как прошёл месяц»: [{ key, title, prose, cites:[{label,ref}] }] (TTS-friendly).
+  letterJson            Json?
+  /// Месячный компас к цели: { direction:'to_goal'|'drift'|'against', score, monthDelta, pace:{factToGoal,planToGoal,etaIso,leadingSignal}, why, pro:[], contra:[], goalId, goalName }.
+  goalAlignmentMonthJson Json?
+  /// Тренд осей по неделям: [{ key:'team'|'clients'|'execution'|'overall', weeks:[{weekStart, state}] }] (детерминированно из 4 недельных вердиктов).
+  weekTrendJson         Json?
+  /// Короткое резюме для рассылки/блока (как DailyOperationsDigest.shortSummary).
+  shortSummary          String?  @db.Text
+  /// Момент успешной доставки уведомления. NULL — не доставлено.
+  deliveredAt           DateTime?
+  createdAt      DateTime @default(now())
+  /// audit — источник записи. 'demo' для seed демо-кабинета; null для боевых.
+  externalSource String?
+
+  tenant Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, periodYm])
+  @@index([tenantId, periodYm])
+  @@map("monthly_operations_digests")
 }
 
 // ──────────────────────────── SBA δ-2 — ProactiveWatcher (2026-05-23) ────────────────────────────
@@ -9411,6 +9607,10 @@ model Issue {
   // Граф знаний
   entityId String?
 
+  /// Единый чат (TZ 2026-06-21, Ф2.5a) — work_chat карточки задачи.
+  /// Скаляр без relation: связь односторонняя, Issue владеет ссылкой.
+  conversationId String? @unique
+
   /// Р4 (TZ 2026-06-16, Ф4) — задача помечена «под вопросом» после отмены/замены
   /// связанного решения (supersede). null — обычная задача. НЕ авто-снос:
   /// показывается человеку в pending-actions, снимается при ручном решении.
@@ -9620,6 +9820,10 @@ model IssueComment {
   // Gamification (Wave 2): кто нажал «спасибо»
   thanksUserIds String[] @default([])
 
+  /// Единый чат (TZ 2026-06-21, Ф2.5a) — reverse-указатель на мигрированное
+  /// Message. null = legacy-комментарий, ещё не перенесён (read мержит такие).
+  messageId String?
+
   createdAt DateTime  @default(now())
   editedAt  DateTime?
   deletedAt DateTime?
@@ -9633,6 +9837,7 @@ model IssueComment {
   @@index([issueId, createdAt])
   @@index([authorId])
   @@index([parentCommentId])
+  @@index([messageId])
 }
 
 /// Датированное обновление прогресса задачи (Asana/Linear Project Update-стиль).
@@ -9773,13 +9978,14 @@ model SupportSlaPolicy {
 
 /// CSAT/оценка тикета поддержки клиентом. TZ support-desk Ф1 (R-INV-2/R3 — чистый сигнал петле).
 model IssueRating {
-  id            String   @id @default(cuid())
-  tenantId      String
-  issueId       String   @unique
-  score         Int /// 1..5
-  comment       String?  @db.Text
-  ratedByUserId String? /// клиент (User.id)
-  createdAt     DateTime @default(now())
+  id             String   @id @default(cuid())
+  tenantId       String
+  issueId        String?  @unique
+  conversationId String?  @unique
+  score          Int /// 1..5
+  comment        String?  @db.Text
+  ratedByUserId  String? /// клиент (User.id)
+  createdAt      DateTime @default(now())
 
   @@index([tenantId, createdAt])
 }
@@ -9789,8 +9995,8 @@ model IssueRating {
 model SupportDraftOutcome {
   id                String   @id @default(cuid())
   tenantId          String /// вендор-Org
-  issueId           String
-  draftCommentId    String?
+  conversationId    String
+  draftMessageId    String?
   taskType          String   @default("support-clone-draft")
   draftText         String   @db.Text
   finalText         String?  @db.Text /// что реально ушло клиенту (null если отклонён)
@@ -9802,7 +10008,7 @@ model SupportDraftOutcome {
   createdAt         DateTime @default(now())
 
   @@index([tenantId, taskType, createdAt])
-  @@index([tenantId, issueId])
+  @@index([tenantId, conversationId])
 }
 
 /// Аудит действий ночного куратора контура поддержки (TZ Ф4, R-INV-6/R24).
@@ -9836,11 +10042,16 @@ model IssueAttachment {
   thumbnailUrl String? // для картинок
   createdAt    DateTime @default(now())
 
+  /// Единый чат (TZ 2026-06-21, Ф2.5a) — перепривязка вложения на Message
+  /// при миграции комментария. null = вложение ещё на legacy IssueComment.
+  messageId String?
+
   issue   Issue         @relation(fields: [issueId], references: [id], onDelete: Cascade)
   comment IssueComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
   @@index([issueId])
   @@index([commentId])
+  @@index([messageId])
 }
 
 /// Внешняя ссылка на задаче (URL + title).
@@ -10510,6 +10721,51 @@ model PushSubscription {
 
   @@unique([userId, endpoint])
   @@index([tenantId, userId])
+}
+
+model PushToken {
+  id           String   @id @default(cuid())
+  userId       String
+  tenantId     String
+  transport    String   @db.VarChar(20)
+  token        String   @db.Text
+  deviceInfo   Json?
+  isActive     Boolean  @default(true)
+  failureCount Int      @default(0)
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, transport, token])
+  @@index([tenantId, userId])
+}
+
+model UserBlock {
+  id             String   @id @default(cuid())
+  tenantId       String
+  blockerUserId  String
+  blockedUserId  String
+  createdAt      DateTime @default(now())
+
+  blocker User @relation("UserBlockBlocker", fields: [blockerUserId], references: [id], onDelete: Cascade)
+  blocked User @relation("UserBlockBlocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, blockerUserId, blockedUserId])
+  @@index([tenantId, blockedUserId])
+}
+
+model MessageReport {
+  id              String   @id @default(cuid())
+  tenantId        String
+  messageId       String
+  conversationId  String
+  reporterUserId  String
+  reason          String?  @db.VarChar(500)
+  createdAt       DateTime @default(now())
+
+  @@index([tenantId, messageId])
+  @@index([tenantId, conversationId])
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -12320,4 +12576,177 @@ model BitrixCrmNote {
 
   @@unique([tenantId, kind, externalId])
   @@index([tenantId, occurredAt])
+}
+
+enum ConversationKind {
+  dm
+  group
+  channel
+  work_chat
+  external
+  ticket
+}
+
+model Conversation {
+  id              String           @id @default(cuid())
+  tenantId        String
+  kind            ConversationKind
+  title           String?
+  isMandatory     Boolean          @default(false)
+  feedsGraph      Boolean          @default(true)
+  createdByUserId String
+  lastMessageAt   DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  members       ConversationMember[]
+  messages      Message[]
+  supportTicket SupportTicket?
+  accessLinks   ConversationAccessLink[]
+  polls         Poll[]
+
+  @@index([tenantId, kind, lastMessageAt])
+}
+
+model Poll {
+  id              String    @id @default(cuid())
+  tenantId        String
+  conversationId  String
+  question        String    @db.Text
+  createdByUserId String
+  status          String    @default("open")
+  closedAt        DateTime?
+  decisionBlockId String?
+  createdAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  options      PollOption[]
+  votes        PollVote[]
+
+  @@index([tenantId, conversationId])
+}
+
+model PollOption {
+  id        String @id @default(cuid())
+  pollId    String
+  text      String
+  sortOrder Int    @default(0)
+
+  poll  Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+
+  @@index([pollId])
+}
+
+model PollVote {
+  id        String   @id @default(cuid())
+  pollId    String
+  optionId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId])
+  @@index([optionId])
+}
+
+model ConversationAccessLink {
+  id              String    @id @default(cuid())
+  tokenHash       String    @unique
+  conversationId  String
+  contactEmail    String?   @db.VarChar(320)
+  contactPhone    String?
+  createdByUserId String
+  claimedByUserId String?
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model ConversationMember {
+  id             String    @id @default(cuid())
+  conversationId String
+  userId         String
+  role           String    @default("member")
+  lastReadSeq    BigInt    @default(0)
+  mutedUntil     DateTime?
+  source         String    @default("manual")
+  joinedAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id                String    @id @default(cuid())
+  tenantId          String
+  conversationId    String
+  seq               BigInt
+  authorUserId      String
+  authorType        String    @default("human")
+  access            String    @default("normal")
+  content           String    @db.Text
+  contentHtml       String?   @db.Text
+  contentStripped   String?   @db.Text
+  parentMessageId   String?
+  clientMessageId   String
+  voiceUrl          String?
+  voiceDuration     Int?
+  voiceTranscript   String?   @db.Text
+  attachments       Json?
+  mentions          String[]
+  reactions         Json?
+  thanksUserIds     String[]  @default([])
+  draftState        String?
+  cloneConfidence   Decimal?  @db.Decimal(4, 3)
+  groundednessScore Decimal?  @db.Decimal(4, 3)
+  editedAt          DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, clientMessageId])
+  @@unique([conversationId, seq])
+  @@index([conversationId, seq])
+  @@index([tenantId, createdAt])
+}
+
+model MessageOutbox {
+  id        String   @id @default(cuid())
+  messageId String   @unique
+  status    String   @default("pending")
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+}
+
+model SupportTicket {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  conversationId     String    @unique
+  status             String    @default("new")
+  customerOrgId      String?
+  customerUserId     String?
+  customerContact    String?   @db.VarChar(320)
+  firstResponseDueAt DateTime?
+  resolutionDueAt    DateTime?
+  firstRespondedAt   DateTime?
+  slaBreachedAt      DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, firstResponseDueAt])
 }

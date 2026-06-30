@@ -124,6 +124,69 @@ const SEEDS: SettingSeed[] = [
     description:
       'Параметр k для слияния рангов RRF в поиске (стандартно 60): сглаживает вклад позиции при объединении гибридного списка и связей графа. По умолчанию 60.',
   },
+  {
+    key: 'knowledge.hnsw_ef_search',
+    value: 100,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Параметр hnsw.ef_search для векторного поиска по HNSW-индексам (IdeaBlock/Entity/Theme): размер списка кандидатов при обходе графа. Выше — точнее recall, но медленнее. Применяется через SET LOCAL в рамках запроса (1–1000). По умолчанию 100.',
+  },
+  {
+    key: 'knowledge.router_confidence_threshold',
+    value: 0.6,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Порог уверенности роутера класса запроса (0–1, слой источника Ф3). Если уверенность в классе ниже порога ИЛИ класс ∈ {список, итог за период, обзор} — retrieval запускает структурный И семантический маршруты параллельно и сливает RRF (both-ways, никогда не пусто). Уверенный topic/fact — только семантика. По умолчанию 0.6.',
+  },
+  {
+    key: 'knowledge.router_v2_enabled',
+    value: true,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'high',
+    description:
+      'Аварийный рубильник роутера 5 классов + confidence-gated both-ways (слой источника Ф3). ON по умолчанию (Ship-On). Выкл → откат на прежний single-route retrieval (семантический путь без структурной подстраховки и без гейта фан-аута по классу).',
+  },
+  {
+    key: 'knowledge.overview_top_themes',
+    value: 5,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Сколько верхних тем (по близости Theme.embedding к вопросу) брать для обзорного класса (К4, слой источника Ф6). Карта строится lazy на лету из Theme.summary выбранных тем; затем — погружение в блоки этих тем. Привязка к близости embedding, ветка темы лишь сужает. По умолчанию 5.',
+  },
+  {
+    key: 'knowledge.list_episodes_limit',
+    value: 30,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Сколько эпизодов-источников (SourceEpisode: встречи/документы/чаты по occurredAt DESC) брать для класса-списка (К1, слой источника Ф10). Ответ — перечисление источников со ссылками, а не абзац-синтез из блоков. По умолчанию 30.',
+  },
+  {
+    key: 'knowledge.person_resolve_trgm_threshold',
+    value: 0.3,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Минимальное триграммное сходство (0–1, pg_trgm) для нечёткого резолва имени человека/компании в К1-маршруте (список встреч/источников по человеку). Устойчивость к опечаткам и ошибкам транскрибации: «Алексан» → «Александр». Точное равенство строки в резолве не используется. По умолчанию 0.3.',
+  },
+  {
+    key: 'knowledge.person_resolve_ambiguity_delta',
+    value: 0.1,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Порог дельты уверенности (0–1) между двумя верхними кандидатами при резолве имени в К1. Если разрыв меньше порога И контекст-сущность не сузила выбор — помощник задаёт уточняющий вопрос вместо слепой подстановки. По умолчанию 0.1.',
+  },
 ];
 
 interface Counters {

@@ -162,7 +162,7 @@ export class KnowledgeEntitiesController {
 
     const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
 
-    const entity = await this.prisma.entity.findUnique({ where: { id } });
+    const entity = await this.prisma.entity.findUnique({ where: { id_tenantId: { id, tenantId } } });
     if (!entity || entity.tenantId !== tenantId) {
       throw new NotFoundException({
         ok: false,
@@ -235,7 +235,7 @@ export class KnowledgeEntitiesController {
       });
     }
     const entity = await this.prisma.entity.findUnique({
-      where: { id },
+      where: { id_tenantId: { id, tenantId } },
       select: { id: true, tenantId: true },
     });
     if (!entity || entity.tenantId !== tenantId) {
@@ -358,7 +358,7 @@ export class KnowledgeEntitiesController {
     const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
 
     const center = await this.prisma.entity.findUnique({
-      where: { id },
+      where: { id_tenantId: { id, tenantId } },
       select: { id: true, type: true, canonicalName: true, tenantId: true },
     });
     if (!center || center.tenantId !== tenantId) {
@@ -608,7 +608,7 @@ export class KnowledgeEntitiesController {
     }
 
     const entity = await this.prisma.entity.findUnique({
-      where: { id },
+      where: { id_tenantId: { id, tenantId } },
       select: { id: true, tenantId: true },
     });
     if (!entity || entity.tenantId !== tenantId) {
@@ -636,7 +636,7 @@ export class KnowledgeEntitiesController {
     } else if (body.nodeId) {
       if (body.nodeId !== id) {
         const node = await this.prisma.entity.findUnique({
-          where: { id: body.nodeId },
+          where: { id_tenantId: { id: body.nodeId, tenantId } },
           select: { id: true, tenantId: true },
         });
         if (!node || node.tenantId !== tenantId) {

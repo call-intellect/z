@@ -81,11 +81,13 @@ export function PersonRow({
   sub,
   right,
   onClick,
+  href,
 }: {
   name: string;
   sub?: ReactNode;
   right?: ReactNode;
   onClick?: () => void;
+  href?: string;
 }) {
   const inner = (
     <>
@@ -112,6 +114,18 @@ export function PersonRow({
       {right && <span className="shrink-0">{right}</span>}
     </>
   );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="flex w-full items-center gap-3 rounded-xl p-2.5 transition hover:brightness-110"
+        style={{ background: "var(--surface-inset)" }}
+      >
+        {inner}
+      </Link>
+    );
+  }
 
   if (onClick) {
     return (

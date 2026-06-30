@@ -231,7 +231,7 @@ LiveKit чистит атрибуты автоматически при disconne
 ### `backend/src/modules/dashboard/` (Phase 8)
 - `dashboard.module.ts`, `services/director-dashboard.service.ts`, `director-dashboard.controller.ts`, `dto/director-dashboard.dto.ts`, `prompts/dashboard-summary.prompt.ts`.
 - `GET /api/v1/dashboard/director?period=week|month` под `RbacService.canViewDirectorDashboard`.
-- **Модульные дашборды исполнения (ТЗ 2026-06-21):** `execution-dashboard.controller.ts` (`ExecutionDashboardController`, `@Controller('api/v1/dashboard')`) + `services/execution-dashboard.service.ts` + `dto/execution-dashboard.dto.ts`. 5 GET под `CookieAuthGuard+TenantGuard`+`canViewDirectorDashboard`: `layout` (раскладка ролевого пресета — override AdminSetting или `null`), `goal-vector/by-person`, `issue-chains`, `load/by-person`, `operations/trend`. Тег Swagger `dashboard-execution`. Фронтовый слой — реестр виджетов `frontend/src/ui/components/dashboard/registry/*` (`widget-registry.ts` — 18 виджетов, `presets.ts` — 3 роли×3 ритма, `DashboardCanvas.tsx` — рендер по `{role,rhythm}`, `use-dashboard-layout.ts` — override/code-fallback); экраны `/dashboard`,`/week`,`/month` собраны канвасом. См. [[../01_projects/director-dashboard]] §«Модульные дашборды исполнения».
+- **Модульные дашборды исполнения (ТЗ 2026-06-21):** `execution-dashboard.controller.ts` (`ExecutionDashboardController`, `@Controller('api/v1/dashboard')`) + `services/execution-dashboard.service.ts` + `dto/execution-dashboard.dto.ts`. 5 GET под `CookieAuthGuard+TenantGuard`+`canViewDirectorDashboard`: `layout` (раскладка ролевого пресета — override AdminSetting или `null`), `goal-vector/by-person` (с 2026-06-26 ответ содержит `goalState ∈ {primary,active_fallback,none}`; `resolveGoalId` имеет 4-й fallback на активную цель), `issue-chains`, `load/by-person`, `operations/trend`. Тег Swagger `dashboard-execution`. Фронтовый слой — реестр виджетов `frontend/src/ui/components/dashboard/registry/*` (`widget-registry.ts` — 18 виджетов, `presets.ts` — 3 роли×3 ритма, `DashboardCanvas.tsx` — рендер по `{role,rhythm}`, `use-dashboard-layout.ts` — override/code-fallback); экраны `/dashboard`,`/week`,`/month` собраны канвасом. См. [[../01_projects/director-dashboard]] §«Модульные дашборды исполнения».
 
 ### `backend/src/modules/goals/` (Phase 9)
 - `goals.module.ts`, `services/goals.service.ts`, `goals.controller.ts`, `dto/goals.dto.ts`.
@@ -1383,7 +1383,7 @@ Assignee resolution 4 ступени: `Task.assigneeUserId` FK → email exact (
 
 Status mapping: `open→backlog`, `in_progress→started`, `done→completed`, `cancelled→cancelled` (в schema используется `started`, не `in_progress`).
 
-Legacy `/api/v1/tasks/*` помечен `@ApiOperation({ deprecated: true })` на каждом из 7 endpoints (TasksController), endpoints продолжают работать.
+Legacy `/api/v1/tasks/*` (модуль `tasks/`, 7 endpoints `TasksController`) — **УДАЛЁН целиком 2026-06-25** (дроп legacy-модели `Task`, см. §«Дроп legacy-модели Task» ниже). Ручной CRUD задач — только через трекер (`Issue`); сам `migrate-task-to-issue.ts` сохранён и переписан под безопасный прод-перенос данных перед дропом таблицы.
 
 ### `backend/src/common/idempotency/` — общий IdempotencyService
 
@@ -1596,6 +1596,16 @@ backend/src/modules/tracker/
 - `conversational/issue-assignment-notifier.service.ts` — `IssueAssignmentNotifierService`: listener `@OnEvent(TrackerEmitterService.EVENT_NAME)` (фильтрует `type=issue.assignee_changed`, только `action=added`) → шлёт исполнителю единое уведомление `issue.assigned` (бот/кабинет) через `ConversationalService.sendNotification`. Self-skip (не уведомляет автора-же-исполнителя), fire-and-forget, kill-switch `ASSIGNMENT_NOTIFICATIONS_ENABLED` (default ON).
 
 **Поток:** tracker эмит `issue.assignee_changed` → conversational listener → `sendNotification('issue.assigned')`. Listener живёт в `ConversationalModule` (а не в tracker), т.к. conversational уже импортит tracker — обратный импорт дал бы цикл. Один listener покрывает **оба** пути назначения: UI-путь `addAssignee` и помощника (`assign_task`).
+
+### Единый помощник: Мастер single-pass + chat-v2 4-вызова (2026-06-25)
+
+ТЗ [`plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md`](../../plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md) (Ф2–Ф6, коммиты `f51e5a0e`…`8dac5210`). Полная карта потока — [[knowledge-core]] §«Единый помощник», профили — [[../01_projects/concierge-agent]] / [[../01_projects/chat-v2]] / [[../01_projects/ai-jobs]]. Убраны обе петли (ReAct Мастера + route/plan/sufficiency внутри chat-v2).
+
+- **`concierge/services/concierge.service.ts` — single-pass.** Удалены `for i<maxSteps`, loop-guard, `buildPartialAnswer`, сырой JSON-дамп, обёртка `ask_chat_v2`, крутилки `concierge.max_steps`/`rag.loop_guard_threshold`. Слой 1 — детерм. перехват (probe/confirm/clarify/checkin) ДО LLM; Слой 2 — один диспетч-вызов `concierge-respond` (`answer|action|note|checkin_self`); Слой 3 — один проход. `answer` → chat-v2 `askEphemeral` в процессе, текст слово-в-слово (passthrough); `action` → инструмент + отдельный render-вызов (`CONCIERGE_RENDER_SYSTEM_PROMPT`). Канальный clarify-перехват — Redis-ключ `concierge:clarify:<bindingId>` (`assistant-channel.bridge.ts` + telegram/max адаптеры).
+- **`knowledge-core/services/chat-v2.service.ts` — движок-ответчик, 4 LLM-вызова, memoryless.** `askEphemeral({history,summary,intent,scope?,scopeRefId?})` без своей `ChatV2Conversation` (тред принадлежит Мастеру). Цепочка: понимание (`dialog-understand`) → поиск+RRF → rerank (`rag-rerank`, `rag.k_retrieve` 30 → `rag.k_context` 18) → синтез (`chat-v2`, токен `[[CLARIFY]]` → `needsClarification`) → groundedness (`rag-groundedness`, при clarify пропускается, переспрос не кэшируется). route/plan/sufficiency-методы удалены; промпты `RAG_ROUTE`/`RAG_PLAN`/`RAG_SUFFICIENCY` законсервированы как exports.
+- **`dialog-layer/services/query-plan-extractor.service.ts` + `dialog.service.ts` — слитое понимание.** `dialog-multi-query` + `dialog-extract-plan` → один вызов `dialog-understand` (метод `understand()`), kill-switch `rag.understanding_merged` (ON; OFF → два прежних вызова как fallback).
+- **Модели по агентам** — `LlmTaskRoute` через `seed-llm-task-routes-edinyy-pomoshnik.ts` (diag `diag-llm-routes.ts`): `concierge-respond`→`gpt-5.4-mini`, `dialog-understand`/`chat-v2`→`deepseek-v4-pro`, `rag-rerank`/`rag-groundedness`→`deepseek-v4-flash`.
+- **Фронт (Ф1/Ф5):** `/chat-v2`+`/assistant` → redirect `/chat`; `/memory` = дверь к реестрам (кусочный `MemorySearch` удалён); видимые «Concierge»→«Мастер». Полное схлопывание 3 движков/4 поверхностей отколото в [`2026-06-25-edinyy-pomoshnik-chat-surface-convergence.md`](../../plans/tz/2026-06-25-edinyy-pomoshnik-chat-surface-convergence.md) (нужна визуальная приёмка).
 
 ### PWA frontend (Wave 2 F2)
 
@@ -1973,6 +1983,26 @@ mail-inbound/
 - `conversational/conversational.service.ts` — eventType `operations.daily_digest` (получатели **только `coo+owner`**, admin исключён).
 - `metrics/business-metrics.service.ts` — `coo_daily_digest_{generated,failed,delivered}_total` + `coo_daily_digest_age_seconds`, `coo_insights_by_cause_total{cause}`, `coo_company_maturity_score`.
 
+### «Месяц компании» — третий ритм брифинга в `operations/` (2026-06-30)
+
+**Источник:** `plans/tz/2026-06-29-month-company-monthly-brief.md` (ветка `feature/month-company-and-report-navigation`). Зеркало Weekly/Daily-дайджеста на месячном окне. Новое в `backend/src/modules/operations/`:
+
+- **Контроллер** `MonthlyDigestController` (`/api/v1/dashboard/operations/monthly-digest`) — 4 GET/POST: `/?period=YYYY-MM`, `/latest`, `POST /generate` (owner/admin/super), `/available-periods?limit=`. RBAC чтения — `canViewOperationsDashboard`. Daily/Weekly-контроллеры получили `/available-periods` (метод `listAvailablePeriods` в 3 сервисах; shared `available-periods.dto.ts`).
+- **Сервис** `MonthlyDigestService` (`operations/services/monthly-digest.service.ts`) — `getStored/getLatest/getOrGenerate/generate/listAvailablePeriods/markDelivered/mondaysInMonth`; сводит 4 недельных `WeeklyOperationsDigest` ОДНИМ LLM-вызовом `operations-monthly-digest` (компресс-вход без `letterJson`, missingWeeks graceful), `clampMonthVerdict`, детерминированный `weekTrendJson`, `pace` (факт/план/ETA) считает КОД, «сухой» fallback.
+- **Cron** `OperationsMonthlyDigestCron` (`operations/workers/operations-monthly-digest.cron.ts`, `@Cron('0 * * * *')` + МСК-гейт «1-е число && час===`monthlyDigestLocalHour`») → генерит за прошлый месяц + доставка `operations.monthly_digest` (`actionUrl /month`) + `markDelivered`.
+- **Промпт** `operations/prompts/monthly-digest.prompt.ts` (`MONTH_COMPANY_SYSTEM_PROMPT` стабилен — prompt-caching).
+- **Скрипты:** `seed-llm-task-routes-month-company.ts`, `seed-admin-setting-month-company.ts`, `seed-admin-setting-report-archive.ts`.
+
+**Внешние пересечения:**
+- `prisma/schema.prisma` — новая модель `MonthlyOperationsDigest` (миграция `20260630000000_add_monthly_operations_digest`, см. [[data-model|data-model]]).
+- `ai/services/llm-router.service.ts` — новый taskType `operations-monthly-digest` (capable `deepseek-v4-pro`, `maxTokens 8000`).
+- `admin/settings/*` — крутилки `betaOps.monthlyDigestEnabled` (kill-switch ON), `betaOps.monthlyDigestLocalHour` (6), `operations.report_archive.recent_limit` (12).
+- `conversational/conversational.service.ts` — eventType `operations.monthly_digest` (роли owner/coo).
+- `metrics/business-metrics.service.ts` — `coo_monthly_digest_{generated,failed,delivered}_total`.
+- `operations/services/weekly-per-person.service.ts` — колонка «Вклад в цель» (`goalContributionNet`) переведена на range-sum по окну.
+
+См. [[../01_projects/director-dashboard]] §«Месяц компании», [[../01_projects/ai-jobs]] §«operations-monthly-digest», [[../01_projects/workers-queues]], [[../01_projects/api-layer]].
+
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
 **Источник:** [`plans/archive/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].
@@ -2243,8 +2273,8 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Единая задача встречи: `MeetingActionItemsService` (Ф5.2)
 
-- **`backend/src/modules/meetings/` — `MeetingActionItemsService`** (новый, в `@Global() MeetingsModule` — инжектится без `imports`). Единая точка чтения «задач встречи»: флаг `AdminSetting knowledge.meetingTasksToTrackerOnly` (code-fallback **FALSE**) — `OFF` → читаем `Task`, `ON` → `Issue` по `linkedMeetingIds`. Репойнт 7 потребителей: public-api (`GET /meetings/:id/tasks` с сохранением контракта), admin, chat, search, exports (md + docx), bulk-zip, внутренний `tasks.service` для фронта. Фронт не тронут (его эндпоинт gate-coupled на бэке). Грабля «два артефакта Task+Issue» — [[code-pitfalls]].
-- `meeting-report-fast.worker.writeTasks` получил gate: при `ON` `Task` для action-items не создаётся.
+- **`backend/src/modules/meetings/` — `MeetingActionItemsService`** (в `@Global() MeetingsModule` — инжектится без `imports`). Единая точка чтения «задач встречи». **С 2026-06-25 (дроп `model Task`) читает ТОЛЬКО `Issue` по `linkedMeetingIds`** — флаг `knowledge.meetingTasksToTrackerOnly` удалён (см. §«Дроп legacy-модели Task»). Питает потребителей: public-api (`GET /meetings/:id/tasks` с сохранением контракта), admin, chat, search, exports (md + docx), bulk-zip.
+- `meeting-report-fast.worker` для встреч пишет ТОЛЬКО `chapters`/`summary`/`qualityScore` — `writeTasks` удалён (action-items встречи извлекаются по Issue-пути `meeting-action-items`, а не записью `Task`).
 
 ### Скрипты
 
@@ -2404,7 +2434,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Новые сервисы
 
-- **`backend/src/modules/meetings/ — MeetingTaskDedupeService`** (Ф5 Р2) — семантический дедуп задач встречи: embedding-KNN-кандидаты + LLM-арбитр серой зоны (taskType `task-dedupe`, `deepseek-v4-flash`) → удаляет fast-черновики-дубли. Вызывается из `tasks-extract.worker` + `meeting-report-fast.worker`. Флаг `AdminSetting.meetings.taskDedupeEnabled` (default **OFF**) + порог `meetings.taskDedupeThreshold` (0.85). Метрика `z_task_dedupe_total{result}`. Маршрут — `seed-llm-task-routes-task-dedupe.ts` (в `apply-prod-deploy.ts` STEPS).
+- **`MeetingTaskDedupeService`** (Ф5 Р2) — семантический дедуп задач встречи (taskType `task-dedupe`). **УДАЛЁН 2026-06-25** вместе с дропом legacy-модели `Task` (дедуп задач теперь — единый спайн-путь `3-15-tasks` + общий `task-dedup-matcher.util` с LINK-семантикой против открытых `Issue`, см. §«Дроп legacy-модели Task» и [[../01_projects/tracker]] §«Спайн-специалист задач»).
 - **`backend/src/modules/knowledge-core/ — GoalTaskLinkerService`** + **`GoalTaskLinkerCron`** (Ф4.1, `@Cron` 30 мин, per-Org, `WorkerOrgGate`, в `ai/workers.module`) + on-event из специалиста `3-14-goals` — LLM-арбитр `goal-task-link` (`deepseek-v4-flash`) привязывает AI-цель встречи к её задачам (`Issue.goalId`, non-destructive). Флаг `AdminSetting.goals.goalTaskLinkEnabled` (default **OFF**). Метрика `z_goal_task_link_total{result}`. Закрывает «LLM-арбитр Goal↔Task (Ф4.1) отложен» из §«Авто-привязка Goal↔Theme». Маршрут — `seed-llm-task-routes-goal-task-link.ts` (в STEPS).
 
 ### Прочие правки (Ф1/Ф2/Ф6 + ТЗ B/D)
@@ -2502,7 +2532,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 **Источник:** ТЗ [`plans/tz/2026-06-20-provenance-probe-followups.md`](../../plans/tz/2026-06-20-provenance-probe-followups.md) (Блок A + Блок B), [`plans/tz/2026-06-20-config-knobs-to-admin-settings.md`](../../plans/tz/2026-06-20-config-knobs-to-admin-settings.md) (Шаги 2–8). Эндпоинты — [[../01_projects/api-layer]]; крутилки — [[../01_projects/admin]]; поля — [[data-model]].
 
-- **`knowledge-core/services/task-evidence-linker.service.ts`** (`TaskEvidenceLinkerService`, B2) — матчит fast-задачу встречи к породившему `IdeaBlock` по цитате (fast-задачи приходят с пустым `evidenceBlockIds`); проставляет провенанс-привязку, делая «Откуда это» рабочим и для задач из встреч.
+- **`TaskEvidenceLinkerService`** (B2) — матчил fast-задачу встречи к породившему `IdeaBlock` по цитате. **УДАЛЁН 2026-06-25** вместе с дропом legacy-модели `Task` (провенанс задачи теперь живёт на `Issue` через `TaskSource{issueId}` / `sourceBlockIds`, см. §«Дроп legacy-модели Task»).
 - **`knowledge-core/crons/voice-note-audio-retention.cron.ts`** (`VoiceNoteAudioRetentionCron`, B3) — уборка аудио голосовых из S3 (`voice-notes/`) старше `provenance.voiceNoteAudioRetentionDays` (AdminSetting, default 90). Эндпоинт выдачи — `provenance/voice-note/:rawEventId/audio` (presigned, TTL `voiceNoteAudioPresignTtlSeconds`=600).
 - **`ingest/adapters/phone-call.adapter.ts`** (`PhoneCallIngestAdapter`, B5) — Mango: запись звонка из S3 → Vox ASR → структурный payload `{ kind:'phone_call', callId, participants, recordingS3Key, fullText, … }` → `IngestService.ingest` (`Source.type='phone_call'`). Mango-вебхук починен (был сырой JSON-шум вместо структурного события).
 - **`common/config/env-classification.ts`** (config-knobs Шаг 2) — `KEEP_ENV_KEYS` (секреты/connection/bootstrap, остаются в ENV) + `ADMIN_FALLBACK_ENV_KEYS` (ENV как fallback к AdminSetting). Гард-тесты `env-classification.guard.spec.ts` (новая ENV без классификации валит CI) и `no-direct-process-env.guard.spec.ts` (прямой `process.env.*` вне whitelist запрещён). Серверная валидация — `AdminSettingsService.set()` (Zod по реестру + reason-gate для severity high/destructive, `MIN_REASON_LENGTH=10`).
@@ -2550,5 +2580,33 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **`knowledge-core/prompts/rag-pipeline.prompts.ts`** — промпты-победители многошаговой ветки: роутер сложности `rag-route` → ReWOO-план `rag-plan` → пошаговый retrieval с судьёй достаточности `rag-sufficiency` → условный LLM-реранк `rag-rerank` (`rag.rerank_min_pool`). Гейт `rag.iterative_enabled` + cold-start `rag.cold_start_min_blocks`, fail-open до одношагового.
 - **`chat-v2.service` `applyGroundednessGate`** — гейт честности после синтеза (taskType `rag-groundedness`, режим `rag.groundedness_mode`, метрика `rag_abstain_total`).
 - **`concierge/utils/loop-guard.ts`** — сторож зацикливания (лимит `concierge.max_steps` AdminSetting, честный частичный ответ при лимите); строгий гейт переспроса в промпте `concierge-respond`.
+
+[[../index|← index]]
+
+## Дроп legacy-модели Task — унификация задач на Issue (2026-06-25)
+
+**Источник:** ТЗ [`plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md`](../../plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md) (Ф0–Ф10). Полный снос двойной сущности «задача» — единственный слой задач теперь `Issue` (трекер). Схема/индексы — [[data-model]] §«Дроп legacy-модели Task»; AI-jobs — [[../01_projects/ai-jobs]]; трекер — [[../01_projects/tracker]].
+
+### Удалено
+- **Модуль `backend/src/modules/tasks/`** (7 deprecated REST-эндпоинтов `TasksController`) — целиком. Ручной CRUD задач — только через трекер (`Issue`).
+- **Писатели `Task` встречи:** `meeting-report-fast.worker.writeTasks`, сервисы `MeetingTaskDedupeService` (`meetings/`) и `TaskEvidenceLinkerService` (`knowledge-core/`).
+- **Писатели `Task` чата:** legacy-ветка `extractTasks` в `chatbox-analyze.worker`, `CrossSourceTaskDedupeService`, промоут/read-union chatbox-`Task` в `intake.service`.
+- **Флаги:** `meetingTasksToTrackerOnly`, `taskExtractionMode`, `chatboxTaskExtractionEnabled`, `tasksCrossSourceDedupeEnabled`, `chatboxTasksInTriageEnabled` (`specialist-3-15-tasks` теперь работает безусловно). Живут: `meetingTasksAlwaysPromote`, `taskDedupLinkSemantics`.
+- **Схема:** `model Task`, `enum TaskStatus`, FK back-refs (`User`/`Meeting`/`Org`), `TaskSource.taskId` (миграция `20260625000000_drop_legacy_task_model`).
+
+### Канон после дропа
+- **Извлечение задач — только спайн** (`specialist-3-15-tasks`: `IdeaBlock(action_item)` → `task-extract` → `IntakeIssue` → `Issue`). Встречи — через `meeting-action-items` (Issue-путь по `linkedMeetingIds`).
+- **Аналитика** (director-dashboard, value-recap, personal-daily-brief, weekly-per-person, meeting-roi-scorer) читает `Issue`, не `Task`.
+- **Связь встреча↔задача** — `Issue.linkedMeetingIds` (GIN-индекс `Issue_linkedMeetingIds_gin_idx`); новый фильтр `GET /api/v1/issues?linkedMeetingId`; вкладка задач встречи на фронте пишет/читает Issue (`useMeetingIssues`, `issuesApi`).
+- **`shares.service`** (публичная шара) переведён на `Issue`. `TaskSource` остаётся провенанс-моделью (только `issueId`).
+
+## Единый чат Коры — модуль `messaging/` (2026-06-28)
+
+**Источник:** ТЗ [`plans/tz/2026-06-21-unified-chat-kora-tz.md`](../../plans/tz/2026-06-21-unified-chat-kora-tz.md) (Ф0–Ф7). Профиль — [[../01_projects/unified-chat]]; модели — [[data-model]]; очереди — [[../01_projects/workers-queues]].
+
+- **`backend/src/modules/messaging/`** — единое ядро: `services/` (conversation/message/read-cursor/work-chat/presence/inbox/chat-ingest/chat-summary/ask-kora/message-actions/message-retention/poll/huddle/user-block/message-report), `queue/` (message.outbox / chat.ingest / voice.transcribe relay-воркеры), `external/` (access-link/external-conversation/guest-controller/guard), `inbox.controller`/`conversation.controller`, `MessageBubble` UI. Один склад `Conversation/Message` на чат+work_chat+ticket+external.
+- **WS** — расширен `tracker/gateways/tracker.gateway.ts` (`conversation.*` + staff-под-room для access-изоляции); `common/ws/redis-io.adapter.ts` (`@socket.io/redis-adapter`, свои pub/sub из cfg).
+- **Пересажено на ядро:** support (`support/*` → Conversation/Message+SupportTicket, 0 Issue-пути), чат задачи (`tracker` comments → Message под work_chat).
+- **Push:** `push/` расширен транспорт-агностичным `PushService` (PushToken apns/fcm/rustore/webpush). **Mobile:** `kora-mobile/` (Expo RN scaffold).
 
 [[../index|← index]]

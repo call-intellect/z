@@ -27,6 +27,7 @@ import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
 
+import { conciergeTitlePreview } from './concierge-title-preview';
 import {
   ListConciergeConversationsQuerySchema,
   PostConciergeMessageBodySchema,
@@ -89,6 +90,9 @@ export class ConciergeController {
         userMessage: body.userMessage,
         ...(body.conversationId ? { conversationId: body.conversationId } : {}),
         ...(body.pageContext ? { pageContext: body.pageContext } : {}),
+        ...(body.scope ? { scope: body.scope } : {}),
+        ...(body.scopeRefId ? { scopeRefId: body.scopeRefId } : {}),
+        ...(body.asOf ? { asOf: body.asOf } : {}),
         userId: user.id,
         tenantId: t,
         baseUrl,
@@ -160,6 +164,9 @@ export class ConciergeController {
       userMessage: body.userMessage,
       ...(body.conversationId ? { conversationId: body.conversationId } : {}),
       ...(body.pageContext ? { pageContext: body.pageContext } : {}),
+      ...(body.scope ? { scope: body.scope } : {}),
+      ...(body.scopeRefId ? { scopeRefId: body.scopeRefId } : {}),
+      ...(body.asOf ? { asOf: body.asOf } : {}),
       userId: user.id,
       tenantId: t,
       baseUrl,
@@ -221,6 +228,7 @@ export class ConciergeController {
       startedAt: string;
       lastMessageAt: string | null;
       summary: string | null;
+      titlePreview: string | null;
       archivedAt: string | null;
     }>;
     total: number;
@@ -244,12 +252,27 @@ export class ConciergeController {
       }),
       this.prisma.conciergeConversation.count({ where }),
     ]);
+
+    const ids = items.map((c) => c.id);
+    const firstUserMsgs = ids.length
+      ? await this.prisma.conciergeMessage.findMany({
+          where: { conversationId: { in: ids }, role: 'user' },
+          orderBy: { createdAt: 'asc' },
+          select: { conversationId: true, content: true },
+        })
+      : [];
+    const firstByConv = new Map<string, string>();
+    for (const m of firstUserMsgs) {
+      if (!firstByConv.has(m.conversationId)) firstByConv.set(m.conversationId, m.content);
+    }
+
     return {
       items: items.map((c) => ({
         id: c.id,
         startedAt: c.startedAt.toISOString(),
         lastMessageAt: c.lastMessageAt ? c.lastMessageAt.toISOString() : null,
         summary: c.summary,
+        titlePreview: conciergeTitlePreview(firstByConv.get(c.id) ?? null),
         archivedAt: c.archivedAt ? c.archivedAt.toISOString() : null,
       })),
       total,

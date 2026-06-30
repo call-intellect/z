@@ -18,31 +18,35 @@ type Fn = ReturnType<typeof vi.fn>;
 
 interface PrismaMocks {
   meetingCount?: Fn;
-  taskCount?: Fn;
+  issueCount?: Fn;
   decisionCount?: Fn;
   ideaBlockCount?: Fn;
+  ideaCount?: Fn;
   queryRaw?: Fn;
 }
 
 function makeService(mocks: PrismaMocks): {
   svc: DirectorDashboardService;
   meetingCount: Fn;
-  taskCount: Fn;
+  issueCount: Fn;
   decisionCount: Fn;
   ideaBlockCount: Fn;
+  ideaCount: Fn;
   queryRaw: Fn;
 } {
   const meetingCount = mocks.meetingCount ?? vi.fn(async () => 0);
-  const taskCount = mocks.taskCount ?? vi.fn(async () => 0);
+  const issueCount = mocks.issueCount ?? vi.fn(async () => 0);
   const decisionCount = mocks.decisionCount ?? vi.fn(async () => 0);
   const ideaBlockCount = mocks.ideaBlockCount ?? vi.fn(async () => 0);
+  const ideaCount = mocks.ideaCount ?? vi.fn(async () => 0);
   const queryRaw = mocks.queryRaw ?? vi.fn(async () => [{ cnt: 0 }]);
 
   const prisma = {
     meeting: { count: meetingCount },
-    task: { count: taskCount },
+    issue: { count: issueCount },
     decision: { count: decisionCount },
     ideaBlock: { count: ideaBlockCount },
+    idea: { count: ideaCount },
     $queryRaw: queryRaw,
   } as unknown as PrismaService;
 
@@ -59,7 +63,7 @@ function makeService(mocks: PrismaMocks): {
     {} as unknown as BusinessMetricsService,
   );
 
-  return { svc, meetingCount, taskCount, decisionCount, ideaBlockCount, queryRaw };
+  return { svc, meetingCount, issueCount, decisionCount, ideaBlockCount, ideaCount, queryRaw };
 }
 
 type Privates = {
@@ -73,9 +77,10 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
   it('5 счётчиков мапятся на правильные запросы с tenant-фильтром', async () => {
     const ctx = makeService({
       meetingCount: vi.fn(async () => 4),
-      taskCount: vi.fn(async () => 11),
+      issueCount: vi.fn(async () => 11),
       decisionCount: vi.fn(async () => 3),
       ideaBlockCount: vi.fn(async () => 2),
+      ideaCount: vi.fn(async () => 5),
       queryRaw: vi.fn(async () => [{ cnt: 7 }]),
     });
 
@@ -87,6 +92,8 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       decisionsExtracted: 3,
       questionsAnsweredByMemory: 7,
       commitmentsKept: 2,
+      tasksResolved: 11,
+      ideasCollected: 5,
     });
 
     expect(ctx.meetingCount).toHaveBeenCalledWith(
@@ -94,9 +101,13 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
         where: expect.objectContaining({ tenantId: 't1' }),
       }),
     );
-    expect(ctx.taskCount).toHaveBeenCalledWith(
+    expect(ctx.issueCount).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: 't1' }),
+        where: expect.objectContaining({
+          tenantId: 't1',
+          deletedAt: null,
+          archivedAt: null,
+        }),
       }),
     );
     expect(ctx.decisionCount).toHaveBeenCalledWith(
@@ -143,9 +154,10 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
   it('негативный путь: пустое окно → все нули', async () => {
     const ctx = makeService({
       meetingCount: vi.fn(async () => 0),
-      taskCount: vi.fn(async () => 0),
+      issueCount: vi.fn(async () => 0),
       decisionCount: vi.fn(async () => 0),
       ideaBlockCount: vi.fn(async () => 0),
+      ideaCount: vi.fn(async () => 0),
       queryRaw: vi.fn(async () => []),
     });
 
@@ -157,6 +169,8 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       decisionsExtracted: 0,
       questionsAnsweredByMemory: 0,
       commitmentsKept: 0,
+      tasksResolved: 0,
+      ideasCollected: 0,
     });
   });
 });

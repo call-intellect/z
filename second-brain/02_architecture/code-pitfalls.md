@@ -100,6 +100,12 @@ Rust-движок убран. `url` в `datasource` запрещён → вын�
 
 **Как обойти:** `PrismaService` и `prisma/seed.ts` — через `@prisma/adapter-pg`. `prisma.config.ts`: `import 'dotenv/config'` (Prisma CLI не видит bun-автозагрузку `.env`) + `url: process.env['DATABASE_URL'] ?? ''` (фолбэк, чтобы `prisma generate` не падал без БД в Docker-сборке).
 
+### 8a. Prisma 7: `$queryRaw` падает на функции, возвращающей `void` (advisory-lock) — нужен `$executeRaw` (2026-06-27)
+
+`SELECT pg_advisory_xact_lock(...)` возвращает колонку типа `void`. Под Prisma 7 (Rust-движок убран, десериализация в JS) `$queryRaw` пытается десериализовать результат и падает: `Failed to deserialize column of type 'void'` → `PrismaClientKnownRequestError`. В транзакции создания задачи (advisory-lock на `tenantId:normTitle`) это роняло весь `$transaction` → задачи/intake не создавались (дельта 0, P0). Симптом коварен: блокировка берётся корректно, но запрос лочит на **чтении результата**, а не на исполнении.
+
+**Как обойти:** для запросов без значимого результата (advisory-lock, `SET`, DDL) — `$executeRaw` / `$executeRawUnsafe` (не десериализуют колонки, tagged-template параметризация сохраняется). `$queryRaw` — только когда реально читаешь строки. Фикс: `specialist-3-15-tasks.service.ts`, `issues.service.ts` (advisory-lock в `acquireIssueLocks`). Сайты с `pg_advisory_unlock` (возвращает `bool`) могут оставаться на `$queryRaw` — `bool` десериализуется.
+
 ### 9. tsc не копирует non-TS ассеты в dist
 
 `RbacService` читает `policies/policy.csv` через `readFileSync(join(__dirname, ...))`. `bun run dev` (из `src/`) работает, а собранный `bun dist/main.js` падает с ENOENT — `tsc` копирует только `.ts`.
@@ -736,5 +742,38 @@ themes/ideas/decisions/teams/tables/roles/clones).
 Фикс — коммит `84b72e90`. **Диагностика ∞-цикла без ошибок в консоли** —
 `MutationObserver` (мутаций/сек) в простое + изоляция сравнением страниц
 (зациклена vs здорова → разница в одном хуке). Подробности — [[../05_история/2026-06-22-tracker-breadcrumb-render-loop]].
+
+## `currentOrgId` из getMe: demo_observer-орга как дефолт = 403 на любую запись (2026-06-25)
+
+`AccountsService.getMe` ([accounts.service.ts:578-599](../../backend/src/modules/accounts/accounts.service.ts#L578))
+— **единственная** точка авто-выбора `currentOrgId/Role` для фронта (через `/accounts/me`
+→ auth-context → `X-Org-Id` во ВСЕХ запросах). `switch-org` — явный выбор юзера, не дефолт.
+
+Ловушка: при регистрации владельцу цепляется `Membership(owner)` своей Org +
+`Membership(demo_observer)` эталона (`ZDEMO_ORG_ID`). Если `getMe` ставит demo_observer
+первым (`demoMembership ?? firstOwnedMembership`), то `currentOrgId` = read-only эталон, и
+**любая** org-scoped мутация (онбординг `/orgs/:id/welcome`, создание встреч/задач) ловит
+**403** от `requireOwnerOrAdmin` / глобального `DemoObserverGuard` (`demo_observer_readonly`).
+Фронт-онбординг глотал 403 молча (`catch { setSaving(false) }`) → симптом «кнопка
+нажимается, ничего не происходит / зацикливается / не заходит в кабинет», без ошибки в UI
+(только 403 в консоли).
+
+**Правило:** дефолтный `currentOrgId` — всегда **своя** Org (`firstOwnedMembership ??
+demoMembership`); read-only роль (demo_observer) не должна быть current-оргой по умолчанию.
+Диагностика: `/accounts/me` показывает `currentOrgRole: demo_observer` + 403 на org-scoped
+write. Фикс — коммит `40ce79bd`. Подробности — [[../05_история/2026-06-25-onboarding-demo-org-403-fix]].
+
+## `EntityLink` — полиморфная модель БЕЗ FK на `Entity`: каскада нет, рёбра чистить вручную (2026-06-25)
+
+`EntityLink` несёт `fromEntityId`/`toEntityId` + `fromType`/`toType` (полиморфные:
+`NULL` трактуется как legacy `'entity'`) и **не имеет FK на `Entity`**. Поэтому при
+hard-delete `Entity` каскад срабатывает только на связи С FK (`IdeaBlockEntity` →
+`onDelete: Cascade`, `ThemeEntity`, `Card`), а строки `EntityLink` **остаются висящими
+рёбрами** — БД их не удалит.
+
+**Правило:** удаляя `Entity`, рёбра `EntityLink` снимай вручную `deleteMany` по **обеим**
+сторонам с учётом legacy-NULL — `(fromEntityId = id AND fromType IN (NULL,'entity'))
+OR (toEntityId = id AND toType IN (NULL,'entity'))`. Образец — `backend/scripts/backfill-purge-junk-entities.ts`
+(чистка мусорных сущностей графа, ТЗ [`2026-06-25-knowledge-graph-hygiene.md`](../../plans/tz/2026-06-25-knowledge-graph-hygiene.md) Ф5).
 
 [[../index|← index]]

@@ -40,6 +40,7 @@ interface PersonAcc {
   tasksDone: number;
   tasksPlanned: number;
   tasksPlannedDone: number;
+  countedDoneIssueIds: Set<string>;
   countedCycleIssueIds: Set<string>;
   checkInsCompleted: number;
   countedCommitmentBlockIds: Set<string>;
@@ -48,6 +49,7 @@ interface PersonAcc {
 export interface WeeklyPerPersonArgs {
   tenantId: string;
   weekStart: string;
+  weekEnd?: string;
   limit: number;
   offset: number;
   sort: 'reliability' | 'risk';
@@ -57,6 +59,7 @@ export interface WeeklyPersonWeekItemsArgs {
   tenantId: string;
   personId: string;
   weekStart: string;
+  weekEnd?: string;
 }
 
 interface CheckInRow {
@@ -85,11 +88,19 @@ export class WeeklyPerPersonService {
     const { tenantId, weekStart, limit, offset, sort } = args;
 
     const weekStartDate = new Date(`${weekStart}T00:00:00.000Z`);
-    const weekEndDate = new Date(weekStartDate.getTime() + 6 * DAY_MS);
-    weekEndDate.setUTCHours(23, 59, 59, 999);
-    const weekEndStr = this.formatDate(weekEndDate);
+    let weekEndDate: Date;
+    let weekEndStr: string;
+    if (args.weekEnd) {
+      weekEndDate = new Date(`${args.weekEnd}T00:00:00.000Z`);
+      weekEndDate.setUTCHours(23, 59, 59, 999);
+      weekEndStr = args.weekEnd;
+    } else {
+      weekEndDate = new Date(weekStartDate.getTime() + 6 * DAY_MS);
+      weekEndDate.setUTCHours(23, 59, 59, 999);
+      weekEndStr = this.formatDate(weekEndDate);
+    }
 
-    const cacheKey = `weekly_per_person:${tenantId}:${weekStart}:${sort}:${limit}:${offset}`;
+    const cacheKey = `weekly_per_person:${tenantId}:${weekStart}:${weekEndStr}:${sort}:${limit}:${offset}`;
     const cached = await this.tryReadCache(cacheKey);
     if (cached) {
       return cached;
@@ -125,9 +136,17 @@ export class WeeklyPerPersonService {
     const { tenantId, personId, weekStart } = args;
 
     const weekStartDate = new Date(`${weekStart}T00:00:00.000Z`);
-    const weekEndDate = new Date(weekStartDate.getTime() + 6 * DAY_MS);
-    weekEndDate.setUTCHours(23, 59, 59, 999);
-    const weekEndStr = this.formatDate(weekEndDate);
+    let weekEndDate: Date;
+    let weekEndStr: string;
+    if (args.weekEnd) {
+      weekEndDate = new Date(`${args.weekEnd}T00:00:00.000Z`);
+      weekEndDate.setUTCHours(23, 59, 59, 999);
+      weekEndStr = args.weekEnd;
+    } else {
+      weekEndDate = new Date(weekStartDate.getTime() + 6 * DAY_MS);
+      weekEndDate.setUTCHours(23, 59, 59, 999);
+      weekEndStr = this.formatDate(weekEndDate);
+    }
     const nowMs = now.getTime();
 
     const person = await this.prisma.person.findFirst({
@@ -147,18 +166,20 @@ export class WeeklyPerPersonService {
         select: { name: true, commitmentStatus: true, commitmentDueDate: true },
       }),
       person?.userId
-        ? this.prisma.task.findMany({
+        ? this.prisma.issue.findMany({
             where: {
               tenantId,
-              assigneeUserId: person.userId,
+              assignees: { some: { userId: person.userId } },
               dueDate: { gte: weekStartDate, lte: weekEndDate },
+              deletedAt: null,
+              archivedAt: null,
             },
-            select: { title: true, status: true, dueDate: true },
+            select: { title: true, completedAt: true, dueDate: true },
           })
         : Promise.resolve(
             [] as Array<{
               title: string;
-              status: string;
+              completedAt: Date | null;
               dueDate: Date | null;
             }>,
           ),
@@ -191,7 +212,7 @@ export class WeeklyPerPersonService {
 
     for (const t of taskRows) {
       const dueMs = t.dueDate?.getTime();
-      const factStatus = this.taskFactStatus(t.status, dueMs, nowMs);
+      const factStatus = this.taskFactStatus(t.completedAt !== null, dueMs, nowMs);
       items.push({
         kind: 'task',
         title: t.title,
@@ -236,11 +257,11 @@ export class WeeklyPerPersonService {
   }
 
   private taskFactStatus(
-    status: string,
+    done: boolean,
     dueMs: number | undefined,
     nowMs: number,
   ): WeeklyPersonItemFactStatus {
-    if (status === 'done') return 'done';
+    if (done) return 'done';
     if (dueMs !== undefined && dueMs < nowMs) return 'overdue';
     return 'open';
   }
@@ -343,41 +364,63 @@ export class WeeklyPerPersonService {
     }
     const authorUserIds = [...userIdToPersonId.keys()];
     if (authorUserIds.length > 0) {
-      const doneTasks = await this.prisma.task.findMany({
+      const authorUserIdSet = new Set(authorUserIds);
+
+      const doneIssues = await this.prisma.issue.findMany({
         where: {
           tenantId,
-          status: 'done',
-          assigneeUserId: { in: authorUserIds },
-          updatedAt: { gte: weekStartDate, lte: weekEndDate },
+          completedAt: { not: null, gte: weekStartDate, lte: weekEndDate },
+          assignees: { some: { userId: { in: authorUserIds } } },
+          deletedAt: null,
+          archivedAt: null,
         },
-        select: { assigneeUserId: true, evidenceBlockIds: true },
+        select: {
+          id: true,
+          sourceBlockIds: true,
+          assignees: { select: { userId: true } },
+        },
       });
-      for (const t of doneTasks) {
-        if (!t.assigneeUserId) continue;
-        const personId = userIdToPersonId.get(t.assigneeUserId);
-        if (!personId) continue;
-        const acc = accByPerson.get(personId);
-        if (!acc) continue;
-        if (this.taskFromCountedCommitment(t.evidenceBlockIds, acc)) continue;
-        acc.tasksDone += 1;
+      for (const issue of doneIssues) {
+        for (const a of issue.assignees) {
+          if (!authorUserIdSet.has(a.userId)) continue;
+          const personId = userIdToPersonId.get(a.userId);
+          if (!personId) continue;
+          const acc = accByPerson.get(personId);
+          if (!acc) continue;
+          if (acc.countedDoneIssueIds.has(issue.id)) continue;
+          acc.countedDoneIssueIds.add(issue.id);
+          if (this.taskFromCountedCommitment(issue.sourceBlockIds, acc)) continue;
+          acc.tasksDone += 1;
+        }
       }
 
-      const plannedTasks = await this.prisma.task.findMany({
+      const plannedIssues = await this.prisma.issue.findMany({
         where: {
           tenantId,
-          assigneeUserId: { in: authorUserIds },
+          assignees: { some: { userId: { in: authorUserIds } } },
           dueDate: { gte: weekStartDate, lte: weekEndDate },
+          deletedAt: null,
+          archivedAt: null,
         },
-        select: { assigneeUserId: true, status: true },
+        select: {
+          id: true,
+          completedAt: true,
+          assignees: { select: { userId: true } },
+        },
       });
-      for (const t of plannedTasks) {
-        if (!t.assigneeUserId) continue;
-        const personId = userIdToPersonId.get(t.assigneeUserId);
-        if (!personId) continue;
-        const acc = accByPerson.get(personId);
-        if (!acc) continue;
-        acc.tasksPlanned += 1;
-        if (t.status === 'done') acc.tasksPlannedDone += 1;
+      for (const issue of plannedIssues) {
+        const isDone = issue.completedAt !== null;
+        for (const a of issue.assignees) {
+          if (!authorUserIdSet.has(a.userId)) continue;
+          const personId = userIdToPersonId.get(a.userId);
+          if (!personId) continue;
+          const acc = accByPerson.get(personId);
+          if (!acc) continue;
+          if (acc.countedCycleIssueIds.has(issue.id)) continue;
+          acc.countedCycleIssueIds.add(issue.id);
+          acc.tasksPlanned += 1;
+          if (isDone) acc.tasksPlannedDone += 1;
+        }
       }
 
       await this.addCycleIssuesToPlan(
@@ -419,8 +462,49 @@ export class WeeklyPerPersonService {
       for (const d of departments) deptNameById.set(d.id, d.name);
     }
 
+    const goalNetByPersonId = new Map<string, number>();
+    if (authorPersonIds.length > 0) {
+      try {
+        const primaryGoal =
+          (await this.prisma.goal.findFirst({
+            where: { tenantId, isPrimary: true },
+            select: { id: true },
+          })) ??
+          (await this.prisma.goal.findFirst({
+            where: { tenantId, status: 'active' },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+            select: { id: true },
+          }));
+        const goalId = primaryGoal?.id;
+        if (goalId) {
+          const contributions = await this.prisma.personGoalContribution.findMany({
+            where: {
+              tenantId,
+              goalId,
+              weekStart: {
+                gte: new Date(`${weekStart}T00:00:00.000Z`),
+                lte: new Date(`${weekEndStr}T00:00:00.000Z`),
+              },
+              personId: { in: authorPersonIds },
+            },
+            select: { personId: true, netScore: true },
+          });
+          for (const c of contributions) {
+            goalNetByPersonId.set(
+              c.personId,
+              (goalNetByPersonId.get(c.personId) ?? 0) + Number(c.netScore),
+            );
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `goalContributionNet lookup failed for ${tenantId}/${weekStart}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     const allRows: WeeklyPersonRowDto[] = [...accByPerson.values()].map((acc) =>
-      this.buildRow(acc, deptNameById, minDenom),
+      this.buildRow(acc, deptNameById, minDenom, goalNetByPersonId),
     );
     const total = allRows.length;
 
@@ -464,6 +548,7 @@ export class WeeklyPerPersonService {
         tasksDone: 0,
         tasksPlanned: 0,
         tasksPlannedDone: 0,
+        countedDoneIssueIds: new Set<string>(),
         countedCycleIssueIds: new Set<string>(),
         checkInsCompleted: 0,
         countedCommitmentBlockIds: new Set<string>(),
@@ -474,13 +559,13 @@ export class WeeklyPerPersonService {
   }
 
   private taskFromCountedCommitment(
-    evidenceBlockIds: string[] | null | undefined,
+    sourceBlockIds: string[] | null | undefined,
     acc: PersonAcc,
   ): boolean {
-    if (!Array.isArray(evidenceBlockIds) || evidenceBlockIds.length === 0) {
+    if (!Array.isArray(sourceBlockIds) || sourceBlockIds.length === 0) {
       return false;
     }
-    for (const blockId of evidenceBlockIds) {
+    for (const blockId of sourceBlockIds) {
       if (acc.countedCommitmentBlockIds.has(blockId)) return true;
     }
     return false;
@@ -544,6 +629,7 @@ export class WeeklyPerPersonService {
     acc: PersonAcc,
     deptNameById: Map<string, string>,
     minDenom: number,
+    goalNetByPersonId: Map<string, number>,
   ): WeeklyPersonRowDto {
     return {
       personId: acc.personId,
@@ -560,6 +646,7 @@ export class WeeklyPerPersonService {
       tasksPlanned: acc.tasksPlanned,
       tasksNotDone: Math.max(0, acc.tasksPlanned - acc.tasksPlannedDone),
       checkInsCompleted: acc.checkInsCompleted,
+      goalContributionNet: goalNetByPersonId.get(acc.personId) ?? null,
     };
   }
 

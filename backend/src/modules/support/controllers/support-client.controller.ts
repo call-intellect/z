@@ -38,7 +38,7 @@ export class SupportClientController {
     @Body(new ZodValidationPipe(CreateTicketSchema)) body: CreateTicketDto,
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() callerOrgId: string | undefined,
-  ): Promise<{ ticketId: string; ticketNumber: string }> {
+  ): Promise<{ ticketId: string }> {
     return this.intake.createTicket(user.id, callerOrgId ?? null, body);
   }
 
@@ -64,7 +64,7 @@ export class SupportClientController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(ClientMessageSchema)) body: ClientMessageDto,
     @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ ok: true; commentId: string }> {
+  ): Promise<{ ok: true; messageId: string }> {
     return this.intake.addMyMessage(user.id, id, body.message);
   }
 

@@ -107,7 +107,7 @@ confidence — уверенность в собранном плане, 0..1.
 Отвечай СТРОГО в JSON, без markdown, без пояснений. Все поля обязательны:
 {"periodExpr":"<токен>","periodDays":<число|null>,"signalTypes":[...],"themeBranches":[...],"entityHints":[...],"personScope":<bool>,"aggregation":<bool>,"needsAction":<bool>,"activeNow":<bool>,"confidence":<0..1>}`;
 
-const SIGNAL_TYPE_ENUM = [
+export const SIGNAL_TYPE_ENUM = [
   'fact',
   'pain',
   'feature_request',
@@ -166,7 +166,7 @@ const SIGNAL_TYPE_ENUM = [
   'thanks_explicit',
 ] as const;
 
-const THEME_BRANCH_ENUM = [
+export const THEME_BRANCH_ENUM = [
   'strategy',
   'clients',
   'sales',

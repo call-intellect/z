@@ -9,15 +9,20 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { MembershipRole, OrgInvitation, Prisma } from '@prisma/client';
-import argon2 from 'argon2';
 import { nanoid } from 'nanoid';
 
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PasswordService } from '../accounts/password.service';
 import { ConversationalLinkCodeService } from '../conversational/link-code.service';
 import { MailService } from '../mail/mail.service';
+import {
+  MEMBERSHIP_CREATED,
+  type MembershipCreatedPayload,
+} from '../messaging/messaging.events';
 import { RbacService } from '../rbac/rbac.service';
 
 
@@ -65,7 +70,13 @@ export class OrgInvitationsService {
     private readonly linkCodes: ConversationalLinkCodeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(EventEmitter2) private readonly events: EventEmitter2,
+    @Inject(PasswordService) private readonly passwords: PasswordService,
   ) {}
+
+  private emitMembershipCreated(payload: MembershipCreatedPayload): void {
+    this.events.emit(MEMBERSHIP_CREATED, payload);
+  }
 
   async createInvitation(input: {
     orgId: string;
@@ -179,7 +190,7 @@ export class OrgInvitationsService {
     const expiresAt = new Date(Date.now() + ttlSec * 1000);
 
     const tempPassword = normalizedEmail ? generateInviteTempPassword() : null;
-    const tempPasswordHash = tempPassword ? await this.hashPasswordArgon2(tempPassword) : null;
+    const tempPasswordHash = tempPassword ? await this.passwords.hash(tempPassword) : null;
 
     const linkCodeOwner =
       input.actorUserId;
@@ -300,7 +311,7 @@ export class OrgInvitationsService {
 
     const resendEmail = invite.email;
     const tempPassword = resendEmail ? generateInviteTempPassword() : null;
-    const tempPasswordHash = tempPassword ? await this.hashPasswordArgon2(tempPassword) : null;
+    const tempPasswordHash = tempPassword ? await this.passwords.hash(tempPassword) : null;
 
     const updated = await this.prisma.orgInvitation.update({
       where: { id: invitationId },
@@ -432,6 +443,7 @@ export class OrgInvitationsService {
 
     this.rbac.invalidate(userId, invite.orgId);
     this.metrics.incInviteAccepted({ path: 'password' });
+    this.emitMembershipCreated({ tenantId: invite.orgId, userId });
 
     return {
       orgId: invite.orgId,
@@ -532,6 +544,7 @@ export class OrgInvitationsService {
     });
 
     this.rbac.invalidate(user.id, invite.orgId);
+    this.emitMembershipCreated({ tenantId: invite.orgId, userId: user.id });
 
     const { token } = await input.issueSession({
       userId: user.id,
@@ -723,15 +736,6 @@ export class OrgInvitationsService {
 
   private async tryBuildQrCode(_url: string): Promise<string | null> {
     return null;
-  }
-
-  private async hashPasswordArgon2(plain: string): Promise<string> {
-    return argon2.hash(plain, {
-      type: argon2.argon2id,
-      memoryCost: this.cfg.argon.memoryKb,
-      timeCost: this.cfg.argon.iterations,
-      parallelism: this.cfg.argon.parallelism,
-    });
   }
 
   private toDomain(i: OrgInvitation, orgName: string): OrgInvitationDomain {

@@ -1,3 +1,4 @@
+import bcrypt from 'bcrypt';
 import { describe, expect, it } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
@@ -32,5 +33,32 @@ describe('PasswordService', () => {
     const svc = new PasswordService(makeCfg());
     expect(await svc.verify('not-a-hash', 'anything')).toBe(false);
     expect(await svc.verify('', 'anything')).toBe(false);
+  });
+
+  it('verify принимает легаси bcrypt-hash без перевыпуска пароля', async () => {
+    const svc = new PasswordService(makeCfg());
+    const bcryptHash = await bcrypt.hash('legacy-admin-pw', 4);
+    expect(await svc.verify(bcryptHash, 'legacy-admin-pw')).toBe(true);
+    expect(await svc.verify(bcryptHash, 'wrong')).toBe(false);
+  });
+
+  it('needsRehash: true для bcrypt и битых, false для актуального argon2id', async () => {
+    const svc = new PasswordService(makeCfg());
+    const bcryptHash = await bcrypt.hash('x', 4);
+    expect(svc.needsRehash(bcryptHash)).toBe(true);
+    expect(svc.needsRehash('not-a-hash')).toBe(true);
+    const argonHash = await svc.hash('x');
+    expect(svc.needsRehash(argonHash)).toBe(false);
+  });
+
+  it('needsRehash: true когда параметры argon2 устарели', async () => {
+    const weak = new PasswordService({
+      argon: { memoryKb: 1024, iterations: 2, parallelism: 1 },
+    } as unknown as TypedConfigService);
+    const oldHash = await weak.hash('x');
+    const strong = new PasswordService({
+      argon: { memoryKb: 4096, iterations: 3, parallelism: 1 },
+    } as unknown as TypedConfigService);
+    expect(strong.needsRehash(oldHash)).toBe(true);
   });
 });

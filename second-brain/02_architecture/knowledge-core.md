@@ -512,17 +512,35 @@ chat-v2 retrieval теперь умеет применять **recall-safe ст�
 
 После гибридного входа (cosine + BM25) поиск делает **1-hop обход рёбер** графа (`knowledge.search_expand_hops`) → **RRF-слияние** результатов (Reciprocal Rank Fusion — слияние рангов нескольких списков, утилита `knowledge-core/utils/rank-fusion.util.ts`, параметр `knowledge.search_rrf_k`) → **группировку по эпизоду**. Superseded-блоки скрыты (bi-temporal `validUntil IS NULL`). Это поднимает связность ответа: вопрос находит не только прямое совпадение, но и соседние по графу блоки.
 
-#### Б. Умный поэтапный поиск Мастера (concierge / chat-v2 / knowledge-core)
+#### Б. Умный поэтапный поиск Мастера — ⚠️ ЗАМЕНЁН single-pass (2026-06-25, «Единый помощник»)
 
-Многошаговая ветка ответа поверх knowledge-core — за гейтом `rag.iterative_enabled` + cold-start (`rag.cold_start_min_blocks`), **fail-open до одношагового** при любой ошибке:
+> **Описанная ниже многошаговая ветка изъята из горячего пути chat-v2** при упрощении ассистента — см. §«Единый помощник» ниже. Текст оставлен как историческая справка о методе; промпты `RAG_ROUTE`/`RAG_PLAN`/`RAG_SUFFICIENCY` законсервированы как exports для будущей фичи «Большой анализ» ([`plans/analysis/2026-06-25-iterative-rag-method-parked.md`](../../plans/analysis/2026-06-25-iterative-rag-method-parked.md)).
 
-1. **Роутер сложности** (taskType `rag-route`) — простой вопрос идёт коротким путём, сложный — поэтапным.
-2. **ReWOO-план** (`rag-plan`) — раскладывает сложный вопрос на под-вопросы заранее (Reasoning WithOut Observation — план до поиска).
-3. **Пошаговый retrieval с судьёй достаточности** (`rag-sufficiency`) — после каждого шага судья решает, хватает ли собранного для ответа.
-4. **RRF-слияние подзапросов** + **условный LLM-реранк** (`rag-rerank`, порог `rag.rerank_min_pool` — реранк только когда пул кандидатов большой).
-5. **Синтез** → **гейт честности после синтеза** (`chat-v2.service applyGroundednessGate` → taskType `rag-groundedness`, режим `rag.groundedness_mode`) — отсекает невыводимые из источников утверждения; метрика `rag_abstain_total` (сколько раз честно воздержались от ответа).
+Многошаговая ветка ответа (была за гейтом `rag.iterative_enabled` + cold-start `rag.cold_start_min_blocks`, **fail-open до одношагового**):
 
-Защита диалога Concierge: **сторож зацикливания** (`concierge/utils/loop-guard.ts`, лимит `concierge.max_steps` — AdminSetting) даёт честный частичный ответ при достижении лимита; строгий **гейт переспроса** в промпте `concierge-respond` — на вопросах-поиск переспрашивать запрещено (Мастер ищет, а не задаёт встречный вопрос). Промпты-победители — `knowledge-core/prompts/rag-pipeline.prompts.ts`.
+1. **Роутер сложности** (`rag-route`) — простой вопрос коротким путём, сложный — поэтапным.
+2. **ReWOO-план** (`rag-plan`) — раскладывал сложный вопрос на под-вопросы заранее (Reasoning WithOut Observation).
+3. **Пошаговый retrieval с судьёй достаточности** (`rag-sufficiency`) — после каждого шага судья решал, хватает ли собранного.
+4. RRF-слияние подзапросов + условный LLM-реранк (`rag-rerank`).
+5. Синтез → гейт честности (`rag-groundedness`).
+
+#### Б′. Единый помощник: single-pass Мастер + chat-v2 (4 вызова) — 2026-06-25
+
+ТЗ [`plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md`](../../plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md) (Ф2–Ф6). Профили — [[../01_projects/concierge-agent]] / [[../01_projects/chat-v2]] / [[../01_projects/ai-jobs]]. Убраны обе петли (ReAct Мастера + route/plan/sufficiency внутри chat-v2).
+
+**Мастер (`concierge.service.ts`) — single-pass, без ReAct-петли.** Удалены `for i<maxSteps`, loop-guard, `buildPartialAnswer`, сырой JSON-дамп (корень прод-бага), крутилки `concierge.max_steps` / `rag.loop_guard_threshold`. Поток:
+- **Слой 1 (детерм. перехват ДО LLM):** открытый probe → probe-handler; pending confirm → выполнить/отменить; **pending clarify → вернуть реплику в исходный вопрос chat-v2** (`isClarifyPending(history)` → `resumeClarify` → `askEphemeral`); ждём чек-ин → handler. Канальный Слой-1: Redis-ключ `concierge:clarify:<bindingId>` (bridge ставит/снимает; telegram+max адаптеры читают первым → форсят `assistant_turn`).
+- **Слой 2 (один LLM-вызов `concierge-respond`):** диспетчер → `answer | action{tool,args} | note | checkin_self`.
+- **Слой 3 (один проход):** `answer` → chat-v2 `askEphemeral` **в процессе** (история+summary треда Мастера), ответ **слово-в-слово** (passthrough — правило для всего `answer`-пути, чтобы не порвать `[BLOCK:id]` и не вернуть выдумку); `action` → один инструмент (мутация → confirm) + один **render-вызов** (отдельный `CONCIERGE_RENDER_SYSTEM_PROMPT`, без JSON-утечки); `note` → ingest; `checkin_self` → DailyCheckIn.
+
+**chat-v2 (`chat-v2.service.ts`) — движок-ответчик single-pass, 4 LLM-вызова, memoryless.** Тред один и принадлежит Мастеру; `askEphemeral({history,summary,intent,scope?,scopeRefId?})` — без своей `ChatV2Conversation`. Цепочка:
+1. **Понимание** (`dialog-understand`, DeepSeek pro) — `dialog-multi-query` + `dialog-extract-plan` СЛИТЫ в один вызов (3 переформулировки + фильтры дата/сущность/тип + флаг `aggregation`); kill-switch `rag.understanding_merged` (ON; OFF → два прежних вызова). `AskInput.intent` пропускает `dialog-classify`.
+2. **Поиск+RRF** — на каждую формулировку кандидаты (вектор+граф), слияние RRF; счёт «сколько» — настоящим COUNT/табличной веткой.
+3. **Переранжировщик** (`rag-rerank`, DeepSeek flash) — ОЖИВЛЁН: `topK` разнесён на `rag.k_retrieve` (30) / `rag.k_context` (18), реранк работает всегда когда пул > `rag.rerank_min_pool` (12), сужает 30→18; кормится summary+история+вопрос+3 формулировки (раньше видел голый вопрос, был мёртв при срезе 12).
+4. **Синтез** (`chat-v2`, DeepSeek pro) — ответ из 18 блоков; переспрос-при-вариантах помечает первую строку токеном `[[CLARIFY]]` → `needsClarification` течёт `ChatV2Output→SynthesisResult→ChatAnswer→контроллер/SSE`.
+5. **Контролёр заземления** (`rag-groundedness`, DeepSeek flash, режим `rag.groundedness_mode`) — анти-выдумка; при `needsClarification` **пропускается**, и оркестратор НЕ кэширует переспрос (`applyGroundednessGate` / `answerCache.set` обходятся).
+
+Модели по агентам — через `LlmTaskRoute` (сид `seed-llm-task-routes-edinyy-pomoshnik.ts`, diag `diag-llm-routes.ts`), не код. Промпты — `knowledge-core/prompts/rag-pipeline.prompts.ts`.
 
 Дополнительные эндпоинты:
 - `GET /api/v1/knowledge/blocks/:id` — деталка блока + evidence + entities;
@@ -826,6 +844,30 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 - **`Specialist36Service.markRealizedByDecision`** — идемпотентная привязка идеи к решению (`updateMany WHERE realizedAsDecisionId IS NULL` — повтор no-op) + FSM: статус `captured`/`in_discussion` → `accepted`.
 - **`Specialist36Service.reconcileIdeaForDecision`** — при материализации Decision (вызывается из `specialist-3-3-decisions`) делает KNN-сверку по `Idea.embedding` (только `realizedAsDecisionId IS NULL`, статус `captured`/`in_discussion`); при сходстве выше порога — `markRealizedByDecision`. Закрывает кейс «идея и её решение пришли разными блоками».
 
+## Граница «задача ↔ решение» в извлечении (2026-06-25)
+
+**Источник:** ТЗ [`plans/tz/2026-06-25-task-decision-disambiguation.md`](../../plans/tz/2026-06-25-task-decision-disambiguation.md). Анализ — [`plans/analysis/2026-06-25-tasks-vs-decisions-noise-audit.md`](../../plans/analysis/2026-06-25-tasks-vs-decisions-noise-audit.md).
+
+Реестр решений накапливал переодетые поручения (~треть записей): извлечение путало «что выбрали» и «кто что делает», и поручение оседало как Decision. Развели по инварианту на уровне промптов всех трёх экстракторов.
+
+- **Инвариант.** **Решение = ЧТО выбрали; задача = КТО что делает.** Одно решение может породить задачи — это разные сущности, не дубль. Различитель дополняет существующие хелперы `DECISION_DISCRIMINATOR` (решение ↔ пожелание/идея) и `NOT_A_TASK_DISCRIMINATOR` (задача ↔ вопрос) из `ai/services/prompts/common.ts` — те покрывали ДРУГИЕ границы; здесь закрыта непокрытая граница «задача ↔ решение».
+- **Единый реестр контрастных пар.** `backend/src/modules/knowledge-core/prompts/task-decision-examples.ts` — 18 пар (домен · решение ↔ задача) из разных индустрий + правило `TASK_VS_DECISION_RULE` + 3 рендера-проекции (чистый TS без NestJS — импортируется и в проде, и в diag-скриптах). Проекции:
+  - `decision-extract` видит примеры «решение → true / задача → false» + пункт самопроверки;
+  - `task-extract` зеркально «задача → true / решение → false» + пункт самопроверки;
+  - `block-ingest` классифицирует `signalType` — усилены описания `decision` (≠ задача) и `action_item` (слова-триггеры поручения) + секция «Граница задача ↔ решение».
+- **Пороги извлечения — крутилки, не хардкод.** Прежний `MIN_EXTRACT_CONFIDENCE=0.4` вынесен в AdminSetting `knowledge.{decisions,ideas,insights}ExtractMinConfidence` (UNIT_INTERVAL, дефолт 0.4) — читается через `@Optional() AdminSettingsService` с code-fallback в specialist-3-3 / 3-5 / 3-6. Сид `backend/scripts/seed-admin-setting-knowledge-extract.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS). Подъём порога 0.4→0.5 регресс разведения НЕ лечит — он на уровне булева `isDecision`/`isTask`, не confidence; поэтому дефолт оставлен 0.4.
+- **Дедуп решений — cosine-гейт перед LLM-арбитром.** `Specialist33Service.classifyDedupeGate(sim, threshold, grayBand)` отсекает LLM/debate-арбитр (`supersedeDetect`) на однозначных случаях: `sim ≥ 0.86` → авто-merge без LLM; `sim < 0.79` (= threshold − grayBand) → новое решение без LLM; серая зона → прежний арбитр. KNN-запрос теперь возвращает similarity (1 − cosine distance). Крутилки `knowledge.decisionsDedupe{Threshold(0.86),GrayBand(0.07)}` (AdminSetting, code-fallback).
+- **Provenance на фронте «Откуда это».** IssueSidebar (ветка «Создано вручную — источника нет»), IssueDetailClient (`ProvenancePreviewSnippet` по `issue.provenancePreview`), IdeasListClient (`ProvenanceChip` entityType=block).
+
+## Гигиена графа знаний + качество идей (2026-06-25)
+
+**Источник:** ТЗ [`plans/tz/2026-06-25-knowledge-graph-hygiene.md`](../../plans/tz/2026-06-25-knowledge-graph-hygiene.md) (граф) + [`plans/tz/2026-06-25-idea-quality.md`](../../plans/tz/2026-06-25-idea-quality.md) (идеи). Ветка `feature/knowledge-graph-idea-quality`. Грабля `EntityLink` без FK — [[code-pitfalls]].
+
+- **Гейт качества имени сущности на входе графа.** Эхо-блоки трекера (`signalType ∈ task_*`, набор `TRACKER_ECHO_SIGNALS` в `block-ingest.worker`) больше **не порождают сущности** — их `mentionedEntities` несут ID/служебные имена, а не понятия графа. Мусорные имена (ID задач `[A-ZА-ЯЁ]{2,6}-\d+`, email, телефон, обрывки <2 букв) отсекаются в `linkEntity` через pure-предикат `isJunkEntityName` (`services/entity-name-quality.ts`, без NestJS/Prisma) — сущность не создаётся (метрика `rejected_junk_name`). Накопленный мусор чистит idempotent-backfill `backfill-purge-junk-entities.ts` (dry-run → `--apply`), сущности с типизированными бизнес-связями (`customer`/`goal`/…) не трогает.
+- **Provenance расширен на `entity` и `idea`.** `GET /api/v1/provenance/{entity|idea}/{id}` отдаёт узлы-источники (блоки → встречи + цитаты) с tenant-изоляцией: `entity` — через `ideaBlockEntity` (`block: { tenantId }`), `idea` — через `idea.sourceBlockIds` (`where { id, tenantId }`). С карточек сущности (`EntityDetailPane`) и идеи (`IdeasListClient`) — кликабельный drill-down `<ProvenanceChip>` (исправлен баг соседнего ТЗ: `IdeasListClient` передавал `entityType="block"` с id идеи → теперь `"idea"`).
+- **Идея direct-path всегда дописывается специалистом 3.6.** В ветке `alreadyMaterialized` (`specialist-3-6-ideas.service.ts`) машинная идея (`createdByUserId=null`, `rationale=null`) прогоняется через `idea-extract` (`upgradeIdeaQuality` → перезапись `statement`+`rationale`), идемпотентно (повтор при наличии `rationale` LLM не дёргает) и с защитой человеческих правок. `idea-extract.prompt.ts` получил правило «задача ≠ идея» (поручение → `isIdea=false`).
+- **Порог дедупа идей — крутилка `knowledge.ideaClusterThreshold`** (AdminSetting, ключ уже был в реестре+сиде — новый НЕ заводили), читается через `getDynamic` во всех 3 потребителях: `findMatchingIdea`, `reconcileIdeaForDecision`, `idea-clusterer.cron`. Порог уверенности — существующий `knowledge.ideasExtractMinConfidence`.
+
 ## Группы доступа к знаниям при ingest + расширение провенанса (knowledge-access, 2026-06-06)
 
 **Источник:** [`plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md). Полная модель доступа и резолвер — [[../01_projects/rbac-access-control]]; разведение с `dataClass` — [[security-and-152fz]] §6.
@@ -905,6 +947,52 @@ ReportIngestListener (@OnEvent, в ingest/knowledge-core)
 ### Консолидация отчётного слоя (Фаза 1, коммит `2501d72b`)
 
 Единое ядро отчёта встречи теперь делает **только** `meeting-report-fast` (один LLM-вызов): главы, задачи, резюме И качество. Дублирующие воркеры `chapters` / `tasks-extract` / `quality-score` (+ их очереди `ai.chapters`/`ai.tasks`/`ai.quality-score` и enqueue-методы) **удалены**. `meeting-report-fast.worker` пишет качество в каноничную таблицу `MeetingQualityScore` (+ `Meeting.qualityScoreStatus='ready'`) — читатели `QualityScoreService` без изменений. Перегенерация глав/качества/полного отчёта перенаправлена на `CoreQueueService.enqueueMeetingReportFast`. `LlmTaskType` `chapters`/`tasks`/`meeting-quality-score` оставлены в union мёртвыми (как мёртвые колонки). Деталь — [[../01_projects/ai-jobs]] и [[../01_projects/workers-queues]].
+
+## Слой источника + многомаршрутный retrieval (2026-06-27)
+
+**Источник:** ТЗ [`plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) (Ф1–Ф10, ветка `feature/sloy-istochnika-marshrutizator`). Анализ — [`plans/analysis/2026-06-27-sloy-istochnika-i-marshrutizator-poiska.md`](../../plans/analysis/2026-06-27-sloy-istochnika-i-marshrutizator-poiska.md).
+
+Поиск памяти перестал отвечать на любой вопрос плоским векторным top-k по `IdeaBlock`. Добавлены: партиционирование векторных индексов по тенанту, **слой источника как первоклассный объект**, **роутер 5 классов запроса** с confidence-gated both-ways, и **синтез ответа по классу**. Половина инфраструктуры (гибрид dense+BM25+RRF, recall-safe структурный путь, эпизод-узел встречи) уже была — это достройка связок.
+
+### Слой источника (`SourceEpisode` / `SourceParticipant` / `SourceEntity`)
+
+Источник (встреча / документ / чат-тред) материализован как первоклассный объект поиска — параллельно поблочному `IdeaBlock`. Модели — [[data-model]] §«Слой источника». Заполняется при ingest в `block-ingest.worker.persistSourceLayer` (best-effort, идемпотентно — upsert по составному PK); для старых `RawEvent` — backfill `scripts/backfill-source-layer.ts`. `SourceEntity` собирается только из извлечённых `IdeaBlockEntity` источника (НЕ из текста summary — защита от ложных сущностей).
+
+- `SourceEpisode` — один на `RawEvent`: `kind` (`meeting`/`document`/`chat`), `title`, `occurredAt`, `summary`, собственный `embedding`+HNSW (партиц. по `tenantId`) для семантики ПО ИСТОЧНИКУ (К2/К4).
+- `SourceParticipant` — ребро «человек присутствовал в источнике» на уровне источника (НЕ линк на каждый блок) — детерминированный фундамент К1.
+- `SourceEntity` — ребро «компания/сущность упомянута в источнике» (агрегат, `mentionsCount`) для К1/К4.
+
+### Роутер 5 классов + both-ways (Ф3)
+
+`understand` (общий промпт `query-understand`) выделяет `QueryClass = list | topic | temporal | overview | fact` (К1–К5) + ось `personIds` + переформулировки в ОДНОМ вызове. Классификация **детерминированная** (`classifyQueryClass` поверх regex-эвристик, LLM-тай-брейк только ниже порога). Шаг понимания+переформулировки (history-aware) выполняется для ВСЕХ классов (разрешение анафоры — «найди по нему встречи» → самодостаточный вопрос); параллельный семантический фан-аут по блокам — только для К2/К5.
+
+**both-ways в `runRetrieval`:** при `confidence < knowledge.router_confidence_threshold` (0.6) ИЛИ К1/К3/К4 — структурный И семантический маршруты параллельно (`Promise.allSettled`) + слияние `fuseRankedLists` (RRF). Уверенный К2/К5 → один путь. Инвариант: пустой структурный → семантический fallback подмешан всегда (никогда не пусто). Kill-switch `knowledge.router_v2_enabled` (ON), метрики `router_query_class`/`router_both_ways`.
+
+### Маршруты К1 / К3 / К4
+
+- **К1 (список/агрегат по человеку/группе)** — `resolvePersonCandidates`: нечёткий резолвинг имени (нормализация → `EntityAlias` → триграммы `pg_trgm` на `Entity.canonicalName`/`Person.name` → близость `Entity.embedding`, merged-канон, контекст-сущность сужает выбор). Точное равенство имени запрещено — детерминизм в ОБХОДЕ по разрешённым id: `runStructuralAggregate` (SQL `SourceParticipant`/`SourceEntity` → `IdeaBlockEvidence` → `blockId`). ≥2 равноуверенных кандидата → уточняющий вопрос (`needsClarification`); резолвинг пуст → семантическая страховка. Крутилки `person_resolve_trgm_threshold` (0.3) / `person_resolve_ambiguity_delta` (0.1).
+- **К3 (временной итог)** — `runTemporalBranch` читает `WeeklyOperationsDigest`/`ValueRecapSnapshot` по периоду тенанта → markdown-свёртка в синтез. Фикс tz-бага `period-resolver` (реальный IANA-tz организации через `Intl`, не жёсткий МСК+180).
+- **К4 (обзор/карта тем)** — `selectTopThemes` (top-N тем по `Theme.embedding <=> qvec`, lazy, query-time, крутилка `overview_top_themes` 5) → `runOverviewBranch` подаёт `Theme.summary` в синтез + погружение в блоки выбранных тем (`poolByThemes` в RRF). Без предрасчитанной community-иерархии — вязка на embedding-близость.
+
+### Contextual-header v2 (Ф7)
+
+`buildMetaLine` обогащён упомянутыми компаниями (`SourceEntity`), полным составом участников (`SourceParticipant`), `RawEvent.sourceTitle` — встроено в эмбеддинг блока для recall класса К2. Header — стабильный префикс (prompt-cache). Поле `IdeaBlock.contextHeaderVersion` — гейт идемпотентности ре-эмбеддинга. Backfill `scripts/backfill-context-header-reembed.ts` (ре-эмбеддинг старых блоков + REINDEX HNSW-партиций).
+
+### Документы как первоклассный объект (Ф8)
+
+Документ получает AI-`title`+`summary` (taskType `document-summarize`, code-fallback `ai/services/prompts/document-summarize.prompt.ts`, `DocumentSummaryService`, крутилка `document_summary_input_chars` 12000); `sourceTitle` передаётся в ingest; гейт summary-узла (`maybePersistMeetingSummary`) обобщён с `meeting` на `document`/`chat`. Битрикс-чат (`kind='chat'`) — код-способность готова, наполнение данными вне scope (внешний блокер — см. [[../04_не-сделано/README]]).
+
+### Синтез ответа по классу — контракт `answerKind` (Ф10)
+
+Сборка контекста перед LLM ветвится по `QueryClass`: К1 → список эпизодов (`listEpisodesByActors`, крутилка `list_episodes_limit` 30), К3 → markdown-свёртка, К4 → карта тем (`Theme.summary`), К2/К5 → блочный синтез. Результат `ask` несёт `answerKind = list | recap | overview | prose` + структурную часть `episodes[]` (id эпизодов для кликабельных ссылок) — течёт `ChatV2Output → SynthesisResult → ChatAnswer → API DTO контроллера`, чтобы UI «Мастера» отрисовал список/карту, а не только текст. Системный промпт chat-v2 (`BASE_SYSTEM_PROMPT`) описывает структуру памяти (источники-объекты, участники, карта тем, итоги периодов) + режимы ответа по классу. UI-рендер форм `answerKind` отложен (vNext-ТЗ фронта — [[../04_не-сделано/README]]).
+
+### Rerank-доводка (Ф9)
+
+`conditionalRerank` (LLM-as-reranker) применяется к both-ways-merged-результату; размер пула вынесен из хардкода в крутилку `rag.rerank_pool_size` (30, registry + сид smart-search).
+
+### Партиционирование + HNSW (Ф1)
+
+`IdeaBlock`/`Entity` HASH-партиционированы по `tenantId` (64 партиции, составной PK) — снят scale-killer «глобальный HNSW + `WHERE tenantId`». HNSW-параметры `m=16, ef_construction=128` на IdeaBlock/Entity + новые HNSW на `Theme.embedding` и `SourceEpisode.embedding`, `ef_search` — крутилка `knowledge.hnsw_ef_search` (100). Все в `postgres-init.sql` (Prisma 7 их не умеет). Детали схемы/FK-рефактора — [[data-model]] §«Партиционирование IdeaBlock/Entity по tenantId».
 
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

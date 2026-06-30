@@ -29,11 +29,8 @@ export function MobileOverviewClient() {
   const { currentOrgId } = useAuth();
 
   const directorSwr = useSWR(
-    currentOrgId ? ["mobile-overview-director", currentOrgId, "week"] : null,
-    async () => {
-      const res = await dashboardApi.getDirectorView(currentOrgId!, "week");
-      return directorDashboardFromApi(res);
-    },
+    currentOrgId ? ["director", currentOrgId, "week"] : null,
+    async () => dashboardApi.getDirectorView(currentOrgId!, "week"),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
@@ -62,7 +59,9 @@ export function MobileOverviewClient() {
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
-  const director = directorSwr.data ?? null;
+  const director = directorSwr.data
+    ? directorDashboardFromApi(directorSwr.data)
+    : null;
   const operations = operationsSwr.data ?? null;
   const checkin = checkinSwr.data ?? null;
 

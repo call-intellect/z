@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
-import { PulsePatternsService } from './pulse-patterns.service';
+import {
+  dedupeLatestRecurringTopicByTheme,
+  PulsePatternsService,
+} from './pulse-patterns.service';
 
 function buildService(overrides: Partial<Record<string, unknown>> = {}): {
   service: PulsePatternsService;
@@ -119,6 +122,7 @@ describe('PulsePatternsService', () => {
           meetingCount: 5,
           windowStart: new Date(now.getTime() - 90 * 24 * 3600 * 1000),
           windowEnd: now,
+          snapshotAt: now,
         },
       ]),
       meetingFindMany: vi.fn(async () => [
@@ -632,5 +636,55 @@ describe('PulsePatternsService', () => {
       contraScore: 6,
       netScore: -5,
     });
+  });
+});
+
+describe('dedupeLatestRecurringTopicByTheme', () => {
+  it('один themeId дважды → один последний снимок (max snapshotAt)', () => {
+    const rows = [
+      {
+        themeId: 't1',
+        themeName: 'Тема 1',
+        mentionCount: 3,
+        snapshotAt: new Date(2026, 0, 1),
+      },
+      {
+        themeId: 't1',
+        themeName: 'Тема 1',
+        mentionCount: 7,
+        snapshotAt: new Date(2026, 0, 5),
+      },
+      {
+        themeId: 't2',
+        themeName: 'Тема 2',
+        mentionCount: 4,
+        snapshotAt: new Date(2026, 0, 2),
+      },
+    ];
+    const out = dedupeLatestRecurringTopicByTheme(rows);
+    expect(out).toHaveLength(2);
+    const ids = out.map((t) => t.themeId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(out.find((t) => t.themeId === 't1')!.mentionCount).toBe(7);
+  });
+
+  it('null themeId дедупится по имени', () => {
+    const rows = [
+      {
+        themeId: null,
+        themeName: 'Без темы',
+        mentionCount: 2,
+        snapshotAt: new Date(2026, 0, 1),
+      },
+      {
+        themeId: null,
+        themeName: 'Без темы',
+        mentionCount: 8,
+        snapshotAt: new Date(2026, 0, 4),
+      },
+    ];
+    const out = dedupeLatestRecurringTopicByTheme(rows);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.mentionCount).toBe(8);
   });
 });

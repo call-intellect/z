@@ -24,7 +24,7 @@ interface LinkRow {
 function makeMocks(args: { blocks: ReadonlyArray<BlockRow>; links: ReadonlyArray<LinkRow> }) {
   const blocksMap = new Map(args.blocks.map((b) => [b.id, b]));
 
-  const ideaBlockFindUnique = vi.fn(async (q: { where: { id: string } }) => {
+  const ideaBlockFindFirst = vi.fn(async (q: { where: { id: string } }) => {
     return blocksMap.get(q.where.id) ?? null;
   });
 
@@ -65,7 +65,7 @@ function makeMocks(args: { blocks: ReadonlyArray<BlockRow>; links: ReadonlyArray
 
   const prisma = {
     ideaBlock: {
-      findUnique: ideaBlockFindUnique,
+      findFirst: ideaBlockFindFirst,
       findMany: ideaBlockFindMany,
     },
     ideaBlockLink: { findMany: ideaBlockLinkFindMany },

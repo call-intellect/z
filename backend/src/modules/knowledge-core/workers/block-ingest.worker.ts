@@ -9,6 +9,7 @@ import {
 import {
   type Entity,
   type EntityType,
+  type ParticipantRole,
   Prisma,
   type RawEvent,
   type SignalType,
@@ -35,11 +36,27 @@ import {
   type ExtractedBlock,
   type ExtractedEntityMention,
 } from '../services/block-extraction.service';
-import { ChunkContextService } from '../services/chunk-context.service';
+import { ChunkContextService, CONTEXT_HEADER_VERSION } from '../services/chunk-context.service';
+import {
+  isCompanyEntityType,
+  makeContextHeaderInput,
+  resolveContextHeaderTitle,
+} from '../services/context-header-input';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
+import { isJunkEntityName } from '../services/entity-name-quality';
 import { EntityResolutionService } from '../services/entity-resolution.service';
 import { SegmentBuilderService, type Segment } from '../services/segment-builder.service';
-import { TaskEvidenceLinkerService } from '../services/task-evidence-linker.service';
+
+export const TRACKER_ECHO_SIGNALS = new Set<string>([
+  'task_created',
+  'task_status_changed',
+  'task_blocked',
+  'task_completed',
+  'task_overdue',
+  'task_reassigned',
+  'task_comment',
+  'task_mention',
+]);
 
 const REASONING_SUBJECT_SIGNAL_TYPES: ReadonlySet<string> = new Set([
   'reasoning',
@@ -58,6 +75,21 @@ export interface PropertySpan {
   startMs: number;
   endMs: number;
 }
+
+interface MeetingSummaryResult {
+  blockId: string | null;
+  text: string | null;
+  vector: number[] | null;
+}
+
+const SOURCE_EPISODE_KIND_BY_TYPE: Partial<Record<RawEvent['sourceType'], 'meeting' | 'document' | 'chat'>> = {
+  meeting: 'meeting',
+  meeting_report: 'meeting',
+  external: 'document',
+  chat: 'chat',
+  chatbox: 'chat',
+  bitrix: 'chat',
+};
 
 export type TypedFailReason = 'age_unavailable' | 'idempotent_skip' | 'validation_error' | 'other';
 
@@ -149,9 +181,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(ProbeService)
     private readonly probeService?: ProbeService,
-    @Optional()
-    @Inject(TaskEvidenceLinkerService)
-    private readonly taskEvidenceLinker?: TaskEvidenceLinkerService,
     @Optional()
     @Inject(ChunkContextService)
     private readonly chunkContext?: ChunkContextService,
@@ -250,15 +279,21 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         'block-ingest: извлечение завершено',
       );
 
+      const headerInput = makeContextHeaderInput({
+        sourceTitle: resolveContextHeaderTitle({
+          sourceTitle: event.sourceTitle,
+          payloadTitle: meetingTitle ?? null,
+          sourceExternalId: event.sourceExternalId,
+          fallback: `${event.sourceType}:${event.id}`,
+        }),
+        companies: this.collectCompanyNames(blocksInOrder),
+        participants: this.tryGetParticipantNames(payload) ?? [],
+        meetingType: this.tryGetMeetingType(payload) ?? null,
+        meetingDateIso: event.occurredAt.toISOString(),
+      });
       const contextHeader = this.chunkContext
         ? await this.chunkContext
-            .buildContextHeader({
-              tenantId: event.tenantId,
-              meetingTitle,
-              meetingType: this.tryGetMeetingType(payload),
-              meetingDateIso: event.occurredAt.toISOString(),
-              participants: this.tryGetParticipantNames(payload),
-            })
+            .buildContextHeader({ tenantId: event.tenantId, ...headerInput })
             .catch(() => '')
         : '';
 
@@ -310,18 +345,18 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      const summaryBlockId = await this.maybePersistMeetingSummary({
+      const summary = await this.maybePersistSourceSummary({
         event,
         payload,
         contextHeader,
       }).catch((err) => {
         this.logger.warn(
           { rawEventId, err: err instanceof Error ? err.message : String(err) },
-          'block-ingest: summary-блок «суть встречи» не создан — пропуск',
+          'block-ingest: summary-блок «суть источника» не создан — пропуск',
         );
-        return null;
+        return { blockId: null, text: null, vector: null } as MeetingSummaryResult;
       });
-      if (summaryBlockId) blockIds.push(summaryBlockId);
+      if (summary.blockId) blockIds.push(summary.blockId);
 
       await this.createStructuralEntityEdges(event.tenantId, blockIds).catch((err) => {
         this.logger.warn(
@@ -334,6 +369,19 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(
           { rawEventId, err: err instanceof Error ? err.message : String(err) },
           'block-ingest: документная привязка (ТЗ-4 Ф4) не удалась — пропуск',
+        );
+      });
+
+      await this.persistSourceLayer({
+        event,
+        payload,
+        blockIds,
+        summaryText: summary.text,
+        summaryVector: summary.vector,
+      }).catch((err) => {
+        this.logger.warn(
+          { rawEventId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: слой источника (SourceEpisode/Participant/Entity) не материализован — пропуск',
         );
       });
 
@@ -779,21 +827,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           });
       }
 
-      if (
-        this.taskEvidenceLinker &&
-        event.sourceType === 'meeting' &&
-        event.sourceExternalId &&
-        blockIds.length > 0
-      ) {
-        await this.taskEvidenceLinker
-          .linkForMeeting({ tenantId: event.tenantId, meetingId: event.sourceExternalId })
-          .catch((err) => {
-            this.logger.warn(
-              { rawEventId, err: err instanceof Error ? err.message : String(err) },
-              'block-ingest: привязка задач к блокам-источникам не удалась — пропуск (graceful)',
-            );
-          });
-      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(
@@ -837,6 +870,19 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     const mt = p.meetingType;
     if (typeof mt === 'string' && mt.length > 0) return mt;
     return undefined;
+  }
+
+  private collectCompanyNames(blocks: ExtractedBlock[]): string[] {
+    const names: string[] = [];
+    for (const b of blocks) {
+      for (const ent of b.mentionedEntities ?? []) {
+        if (isCompanyEntityType(ent.type) && typeof ent.name === 'string') {
+          const trimmed = ent.name.trim();
+          if (trimmed.length > 0) names.push(trimmed);
+        }
+      }
+    }
+    return names;
   }
 
   private tryGetParticipantNames(payload: unknown): string[] | undefined {
@@ -981,21 +1027,59 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     return md.length > 0 ? md : null;
   }
 
-  private async maybePersistMeetingSummary(args: {
+  private tryGetDocumentSummary(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const v = (payload as { documentSummary?: unknown }).documentSummary;
+    const text = typeof v === 'string' ? v.trim() : '';
+    return text.length > 0 ? text : null;
+  }
+
+  private resolveSourceSummaryText(
+    kind: 'meeting' | 'document' | 'chat',
+    payload: unknown,
+  ): string | null {
+    if (kind === 'meeting') return this.tryGetReportSummaryMarkdown(payload);
+    if (kind === 'document') return this.tryGetDocumentSummary(payload);
+    return null;
+  }
+
+  private buildSourceSummaryBlockTitle(
+    kind: 'meeting' | 'document' | 'chat',
+    payload: unknown,
+    event: RawEvent,
+  ): string {
+    if (kind === 'meeting') {
+      const meetingTitle = this.tryGetMeetingTitle(payload);
+      return (meetingTitle ? `Суть встречи: ${meetingTitle}` : 'Суть встречи').slice(0, 200);
+    }
+    if (kind === 'document') {
+      const title = event.sourceTitle?.trim();
+      return (title ? `Суть документа: ${title}` : 'Суть документа').slice(0, 200);
+    }
+    return 'Суть переписки'.slice(0, 200);
+  }
+
+  private buildSourceSummaryCriticalQuestion(kind: 'meeting' | 'document' | 'chat'): string {
+    if (kind === 'meeting') return 'О чём была встреча и что главное?';
+    if (kind === 'document') return 'О чём этот документ и что главное?';
+    return 'О чём эта переписка и что главное?';
+  }
+
+  private async maybePersistSourceSummary(args: {
     event: RawEvent;
     payload: unknown;
     contextHeader: string;
-  }): Promise<string | null> {
+  }): Promise<MeetingSummaryResult> {
     const { event, payload, contextHeader } = args;
-    if (event.sourceType !== 'meeting_report') return null;
-    const summaryMd = this.tryGetReportSummaryMarkdown(payload);
-    if (!summaryMd) return null;
+    const kind = this.resolveSourceEpisodeKind(event.sourceType);
+    if (!kind) return { blockId: null, text: null, vector: null };
+    const summaryText = this.resolveSourceSummaryText(kind, payload);
+    if (!summaryText) return { blockId: null, text: null, vector: null };
 
-    const meetingTitle = this.tryGetMeetingTitle(payload);
-    const answer = summaryMd.slice(0, 4000);
+    const answer = summaryText.slice(0, 4000);
     const summaryBlock: ExtractedBlock = {
-      name: (meetingTitle ? `Суть встречи: ${meetingTitle}` : 'Суть встречи').slice(0, 200),
-      criticalQuestion: 'О чём была встреча и что главное?',
+      name: this.buildSourceSummaryBlockTitle(kind, payload, event),
+      criticalQuestion: this.buildSourceSummaryCriticalQuestion(kind),
       trustedAnswer: answer,
       signalType: 'fact',
       tags: [],
@@ -1007,7 +1091,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       role_relevant: false,
     };
     const [vector] = await this.embeddings.embedBlocks([summaryBlock], contextHeader);
-    return this.persistBlock({
+    const blockId = await this.persistBlock({
       event,
       block: summaryBlock,
       embedding: vector ?? null,
@@ -1017,6 +1101,185 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       authorUserId: null,
       isMeetingSummary: true,
     });
+    return { blockId, text: answer, vector: vector ?? null };
+  }
+
+  private resolveSourceEpisodeKind(
+    sourceType: RawEvent['sourceType'],
+  ): 'meeting' | 'document' | 'chat' | null {
+    return SOURCE_EPISODE_KIND_BY_TYPE[sourceType] ?? null;
+  }
+
+  private tryGetPayloadMeetingId(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const v = (payload as { meetingId?: unknown }).meetingId;
+    return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
+  }
+
+  private resolveEpisodeMeetingId(event: RawEvent, payload: unknown): string | null {
+    if (event.sourceType === 'meeting') return event.sourceExternalId ?? null;
+    if (event.sourceType === 'meeting_report') return this.tryGetPayloadMeetingId(payload);
+    return null;
+  }
+
+  private resolveEpisodeTitle(event: RawEvent, payload: unknown): string {
+    const fromEvent = event.sourceTitle?.trim();
+    if (fromEvent && fromEvent.length > 0) return fromEvent.slice(0, 500);
+    const meetingTitle = this.tryGetMeetingTitle(payload)?.trim();
+    if (meetingTitle && meetingTitle.length > 0) return meetingTitle.slice(0, 500);
+    return event.sourceExternalId?.trim() || `${event.sourceType}:${event.id}`;
+  }
+
+  private mapParticipantRole(role: ParticipantRole): string {
+    return role === 'host' ? 'host' : 'guest';
+  }
+
+  private async persistSourceLayer(args: {
+    event: RawEvent;
+    payload: unknown;
+    blockIds: string[];
+    summaryText: string | null;
+    summaryVector: number[] | null;
+  }): Promise<void> {
+    const { event, payload, blockIds, summaryText, summaryVector } = args;
+    const kind = this.resolveSourceEpisodeKind(event.sourceType);
+    if (!kind) return;
+
+    const tenantId = event.tenantId;
+    const rawEventId = event.id;
+    const title = this.resolveEpisodeTitle(event, payload);
+    const embeddingModelVersion = this.cfg.ai.embeddings.model;
+
+    await this.prisma.sourceEpisode.upsert({
+      where: { rawEventId_tenantId: { rawEventId, tenantId } },
+      create: {
+        tenantId,
+        rawEventId,
+        kind,
+        title,
+        occurredAt: event.occurredAt,
+        summary: summaryText,
+        embeddingModelVersion: summaryVector ? embeddingModelVersion : null,
+      },
+      update: {
+        kind,
+        title,
+        occurredAt: event.occurredAt,
+        summary: summaryText,
+        embeddingModelVersion: summaryVector ? embeddingModelVersion : null,
+      },
+    });
+
+    if (summaryVector && summaryVector.length > 0) {
+      await this.prisma.$executeRawUnsafe(
+        'UPDATE "SourceEpisode" SET embedding = $1::vector(1536) WHERE "rawEventId" = $2 AND "tenantId" = $3',
+        this.toVectorLiteral(summaryVector),
+        rawEventId,
+        tenantId,
+      );
+    }
+
+    await this.persistSourceParticipants({ event, payload, kind });
+    await this.persistSourceEntities({ tenantId, rawEventId, blockIds });
+  }
+
+  private async persistSourceParticipants(args: {
+    event: RawEvent;
+    payload: unknown;
+    kind: 'meeting' | 'document' | 'chat';
+  }): Promise<void> {
+    const { event, payload, kind } = args;
+    const tenantId = event.tenantId;
+    const rawEventId = event.id;
+
+    if (kind === 'meeting') {
+      const meetingId = this.resolveEpisodeMeetingId(event, payload);
+      if (!meetingId) return;
+      const participants = await this.prisma.participant.findMany({
+        where: { meetingId, personId: { not: null } },
+        select: { personId: true, role: true },
+      });
+      const seen = new Set<string>();
+      for (const p of participants) {
+        const personId = p.personId;
+        if (!personId || seen.has(personId)) continue;
+        seen.add(personId);
+        await this.upsertSourceParticipant({
+          rawEventId,
+          personId,
+          tenantId,
+          role: this.mapParticipantRole(p.role),
+        }).catch((err) => {
+          this.logger.warn(
+            { rawEventId, personId, err: err instanceof Error ? err.message : String(err) },
+            'block-ingest: SourceParticipant (встреча) не записан — пропуск',
+          );
+        });
+      }
+      return;
+    }
+
+    if (kind === 'chat') {
+      const authorPersonId = this.tryGetActorIdentity(payload).authorPersonId;
+      if (!authorPersonId) return;
+      await this.upsertSourceParticipant({
+        rawEventId,
+        personId: authorPersonId,
+        tenantId,
+        role: 'author',
+      }).catch((err) => {
+        this.logger.warn(
+          { rawEventId, personId: authorPersonId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: SourceParticipant (чат-автор) не записан — пропуск',
+        );
+      });
+    }
+  }
+
+  private async upsertSourceParticipant(args: {
+    rawEventId: string;
+    personId: string;
+    tenantId: string;
+    role: string;
+  }): Promise<void> {
+    const { rawEventId, personId, tenantId, role } = args;
+    await this.prisma.sourceParticipant.upsert({
+      where: { rawEventId_personId: { rawEventId, personId } },
+      create: { rawEventId, personId, tenantId, role },
+      update: { tenantId, role },
+    });
+  }
+
+  private async persistSourceEntities(args: {
+    tenantId: string;
+    rawEventId: string;
+    blockIds: string[];
+  }): Promise<void> {
+    const { tenantId, rawEventId, blockIds } = args;
+    if (blockIds.length === 0) return;
+
+    const grouped = await this.prisma.ideaBlockEntity.groupBy({
+      by: ['entityId'],
+      where: { blockId: { in: blockIds }, tenantId },
+      _count: { entityId: true },
+    });
+
+    for (const row of grouped) {
+      const entityId = row.entityId;
+      const mentionsCount = row._count.entityId;
+      await this.prisma.sourceEntity
+        .upsert({
+          where: { rawEventId_entityId: { rawEventId, entityId } },
+          create: { rawEventId, entityId, tenantId, mentionsCount },
+          update: { tenantId, mentionsCount },
+        })
+        .catch((err) => {
+          this.logger.warn(
+            { rawEventId, entityId, err: err instanceof Error ? err.message : String(err) },
+            'block-ingest: SourceEntity не записан — пропуск',
+          );
+        });
+    }
   }
 
   private async persistBlock(args: {
@@ -1089,13 +1352,16 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         });
         if (embedding && embedding.length > 0) {
           await tx.$executeRawUnsafe(
-            'UPDATE "IdeaBlock" SET embedding = $1::vector(1536) WHERE id = $2',
+            'UPDATE "IdeaBlock" SET embedding = $1::vector(1536), "contextHeaderVersion" = $2 WHERE id = $3 AND "tenantId" = $4',
             this.toVectorLiteral(embedding),
+            CONTEXT_HEADER_VERSION,
             ideaBlock.id,
+            event.tenantId,
           );
         }
         const evidence = await tx.ideaBlockEvidence.create({
           data: {
+            tenantId: event.tenantId,
             blockId: ideaBlock.id,
             rawEventId: event.id,
             sourceType: event.sourceType,
@@ -1111,7 +1377,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         const propertySpansValue = this.buildPropertySpans(block, evidence.id);
         if (propertySpansValue !== null && propertySpansValue.length > 0) {
           await tx.ideaBlock.update({
-            where: { id: ideaBlock.id },
+            where: { id_tenantId: { id: ideaBlock.id, tenantId: event.tenantId } },
             data: {
               propertySpans: propertySpansValue as unknown as Prisma.InputJsonValue,
             },
@@ -1120,22 +1386,24 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         return ideaBlock.id;
       });
 
-      for (const mention of block.mentionedEntities) {
-        await this.linkEntity({
-          tenantId: event.tenantId,
-          blockId,
-          mention,
-          event,
-        }).catch((err) => {
-          this.logger.warn(
-            {
-              blockId,
-              entityName: mention.name,
-              err: err instanceof Error ? err.message : String(err),
-            },
-            'block-ingest: сущность не привязалась — пропуск',
-          );
-        });
+      if (!TRACKER_ECHO_SIGNALS.has(block.signalType)) {
+        for (const mention of block.mentionedEntities) {
+          await this.linkEntity({
+            tenantId: event.tenantId,
+            blockId,
+            mention,
+            event,
+          }).catch((err) => {
+            this.logger.warn(
+              {
+                blockId,
+                entityName: mention.name,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'block-ingest: сущность не привязалась — пропуск',
+            );
+          });
+        }
       }
 
       if (isCommitment && block.commitmentRecipientNameGuess) {
@@ -1282,9 +1550,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.prisma.ideaBlockEntity.upsert({
       where: {
-        blockId_entityId: { blockId: args.blockId, entityId: subjectEntityId },
+        blockId_entityId_tenantId: {
+          blockId: args.blockId,
+          entityId: subjectEntityId,
+          tenantId: args.event.tenantId,
+        },
       },
       create: {
+        tenantId: args.event.tenantId,
         blockId: args.blockId,
         entityId: subjectEntityId,
         mentionContext: 'author',
@@ -1364,7 +1637,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     if (!authorPersonId) return;
 
     await this.prisma.ideaBlock.update({
-      where: { id: args.blockId },
+      where: { id_tenantId: { id: args.blockId, tenantId: args.event.tenantId } },
       data: { commitmentAuthorPersonId: authorPersonId },
     });
 
@@ -1385,6 +1658,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     event?: RawEvent;
   }): Promise<void> {
     if (!ENTITY_TYPE_VALUES.includes(args.mention.type)) {
+      return;
+    }
+    if (isJunkEntityName(args.mention.name)) {
+      this.metrics.incExtractionEntity({ type: 'rejected_junk_name' });
       return;
     }
     const { entity, created } = await this.entities.findOrCreateEntity({
@@ -1412,6 +1689,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     try {
       await this.prisma.ideaBlockEntity.create({
         data: {
+          tenantId: args.tenantId,
           blockId: args.blockId,
           entityId: entity.id,
           mentionContext: args.mention.mentionContext,
@@ -1670,7 +1948,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     const personId = candidates[0]?.id;
     if (!personId) return;
     await this.prisma.ideaBlock.update({
-      where: { id: args.blockId },
+      where: { id_tenantId: { id: args.blockId, tenantId: args.tenantId } },
       data: { commitmentRecipientPersonId: personId },
     });
   }
@@ -1731,6 +2009,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const themeId = p.attachedThemeId;
       await this.prisma.themeIdeaBlock.createMany({
         data: blockIds.map((blockId) => ({
+          tenantId: event.tenantId,
           themeId,
           blockId,
           weight: new Prisma.Decimal('0.8'),
@@ -1765,10 +2044,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         await this.prisma.ideaBlockLink
           .upsert({
             where: {
-              fromBlockId_toBlockId_relationType: {
+              fromBlockId_toBlockId_relationType_tenantId: {
                 fromBlockId: blockId,
                 toBlockId: o.blockId,
                 relationType: 'shares_entity',
+                tenantId,
               },
             },
             update: { status: 'active', deletedAt: null, deletedBy: null },

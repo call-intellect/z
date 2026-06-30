@@ -38,6 +38,7 @@ import { MeetingReportFastWorker } from '../knowledge-core/workers/meeting-repor
 import { PersonaLayerValidationCron } from '../knowledge-core/workers/persona-layer-validation.cron';
 import { ProcessDetectorWorker } from '../knowledge-core/workers/process-detector.worker';
 import { ProcessTemplateCompletenessCron } from '../knowledge-core/workers/process-template-completeness.cron';
+import { RawEventRecoveryCron } from '../knowledge-core/workers/raw-event-recovery.cron';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
 import { RegulationConsolidatorCronService } from '../knowledge-core/workers/regulation-consolidator.cron';
 import { RegulationConsolidatorWorker } from '../knowledge-core/workers/regulation-consolidator.worker';
@@ -66,6 +67,10 @@ import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cr
 import { ThemeSummarizeCron } from '../knowledge-core/workers/theme-summarize.cron';
 import { MeetingUploadIngestWorker } from '../meeting-uploads/workers/meeting-upload-ingest.worker';
 import { MeetingUploadTranscribeWorker } from '../meeting-uploads/workers/meeting-upload-transcribe.worker';
+import { MessagingModule } from '../messaging/messaging.module';
+import { ChatIngestWorker } from '../messaging/queue/chat-ingest.worker';
+import { MessageOutboxRelayWorker } from '../messaging/queue/message-outbox.worker';
+import { VoiceTranscribeWorker } from '../messaging/queue/voice-transcribe.worker';
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 import { ProcessesModule } from '../processes/processes.module';
 import { FaststartWorker } from '../recordings/workers/faststart.worker';
@@ -105,6 +110,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     BitrixModule,
     DocumentsModule,
     IntegrationObservabilityModule,
+    MessagingModule,
   ],
   providers: [
     VoxService,
@@ -146,6 +152,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // (jobId-дедуп + skip not-draft в distill-worker). WorkerOrgGate / CoreQueue —
     // из @Global CoreQueueModule.
     BlockDistillReconcileCron,
+    RawEventRecoveryCron,
     // Agent-chain overhaul Фаза 4.2 (2026-06-07) — cron каждые 30 мин:
     // догоночная авто-привязка тем к AI-целям без единой темы (провенанс +
     // co-mention, GoalTheme source='ai'). Закрывает «0 тем», из-за которых
@@ -198,6 +205,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     StrategicAlignmentCron,
 
     PersonalRelationBuilderWorker,
+
+    MessageOutboxRelayWorker,
+    ChatIngestWorker,
+    VoiceTranscribeWorker,
 
     DocumentIngestAdapter,
     TextIngestAdapter,

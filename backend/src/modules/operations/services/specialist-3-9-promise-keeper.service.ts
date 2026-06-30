@@ -192,7 +192,7 @@ export class Specialist39PromiseKeeperService {
     }
     try {
       await this.prisma.ideaBlock.update({
-        where: { id: args.blockId },
+        where: { id_tenantId: { id: args.blockId, tenantId: args.tenantId } },
         data: {
           commitmentStatus: 'asked',
           commitmentAskedAt: new Date(),
@@ -260,7 +260,7 @@ export class Specialist39PromiseKeeperService {
     }
     try {
       await this.prisma.ideaBlock.update({
-        where: { id: args.blockId },
+        where: { id_tenantId: { id: args.blockId, tenantId: args.tenantId } },
         data: { commitmentEscalatedAt: new Date() },
       });
       this.metrics?.incCommitmentsEscalated({

@@ -19,7 +19,7 @@ function makeController(over: { prisma?: Record<string, unknown>; canRead?: bool
     chatboxChat: { count: vi.fn() },
     chatboxChatSession: { count: vi.fn() },
     ideaBlock: { count: vi.fn() },
-    task: { count: vi.fn() },
+    issue: { count: vi.fn() },
     ...over.prisma,
   };
   const rbac = {
@@ -57,7 +57,7 @@ describe('ChatboxIntegrationController.memorySummary', () => {
       .mockResolvedValueOnce(3)
       .mockResolvedValueOnce(1);
     prisma.ideaBlock.count.mockResolvedValue(7);
-    prisma.task.count.mockResolvedValue(4);
+    prisma.issue.count.mockResolvedValue(4);
 
     const out = await controller.memorySummary(user as any, 't1');
 
@@ -78,9 +78,9 @@ describe('ChatboxIntegrationController.memorySummary', () => {
         where: expect.objectContaining({ tenantId: 't1', status: 'canonical' }),
       }),
     );
-    expect(prisma.task.count).toHaveBeenCalledWith(
+    expect(prisma.issue.count).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ sourceType: 'chatbox' }),
+        where: expect.objectContaining({ externalSource: 'chatbox', deletedAt: null }),
       }),
     );
     expect(prisma.chatboxChatSession.count).toHaveBeenNthCalledWith(

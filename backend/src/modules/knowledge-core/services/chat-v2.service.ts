@@ -14,7 +14,11 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
-import type { StructuralRetrievalFilters } from '../../dialog-layer/services/query-plan-extractor.service';
+import type { QueryClass } from '../../dialog-layer/services/query-classifier.service';
+import {
+  QUERY_PLAN_MIN_CONFIDENCE,
+  type StructuralRetrievalFilters,
+} from '../../dialog-layer/services/query-plan-extractor.service';
 import {
   KnowledgeAccessResolver,
   type KnowledgeAccessContext,
@@ -23,15 +27,6 @@ import {
   RAG_RERANK_SYSTEM_PROMPT,
   RagRerankSchema,
   buildRagRerankUser,
-  RAG_ROUTE_SYSTEM_PROMPT,
-  RagRouteSchema,
-  buildRagRouteUser,
-  RAG_PLAN_SYSTEM_PROMPT,
-  RagPlanSchema,
-  buildRagPlanUser,
-  RAG_SUFFICIENCY_SYSTEM_PROMPT,
-  RagSufficiencySchema,
-  buildRagSufficiencyUser,
 } from '../prompts/rag-pipeline.prompts';
 import { fuseRankedLists } from '../utils/rank-fusion.util';
 
@@ -68,6 +63,38 @@ export type { ChatV2Scope } from './chat-v2-retrieval.service';
  * Это НЕ посимвольный стрим токенов — только крупные фазы.
  */
 export type ChatV2Stage = 'understanding' | 'searching' | 'writing';
+
+/**
+ * Слой источника Ф10 (R12) — форма ответа для UI помощника. Деривация из
+ * `QueryClass`: list→'list', temporal→'recap', overview→'overview',
+ * topic/fact/неизвестно→'prose'. UI рисует список/карту/итог, а не только текст.
+ */
+export type ChatV2AnswerKind = 'list' | 'recap' | 'overview' | 'prose';
+
+/**
+ * Слой источника Ф10 (R12) — структурная часть ответа класса К1 (list):
+ * перечень эпизодов-источников с id для кликабельных ссылок UI.
+ */
+export interface ChatV2Episode {
+  id: string;
+  title: string;
+  occurredAt: Date;
+  kind: string;
+  rawEventId: string;
+}
+
+export function deriveAnswerKind(queryClass?: QueryClass | null): ChatV2AnswerKind {
+  switch (queryClass) {
+    case 'list':
+      return 'list';
+    case 'temporal':
+      return 'recap';
+    case 'overview':
+      return 'overview';
+    default:
+      return 'prose';
+  }
+}
 
 export interface ChatV2Input {
   tenantId: string;
@@ -125,6 +152,14 @@ export interface ChatV2Input {
    */
   intent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay';
   /**
+   * Слой источника Ф3 — класс запроса роутера (list/topic/temporal/overview/
+   * fact) и уверенность в нём. Определяют both-ways-развилку и гейт
+   * семантического фан-аута по блокам в runRetrieval. Если не задан —
+   * текущее single-route поведение (как до Ф3).
+   */
+  queryClass?: QueryClass;
+  queryClassConfidence?: number;
+  /**
    * Override системного промпта. ТЗ 2026-06-15 — режимы factual/synthetic/
    * clone_style как «текст промпта» удалены: графовый ответ идёт на единый
    * BASE_SYSTEM_PROMPT. Override теперь подаётся только для brand-voice
@@ -177,6 +212,17 @@ export interface ChatV2Output {
    * (ответ-заглушка без данных).
    */
   dataClass: DataClass;
+  needsClarification: boolean;
+  /**
+   * Слой источника Ф10 (R12) — форма ответа для UI помощника (list|recap|
+   * overview|prose), деривация из queryClass. UI рисует ответ под форму.
+   */
+  answerKind: ChatV2AnswerKind;
+  /**
+   * Слой источника Ф10 (R12) — для К1 (list): перечень эпизодов-источников с id
+   * для кликабельных ссылок. Для прочих классов — undefined.
+   */
+  episodes?: ChatV2Episode[];
 }
 
 /**
@@ -314,6 +360,42 @@ function signalTypeContextRu(signalType: string): string {
   );
 }
 
+function isoDateKey(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function monthKeysBetween(from: Date, to: Date): string[] {
+  if (from.getTime() > to.getTime()) return [];
+  const keys: string[] = [];
+  let year = from.getUTCFullYear();
+  let month0 = from.getUTCMonth();
+  const endYear = to.getUTCFullYear();
+  const endMonth0 = to.getUTCMonth();
+  const MAX = 36;
+  let guard = 0;
+  while ((year < endYear || (year === endYear && month0 <= endMonth0)) && guard < MAX) {
+    keys.push(`${year}-${String(month0 + 1).padStart(2, '0')}`);
+    month0 += 1;
+    if (month0 > 11) {
+      month0 = 0;
+      year += 1;
+    }
+    guard += 1;
+  }
+  return keys;
+}
+
+export function extractRecapNarrative(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const narrative = (payload as Record<string, unknown>).narrative;
+  if (typeof narrative !== 'string') return null;
+  const trimmed = narrative.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /**
  * Chat-v2 единый промпт (ТЗ 2026-06-15 §6.1) — ИМЕНОВАННЫЕ КОНСТАНТЫ русских
  * тегов контекста. Единый источник для билдера (buildUserMessage) и чистилки
@@ -326,6 +408,16 @@ export const CONTRADICTING_FACT_TAG = '[ПРОТИВОРЕЧАЩИЙ ФАКТ]';
 export const CONTRADICTIONS_HEADER = 'Противоречащие факты:';
 /** Префикс блока «Данные из таблиц» (наполняет ЧАСТЬ B; константа и strip — здесь). */
 export const TABLE_TAG_PREFIX = '[ТАБЛИЦА:';
+export const TEMPORAL_ROLLUP_TAG_PREFIX = '[ИТОГ ПЕРИОДА:';
+export const THEME_MAP_TAG_PREFIX = '[ТЕМА:';
+/** Префикс маркера эпизода-источника для К1 (list): [ИСТОЧНИК:<rawEventId>]. */
+export const EPISODE_TAG_PREFIX = '[ИСТОЧНИК:';
+
+const EPISODE_KIND_RU: Record<string, string> = {
+  meeting: 'встреча',
+  document: 'документ',
+  chat: 'переписка',
+};
 
 /**
  * Query Understanding Ф4 (R10) — карта ветки темы → человекочитаемый русский
@@ -392,6 +484,9 @@ function dedupe(items: string[]): string[] {
 
 const BLOCK_REF_REGEX = /\[BLOCK:([a-z0-9]+)\]/gi;
 
+const CLARIFY_MARKER_REGEX = /^\s*\[\[CLARIFY\]\]/;
+const CLARIFY_MARKER_STRIP_REGEX = /\[\[CLARIFY\]\]/g;
+
 /**
  * §1 Ф5 (2026-06-11) — вырезает технические маркеры цитат из текста ответа
  * AI-чата (chat-v2), чтобы они не утекали в UI. Цитаты сохраняются отдельно
@@ -421,6 +516,9 @@ export function stripBlockMarkers(text: string): string {
     .replace(/\[ПРОТИВОРЕЧАЩИЙ ФАКТ[^\]]*\]/g, '')
     .replace(/\[ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ[^\]]*\]/g, '')
     .replace(/\[ТАБЛИЦА:[^\]]*\]/g, '')
+    .replace(/\[ИТОГ ПЕРИОДА:[^\]]*\]/g, '')
+    .replace(/\[ТЕМА:[^\]]*\]/g, '')
+    .replace(/\[ИСТОЧНИК:[^\]]*\]/g, '')
     .replace(/\[BLOCK:[a-zA-Z0-9_-]+(?:\s*[—-][^\]]*)?\]/gu, '')
     .replace(/[ \t]{2,}/g, ' ') // схлопнуть двойные пробелы от вырезанных маркеров
     .replace(/ +([.,;:!?])/g, '$1') // убрать пробел перед пунктуацией
@@ -482,6 +580,21 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 переписки, решения, документы. Ты не универсальный чат-бот — ты память
 и аналитик одной конкретной компании (она описана в разделе «О компании» ниже).
 
+## Как устроена память компании
+Память — это не плоский набор фрагментов, а связанная структура:
+- Источники-объекты: встречи, документы, переписки — каждый со своим заголовком
+  и датой. На них можно ссылаться как на отдельные источники.
+- Участники и сущности: кто был в источнике, какие компании/проекты упоминались.
+  Отсюда берутся ответы «все встречи с человеком X», «по клиенту Y».
+- Факты (блоки знаний) с маркером [BLOCK:<id>] — атомарные знания внутри
+  источников: решения, обязательства, риски, идеи.
+- Карта тем: крупные смысловые разделы с готовыми свёртками — для обзора «что
+  у нас по направлению».
+- Итоги периодов: готовые свёртки недели/месяца — для вопросов «как прошёл
+  период».
+Какие из этих форм пришли в контекст — зависит от вопроса. Отвечай в форме,
+которая соответствует пришедшим данным (см. «Режим ответа по форме результата»).
+
 ## Кому ты отвечаешь и что будет с ответом
 - Спрашивает сотрудник компании — из кабинета или из мессенджера. Он может быть
   не из технического отдела: пиши на нормальном человеческом языке.
@@ -523,6 +636,23 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 6. Конфликт не заглаживай. Если факты спорят — назови оба
    ([BLOCK:<id1>] vs [BLOCK:<id2>]) и предложи человеку уточнить, какой
    актуальный. Никогда не выбирай «правильный» сам.
+7. Структура по содержанию. Простой факт — 1-2 предложения. Составной ответ
+   (несколько частей, пунктов, сущностей) — короткая вводная фраза, затем
+   список или разделы. Структурируй ради ясности, а не ради объёма.
+
+## Переспрос при нескольких РАЗНЫХ объектах
+Это не про конфликт фактов (правило 6 — когда факты спорят об ОДНОМ объекте).
+Здесь речь о другом: под вопрос подходит несколько РАЗНЫХ объектов, и выбрать
+один нельзя (например, «что решили на встрече с Александром», а в памяти три
+разные встречи с Александром). В таком случае:
+- Не выдумывай единый ответ и не сваливай всё подряд.
+- Опиши КАЖДЫЙ вариант человеческим языком (что это, когда, о чём шла речь) и
+  подкрепи его источником-маркером [BLOCK:<id>].
+- В конце задай ОДИН короткий уточняющий вопрос, какой из вариантов имеется
+  в виду.
+- Начни такой ответ со служебного токена [[CLARIFY]] в самой первой строке.
+  Это внутренняя метка для системы — её вырежут до показа, человек её никогда
+  не увидит. В обычном ответе токен не пиши.
 
 ## Особые пометки в контексте (подсказки для тебя; в ответе их не показывай)
 - «Цепочка рассуждения к факту» — разложенное «почему»: решение ← обоснование
@@ -533,6 +663,29 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 - «Данные из таблиц» — строки из умных таблиц компании. Используй наравне с
   фактами; при ссылке указывай таблицу «<название>» (цитата подставится сама).
   На счётный вопрос («сколько…») посчитай по строкам и дай число.
+- «Итоги периода» — готовая свёртка недели/месяца (что наработали, как с
+  обещаниями, что зависло, почему). На вопрос про итоги периода («как прошёл
+  месяц», «итоги недели») опирайся прежде всего на эту свёртку, а не на
+  разрозненные факты; подведи итог человеческим языком.
+- «Карта тем» — крупные смысловые разделы компании со свёрткой по каждому. На
+  обзорный вопрос («что у нас по продажам», «как дела с наймом») построй обзор
+  с разбивкой по этим разделам, а не свали факты в кучу.
+- «Источники (встречи/документы/чаты)» — перечень источников-объектов с
+  заголовком, типом и датой; каждый помечен маркером [ИСТОЧНИК:<id>]. На вопрос-
+  список («все встречи с человеком X», «какие были созвоны по клиенту Y»)
+  отвечай ПЕРЕЧИСЛЕНИЕМ этих источников со ссылкой-маркером у каждого, а НЕ
+  абзацем-синтезом из фактов.
+
+## Режим ответа по форме результата
+Форма ответа должна соответствовать тому, что пришло в контекст:
+- Есть «Источники» (вопрос-список) → дай перечисление: по строке на источник,
+  у каждого маркер [ИСТОЧНИК:<id>], кратко что это, когда. Не превращай список
+  в единый абзац и ничего не выдумывай сверх списка.
+- Есть «Итоги периода» (вопрос про период) → подведи итог периода своими
+  словами из свёртки, не пересказывай разрозненные факты.
+- Есть «Карта тем» (обзорный вопрос) → дай обзор с разбивкой по разделам.
+- В остальных случаях → обычный ответ из фактов с маркерами [BLOCK:<id>], как
+  описано выше.
 
 ## Примеры (плохо → хорошо)
 1. Два факта спорят.
@@ -550,20 +703,27 @@ export const BASE_SYSTEM_PROMPT = `## Роль
    ✗ перечисляет каждое звено цепочки как отдельный факт с кучей маркеров.
    ✓ «Скидку убрали: она съедала маржу и не давала роста повторных
      продаж [BLOCK:5].»
+5. Вопрос-список «все встречи с Ивановым».
+   ✗ «С Ивановым обсуждали запуск и бюджет.»  (синтез абзаца вместо списка)
+   ✓ «Нашёл встречи с Ивановым:
+     - Планёрка по запуску — встреча, 2026-06-20 [ИСТОЧНИК:abc]
+     - Разбор бюджета — встреча, 2026-06-05 [ИСТОЧНИК:def]»
 
 ## Самопроверка перед ответом
 - Вопрос вообще про дела компании? Если нет — вежливый отказ, без выдумок.
 - Каждый факт подкреплён [BLOCK:<id>] из контекста? Нет выдуманных номеров?
 - Если данных не было — сказал честно, не досочинил?
 - Конфликт назван, а не заглажен?
+- Если это вопрос-список — ответ перечислением источников с маркерами
+  [ИСТОЧНИК:<id>], а не абзацем?
 - В тексте нет ни одного английского/служебного слова, кроме маркеров
-  [BLOCK:<id>]?
+  [BLOCK:<id>] и [ИСТОЧНИК:<id>]?
 Если что-то не так — перепиши, и только потом отвечай.
 
 ## Запреты
 - Никаких английских слов, кодов, технических названий в тексте ответа
-  (кроме маркеров [BLOCK:<id>], которые станут ссылками). Даже если они есть
-  во входе — переводи на человеческий русский.
+  (кроме маркеров [BLOCK:<id>] и [ИСТОЧНИК:<id>], которые станут ссылками).
+  Даже если они есть во входе — переводи на человеческий русский.
 - Не выдумывай факты, даты, имена, решения, которых нет в контексте.
 - Не выбирай «победителя» при споре двух фактов.`;
 
@@ -572,7 +732,8 @@ interface RetrievalCtx {
   scope: ChatV2Scope;
   scopeId: string | null;
   query: string;
-  topK: number;
+  kRetrieve: number;
+  kContext: number;
   graphHops: number;
   accessWhere: Record<string, unknown> | undefined;
 }
@@ -634,7 +795,7 @@ export class ChatV2Service {
    */
   async ask(input: ChatV2Input): Promise<ChatV2Output> {
     const { tenantId, scope, scopeId, query } = input;
-    const topK = this.cfg.knowledgeCore.chatV2TopBlocks;
+    const { kRetrieve, kContext } = await this.resolveKSplit();
     const graphHops = this.cfg.knowledgeCore.chatV2GraphHops;
 
     // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
@@ -672,17 +833,27 @@ export class ChatV2Service {
     // ЧАСТЬ B (ТЗ 2026-06-15 §7) — табличная ветка (fetchTableContext) идёт
     // ОДНОВРЕМЕННО с графовым retrieval через Promise.allSettled: по времени
     // почти не дороже. Падение ветки таблиц НЕ валит ответ (граф отвечает).
-    const [retrievalSettled, tableSettled] = await Promise.allSettled([
-      this.retrieveWithOptionalPlan(input, {
+    const [
+      retrievalSettled,
+      tableSettled,
+      temporalSettled,
+      overviewSettled,
+      episodesSettled,
+    ] = await Promise.allSettled([
+      this.runRetrieval(input, {
         tenantId,
         scope,
         scopeId: scopeId ?? null,
         query,
-        topK,
+        kRetrieve,
+        kContext,
         graphHops,
         accessWhere,
       }),
       this.runTableBranch(input, tenantId),
+      this.runTemporalBranch(input, tenantId),
+      this.runOverviewBranch(input, tenantId),
+      this.runEpisodesBranch(input, tenantId),
     ]);
 
     const rankedBlockIds: string[] =
@@ -703,6 +874,21 @@ export class ChatV2Service {
     // tableRows — fail-safe: ветка таблиц никогда не должна валить ответ.
     const tableRows: Array<{ tableName: string; cells: string }> =
       tableSettled.status === 'fulfilled' ? tableSettled.value : [];
+    // Ф5 мост К3 — temporal-свёртки (ValueRecapSnapshot/WeeklyOperationsDigest).
+    // Best-effort: rejected/нет свёртки → []. Не валит ответ — both-ways семантика
+    // остаётся (R3 fallback).
+    const temporalRollups: Array<{ label: string; markdown: string }> =
+      temporalSettled.status === 'fulfilled' ? temporalSettled.value : [];
+    // Ф6 мост К4 — карта тем (Theme.summary lazy-map). Best-effort: rejected/нет
+    // тем → []. Не валит ответ — both-ways семантика остаётся (R4 fallback).
+    const themeMap: Array<{ label: string; markdown: string }> =
+      overviewSettled.status === 'fulfilled' ? overviewSettled.value : [];
+    // Ф10 мост К1 — список эпизодов-источников (SourceEpisode по разрешённым
+    // personIds/entityIds). Best-effort: rejected/нет эпизодов → []. Несёт
+    // структурную часть ответа (episodes) + перечисление в контекст.
+    const episodes: ChatV2Episode[] =
+      episodesSettled.status === 'fulfilled' ? episodesSettled.value : [];
+    const answerKind = deriveAnswerKind(input.queryClass);
 
     // 2) Выгружаем сами блоки + первую evidence из встреч + meeting title.
     //    Ф4 — главный выходной шлюз доступа (см. loadContextBlocks).
@@ -720,7 +906,13 @@ export class ChatV2Service {
     //    ЧАСТЬ B (ТЗ 2026-06-15 §7): но если граф пуст, А ТАБЛИЦЫ дали строки
     //    (например «сколько клиентов из Москвы») — НЕ возвращаем заглушку, а идём
     //    в синтез с одними табличными данными (счётный вопрос считается по строкам).
-    if (contextBlocks.length === 0 && tableRows.length === 0) {
+    if (
+      contextBlocks.length === 0 &&
+      tableRows.length === 0 &&
+      temporalRollups.length === 0 &&
+      themeMap.length === 0 &&
+      episodes.length === 0
+    ) {
       const desc = input.structuralFilters
         ? describeStructuralFilters(input.structuralFilters)
         : '';
@@ -743,6 +935,9 @@ export class ChatV2Service {
         outputTokens: 0,
         // M-1 — пустой контекст: ответ-заглушка без данных.
         dataClass: 'internal',
+        needsClarification: false,
+        answerKind,
+        episodes: undefined,
       };
     }
 
@@ -794,6 +989,12 @@ export class ChatV2Service {
         // ЧАСТЬ B — строки умных таблиц (параллельная ветка). Пусто → секция
         // «Данные из таблиц» не выводится.
         tableRows,
+        // Ф5 мост К3 — свёртки периода. Пусто → секция «Итоги периода» не выводится.
+        temporalRollups,
+        // Ф6 мост К4 — карта тем. Пусто → секция «Карта тем» не выводится.
+        themeMap,
+        // Ф10 мост К1 — список эпизодов-источников. Пусто → секция «Источники» не выводится.
+        episodes,
       },
     );
 
@@ -877,17 +1078,18 @@ export class ChatV2Service {
       timeoutMs: this.cfg.knowledgeCore.chatV2SynthesisTimeoutMs,
     });
 
+    const needsClarification = CLARIFY_MARKER_REGEX.test(result.text);
+    const clarifyStripped = result.text.replace(CLARIFY_MARKER_STRIP_REGEX, '');
+
     // 6) Парсим citations: [BLOCK:<id>] → primaryMeetingEvidence блока.
     const citations = this.parseCitationsFromAnswer(
-      result.text,
+      clarifyStripped,
       contextBlocks,
     );
-    const usedBlockIds = this.parseUsedBlockIds(result.text, contextBlocks);
+    const usedBlockIds = this.parseUsedBlockIds(clarifyStripped, contextBlocks);
 
     return {
-      // §1 Ф5 — strip технических маркеров из видимого текста; парс цитат выше
-      // уже сделан на СЫРОМ result.text (с маркерами), поэтому citations целы.
-      message: stripBlockMarkers(result.text),
+      message: stripBlockMarkers(clarifyStripped),
       citations,
       modelUsed: result.modelUsed,
       usedBlockIds,
@@ -895,219 +1097,146 @@ export class ChatV2Service {
       outputTokens: result.outputTokens,
       // M-1 — derived класс ответа (тот же, что ушёл в llm.call).
       dataClass: effectiveDataClass,
+      needsClarification,
+      answerKind,
+      episodes: episodes.length > 0 ? episodes : undefined,
     };
   }
 
   // ─────────────────────────── private ───────────────────────────
 
-  private async retrieveWithOptionalPlan(
-    input: ChatV2Input,
-    ctx: RetrievalCtx,
-  ): Promise<string[]> {
-    try {
-      const iterativeEnabled = await this.cfg.getDynamic<boolean>(
-        'rag.iterative_enabled',
-        undefined,
-        true,
-      );
-      if (!iterativeEnabled) return this.runRetrieval(input, ctx);
-
-      const minBlocks = await this.cfg.getDynamic<number>(
-        'rag.cold_start_min_blocks',
-        undefined,
-        20,
-      );
-      const canonicalCount = await this.prisma.ideaBlock.count({
-        where: { tenantId: ctx.tenantId, status: 'canonical' },
-      });
-      if (canonicalCount < minBlocks) return this.runRetrieval(input, ctx);
-
-      const route = await this.routeComplexity(ctx.tenantId, input.query);
-      if (route !== 'iterative') return this.runRetrieval(input, ctx);
-
-      const steps = await this.planSteps(ctx.tenantId, input.query);
-
-      const collected = new Set<string>();
-      const seenQueries = new Set<string>();
-      const norm = (q: string): string =>
-        q.toLowerCase().replace(/[^a-zа-я0-9]+/gi, ' ').trim();
-      const runStep = async (q: string): Promise<void> => {
-        if (!q) return;
-        const fp = norm(q);
-        if (!fp || seenQueries.has(fp)) return;
-        seenQueries.add(fp);
-        const ids = await this.runRetrieval(
-          { ...input, query: q, queries: [q] },
-          { ...ctx, query: q },
-        );
-        for (const id of ids) collected.add(id);
-      };
-
-      for (const s of steps) {
-        await runStep(s.query);
-      }
-
-      const suff = await this.judgeSufficiency(
-        ctx.tenantId,
-        input.query,
-        [...collected],
-      );
-      if (!suff.sufficient && suff.nextQuery && !seenQueries.has(norm(suff.nextQuery))) {
-        await runStep(suff.nextQuery);
-      }
-
-      if (collected.size === 0) return this.runRetrieval(input, ctx);
-      return [...collected].slice(0, Math.max(ctx.topK, collected.size));
-    } catch (err) {
-      this.logger.warn(
-        {
-          tenantId: ctx.tenantId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'chat-v2 retrieveWithOptionalPlan: сбой ветки — fail-open до одношагового',
-      );
-      return this.runRetrieval(input, ctx);
-    }
+  private async resolveKSplit(): Promise<{
+    kRetrieve: number;
+    kContext: number;
+  }> {
+    const rawRetrieve = await this.cfg.getDynamic<number>(
+      'rag.k_retrieve',
+      undefined,
+      30,
+    );
+    const rawContext = await this.cfg.getDynamic<number>(
+      'rag.k_context',
+      undefined,
+      18,
+    );
+    const kRetrieve =
+      Number.isFinite(rawRetrieve) && rawRetrieve > 0 ? rawRetrieve : 30;
+    let kContext =
+      Number.isFinite(rawContext) && rawContext > 0 ? rawContext : 18;
+    if (kContext > kRetrieve) kContext = kRetrieve;
+    return { kRetrieve, kContext };
   }
 
-  /**
-   * Ф4.4 — роутер сложности. FAIL-OPEN: при ошибке/невалидном ответе → 'single'
-   * (при сомнении ищем, не отбрасываем как 'none').
-   */
-  private async routeComplexity(
-    tenantId: string,
-    question: string,
-  ): Promise<'none' | 'single' | 'iterative'> {
-    try {
-      const guardOn = this.isPromptInjectionGuardEnabled();
-      const out = await this.llm.call({
-        taskType: 'rag-route',
-        tenantId,
-        systemPrompt: guardOn
-          ? withInjectionGuard(RAG_ROUTE_SYSTEM_PROMPT)
-          : RAG_ROUTE_SYSTEM_PROMPT,
-        userMessage: guardOn
-          ? wrapUserData(buildRagRouteUser(question))
-          : buildRagRouteUser(question),
-        responseFormat: { type: 'json_object' },
-        maxTokens: 200,
-        dataClass: 'internal',
-        sourceRef: { type: 'chat-v2-route', id: tenantId },
-      });
-      const parsed = RagRouteSchema.safeParse(tryParseJson(out.text));
-      if (!parsed.success) return 'single';
-      return parsed.data.complexity;
-    } catch (err) {
-      this.logger.warn(
-        { tenantId, err: err instanceof Error ? err.message : String(err) },
-        'chat-v2 routeComplexity: сбой — fail-open (single)',
-      );
-      return 'single';
-    }
-  }
-
-  private async planSteps(
-    tenantId: string,
-    question: string,
-  ): Promise<Array<{ goal: string; query: string }>> {
-    const fallback = [{ goal: '', query: question }];
-    try {
-      const guardOn = this.isPromptInjectionGuardEnabled();
-      const out = await this.llm.call({
-        taskType: 'rag-plan',
-        tenantId,
-        systemPrompt: guardOn
-          ? withInjectionGuard(RAG_PLAN_SYSTEM_PROMPT)
-          : RAG_PLAN_SYSTEM_PROMPT,
-        userMessage: guardOn
-          ? wrapUserData(buildRagPlanUser(question))
-          : buildRagPlanUser(question),
-        responseFormat: { type: 'json_object' },
-        maxTokens: 400,
-        dataClass: 'internal',
-        sourceRef: { type: 'chat-v2-plan', id: tenantId },
-      });
-      const parsed = RagPlanSchema.safeParse(tryParseJson(out.text));
-      if (!parsed.success || parsed.data.steps.length === 0) return fallback;
-      return parsed.data.steps.slice(0, 4);
-    } catch (err) {
-      this.logger.warn(
-        { tenantId, err: err instanceof Error ? err.message : String(err) },
-        'chat-v2 planSteps: сбой — fail-open (один шаг = исходный вопрос)',
-      );
-      return fallback;
-    }
-  }
-
-  private async judgeSufficiency(
-    tenantId: string,
-    question: string,
-    blockIds: string[],
-  ): Promise<{ sufficient: boolean; nextQuery: string }> {
-    try {
-      const poolIds = blockIds.slice(0, 20);
-      let collectedStr = '';
-      if (poolIds.length > 0) {
-        const rows = await this.prisma.ideaBlock.findMany({
-          where: { id: { in: poolIds }, tenantId, status: 'canonical' },
-          select: { id: true, name: true, trustedAnswer: true },
-        });
-        collectedStr = rows
-          .map((r) => `[ID:${r.id}] ${r.name}: ${r.trustedAnswer}`)
-          .join('\n');
-      }
-
-      const guardOn = this.isPromptInjectionGuardEnabled();
-      const out = await this.llm.call({
-        taskType: 'rag-sufficiency',
-        tenantId,
-        systemPrompt: guardOn
-          ? withInjectionGuard(RAG_SUFFICIENCY_SYSTEM_PROMPT)
-          : RAG_SUFFICIENCY_SYSTEM_PROMPT,
-        userMessage: guardOn
-          ? wrapUserData(buildRagSufficiencyUser(question, collectedStr))
-          : buildRagSufficiencyUser(question, collectedStr),
-        responseFormat: { type: 'json_object' },
-        maxTokens: 250,
-        dataClass: 'internal',
-        sourceRef: { type: 'chat-v2-sufficiency', id: tenantId },
-      });
-      const parsed = RagSufficiencySchema.safeParse(tryParseJson(out.text));
-      if (!parsed.success) return { sufficient: true, nextQuery: '' };
-      return {
-        sufficient: parsed.data.sufficient,
-        nextQuery: parsed.data.nextQuery,
-      };
-    } catch (err) {
-      this.logger.warn(
-        { tenantId, err: err instanceof Error ? err.message : String(err) },
-        'chat-v2 judgeSufficiency: сбой — fail-open (sufficient)',
-      );
-      return { sufficient: true, nextQuery: '' };
-    }
-  }
-
-  /**
-   * Графовый retrieval blockId'ов под scope (вынесен из ask() для запуска
-   * ПАРАЛЛЕЛЬНО с табличной веткой, ЧАСТЬ B ТЗ 2026-06-15 §7). Логика та же:
-   * precomputedBlockIds → multi-query merge → topK. Возвращает ranked blockIds.
-   */
   private async runRetrieval(
     input: ChatV2Input,
     ctx: RetrievalCtx,
   ): Promise<string[]> {
-    const { tenantId, scope, scopeId, query, topK, graphHops, accessWhere } = ctx;
+    const { tenantId, query, kRetrieve, kContext } = ctx;
 
     if (input.precomputedBlockIds && input.precomputedBlockIds.length > 0) {
-      return [...input.precomputedBlockIds].slice(0, topK);
+      return [...input.precomputedBlockIds].slice(0, kContext);
     }
 
     const queries: string[] =
       input.queries && input.queries.length > 0 ? [...input.queries] : [query];
+
+    const routerEnabled = await this.cfg.getDynamic<boolean>(
+      'knowledge.router_v2_enabled',
+      undefined,
+      true,
+    );
+    const threshold = await this.cfg.getDynamic<number>(
+      'knowledge.router_confidence_threshold',
+      undefined,
+      QUERY_PLAN_MIN_CONFIDENCE,
+    );
+
+    const queryClass = input.queryClass ?? null;
+    const queryClassConfidence = input.queryClassConfidence ?? 1;
+    const isStructuralClass =
+      queryClass === 'list' || queryClass === 'temporal' || queryClass === 'overview';
+    const bothWays =
+      routerEnabled && (queryClassConfidence < threshold || isStructuralClass);
+
+    this.metrics.incRouterBothWays({ triggered: bothWays ? 'yes' : 'no' });
+
+    const useSingleSemanticQuery = routerEnabled && isStructuralClass;
+    const semanticQueries = useSingleSemanticQuery ? [query] : queries;
+
+    const rrfK = await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60);
+
+    if (!bothWays) {
+      const semantic = await this.runSemanticRoute(input, ctx, semanticQueries, rrfK);
+      if (semantic.length === 0) return [];
+      const reranked = await this.conditionalRerank({
+        tenantId,
+        question: query,
+        blockIds: semantic,
+        conversationSummary: input.conversationSummary ?? null,
+        history: input.history,
+        reformulations: queries,
+      });
+      return reranked.slice(0, kContext);
+    }
+
+    const [semanticSettled, structuralSettled] = await Promise.allSettled([
+      this.runSemanticRoute(input, ctx, semanticQueries, rrfK),
+      this.runStructuralRoute(input, ctx),
+    ]);
+
+    const semantic =
+      semanticSettled.status === 'fulfilled' ? semanticSettled.value : [];
+    const structural =
+      structuralSettled.status === 'fulfilled' ? structuralSettled.value : [];
+
+    if (structuralSettled.status === 'rejected') {
+      this.logger.warn(
+        {
+          err:
+            structuralSettled.reason instanceof Error
+              ? structuralSettled.reason.message
+              : String(structuralSettled.reason),
+        },
+        'chat-v2 runRetrieval: структурный маршрут упал — отдаём только семантику',
+      );
+    }
+
+    if (semantic.length === 0 && structural.length === 0) return [];
+
+    const merged =
+      structural.length > 0
+        ? fuseRankedLists(
+            [
+              structural.map((id) => ({ id })),
+              semantic.map((id) => ({ id })),
+            ],
+            rrfK,
+          ).slice(0, kRetrieve)
+        : semantic.slice(0, kRetrieve);
+
+    const reranked = await this.conditionalRerank({
+      tenantId,
+      question: query,
+      blockIds: merged,
+      conversationSummary: input.conversationSummary ?? null,
+      history: input.history,
+      reformulations: queries,
+    });
+    return reranked.slice(0, kContext);
+  }
+
+  private async runSemanticRoute(
+    input: ChatV2Input,
+    ctx: RetrievalCtx,
+    queries: ReadonlyArray<string>,
+    rrfK: number,
+  ): Promise<string[]> {
+    const { tenantId, scope, scopeId, kRetrieve, graphHops, accessWhere } = ctx;
+
     const perQueryLimit =
       queries.length > 1
-        ? Math.max(4, Math.ceil(topK / queries.length) + 2)
-        : topK;
+        ? Math.max(4, Math.ceil(kRetrieve / queries.length) + 2)
+        : kRetrieve;
 
     const perQuery: RankedBlockId[][] = [];
     for (const q of queries) {
@@ -1135,21 +1264,74 @@ export class ChatV2Service {
 
     if (perQuery.length === 0) return [];
 
-    const ranked =
-      perQuery.length > 1
-        ? fuseRankedLists(
-            perQuery.map((list) => list.map((r) => ({ id: r.blockId }))),
-            await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60),
-          ).slice(0, topK)
-        : perQuery[0]!.slice(0, topK).map((r) => r.blockId);
+    return perQuery.length > 1
+      ? fuseRankedLists(
+          perQuery.map((list) => list.map((r) => ({ id: r.blockId }))),
+          rrfK,
+        ).slice(0, kRetrieve)
+      : perQuery[0]!.slice(0, kRetrieve).map((r) => r.blockId);
+  }
 
-    return this.conditionalRerank({ tenantId, question: query, blockIds: ranked });
+  /**
+   * Слой источника Ф4 (R1) — маршрут К1 «список/агрегат по человеку/группе».
+   * Точный детерминированный обход по уже разрешённым (Ф3) personIds/entityIds
+   * через `SourceParticipant`/`SourceEntity` → блоки. Семантическая страховка —
+   * both-ways в runRetrieval (этот маршрут отдаёт только структурную ногу).
+   *
+   * Возвращает [] (общий результат = семантика) если:
+   *   - класс не 'list' (К3/К4/К2/К5 — другие маршруты / семантика), ИЛИ
+   *   - нет разрешённых personIds и entityIds (резолв пуст → страховка).
+   */
+  private async runStructuralRoute(
+    input: ChatV2Input,
+    ctx: RetrievalCtx,
+  ): Promise<string[]> {
+    if (input.queryClass === 'overview') {
+      return this.runOverviewStructuralRoute(input, ctx);
+    }
+    if (input.queryClass !== 'list') return [];
+    const personIds = input.structuralFilters?.personIds ?? [];
+    const entityIds = input.structuralFilters?.entityIds ?? [];
+    if (personIds.length === 0 && entityIds.length === 0) return [];
+
+    return this.retrieval.runStructuralAggregate({
+      tenantId: ctx.tenantId,
+      personIds,
+      entityIds,
+      limit: ctx.kRetrieve,
+    });
+  }
+
+  private async runOverviewStructuralRoute(
+    input: ChatV2Input,
+    ctx: RetrievalCtx,
+  ): Promise<string[]> {
+    const topThemes = await this.cfg.getDynamic<number>(
+      'knowledge.overview_top_themes',
+      undefined,
+      5,
+    );
+    const themes = await this.retrieval.selectTopThemes({
+      tenantId: ctx.tenantId,
+      query: ctx.query,
+      limit: topThemes,
+      branches: input.structuralFilters?.themeBranches,
+    });
+    if (themes.length === 0) return [];
+    return this.retrieval.poolByThemes(
+      ctx.tenantId,
+      themes.map((t) => t.id),
+      ctx.kRetrieve,
+    );
   }
 
   private async conditionalRerank(args: {
     tenantId: string;
     question: string;
     blockIds: string[];
+    conversationSummary?: string | null;
+    history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+    reformulations?: ReadonlyArray<string>;
   }): Promise<string[]> {
     const { tenantId, question, blockIds } = args;
     const minPool = await this.cfg.getDynamic<number>(
@@ -1159,8 +1341,14 @@ export class ChatV2Service {
     );
     if (blockIds.length <= minPool) return blockIds;
 
+    const poolSize = await this.cfg.getDynamic<number>(
+      'rag.rerank_pool_size',
+      undefined,
+      30,
+    );
+
     try {
-      const poolIds = blockIds.slice(0, 30);
+      const poolIds = blockIds.slice(0, poolSize);
       const rows = await this.prisma.ideaBlock.findMany({
         where: { id: { in: poolIds }, tenantId, status: 'canonical' },
         select: { id: true, name: true, trustedAnswer: true },
@@ -1174,6 +1362,11 @@ export class ChatV2Service {
         .join('\n');
       if (!candidatesStr) return blockIds;
 
+      const rerankCtx = {
+        conversationSummary: args.conversationSummary ?? null,
+        history: args.history,
+        reformulations: args.reformulations,
+      };
       const guardOn = this.isPromptInjectionGuardEnabled();
       const out = await this.llm.call({
         taskType: 'rag-rerank',
@@ -1182,8 +1375,8 @@ export class ChatV2Service {
           ? withInjectionGuard(RAG_RERANK_SYSTEM_PROMPT)
           : RAG_RERANK_SYSTEM_PROMPT,
         userMessage: guardOn
-          ? wrapUserData(buildRagRerankUser(question, candidatesStr))
-          : buildRagRerankUser(question, candidatesStr),
+          ? wrapUserData(buildRagRerankUser(question, candidatesStr, rerankCtx))
+          : buildRagRerankUser(question, candidatesStr, rerankCtx),
         responseFormat: { type: 'json_object' },
         maxTokens: 400,
         dataClass: 'internal',
@@ -1242,6 +1435,133 @@ export class ChatV2Service {
       );
       return [];
     }
+  }
+
+  private async runTemporalBranch(
+    input: ChatV2Input,
+    tenantId: string,
+  ): Promise<Array<{ label: string; markdown: string }>> {
+    if (input.queryClass !== 'temporal') return [];
+    const dateFrom = input.structuralFilters?.dateFrom ?? null;
+    const dateTo = input.structuralFilters?.dateTo ?? null;
+    if (!dateFrom || !dateTo) return [];
+    try {
+      const [recaps, digests] = await Promise.all([
+        this.loadValueRecaps(tenantId, dateFrom, dateTo),
+        this.loadWeeklyDigests(tenantId, dateFrom, dateTo),
+      ]);
+      return [...recaps, ...digests];
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 runTemporalBranch: сбой — возвращаем [] (семантика отвечает)',
+      );
+      return [];
+    }
+  }
+
+  private async runOverviewBranch(
+    input: ChatV2Input,
+    tenantId: string,
+  ): Promise<Array<{ label: string; markdown: string }>> {
+    if (input.queryClass !== 'overview') return [];
+    try {
+      const topThemes = await this.cfg.getDynamic<number>(
+        'knowledge.overview_top_themes',
+        undefined,
+        5,
+      );
+      const themes = await this.retrieval.selectTopThemes({
+        tenantId,
+        query: input.query,
+        limit: topThemes,
+        branches: input.structuralFilters?.themeBranches,
+      });
+      const out: Array<{ label: string; markdown: string }> = [];
+      for (const theme of themes) {
+        const summary = (theme.summary ?? '').trim();
+        if (!summary) continue;
+        out.push({ label: theme.id, markdown: summary });
+      }
+      return out;
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 runOverviewBranch: сбой — возвращаем [] (семантика отвечает)',
+      );
+      return [];
+    }
+  }
+
+  private async runEpisodesBranch(
+    input: ChatV2Input,
+    tenantId: string,
+  ): Promise<ChatV2Episode[]> {
+    if (input.queryClass !== 'list') return [];
+    const personIds = input.structuralFilters?.personIds ?? [];
+    const entityIds = input.structuralFilters?.entityIds ?? [];
+    if (personIds.length === 0 && entityIds.length === 0) return [];
+    const limit = await this.cfg.getDynamic<number>(
+      'knowledge.list_episodes_limit',
+      undefined,
+      30,
+    );
+    try {
+      return await this.retrieval.listEpisodesByActors({
+        tenantId,
+        personIds,
+        entityIds,
+        limit,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 runEpisodesBranch: сбой — возвращаем [] (семантика отвечает)',
+      );
+      return [];
+    }
+  }
+
+  private async loadValueRecaps(
+    tenantId: string,
+    dateFrom: Date,
+    dateTo: Date,
+  ): Promise<Array<{ label: string; markdown: string }>> {
+    const periodYms = monthKeysBetween(dateFrom, dateTo);
+    if (periodYms.length === 0) return [];
+    const rows = await this.prisma.valueRecapSnapshot.findMany({
+      where: { tenantId, periodYm: { in: periodYms } },
+      orderBy: { periodYm: 'asc' },
+      select: { periodYm: true, payloadJson: true },
+    });
+    const out: Array<{ label: string; markdown: string }> = [];
+    for (const row of rows) {
+      const narrative = extractRecapNarrative(row.payloadJson);
+      if (!narrative) continue;
+      out.push({ label: `месяц ${row.periodYm}`, markdown: narrative });
+    }
+    return out;
+  }
+
+  private async loadWeeklyDigests(
+    tenantId: string,
+    dateFrom: Date,
+    dateTo: Date,
+  ): Promise<Array<{ label: string; markdown: string }>> {
+    const fromKey = isoDateKey(dateFrom);
+    const toKey = isoDateKey(dateTo);
+    const rows = await this.prisma.weeklyOperationsDigest.findMany({
+      where: { tenantId, weekStart: { gte: fromKey, lte: toKey } },
+      orderBy: { weekStart: 'asc' },
+      select: { weekStart: true, weekEnd: true, bodyMarkdown: true },
+    });
+    const out: Array<{ label: string; markdown: string }> = [];
+    for (const row of rows) {
+      const body = (row.bodyMarkdown ?? '').trim();
+      if (!body) continue;
+      out.push({ label: `неделя ${row.weekStart}–${row.weekEnd}`, markdown: body });
+    }
+    return out;
   }
 
   /**
@@ -1508,7 +1828,7 @@ export class ChatV2Service {
     }
     if (scope === 'entity') {
       const e = await this.prisma.entity.findUnique({
-        where: { id: scopeId },
+        where: { id_tenantId: { id: scopeId, tenantId } },
         select: { canonicalName: true, type: true, tenantId: true },
       });
       if (e && e.tenantId === tenantId) {
@@ -1606,6 +1926,9 @@ export class ChatV2Service {
        * секция не выводится.
        */
       tableRows?: ReadonlyArray<{ tableName: string; cells: string }>;
+      temporalRollups?: ReadonlyArray<{ label: string; markdown: string }>;
+      themeMap?: ReadonlyArray<{ label: string; markdown: string }>;
+      episodes?: ReadonlyArray<ChatV2Episode>;
     },
   ): string {
     const parts: string[] = [];
@@ -1673,6 +1996,44 @@ export class ChatV2Service {
       parts.push('Данные из таблиц:');
       for (const r of tableRows) {
         parts.push(`${TABLE_TAG_PREFIX} ${r.tableName}] ${r.cells}`);
+      }
+    }
+
+    // Ф5 мост К3 — итоги периода (свёртки ValueRecapSnapshot/WeeklyOperationsDigest).
+    const temporalRollups = extra?.temporalRollups;
+    if (temporalRollups && temporalRollups.length > 0) {
+      parts.push('');
+      parts.push('Итоги периода:');
+      for (const r of temporalRollups) {
+        parts.push(`${TEMPORAL_ROLLUP_TAG_PREFIX} ${r.label}]`);
+        parts.push(r.markdown);
+      }
+    }
+
+    // Ф6 мост К4 — карта тем (Theme.summary выбранных по близости тем).
+    const themeMap = extra?.themeMap;
+    if (themeMap && themeMap.length > 0) {
+      parts.push('');
+      parts.push('Карта тем:');
+      for (const r of themeMap) {
+        parts.push(`${THEME_MAP_TAG_PREFIX} ${r.label}]`);
+        parts.push(r.markdown);
+      }
+    }
+
+    // Ф10 мост К1 — список эпизодов-источников (встречи/документы/чаты) по
+    // разрешённым участникам/сущностям. Ответ — перечисление со ссылками-
+    // маркерами на источники, НЕ абзац-синтез из блоков.
+    const episodes = extra?.episodes;
+    if (episodes && episodes.length > 0) {
+      parts.push('');
+      parts.push('Источники (встречи/документы/чаты):');
+      for (const ep of episodes) {
+        const kindRu = EPISODE_KIND_RU[ep.kind] ?? ep.kind;
+        const when = isoDateKey(ep.occurredAt);
+        parts.push(
+          `${EPISODE_TAG_PREFIX}${ep.rawEventId}] ${ep.title} — ${kindRu}, ${when}`,
+        );
       }
     }
 

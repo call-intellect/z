@@ -6,6 +6,7 @@ import { ChevronDown, ChevronRight, Download, Users } from "lucide-react";
 import { ApiError } from "@/api/api-error";
 import { weeklyPerPersonApi } from "@/api/weekly-per-person.api";
 import {
+  goalContributionDisplay,
   pluralRu,
   reliabilityDisplay,
   weeklyPerPersonFromApi,
@@ -19,7 +20,19 @@ import { buildPlanerkaCsv, type PlanerkaPerson } from "@/domain/planerka-csv";
 import { CardTitle, GlassCard, GRAD } from "@/ui/components/dashboard/modern";
 import { toast } from "@/ui/shadcn/toast";
 
-export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
+export function WeeklyPerPersonWidget({
+  weekStart,
+  weekEnd,
+  title,
+  subtitle,
+  emptyHint,
+}: {
+  weekStart: string;
+  weekEnd?: string;
+  title?: string;
+  subtitle?: string;
+  emptyHint?: string;
+}) {
   const [data, setData] = useState<WeeklyPerPersonUi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,7 +52,7 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
     setAllRows(null);
     setAllError(null);
     weeklyPerPersonApi
-      .get(weekStart, { sort: "reliability" })
+      .get(weekStart, { sort: "reliability", weekEnd })
       .then((res) => {
         if (cancelled) return;
         setData(weeklyPerPersonFromApi(res));
@@ -55,13 +68,13 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
     return () => {
       cancelled = true;
     };
-  }, [weekStart]);
+  }, [weekStart, weekEnd]);
 
   const loadAll = () => {
     setAllLoading(true);
     setAllError(null);
     weeklyPerPersonApi
-      .get(weekStart, { limit: 100, offset: 0, sort: "reliability" })
+      .get(weekStart, { limit: 100, offset: 0, sort: "reliability", weekEnd })
       .then((res) => {
         setAllRows(weeklyPerPersonFromApi(res).rows);
         setExpanded(true);
@@ -83,6 +96,7 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
           limit: 100,
           offset: 0,
           sort: "reliability",
+          weekEnd,
         }),
       );
       const rows = full.rows;
@@ -130,10 +144,11 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
   return (
     <GlassCard>
       <CardTitle icon={<Users size={16} />} grad={GRAD.blue}>
-        Кто держит слово — за неделю
+        {title ?? "Кто держит слово — за неделю"}
       </CardTitle>
       <p className="mt-1 text-sm text-fg-secondary">
-        План-факт по людям: обещания, задачи и чек-ины за неделю.
+        {subtitle ??
+          "План-факт по людям: обещания, задачи и чек-ины за неделю."}
       </p>
 
       {loading ? (
@@ -146,8 +161,8 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
         </p>
       ) : !data || data.total === 0 ? (
         <p className="mt-3 rounded border bg-bg-subtle p-4 text-sm text-fg-secondary">
-          За эту неделю ещё нет данных по людям — обещания, задачи и чек-ины
-          появятся по мере работы команды.
+          {emptyHint ??
+            "За эту неделю ещё нет данных по людям — обещания, задачи и чек-ины появятся по мере работы команды."}
         </p>
       ) : (
         <>
@@ -378,11 +393,30 @@ function PersonRow({
               </span>
             ) : null}
             <span>· Чек-ины: {row.checkInsCompleted}</span>
+            <GoalContributionChip net={row.goalContributionNet} />
           </span>
         </span>
       </button>
       {drill.open ? <PersonItemsDrill drill={drill} /> : null}
     </li>
+  );
+}
+
+function GoalContributionChip({ net }: { net: number | null }) {
+  const goal = goalContributionDisplay(net);
+  const chip =
+    goal.tone === "pos"
+      ? "bg-chip-success-bg text-chip-success-fg"
+      : goal.tone === "neg"
+        ? "bg-chip-danger-bg text-chip-danger-fg"
+        : "bg-bg-subtle text-fg-tertiary";
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 tabular-nums ${chip}`}
+      title="Вклад в главную цель за неделю: pro−contra"
+    >
+      Вклад в цель: {goal.label}
+    </span>
   );
 }
 
@@ -562,6 +596,9 @@ function AllRowItem({
         ) : null}
         <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
           Чек-ины {row.checkInsCompleted}
+        </span>
+        <span className="shrink-0 text-[11px]">
+          <GoalContributionChip net={row.goalContributionNet} />
         </span>
         <span
           className={`shrink-0 rounded px-2 py-0.5 text-[11px] tabular-nums ${

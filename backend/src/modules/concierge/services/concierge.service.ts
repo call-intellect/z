@@ -1,21 +1,30 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { type ConciergeConversation, type ConciergeMessage, Prisma } from '@prisma/client';
+import {
+  type ChatV2Scope,
+  type ConciergeConversation,
+  type ConciergeMessage,
+  Prisma,
+} from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { formatRuDate } from '../../../common/utils/format-ru-date';
-import { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
+import { LlmRouterService, type LlmCallResult } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
-import { LlmRouterService, type LlmCallResult } from '../../ai/services/llm-router.service';
+import { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
+import {
+  ChatV2OrchestrationService,
+  type EphemeralAnswer,
+} from '../../chat-v2/chat-v2.service';
 import { QuotaExceededError } from '../../quotas/quota.errors';
 import type { PageContextDto } from '../dto/concierge.dto';
 import {
+  CONCIERGE_RENDER_SYSTEM_PROMPT,
   CONCIERGE_RESPOND_SYSTEM_PROMPT,
   buildConciergeUserPrompt,
 } from '../prompts/concierge-respond.prompt';
-import { LoopGuard } from '../utils/loop-guard';
 
 import { ConciergeContextBuilderService } from './concierge-context-builder.service';
 import { ConciergeQuotaService } from './concierge-quota.service';
@@ -28,14 +37,12 @@ import {
 } from './step-scorer.service';
 import { ToolRouterService } from './tool-router.service';
 
-const DEFAULT_MAX_STEPS = 6;
-const DEFAULT_LOOP_GUARD_THRESHOLD = 1;
-
-const SEARCH_TOOL_NAME_HINTS = ['chat', 'memory', 'search', 'ask'];
-const SEARCH_QUERY_PARAM_KEYS = ['query', 'question', 'q', 'text'];
-
 const DEFAULT_HISTORY_PAIRS = 4;
 const DEFAULT_CLARIFY_MIN_CONFIDENCE = 80;
+
+const ASK_CHAT_V2_TOOL = 'ask_chat_v2';
+const INGEST_NOTE_TOOL = 'ingest_note';
+const INGEST_NOTE_STATUS_TEXT = 'Записал в память.';
 
 export interface ProcessInput {
   userMessage: string;
@@ -48,6 +55,9 @@ export interface ProcessInput {
   authMode?: 'cookie' | 'service';
   toolWhitelist?: string[];
   confirmHold?: boolean;
+  scope?: ChatV2Scope;
+  scopeRefId?: string | null;
+  asOf?: string;
 }
 
 export type ConciergeStreamEvent =
@@ -78,6 +88,7 @@ export type ConciergeStreamEvent =
       type: 'message';
       text: string;
       citations?: unknown[];
+      needsClarification?: boolean;
     }
   | { type: 'done'; messageId: string }
   | { type: 'error'; code: string; message: string }
@@ -148,6 +159,8 @@ export class ConciergeService {
     private readonly aiChatQuota: AiChatQuotaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(ChatV2OrchestrationService)
+    private readonly chatV2: ChatV2OrchestrationService,
     @Optional()
     @Inject(ConciergeStepScorerService)
     private readonly stepScorer: ConciergeStepScorerService | null = null,
@@ -249,257 +262,427 @@ export class ConciergeService {
     const historyTake = await this.getHistoryMessagesCount();
     const history = await this.loadRecentHistory(conversation.id, historyTake);
 
-    const executedTools: string[] = [];
-    let askChatV2Capture: { text: string; citations: unknown[] } | null = null;
-
-    let toolMessages: Array<{ role: 'tool'; content: string }> = [];
-    let finalText = '';
-
-    const maxSteps = await this.getMaxSteps();
-    const guardThreshold = await this.getLoopGuardThreshold();
-    const guard = new LoopGuard();
-    let gotFinal = false;
-    let loopGuardTripped = false;
-    let lastSearchPreview = '';
-
-    for (let i = 0; i < maxSteps; i++) {
-      const rawUserBlock = this.composeConciergeUserBlock({
-        contextBlock,
+    if (this.isClarifyPending(history)) {
+      yield* this.resumeClarify({
+        input,
+        conversationId: conversation.id,
         summary: conversation.summary,
         history,
-        toolMessages,
-        message: effectiveQuestion,
       });
-      const userBlock = guardOn ? wrapUserData(rawUserBlock) : rawUserBlock;
+      return;
+    }
 
-      let parsed:
-        | { kind: 'tool_call'; toolName: string; params: Record<string, unknown> }
-        | { kind: 'final'; text: string };
-      try {
-        const out = await this.llm.call({
-          taskType: 'concierge-respond',
-          systemPrompt,
-          userMessage: userBlock,
-          tenantId: input.tenantId,
-          userId: input.userId,
-          maxTokens: 1500,
-          ...(nativeTools ? { tools: llmTools } : {}),
-        });
-        parsed = nativeTools ? this.toolCallFromNativeOutput(out) : this.tryParseToolCall(out.text);
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        this.logger.error({ err: m }, 'concierge LLM call failed');
-        yield {
-          type: 'error',
-          code: 'llm_error',
-          message: 'LLM временно недоступен',
-        };
-        return;
-      }
+    const rawUserBlock = this.composeConciergeUserBlock({
+      contextBlock,
+      summary: conversation.summary,
+      history,
+      message: effectiveQuestion,
+    });
+    const userBlock = guardOn ? wrapUserData(rawUserBlock) : rawUserBlock;
 
-      if (parsed.kind === 'final') {
-        finalText = parsed.text;
-        gotFinal = true;
-        yield { type: 'thinking', text: 'Готовлю ответ…' };
-        break;
-      }
-
-      const toolName = parsed.toolName;
-      const params = parsed.params;
-
-      const searchQuery = this.extractSearchQuery(toolName, params);
-      if (searchQuery !== null) {
-        const repeated = !guard.firstTime(searchQuery);
-        if (repeated && guard.hitCount > guardThreshold) {
-          this.logger.warn(
-            { toolName, conversationId: conversation.id, hitCount: guard.hitCount },
-            'concierge: сторож зацикливания — идентичный поисковый запрос повторён сверх порога, останавливаю переформулировку',
-          );
-          loopGuardTripped = true;
-          break;
-        }
-      }
-
-      if (input.toolWhitelist && !input.toolWhitelist.includes(toolName)) {
-        this.logger.warn(
-          { toolName, conversationId: conversation.id },
-          'concierge: tool вне канального whitelist — исполнение отклонено',
-        );
-        toolMessages = [
-          ...toolMessages,
-          {
-            role: 'tool',
-            content: `Результат tool ${toolName}: ok=false status=403. Инструмент недоступен в этом канале — выбери другой инструмент из списка или ответь текстом.`,
-          },
-        ];
-        continue;
-      }
-
-      const tool = this.serviceMap.findTool(toolName);
-      const requiresConfirm =
-        !!tool && tool.method !== 'GET' && !tool.readOnly && !tool.undoableVia;
-
-      if (input.confirmHold === true && requiresConfirm) {
-        const confirmPreview = this.buildConfirmPreview(toolName, params);
-        yield {
-          type: 'confirm_required',
-          toolName,
-          params,
-          preview: confirmPreview,
-        };
-        const holdMsg = await this.appendMessage({
-          conversationId: conversation.id,
-          role: 'assistant',
-          content: `Подтвердите действие: ${confirmPreview}`,
-          toolCalls: [{ id: `confirm_${i}`, name: toolName, arguments: params, held: true }],
-        });
-        yield { type: 'done', messageId: holdMsg.id };
-        await this.prisma.conciergeConversation.updateMany({
-          where: { id: conversation.id, tenantId: input.tenantId },
-          data: { lastMessageAt: new Date() },
-        });
-        return;
-      }
-
-      yield {
-        type: 'tool_call',
-        toolName,
-        params,
-        requiresConfirm,
-      };
-
-      const shadowScoringPromise = this.maybeStartShadowScoring({
-        llmCandidate: { toolName, args: params },
+    let parsed:
+      | { kind: 'tool_call'; toolName: string; params: Record<string, unknown> }
+      | { kind: 'final'; text: string };
+    try {
+      const out = await this.llm.call({
+        taskType: 'concierge-respond',
         systemPrompt,
         userMessage: userBlock,
         tenantId: input.tenantId,
         userId: input.userId,
-        effectiveQuestion,
-        history,
-        preHits: [],
+        maxTokens: 1500,
+        ...(nativeTools ? { tools: llmTools } : {}),
       });
-
-      const execResult = await this.toolRouter.execute({
-        toolName,
-        args: params,
-        userId: input.userId,
-        tenantId: input.tenantId,
-        ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
-        ...(input.authMode ? { authMode: input.authMode } : {}),
-        ...(input.authCookie ? { authCookie: input.authCookie } : {}),
-      });
-
-      executedTools.push(toolName);
-      if (toolName === 'ask_chat_v2' && execResult.ok) {
-        askChatV2Capture = this.extractChatV2Answer(execResult.result);
-      }
-
-      let undoLogId: string | undefined;
-      if (execResult.ok && tool && tool.method !== 'GET' && !tool.readOnly) {
-        try {
-          const log = await this.undoLog.record({
-            tenantId: input.tenantId,
-            conversationId: conversation.id,
-            tool: execResult.tool,
-            params,
-            result: execResult.result,
-          });
-          undoLogId = log.id;
-        } catch (err) {
-          this.logger.warn(
-            { err: err instanceof Error ? err.message : String(err) },
-            'undoLog.record failed (non-fatal)',
-          );
-        }
-      }
-
-      const preview = this.previewResult(execResult.result);
-      if (this.extractSearchQuery(toolName, params) !== null && execResult.ok) {
-        lastSearchPreview = preview;
-      }
+      parsed = nativeTools ? this.toolCallFromNativeOutput(out) : this.tryParseToolCall(out.text);
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      this.logger.error({ err: m }, 'concierge LLM call failed');
       yield {
-        type: 'tool_result',
+        type: 'error',
+        code: 'llm_error',
+        message: 'LLM временно недоступен',
+      };
+      return;
+    }
+
+    if (parsed.kind === 'final') {
+      yield* this.emitFinalText({
+        input,
+        conversationId: conversation.id,
+        text: parsed.text,
+      });
+      return;
+    }
+
+    const toolName = parsed.toolName;
+    const params = parsed.params;
+
+    if (input.toolWhitelist && !input.toolWhitelist.includes(toolName)) {
+      this.logger.warn(
+        { toolName, conversationId: conversation.id },
+        'concierge: tool вне канального whitelist — исполнение отклонено',
+      );
+      yield* this.emitFinalText({
+        input,
+        conversationId: conversation.id,
+        text: 'Это действие недоступно в этом канале. Откройте кабинет Коры или попросите что-то другое по работе.',
+      });
+      return;
+    }
+
+    if (toolName === ASK_CHAT_V2_TOOL) {
+      yield* this.dispatchAskChatV2({
+        input,
+        conversationId: conversation.id,
+        summary: conversation.summary,
+        history,
+        params,
+      });
+      return;
+    }
+
+    const tool = this.serviceMap.findTool(toolName);
+    const requiresConfirm = !!tool && tool.method !== 'GET' && !tool.readOnly && !tool.undoableVia;
+
+    if (input.confirmHold === true && requiresConfirm) {
+      const confirmPreview = this.buildConfirmPreview(toolName, params);
+      yield {
+        type: 'confirm_required',
         toolName,
+        params,
+        preview: confirmPreview,
+      };
+      const holdMsg = await this.appendMessage({
+        conversationId: conversation.id,
+        role: 'assistant',
+        content: `Подтвердите действие: ${confirmPreview}`,
+        toolCalls: [{ id: 'confirm_0', name: toolName, arguments: params, held: true }],
+      });
+      yield { type: 'done', messageId: holdMsg.id };
+      await this.prisma.conciergeConversation.updateMany({
+        where: { id: conversation.id, tenantId: input.tenantId },
+        data: { lastMessageAt: new Date() },
+      });
+      return;
+    }
+
+    yield {
+      type: 'tool_call',
+      toolName,
+      params,
+      requiresConfirm,
+    };
+
+    const shadowScoringPromise = this.maybeStartShadowScoring({
+      llmCandidate: { toolName, args: params },
+      systemPrompt,
+      userMessage: userBlock,
+      tenantId: input.tenantId,
+      userId: input.userId,
+      effectiveQuestion,
+      history,
+      preHits: [],
+    });
+
+    const execResult = await this.toolRouter.execute({
+      toolName,
+      args: params,
+      userId: input.userId,
+      tenantId: input.tenantId,
+      ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+      ...(input.authMode ? { authMode: input.authMode } : {}),
+      ...(input.authCookie ? { authCookie: input.authCookie } : {}),
+    });
+
+    let undoLogId: string | undefined;
+    if (execResult.ok && tool && tool.method !== 'GET' && !tool.readOnly) {
+      try {
+        const log = await this.undoLog.record({
+          tenantId: input.tenantId,
+          conversationId: conversation.id,
+          tool: execResult.tool,
+          params,
+          result: execResult.result,
+        });
+        undoLogId = log.id;
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'undoLog.record failed (non-fatal)',
+        );
+      }
+    }
+
+    const preview = this.previewResult(execResult.result);
+    yield {
+      type: 'tool_result',
+      toolName,
+      ok: execResult.ok,
+      status: execResult.status,
+      ...(undoLogId ? { undoLogId } : {}),
+      preview,
+      ...(RICH_PREVIEW_TOOLS.has(toolName) ? { data: execResult.result } : {}),
+    };
+
+    const toolMessage = await this.appendMessage({
+      conversationId: conversation.id,
+      role: 'tool',
+      content: JSON.stringify({
+        tool: toolName,
         ok: execResult.ok,
         status: execResult.status,
-        ...(undoLogId ? { undoLogId } : {}),
-        preview,
-        ...(RICH_PREVIEW_TOOLS.has(toolName) ? { data: execResult.result } : {}),
-      };
+        result: execResult.result,
+        errorMessage: execResult.errorMessage,
+      }),
+      toolCalls: [{ id: 'call_0', name: toolName, arguments: params }],
+    });
 
-      const toolMessage = await this.appendMessage({
+    await this.finalizeShadowScoring({
+      shadowScoring: shadowScoringPromise,
+      conversationId: conversation.id,
+      messageId: toolMessage.id,
+      stepIndex: 0,
+      tenantId: input.tenantId,
+      llmCandidate: { toolName, args: params },
+      effectiveQuestion,
+    });
+
+    if (toolName === INGEST_NOTE_TOOL) {
+      yield* this.emitFinalText({
+        input,
         conversationId: conversation.id,
-        role: 'tool',
-        content: JSON.stringify({
-          tool: toolName,
-          ok: execResult.ok,
-          status: execResult.status,
-          result: execResult.result,
-          errorMessage: execResult.errorMessage,
-        }),
-        toolCalls: [{ id: `call_${i}`, name: toolName, arguments: params }],
+        text: INGEST_NOTE_STATUS_TEXT,
       });
+      return;
+    }
 
-      await this.finalizeShadowScoring({
-        shadowScoring: shadowScoringPromise,
-        conversationId: conversation.id,
-        messageId: toolMessage.id,
-        stepIndex: i,
-        tenantId: input.tenantId,
-        llmCandidate: { toolName, args: params },
-        effectiveQuestion,
+    const renderText = await this.renderToolResult({
+      contextBlock,
+      summary: conversation.summary,
+      history,
+      message: effectiveQuestion,
+      toolName,
+      execResult,
+      guardOn,
+      tenantId: input.tenantId,
+      userId: input.userId,
+    });
+
+    yield* this.emitFinalText({
+      input,
+      conversationId: conversation.id,
+      text: renderText,
+    });
+  }
+
+  private async *dispatchAskChatV2(args: {
+    input: ProcessInput;
+    conversationId: string;
+    summary: string | null;
+    history: ConciergeMessage[];
+    params: Record<string, unknown>;
+  }): AsyncIterable<ConciergeStreamEvent> {
+    const question = this.extractQuestionParam(args.params, args.input.userMessage);
+    let answer: EphemeralAnswer;
+    try {
+      answer = await this.chatV2.askEphemeral({
+        tenantId: args.input.tenantId,
+        userId: args.input.userId,
+        question,
+        history: this.toChatV2History(args.history),
+        conversationSummary: args.summary,
+        intent: 'factual',
+        ...(args.input.scope ? { scope: args.input.scope } : {}),
+        ...(args.input.scopeRefId != null ? { scopeRefId: args.input.scopeRefId } : {}),
+        ...(args.input.asOf ? { asOf: args.input.asOf } : {}),
       });
-
-      toolMessages = [
-        ...toolMessages,
-        {
-          role: 'tool',
-          content: `Результат tool ${toolName}: ok=${execResult.ok} status=${execResult.status}. ${preview}`,
-        },
-      ];
-    }
-
-    let citations: unknown[] = [];
-    const passthrough =
-      executedTools.length === 1 && executedTools[0] === 'ask_chat_v2' && askChatV2Capture !== null;
-    if (passthrough && askChatV2Capture) {
-      finalText = askChatV2Capture.text;
-      citations = askChatV2Capture.citations;
-    }
-
-    if (!finalText && !gotFinal && (loopGuardTripped || executedTools.length > 0)) {
-      finalText = this.buildPartialAnswer({ lastSearchPreview, toolMessages });
-    }
-
-    if (!finalText) {
-      finalText = 'Готово. Если нужно — уточните, что сделать дальше.';
+    } catch (err) {
+      this.logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'concierge ask_chat_v2 askEphemeral failed',
+      );
+      yield { type: 'error', code: 'llm_error', message: 'LLM временно недоступен' };
+      return;
     }
 
     const assistantMsg = await this.appendMessage({
-      conversationId: conversation.id,
+      conversationId: args.conversationId,
       role: 'assistant',
-      content: finalText,
-      ...(passthrough
-        ? {
-            toolCalls: {
-              askChatV2Passthrough: true,
-              citationsCount: citations.length,
-            },
-          }
-        : {}),
+      content: answer.text,
+      toolCalls: {
+        askChatV2Passthrough: true,
+        citationsCount: answer.citations.length,
+        ...(answer.needsClarification ? { clarifyPending: true } : {}),
+      },
     });
 
     yield {
       type: 'message',
-      text: finalText,
-      ...(citations.length > 0 ? { citations } : {}),
+      text: answer.text,
+      needsClarification: answer.needsClarification === true,
+      ...(answer.citations.length > 0 ? { citations: answer.citations } : {}),
     };
     yield { type: 'done', messageId: assistantMsg.id };
 
     await this.prisma.conciergeConversation.updateMany({
-      where: { id: conversation.id, tenantId: input.tenantId },
+      where: { id: args.conversationId, tenantId: args.input.tenantId },
       data: { lastMessageAt: new Date() },
     });
+  }
+
+  private async *resumeClarify(args: {
+    input: ProcessInput;
+    conversationId: string;
+    summary: string | null;
+    history: ConciergeMessage[];
+  }): AsyncIterable<ConciergeStreamEvent> {
+    let answer: EphemeralAnswer;
+    try {
+      answer = await this.chatV2.askEphemeral({
+        tenantId: args.input.tenantId,
+        userId: args.input.userId,
+        question: args.input.userMessage,
+        history: this.toChatV2History(args.history),
+        conversationSummary: args.summary,
+        intent: 'factual',
+        ...(args.input.scope ? { scope: args.input.scope } : {}),
+        ...(args.input.scopeRefId != null ? { scopeRefId: args.input.scopeRefId } : {}),
+        ...(args.input.asOf ? { asOf: args.input.asOf } : {}),
+      });
+    } catch (err) {
+      this.logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'concierge clarify-resume askEphemeral failed',
+      );
+      yield { type: 'error', code: 'llm_error', message: 'LLM временно недоступен' };
+      return;
+    }
+
+    const assistantMsg = await this.appendMessage({
+      conversationId: args.conversationId,
+      role: 'assistant',
+      content: answer.text,
+      toolCalls: {
+        askChatV2Passthrough: true,
+        citationsCount: answer.citations.length,
+        ...(answer.needsClarification ? { clarifyPending: true } : {}),
+      },
+    });
+
+    yield {
+      type: 'message',
+      text: answer.text,
+      needsClarification: answer.needsClarification === true,
+      ...(answer.citations.length > 0 ? { citations: answer.citations } : {}),
+    };
+    yield { type: 'done', messageId: assistantMsg.id };
+
+    await this.prisma.conciergeConversation.updateMany({
+      where: { id: args.conversationId, tenantId: args.input.tenantId },
+      data: { lastMessageAt: new Date() },
+    });
+  }
+
+  private async *emitFinalText(args: {
+    input: ProcessInput;
+    conversationId: string;
+    text: string;
+  }): AsyncIterable<ConciergeStreamEvent> {
+    const text =
+      args.text.trim() !== '' ? args.text : 'Готово. Если нужно — уточните, что сделать дальше.';
+    const assistantMsg = await this.appendMessage({
+      conversationId: args.conversationId,
+      role: 'assistant',
+      content: text,
+    });
+    yield { type: 'message', text };
+    yield { type: 'done', messageId: assistantMsg.id };
+    await this.prisma.conciergeConversation.updateMany({
+      where: { id: args.conversationId, tenantId: args.input.tenantId },
+      data: { lastMessageAt: new Date() },
+    });
+  }
+
+  private async renderToolResult(args: {
+    contextBlock: string;
+    summary: string | null;
+    history: ConciergeMessage[];
+    message: string;
+    toolName: string;
+    execResult: { ok: boolean; status: number; result: unknown; errorMessage?: string };
+    guardOn: boolean;
+    tenantId: string;
+    userId: string;
+  }): Promise<string> {
+    const preview = this.previewResult(args.execResult.result);
+    const toolMessages: Array<{ role: 'tool'; content: string }> = [
+      {
+        role: 'tool',
+        content: `Результат tool ${args.toolName}: ok=${args.execResult.ok} status=${args.execResult.status}. ${preview}`,
+      },
+    ];
+    const rawUserBlock = this.composeConciergeUserBlock({
+      contextBlock: args.contextBlock,
+      summary: args.summary,
+      history: args.history,
+      message: args.message,
+      toolMessages,
+    });
+    const userBlock = args.guardOn ? wrapUserData(rawUserBlock) : rawUserBlock;
+    const renderSystemPrompt = args.guardOn
+      ? withInjectionGuard(CONCIERGE_RENDER_SYSTEM_PROMPT)
+      : CONCIERGE_RENDER_SYSTEM_PROMPT;
+    try {
+      const out = await this.llm.call({
+        taskType: 'concierge-respond',
+        systemPrompt: renderSystemPrompt,
+        userMessage: userBlock,
+        tenantId: args.tenantId,
+        userId: args.userId,
+        maxTokens: 1500,
+      });
+      const text = out.text.trim();
+      return text !== '' ? text : 'Готово. Если нужно — уточните, что сделать дальше.';
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'concierge render LLM call failed — отдаю детерминированный ответ',
+      );
+      return 'Готово. Если нужно — уточните, что сделать дальше.';
+    }
+  }
+
+  private isClarifyPending(history: ConciergeMessage[]): boolean {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (!msg || msg.role !== 'assistant') continue;
+      const tc = msg.toolCallsJson;
+      if (tc && typeof tc === 'object' && !Array.isArray(tc)) {
+        return (tc as Record<string, unknown>).clarifyPending === true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  private toChatV2History(
+    history: ConciergeMessage[],
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const mapped: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const m of history) {
+      if (m.role === 'user') mapped.push({ role: 'user', content: m.content });
+      else if (m.role === 'assistant') mapped.push({ role: 'assistant', content: m.content });
+    }
+    return mapped;
+  }
+
+  private extractQuestionParam(
+    params: Record<string, unknown>,
+    fallback: string,
+  ): string {
+    const q = params.question;
+    if (typeof q === 'string' && q.trim() !== '') return q;
+    return fallback;
   }
 
   private async getHistoryMessagesCount(): Promise<number> {
@@ -529,68 +712,12 @@ export class ConciergeService {
     }
   }
 
-  private async getMaxSteps(): Promise<number> {
-    let value: number;
-    try {
-      value = await this.cfg.getDynamic<number>('concierge.max_steps', undefined, DEFAULT_MAX_STEPS);
-    } catch {
-      value = DEFAULT_MAX_STEPS;
-    }
-    return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_MAX_STEPS;
-  }
-
-  private async getLoopGuardThreshold(): Promise<number> {
-    let value: number;
-    try {
-      value = await this.cfg.getDynamic<number>(
-        'rag.loop_guard_threshold',
-        undefined,
-        DEFAULT_LOOP_GUARD_THRESHOLD,
-      );
-    } catch {
-      value = DEFAULT_LOOP_GUARD_THRESHOLD;
-    }
-    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : DEFAULT_LOOP_GUARD_THRESHOLD;
-  }
-
-  private extractSearchQuery(
-    toolName: string,
-    params: Record<string, unknown>,
-  ): string | null {
-    const lower = toolName.toLowerCase();
-    const isSearchTool = SEARCH_TOOL_NAME_HINTS.some((hint) => lower.includes(hint));
-    if (!isSearchTool) return null;
-    for (const key of SEARCH_QUERY_PARAM_KEYS) {
-      const v = params[key];
-      if (typeof v === 'string' && v.trim() !== '') return v;
-    }
-    const firstString = Object.values(params).find(
-      (v): v is string => typeof v === 'string' && v.trim() !== '',
-    );
-    return firstString ?? null;
-  }
-
-  private buildPartialAnswer(args: {
-    lastSearchPreview: string;
-    toolMessages: Array<{ role: 'tool'; content: string }>;
-  }): string {
-    const found = args.lastSearchPreview.trim();
-    if (found !== '') {
-      return `Не успел собрать полный ответ за отведённые шаги — вот что нашёл: ${found}`;
-    }
-    const lastTool = args.toolMessages[args.toolMessages.length - 1]?.content.trim() ?? '';
-    if (lastTool !== '') {
-      return `Не успел собрать полный ответ за отведённые шаги — вот что нашёл: ${lastTool}`;
-    }
-    return 'Пока не нашёл ответ в памяти компании. Уточните вопрос, и я поищу ещё.';
-  }
-
   private composeConciergeUserBlock(args: {
     contextBlock: string;
     summary: string | null;
     history: Array<Pick<ConciergeMessage, 'role' | 'content'>>;
-    toolMessages: Array<{ role: 'tool'; content: string }>;
     message: string;
+    toolMessages?: Array<{ role: 'tool'; content: string }>;
   }): string {
     const parts: string[] = [];
     if (args.contextBlock.trim() !== '') {
@@ -608,7 +735,7 @@ export class ConciergeService {
         message: args.message,
       }),
     );
-    if (args.toolMessages.length > 0) {
+    if (args.toolMessages && args.toolMessages.length > 0) {
       parts.push('');
       parts.push('Результаты последних вызовов инструментов:');
       for (const tm of args.toolMessages) {
@@ -616,16 +743,6 @@ export class ConciergeService {
       }
     }
     return parts.join('\n');
-  }
-
-  private extractChatV2Answer(result: unknown): { text: string; citations: unknown[] } {
-    if (typeof result === 'object' && result !== null) {
-      const obj = result as Record<string, unknown>;
-      const text = typeof obj.text === 'string' ? obj.text : '';
-      const citations = Array.isArray(obj.citations) ? obj.citations : [];
-      return { text, citations };
-    }
-    return { text: '', citations: [] };
   }
 
   private isPromptInjectionGuardEnabled(): boolean {

@@ -9,10 +9,15 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { MembershipRole, Org, OrgVisibilityMode, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { SubscriptionService } from '../billing/services/subscription.service';
+import {
+  MEMBERSHIP_REMOVED,
+  type MembershipRemovedPayload,
+} from '../messaging/messaging.events';
 import { PersonsService } from '../persons/services/persons.service';
 import { RbacService } from '../rbac/rbac.service';
 import { TablesAutoProvisionService } from '../tables/services/tables-auto-provision.service';
@@ -53,6 +58,7 @@ export class OrgsService {
     @Inject(TablesAutoProvisionService)
     private readonly tablesAutoProvision: TablesAutoProvisionService,
     @Inject(PersonsService) private readonly persons: PersonsService,
+    @Inject(EventEmitter2) private readonly events: EventEmitter2,
   ) {}
 
   async createForOwner(
@@ -409,6 +415,8 @@ export class OrgsService {
       where: { orgId_userId: { orgId, userId: targetUserId } },
     });
     this.rbac.invalidate(targetUserId, orgId);
+    const payload: MembershipRemovedPayload = { tenantId: orgId, userId: targetUserId };
+    this.events.emit(MEMBERSHIP_REMOVED, payload);
   }
 
   private toOrgDomain(o: Org): OrgDomain {

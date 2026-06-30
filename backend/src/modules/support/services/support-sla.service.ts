@@ -49,22 +49,20 @@ export class SupportSlaService {
     const vendorOrgId = await this.access.getVendorOrgId();
     if (!vendorOrgId) return 0;
 
-    const overdue = await this.prisma.issue.findMany({
+    const overdue = await this.prisma.supportTicket.findMany({
       where: {
         tenantId: vendorOrgId,
-        supportCustomerUserId: { not: null },
         slaBreachedAt: null,
         firstRespondedAt: null,
         firstResponseDueAt: { lt: now },
-        deletedAt: null,
-        OR: [{ stateId: null }, { state: { category: { notIn: ['completed', 'cancelled'] } } }],
+        status: { notIn: ['resolved', 'closed'] },
       },
       select: { id: true },
     });
     if (overdue.length === 0) return 0;
 
-    const res = await this.prisma.issue.updateMany({
-      where: { id: { in: overdue.map((i) => i.id) } },
+    const res = await this.prisma.supportTicket.updateMany({
+      where: { id: { in: overdue.map((t) => t.id) } },
       data: { slaBreachedAt: now },
     });
     return res.count;

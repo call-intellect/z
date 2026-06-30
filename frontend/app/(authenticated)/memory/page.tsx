@@ -10,8 +10,6 @@ import {
   Table2,
 } from "lucide-react";
 
-import { MemorySearch } from "@/ui/components/memory/MemorySearch";
-
 export const metadata: Metadata = {
   title: "Память",
 };
@@ -22,15 +20,6 @@ interface Entry {
   desc: string;
   icon: typeof MessageCircle;
 }
-
-const ENTRIES: Entry[] = [
-  {
-    href: "/chat",
-    label: "Спросить",
-    desc: "Задайте вопрос — Кора ответит из памяти компании со ссылками на источники.",
-    icon: MessageCircle,
-  },
-];
 
 const REGISTRIES: Entry[] = [
   {
@@ -85,39 +74,30 @@ export default function MemoryHubPage() {
           Память
         </h1>
         <p className="mt-1 text-sm text-fg-secondary">
-          Всё, что Кора извлекла из встреч и разговоров. Спросите, читайте ленту
-          или откройте реестры.
+          Всё, что Кора извлекла из встреч и разговоров. Спросите у Мастера или
+          откройте реестры.
         </p>
       </header>
 
-      {}
-      <div className="mb-8">
-        <MemorySearch />
-      </div>
+      <Link
+        href="/chat"
+        className="mb-6 flex items-center gap-4 rounded-lg border border-accent bg-accent/10 px-5 py-4 transition-colors hover:bg-accent/15"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg">
+          <Sparkles size={20} />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-fg-primary">
+            Спросить у Мастера
+          </span>
+          <span className="block text-xs text-fg-secondary">
+            Задайте вопрос по памяти компании — Мастер найдёт ответ и сделает
+            действие
+          </span>
+        </span>
+      </Link>
 
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-secondary">
-        Спросить и читать
-      </h2>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {ENTRIES.map((e) => {
-          const Icon = e.icon;
-          return (
-            <Link
-              key={e.href}
-              href={e.href}
-              className="group flex flex-col gap-2 rounded-xl border border-border-subtle bg-bg-surface p-5 transition-colors hover:border-accent hover:bg-bg-overlay"
-            >
-              <span className="flex items-center gap-2 text-base font-medium text-fg-primary">
-                <Icon size={18} className="text-accent" />
-                {e.label}
-              </span>
-              <span className="text-sm text-fg-secondary">{e.desc}</span>
-            </Link>
-          );
-        })}
-      </div>
-
-      <h2 className="mt-8 mb-3 text-xs font-semibold uppercase tracking-wider text-fg-secondary">
         Реестры
       </h2>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">

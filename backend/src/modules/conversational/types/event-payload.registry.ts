@@ -28,6 +28,24 @@ const ProbeDigestPayloadSchema = z
   })
   .strict();
 
+const ProbeClarifyPayloadSchema = z
+  .object({
+    question: z.string().min(1).max(4_000),
+    objectTitle: z.string().max(200).optional(),
+    probeEventId: z.string().optional(),
+    summary: z.string().max(4_000).optional(),
+  })
+  .strict();
+
+const ProbeConfirmPayloadSchema = z
+  .object({
+    question: z.string().min(1).max(4_000),
+    objectTitle: z.string().max(200).optional(),
+    probeEventId: z.string().optional(),
+    summary: z.string().max(4_000).optional(),
+  })
+  .strict();
+
 const ProbeAnswerAckPayloadSchema = z
   .object({
     text: z.string().min(1).max(400),
@@ -268,16 +286,58 @@ const MeetingInvitePayloadSchema = z
 const SupportTicketEventPayloadSchema = z
   .object({
     ticketId: z.string().min(1).max(80),
-    ticketNumber: z.string().min(1).max(40),
+    ticketNumber: z.string().min(1).max(40).optional(),
     subject: z.string().min(1).max(300),
     snippet: z.string().max(2_000).optional(),
     actionUrl: z.string().max(2_000).optional(),
   })
   .strict();
 
+const ChatNewMessagePayloadSchema = z
+  .object({
+    conversationId: z.string().min(1).max(80),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
+const TasksDailyOpenItemSchema = z
+  .object({
+    issueId: z.string().min(1).max(80),
+    identifier: z.string().min(1).max(40),
+    title: z.string().min(1).max(300),
+    dueDate: z.string().max(40).nullable().optional(),
+    priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']),
+    actionUrl: z.string().min(1).max(300),
+  })
+  .strict();
+
+const TasksDailyOpenGroupSchema = z
+  .object({
+    key: z.enum(['overdue', 'due_today', 'in_progress', 'backlog']),
+    label: z.string().min(1).max(60),
+    items: z.array(TasksDailyOpenItemSchema).max(500),
+  })
+  .strict();
+
+const TasksDailyOpenPayloadSchema = z
+  .object({
+    dateMsk: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    isEmpty: z.boolean(),
+    total: z.number().int().nonnegative(),
+    shownCount: z.number().int().nonnegative(),
+    overflowCount: z.number().int().nonnegative(),
+    title: z.string().min(1).max(120),
+    actionUrl: z.string().min(1).max(300),
+    groups: z.array(TasksDailyOpenGroupSchema).max(4),
+  })
+  .strict();
+
 const registry = new Map<string, z.ZodTypeAny>([
+  ['chat.new_message', ChatNewMessagePayloadSchema],
   ['probe.question', ProbeQuestionPayloadSchema],
   ['probe.digest', ProbeDigestPayloadSchema],
+  ['probe.clarify', ProbeClarifyPayloadSchema],
+  ['probe.confirm', ProbeConfirmPayloadSchema],
   ['probe.answer_acknowledged', ProbeAnswerAckPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
   ['system.message', SystemMessagePayloadSchema],
@@ -301,6 +361,7 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['meeting.invite', MeetingInvitePayloadSchema],
   ['support.ticket_created', SupportTicketEventPayloadSchema],
   ['support.ticket_reply', SupportTicketEventPayloadSchema],
+  ['tasks.daily_open', TasksDailyOpenPayloadSchema],
 ]);
 
 export function validateEventPayload(eventType: string, payload: unknown): Record<string, unknown> {

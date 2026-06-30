@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { onboardingApi } from '@/api/onboarding.api';
 import { OnboardingShell } from '../OnboardingShell';
 import { Button } from '@/ui/shadcn/button';
+import { toast } from 'sonner';
+import { humanizeApiError } from '@/api/api-error';
 
 const PAIN_POINTS = [
   { id: 'goals_dissolve', label: 'Цели на квартал растворяются, к середине никто не помнит куда шли' },
@@ -28,6 +30,23 @@ export default function Step4Page() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (!currentOrgId) return;
+    let active = true;
+    onboardingApi
+      .getWelcome(currentOrgId)
+      .then((w) => {
+        if (!active) return;
+        if (w.painPoints.length > 0) {
+          setSelected((prev) => (prev.size === 0 ? new Set(w.painPoints) : prev));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [currentOrgId]);
+
   const toggle = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -38,13 +57,18 @@ export default function Step4Page() {
   };
 
   const handleNext = async () => {
-    if (saving || !currentOrgId || selected.size === 0) return;
+    if (saving || selected.size === 0) return;
+    if (!currentOrgId) {
+      toast.error('Данные профиля ещё загружаются — подождите пару секунд и попробуйте снова.');
+      return;
+    }
     setSaving(true);
     try {
       await onboardingApi.patchWelcome(currentOrgId, { painPoints: [...selected] });
       router.push('/onboarding/welcome/step-5');
-    } catch {
+    } catch (e) {
       setSaving(false);
+      toast.error(humanizeApiError(e, 'Не удалось сохранить ответ. Попробуйте ещё раз.'));
     }
   };
 

@@ -3,10 +3,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { MessageService } from '../../messaging/services/message.service';
+import type { WorkChatService } from '../../messaging/services/work-chat.service';
 import type { S3Service } from '../../recordings/s3.service';
 import type { TrackerEventsService } from '../services/tracker-events.service';
 
 import { TrelloImportStrategy } from './trello-import.strategy';
+
+function buildWorkChatMocks(): {
+  workChat: WorkChatService;
+  messageService: MessageService;
+  ensureWorkChat: ReturnType<typeof vi.fn>;
+  insertHistorical: ReturnType<typeof vi.fn>;
+} {
+  const ensureWorkChat = vi.fn(async () => ({ conversationId: 'conv-1' }));
+  let seq = 0;
+  const insertHistorical = vi.fn(async () => {
+    seq += 1;
+    return { messageId: `msg-${seq}`, deduped: false };
+  });
+  return {
+    workChat: { ensureWorkChat } as unknown as WorkChatService,
+    messageService: { insertHistorical } as unknown as MessageService,
+    ensureWorkChat,
+    insertHistorical,
+  };
+}
 
 function buildPrismaMock(): {
   prisma: PrismaService;
@@ -249,6 +271,7 @@ describe('TrelloImportStrategy.run', () => {
     } as unknown as ImportLog;
 
     const onProgress = vi.fn(async () => undefined);
+    const { workChat, messageService, insertHistorical } = buildWorkChatMocks();
 
     const result = await strategy.run({
       importLog,
@@ -264,6 +287,8 @@ describe('TrelloImportStrategy.run', () => {
         s3,
         events,
         metrics,
+        workChat,
+        messageService,
       },
       onProgress,
     });
@@ -273,7 +298,7 @@ describe('TrelloImportStrategy.run', () => {
     expect(result.totalIssues).toBe(3);
     expect(calls.issueCreate).toHaveBeenCalledTimes(3);
     expect(result.totalComments).toBe(1);
-    expect(calls.issueCommentCreate).toHaveBeenCalledTimes(1);
+    expect(insertHistorical).toHaveBeenCalledTimes(1);
     expect(result.totalAttachments).toBe(1);
     expect(calls.issueAttachmentCreate).toHaveBeenCalledTimes(1);
     expect(calls.issueStateCreate).toHaveBeenCalledTimes(5);
@@ -285,6 +310,7 @@ describe('TrelloImportStrategy.run', () => {
   it('skip если Issue с (tenantId, externalSource=trello, externalId) уже существует', async () => {
     const strategy = new TrelloImportStrategy();
     const { prisma, calls } = buildPrismaMock();
+    const skipWorkChat = buildWorkChatMocks();
     calls.issueFindFirst.mockImplementation(
       async ({ where }: { where: Record<string, unknown> }) => {
         if (where?.externalId === 'card-1') return { id: 'existing-iss-1' };
@@ -319,6 +345,8 @@ describe('TrelloImportStrategy.run', () => {
         prisma,
         s3: { putObject: vi.fn() } as unknown as S3Service,
         events: { publishImportProgress: vi.fn() } as unknown as TrackerEventsService,
+        workChat: skipWorkChat.workChat,
+        messageService: skipWorkChat.messageService,
       },
       onProgress: vi.fn(async () => undefined),
     });

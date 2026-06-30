@@ -12,6 +12,7 @@ export const ListOrgIssuesQuerySchema = z
   .object({
     projectId: z.string().max(64).optional(),
     assigneeUserId: z.string().max(64).optional(),
+    linkedMeetingId: z.string().min(1).max(64).optional(),
     stateCategory: z
       .enum(['backlog', 'unstarted', 'started', 'completed', 'cancelled'])
       .optional(),

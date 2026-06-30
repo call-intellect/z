@@ -45,7 +45,7 @@ function buildHarness(opts: HarnessOpts): WorkerHarness {
     decision: {
       count: vi.fn(async () => decisionsCount),
     },
-    task: {
+    issue: {
       count: vi.fn(async () => tasksCount),
     },
     rawEvent: {

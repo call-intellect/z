@@ -35,7 +35,7 @@ export class TableSyncService {
     }
 
     const entity = await this.prisma.entity.findUnique({
-      where: { id: entityId },
+      where: { id_tenantId: { id: entityId, tenantId } },
     });
     if (!entity || entity.tenantId !== tenantId || entity.mergedIntoId !== null) {
       return;

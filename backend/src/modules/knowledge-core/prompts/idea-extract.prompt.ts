@@ -16,6 +16,7 @@ import {
 } from '../../ai/services/prompts/common';
 
 import { signalTypeLabel } from './signal-type-label';
+import { renderExamplesForIdeaExtractor } from './task-decision-examples';
 
 export const IDEA_EXTRACT_SYSTEM_PROMPT = withAsrNote(
   withEdgeCasePolicy(
@@ -43,6 +44,8 @@ export const IDEA_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '# Чистый русский на выходе',
     'Все человеческие строки (statement, rationale) — на чистом русском, без кодов, латиницы и идентификаторов. Технические поля (kind) ты выбираешь из допустимых значений — в человеческий текст код не вставляй.',
     '',
+    renderExamplesForIdeaExtractor(),
+    '',
     '# Примеры (плохо → хорошо)',
     'Положительный (client_request с явной мотивацией):',
     'Блок «Экспорт отчёта в PDF» (запрос новой возможности). Цитаты: «Иван (клиент Sber): нам нужно отдавать отчёт по встрече юристам в PDF — Word не пропускает их безопасник. Без этого не можем рассылать сводки наружу».',
@@ -63,6 +66,7 @@ export const IDEA_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '4. Ничего не выдумано вне блока?',
     '5. Чистый русский, без кодов и латиницы?',
     '6. Это ещё НЕ принятый выбор? Если в окне зафиксировано принятие («решили/договорились/берём/принято/утвердили») — верни isIdea=false: это решение, не идея.',
+    '7. Это НЕ поручение/задача? Если кому-то поручают сделать действие (в т.ч. со словом «задача», «поручаю», «подготовь», «настрой») — верни isIdea=false: задачу берёт трекер.',
     '',
     'Верни строго JSON по схеме idea_extract_v1. Никакого текста вне JSON.',
     ].join('\n'),

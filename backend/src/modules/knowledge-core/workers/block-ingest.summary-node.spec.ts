@@ -131,4 +131,116 @@ describe('BlockIngestWorker — Ф4 «суть встречи» retrievable-уз
     expect(fn.call(worker, { kind: 'other', reportSummaryMarkdown: 'x' })).toBeNull();
     expect(fn.call(worker, null)).toBeNull();
   });
+
+  it('tryGetDocumentSummary: достаёт documentSummary из payload документа', () => {
+    const { worker } = buildWorker();
+    const fn = (worker as unknown as { tryGetDocumentSummary: (p: unknown) => string | null })
+      .tryGetDocumentSummary;
+    expect(fn.call(worker, { documentSummary: 'Резюме документа' })).toBe('Резюме документа');
+    expect(fn.call(worker, { documentSummary: '   ' })).toBeNull();
+    expect(fn.call(worker, { documentSummary: 42 })).toBeNull();
+    expect(fn.call(worker, null)).toBeNull();
+  });
+
+  it('resolveSourceSummaryText: meeting→reportSummaryMarkdown, document→documentSummary, chat→null', () => {
+    const { worker } = buildWorker();
+    const fn = (
+      worker as unknown as {
+        resolveSourceSummaryText: (
+          kind: 'meeting' | 'document' | 'chat',
+          p: unknown,
+        ) => string | null;
+      }
+    ).resolveSourceSummaryText;
+    expect(
+      fn.call(worker, 'meeting', { kind: 'meeting_report', reportSummaryMarkdown: 'M' }),
+    ).toBe('M');
+    expect(fn.call(worker, 'document', { documentSummary: 'D' })).toBe('D');
+    expect(fn.call(worker, 'chat', { documentSummary: 'D' })).toBeNull();
+  });
+});
+
+describe('BlockIngestWorker — Ф8 summary-узел для документа (снят гейт meeting_report)', () => {
+  function buildDocWorker() {
+    const { tx, create } = buildFakeTx();
+    const prisma = {
+      $transaction: vi.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
+      ideaBlockEntity: { upsert: vi.fn(async () => ({})) },
+    } as unknown;
+    const embedBlocks = vi.fn(async () => [[0.1, 0.2, 0.3]]);
+    const embeddings = { embedBlocks } as unknown;
+    const getDynamic = vi.fn(async (key: string, _e?: unknown, def?: unknown) =>
+      key === 'knowledge.reportBlockConfidenceCap' ? 0.6 : (def ?? false),
+    );
+    const cfg = {
+      bitemporal: { enabled: false, supersedeEnabled: false, factSignalTypes: [] },
+      getDynamic,
+    } as unknown;
+    const worker = new BlockIngestWorker(
+      {} as never,
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      embeddings as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { incSubjectAttribution: vi.fn(), incBlockWithoutEvidence: vi.fn() } as never,
+      {} as never,
+      cfg as never,
+      {} as never,
+    );
+    return { worker, create, embedBlocks };
+  }
+
+  const docEvent = {
+    id: 'raw-doc',
+    tenantId: 'tenant-1',
+    sourceType: 'external',
+    sourceTitle: 'План логистики 2026',
+    occurredAt: new Date('2026-04-01T10:00:00.000Z'),
+    dataClass: 'internal',
+  } as never;
+
+  it('document + documentSummary непустой → строит summary-блок «Суть документа», вектор есть', async () => {
+    const { worker, create, embedBlocks } = buildDocWorker();
+    const res = await (
+      worker as unknown as {
+        maybePersistSourceSummary: (a: unknown) => Promise<{
+          blockId: string | null;
+          text: string | null;
+          vector: number[] | null;
+        }>;
+      }
+    ).maybePersistSourceSummary({
+      event: docEvent,
+      payload: { documentSummary: 'Документ про маршруты доставки и склады.' },
+      contextHeader: 'ctx',
+    });
+
+    expect(res.blockId).toBe('block-1');
+    expect(res.text).toBe('Документ про маршруты доставки и склады.');
+    expect(res.vector).toEqual([0.1, 0.2, 0.3]);
+    expect(embedBlocks).toHaveBeenCalledOnce();
+    const data = create.mock.calls[0]![0].data as Record<string, unknown>;
+    expect(String(data.name)).toContain('Суть документа');
+  });
+
+  it('document без summary-текста → return null (не падает, блок не создаётся)', async () => {
+    const { worker, create } = buildDocWorker();
+    const res = await (
+      worker as unknown as {
+        maybePersistSourceSummary: (a: unknown) => Promise<{ blockId: string | null }>;
+      }
+    ).maybePersistSourceSummary({
+      event: docEvent,
+      payload: { documentSummary: '' },
+      contextHeader: 'ctx',
+    });
+
+    expect(res.blockId).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
 });

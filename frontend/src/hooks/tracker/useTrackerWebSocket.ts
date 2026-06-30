@@ -26,6 +26,7 @@ const KNOWN_EVENT_TYPES: TrackerWsEventType[] = [
   "sprint_hint.updated",
   "sprint_hint.dismissed",
   "sprint_hint.resolved",
+  "message.new",
 ];
 
 export interface TrackerWsClient {
@@ -37,6 +38,8 @@ export interface TrackerWsClient {
   unsubscribeProject: (projectId: string) => Promise<void>;
   subscribeIssue: (issueId: string) => Promise<void>;
   unsubscribeIssue: (issueId: string) => Promise<void>;
+  subscribeConversation: (conversationId: string) => Promise<void>;
+  unsubscribeConversation: (conversationId: string) => Promise<void>;
   close: () => void;
   __socket: Socket;
 }
@@ -177,6 +180,23 @@ export function useTrackerWebSocket(
       async unsubscribeIssue(issueId) {
         try {
           await emitWithAck<{ ok: boolean }>("unsubscribe.issue", { issueId });
+        } catch {}
+      },
+      async subscribeConversation(conversationId) {
+        try {
+          await emitWithAck<{ ok: boolean; error?: string }>(
+            "conversation.join",
+            { conversationId },
+          );
+        } catch (err) {
+          console.warn("[tracker-ws] subscribeConversation failed:", err);
+        }
+      },
+      async unsubscribeConversation(conversationId) {
+        try {
+          await emitWithAck<{ ok: boolean }>("conversation.leave", {
+            conversationId,
+          });
         } catch {}
       },
       close() {

@@ -11,6 +11,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { TypedConfigService } from './common/config/index';
 import { GlobalZodValidationPipe } from './common/pipes/zod-validation.pipe';
+import { RedisIoAdapter } from './common/ws/redis-io.adapter';
 import { DbLoggerBridge } from './modules/logging/db-logger.bridge';
 
 async function bootstrap(): Promise<void> {
@@ -118,6 +119,10 @@ async function bootstrap(): Promise<void> {
       );
     }
   }
+
+  const redisIoAdapter = new RedisIoAdapter(app);
+  await redisIoAdapter.connectToRedis();
+  app.useWebSocketAdapter(redisIoAdapter);
 
   app.enableShutdownHooks();
 

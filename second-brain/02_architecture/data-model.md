@@ -298,7 +298,7 @@ LlmModelPrice {
 **`User.isSuperAdmin: Boolean (default false)`** — флаг владельца Z-Admin (Фаза 7). Bypass RBAC.
 
 **`tenantId String?`** добавлен во все tenant-scoped модели + `@@index([tenantId])`:
-- `Meeting`, `Card`, `Task`, `MeetingChapter`, `MeetingHighlight`, `MeetingChatMessage`, `Tag`
+- `Meeting`, `Card`, `MeetingChapter`, `MeetingHighlight`, `MeetingChatMessage`, `Tag` (model `Task` — **дропнут** 2026-06-25, см. §«Дроп legacy-модели Task»)
 - `WebhookSubscription`, `IntegrationDestination`, `Export`, `ApiKey`
 - `LlmTaskRoute` (NULL = глобальный дефолт), `AuditLog`, `AiUsageLog`
 
@@ -421,15 +421,17 @@ N:1 к IdeaBlock — один блок может агрегировать мн�
 При merge блока всё его evidence переносится на canonical через
 `updateMany`.
 
-**Провенанс — денорм-снимок (2026-06-20, миграция `20260620113751_provenance_preview_snapshot`):** для рендера СПИСКОВ без join вглубь (анти-N+1; полный резолв — on-demand через `ProvenanceService.resolve` с фильтром прав зрителя). `Decision`/`Issue`/`Regulation` получили `previewQuote String? @db.Text` + `previewSourceRef Json?` (`{evidenceId, blockId, sourceType, refId, startMs, deepLink, attribution, label}`); `Task` — только `previewSourceRef` (цитата уже в `sourceQuote`/`sourceStartMs`). Заполняет `backfill-provenance-preview.ts` из первого `IdeaBlockEvidence` (идемпотентно). `attribution` = `primarySource==='report' ? 'inferred' : 'quoted'`. Подробно — [[knowledge-core]] / [[module-map]] (`ProvenanceService`).
+**Провенанс — денорм-снимок (2026-06-20, миграция `20260620113751_provenance_preview_snapshot`):** для рендера СПИСКОВ без join вглубь (анти-N+1; полный резолв — on-demand через `ProvenanceService.resolve` с фильтром прав зрителя). `Decision`/`Issue`/`Regulation` получили `previewQuote String? @db.Text` + `previewSourceRef Json?` (`{evidenceId, blockId, sourceType, refId, startMs, deepLink, attribution, label}`). Заполняет `backfill-provenance-preview.ts` из первого `IdeaBlockEvidence` (идемпотентно). _(legacy `Task` тоже имел `previewSourceRef`, но model `Task` дропнута 2026-06-25 — см. §«Дроп legacy-модели Task».)_ `attribution` = `primarySource==='report' ? 'inferred' : 'quoted'`. Подробно — [[knowledge-core]] / [[module-map]] (`ProvenanceService`).
 
-**Деноль-снимок теперь читается list-DTO (2026-06-20, provenance-probe-followups A1):** `previewQuote`/`previewSourceRef` (Decision/Issue/Regulation/Task) выводятся в DTO списков решений/регламентов/задач — фронт рисует сниппет цитаты-источника прямо на карточке списка без on-demand резолва (полный `ProvenanceService.resolve` остаётся по клику «Откуда это»).
+**Деноль-снимок теперь читается list-DTO (2026-06-20, provenance-probe-followups A1):** `previewQuote`/`previewSourceRef` (Decision/Issue/Regulation) выводятся в DTO списков решений/регламентов/задач — фронт рисует сниппет цитаты-источника прямо на карточке списка без on-demand резолва (полный `ProvenanceService.resolve` остаётся по клику «Откуда это»).
 
 **Soft-delete карточек знаний (2026-06-22, миграция `20260622065212_add_softdelete_to_knowledge_cards`, qa-fixes Ф5–Ф7):** `Regulation`/`Process`/`Policy`/`Instruction`/`Decision` получили `deletedAt DateTime?` + `deletedById String?` + `@@index([tenantId, deletedAt])`. Owner/admin удаляет (`@Delete(:id)` → `softDelete`, `deletedAt=now`) и восстанавливает (`@Post(:id/restore)`) в течение grace-окна (30 дней, по образцу `cards`). Удалённые исчезают из ВСЕХ выдач — все чтения (list/search/count/getById/провенанс/специалисты/дашборды/дайджесты) фильтруют `deletedAt: null`; list-эндпоинты регламентов/решений принимают `deleted: true` для показа удалённых (UI-тумблер «Удалённые»). Аддитивно (nullable = «не удалён»). Подробно — [[knowledge-core]].
 
 **Поле `sourceMessageExternalId String?`** (2026-06-20, миграция `20260620181013_add_evidence_source_message`, provenance-probe-followups B1) — внешний id конкретного сообщения чата, из которого взято свидетельство. Аддитивно (nullable, backfill не обязателен). Нужно для chatbox deep-link на сообщение: `ProvenanceService.buildDeepLink` строит `/chats/<chatId>?m=<msg>` (раньше вёл только на чат целиком). Заполняется на ingest chatbox-evidence; исторические записи — `null` (deep-link на чат без якоря сообщения).
 
 **Поля `authorPersonId String?` + `authorLabel String?`** (2026-06-23, миграция `20260623083858_evidence_author_person`, ТЗ [`meeting-tasks-assignee-probe-closure`](../../plans/tz/2026-06-23-meeting-tasks-assignee-probe-closure-tz.md) Ф1) — автор конкретной реплики-источника свидетельства. `authorPersonId` — FK-id на `Person`-автора (резолвится `resolveEvidenceAuthor` в `block-ingest`); `authorLabel` — текстовая метка автора, когда `Person` не идентифицирован (например `'Клиент'` для внешнего собеседника чат-бокса). Аддитивно (оба nullable, backfill не нужен). Зачем на уровне evidence: автор реплики доносится до агента извлечения задач (specialist-3-15 показывает автора каждой цитаты), что включает само-назначение «мне» и адресацию уточняющего probe **автору реплики**, а не владельцу встречи. Источник метки внешнего автора — `SegmentBuilder.Segment.authorExternalLabel`.
+
+**Поля `Decision.impliesAction Boolean @default(false)` + `Decision.actionExtractedAt DateTime?`** (2026-06-27, миграция `20260627210000_decision_implies_action`, ТЗ [`task-decision-execution-unified`](../../plans/tz/2026-06-27-task-decision-execution-unified-tz.md) Ф2) — разводят **две ортогональные оси** решения: память (что решили — описание `Decision`, не меняется) и исполнение (нужно ли из этого завести задачу). `impliesAction=true` ставится `decision-extract`, когда решение содержит конкретное дело (`actionTitle` в повелит. наклонении); «решили НЕ делать» / стратегия без конкретного действия → `impliesAction=false`. `actionExtractedAt` — маркер идемпотентности: проставляется, когда `specialist-3-3` уже завёл задачу из этого решения (через `IntakeService.create`, `source='decision'`), и блокирует повторный intake. Аддитивно (дефолт `false` = «не подразумевает действия»). Дашборд (Ф4) использует `impliesAction` как знаменатель: не-actionable решение никогда не «застрявшее» и не в throughput-метрике. **Старые решения по дефолту `impliesAction=false`** → выпадают из stalled/throughput до LLM-ре-экстракции (бэкфилл вне scope ТЗ — см. [[../04_не-сделано/README]]).
 
 ### Entity
 
@@ -584,6 +586,65 @@ Per-Org кэш cross-source идентичности «псевдоним → Pe
 `entity-name-resolve`) → **fail-closed null** (инвариант R-2: разных людей не
 склеиваем). Подробно — [[knowledge-core]] §«Cross-source идентичность».
 
+## Слой источника (Ф2 слой-источника+маршрутизатор, 2026-06-27)
+
+**Источник:** ТЗ [`2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) (миграция `20260627130000_source_layer`). Подробно — [[knowledge-core]] §«Слой источника + многомаршрутный retrieval». Источник (встреча/документ/чат-тред) материализован как первоклассный объект поиска параллельно поблочному `IdeaBlock`. Все три модели несут `tenantId` явно (`Participant` его НЕ имеет). Заполняются при ingest (`block-ingest.worker.persistSourceLayer`, best-effort/идемпотентно); backfill — `backfill-source-layer.ts`.
+
+### SourceEpisode
+
+```
+SourceEpisode {
+  id, tenantId (FK Org, Cascade), rawEventId @unique → RawEvent (Cascade),
+  kind VARCHAR(16)        -- 'meeting' | 'document' | 'chat'
+  title, occurredAt, summary? @Text,
+  embedding vector(1536), embeddingModelVersion? VARCHAR(40),
+  branch? ThemeBranch,
+  createdAt, updatedAt
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, kind, occurredAt])
+}
+```
+
+Один на `RawEvent`. Несёт human-резюме + собственный вектор для семантического поиска ПО ИСТОЧНИКУ (К2/К4), отдельно от `IdeaBlock.embedding`. HNSW на `embedding` (партиц. по tenantId как Ф1) — в `postgres-init.sql`.
+
+### SourceParticipant
+
+```
+SourceParticipant {
+  rawEventId → RawEvent (Cascade), personId → Person (Cascade), tenantId → Org (Cascade),
+  role VARCHAR(16)        -- 'host' | 'guest' | 'author' | 'member'
+  speakingShare? Decimal(4,3),   -- доля реплик 0..1, null для не-встреч (для ранжирования)
+  createdAt
+  @@id([rawEventId, personId])
+  @@index([tenantId, personId, createdAt])
+}
+```
+
+Ребро «человек присутствовал в источнике» на уровне ИСТОЧНИКА (НЕ линк на каждый блок) — детерминированный фундамент маршрута К1 «все встречи/чаты с человеком X».
+
+### SourceEntity
+
+```
+SourceEntity {
+  rawEventId → RawEvent (Cascade), entityId → Entity (Cascade), tenantId → Org (Cascade),
+  mentionsCount Int @default(0), createdAt
+  @@id([rawEventId, entityId])
+  @@index([tenantId, entityId, createdAt])
+}
+```
+
+Ребро «компания/сущность упомянута в источнике» — агрегат на уровне источника (НЕ дубль `IdeaBlockEntity`, который mention на уровне блока). Только из извлечённых `IdeaBlockEntity` (НЕ из текста summary — защита от ложных сущностей). Для К1/К4.
+
+## Партиционирование IdeaBlock/Entity по tenantId (Ф1 слой-источника+маршрутизатор, 2026-06-27)
+
+**Источник:** ТЗ [`2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) Ф1 (миграция `20260627120000_partition_idea_block_entity_by_tenant`). Снимает scale-killer «глобальный HNSW + `WHERE tenantId`» до наполнения прода (проектирование под 100–200k тенантов).
+
+- `IdeaBlock` и `Entity` — декларативное **HASH-партиционирование по `tenantId`** (64 партиции). Postgres требует партиционный ключ во всех unique-ограничениях → **PK становится составным** `@@id([id, tenantId])`.
+- Все входящие FK переведены на составные `(blockId/entityId, tenantId)`: Cascade-связи переиспользуют `tenantId`; SetNull/self-связи получили nullable-компаньоны (`mergedIntoTenantId`, `supersededByTenantId`, `entityTenantId`, `sourceIdeaBlockTenantId`). Join-таблицы (`IdeaBlockEntity`/`IdeaBlockAccess`, `ThemeIdeaBlock`/`ThemeEntity`) и 1:1-unique получили `tenantId`.
+- **Новое поле `IdeaBlock.contextHeaderVersion`** (миграция `20260627140000_idea_block_context_header_version`, Ф7) — версия contextual-header, гейт идемпотентности ре-эмбеддинга (`backfill-context-header-reembed.ts`). Подробно — [[knowledge-core]] §«Contextual-header v2».
+- HNSW-параметры `m=16, ef_construction=128` на IdeaBlock/Entity + новый HNSW на `Theme.embedding` и `SourceEpisode.embedding`; `ef_search` — крутилка `knowledge.hnsw_ef_search` (100). Всё в `postgres-init.sql`.
+- ⚠️ **БД-приёмка миграции** (партиц-swap, FK-рефактор) выполняется на проде/staging — локальной БД в среде разработки не было (см. [[../04_не-сделано/README]]).
+
 ### ThemeIdeaBlock (M:M)
 
 ```
@@ -628,27 +689,16 @@ Card {
 - `bornFromThemeId` — выставляет endpoint `POST /knowledge/themes/:id/save-as-card`.
 - `cachedTopThemeIds` — `card-rollup-v2.worker` пересчитывает на каждом тике.
 
-## Knowledge-core (Фаза 5): расширения Task / MeetingChapter / MeetingHighlight / AiResult / Meeting
+## Дроп legacy-модели Task — задачи живут ТОЛЬКО в Issue (2026-06-25)
 
-Фаза 5 переписывает Tasks/Chapters/Summary поверх IdeaBlock'ов через `MeetingAnalyzeV2Worker` (`core.meeting-analyze-v2`, debounce 2 мин). Legacy `tasks-extract.worker` / `chapters.worker` НЕ удалены — V2 пишет в новые поля параллельно для A/B-сравнения.
+**Полный дроп `model Task` + `enum TaskStatus`** (миграция `20260625000000_drop_legacy_task_model`, ТЗ [`drop-legacy-task-model-unify-on-issue`](../../plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md), Ф0–Ф10). Задача в Z/Кора — это **только `Issue`** (трекер). Прежняя двойная сущность (легаси `Task` параллельно с `Issue`) убрана: она плодила дубли «один артефакт в двух таблицах».
 
-**`Task` дополнительно:**
-- `evidenceBlockIds: String[]` (default `[]`) — id IdeaBlock'ов, породивших задачу.
-- `extractorVersion: String?` — `'v2'` если задача создана `meeting-analyze-v2.worker`'ом, NULL = legacy.
-- `assigneeUserId: String?` — жёсткая связь с `User.id` (relation `assignee`, `onDelete: SetNull`). Заполняется AI-pipeline после ТЗ 2026-05-25 `hard-participant-identification`: `ParticipantContextService.loadForMeeting` отдаёт participants → промпт (`tasks-v2` / `tasks-structured`) → LLM возвращает `assigneeUserId` → `TaskAssigneeResolverService` валидирует против participants (галлюцинации режутся, ≥2 кандидатов → null + метрика `z_task_assignee_ambiguous_total`). `assigneeRaw` сохраняется ВСЕГДА — для UI fallback и гостей. Index `@@index([assigneeUserId])` — для фильтра «мои задачи».
+- Удалены: `model Task`, `enum TaskStatus`, все FK back-refs со стороны `User`/`Meeting`/`Org`, колонка `TaskSource.taskId`.
+- **`TaskSource` остаётся** справочной провенанс-моделью, но теперь ссылается **только на `Issue`** через `issueId` (`onDelete: Cascade`). `taskId` дропнута. `@@unique([issueId, sourceType, sourceRefId])` + `@@index([tenantId, issueId])` — идемпотентность провенанса (повтор `create` глотается P2002). Одна задача — N источников; источник линкует дубль к существующему `Issue` без дубль-Issue (LINK-семантика спайн-дедупа `3-15-tasks`).
+- **Связь встреча↔задача — канон `Issue.linkedMeetingIds String[]`** (Р-D). «Задачи встречи» читаются `where: { linkedMeetingIds: { has: meetingId } }` (а не через прежний `Task.meetingId`). Для ускорения — **GIN-индекс `Issue_linkedMeetingIds_gin_idx`** (`postgres-init.sql`, не в schema; нужен дедупу meeting-Issue и drill-down карточки встречи). Новый фильтр `GET /api/v1/issues?linkedMeetingId` ([[../01_projects/tracker]]).
+- **Безопасный порядок на проде:** перенос данных `Task→Issue` (`migrate-task-to-issue.ts`) + схлопывание meeting-дублей (`backfill-collapse-legacy-task-duplicates.ts`) выполняются в `apply-prod-deploy.ts runSchemaPhase` (`--with-schema`) **ПЕРЕД** `prisma migrate deploy` — к моменту дропа таблицы данные уже в `Issue`. Скрипты guard'ятся на отсутствие таблицы `Task` (повторный деплой = no-op).
 
-**`Task` — source-поля (миграция `20260611110000_chatbox_tasks_and_customer_link`, ТЗ chatbox-memory-finishing Ф5/Ф6):** задача больше не обязана быть из встречи.
-- `meetingId: String?` — **стал nullable** (был NOT NULL): задача может родиться из переписки ChatBox или трекера. ⚠ Каскад на view-типы: все читатели «задач встречи» (`where:{meetingId}`) и UI-мапперы должны допускать `meetingId=null` (см. [[code-pitfalls]] §«meetingId nullable»).
-- `sourceType: String @default("meeting")` (FK на модель `TaskSource`) — `'meeting'` | `'chatbox'` | … : откуда пришла задача. Backfill пустых → `'meeting'`: `scripts/backfill-task-source-type.ts` (safety no-op, колонка с дефолтом).
-- `sourceChatSessionId: String?` / `sourceChatId: String?` — для `sourceType='chatbox'`: на какую сессию/чат переписки опирается задача (извлечена `chatbox` task-extractor'ом Ф5, гейт `CHATBOX_TASK_EXTRACTION_ENABLED`).
-- **Межисточниковый дедуп (Ф6):** задача из переписки, семантически совпадающая (cosine ≥ `tasks.cross_source_dedupe_threshold`, дефолт 0.85) с задачей из встречи/трекера, не плодит дубль. Гейт `TASKS_CROSS_SOURCE_DEDUPE_ENABLED`.
-
-**`TaskSource`** — новая справочная модель/enum источника задачи (значения `meeting`/`chatbox`/…), на которую ссылается `Task.sourceType`.
-
-**`TaskSource` — провенанс-связь с `Issue` (миграция `20260623130000_tasksource_issue_link`, ТЗ unified-task-extraction Ф3/Ф4):** одна задача — N источников; источник теперь может указывать на `Issue` напрямую (LINK-семантика спайн-дедупа), а не только на `Task`.
-- `taskId: String?` — **стал nullable** (был NOT NULL): запись может относиться к `Issue`, а не к `Task`.
-- `issueId: String?` — FK на `Issue` (`onDelete: Cascade`): дубль задачи линкуется к существующему `Issue` без создания дубль-Issue (спайн-специалист `3-15-tasks` на вердикт дедупа 'same'; промоут Task→Issue пишет провенанс при accept).
-- `@@unique([issueId, sourceType, sourceRefId])` + `@@index([tenantId, issueId])` (идемпотентность провенанса: повтор `create` глотается P2002).
+> Расширения `MeetingChapter` / `MeetingHighlight` / `AiResult` / `Meeting` — ниже.
 
 **ChatBox: связка клиента переписки с графом (та же миграция).** `ChatboxCustomer` и `ChatboxChannelClient` (`ChannelClient`) получили:
 - `linkedPersonId: String?` — связь клиента/контакта переписки с `Person` графа знаний. **DEPRECATED (2026-06-23)** — заменён на `linkedCustomerId`, физический drop колонки — vNext.
@@ -839,7 +889,7 @@ erDiagram
 - `parentId?` — иерархия подзадач (self-relation IssueSubtasks).
 - `estimatePoints Int?`, `sortOrder Int @default(0)`.
 - `startDate?, dueDate?, completedAt?, cycleId?`.
-- Связи с другими системами: `goalId?` (FK на Goal), `meetingId?` (legacy), `linkedMeetingIds String[]` (видеовстречи из задачи).
+- Связи с другими системами: `goalId?` (FK на Goal), `meetingId?` (legacy), `linkedMeetingIds String[]` (видеовстречи из задачи). **`linkedMeetingIds` — канон связи встреча↔задача** (Р-D, после дропа `model Task` 2026-06-25): «задачи встречи» = `where:{ linkedMeetingIds:{ has: meetingId } }`. GIN-индекс `Issue_linkedMeetingIds_gin_idx` (`postgres-init.sql`, не в schema). Фильтр `GET /api/v1/issues?linkedMeetingId`.
 - AI metadata: `sourceBlockIds String[]`, `confidence Decimal(4,3)?`, `createdManually @default(true)`.
 - Внешний источник: `externalSource?` (email/telegram/checkin/meeting/api/manual), `externalId?`.
 - `entityId?` для графа, `createdById String`, soft-delete `deletedAt?`.
@@ -1039,6 +1089,14 @@ model WeeklyOperationsDigest {
 }
 ```
 
+**Расширение «Неделя компании» (2026-06-29):** к `WeeklyOperationsDigest` добавлены 4 nullable JSONB-поля для owner-героя на `/dashboard` (миграция `20260629010000_add_week_company_fields_to_digest`, аддитивная — 4× `ADD COLUMN JSONB`):
+- `verdictJson` — вердикт недели: `overall{state, emoji, title, oneLiner}` + `axes[4]{key∈team|clients|execution|overall, state∈ok|warn|risk, label, why}`.
+- `letterJson` — письмо-проза «как прошла неделя»: `[{key, title, prose, cites?}]`.
+- `goalAlignmentWeekJson` — недельный компас: `{direction∈to_goal|drift|against, score, weekDelta, why, pro[], contra[], goalId, goalName}`.
+- `dayTrendJson` — тренд осей по дням пн–пт: `[{key, days:[{dateLocal, state}]}]` (детерминированно из 5 дневных вердиктов, без LLM; пустой день → `state:'none'`).
+
+Поля заполняются ОДНИМ capable LLM-вызовом (`taskType operations-weekly-digest`, json_schema strict) в `WeeklyDigestService.generate` (свод 5 дневных `DailyOperationsDigest` пн–пт); post-LLM `clampWeekVerdict` (клиентский risk в дневных ⇒ `clients≠ok`; план/факт<50% ⇒ `execution≠ok`); `dayTrendJson` всегда детерминирован; при провале LLM/JSON — «сухой» fallback (NULL новых полей). Зеркало расширения «День компании» (см. выше). Подробности — [[../01_projects/director-dashboard]] §«Неделя компании», [[../01_projects/ai-jobs]] §«operations-weekly-digest».
+
 **`Org` (расширение):** добавлено поле `timezone String? @default("Europe/Moscow")`. Backfill — `backend/scripts/patch-org-timezone-default.ts`.
 
 ### SBA β-8.3 — DailyOperationsDigest (2026-05-25)
@@ -1065,6 +1123,44 @@ model DailyOperationsDigest {
 ```
 
 Глобальный cron `operations-daily-digest` (`0 22 * * *` UTC = 01:00 МСК, см. [[../01_projects/workers-queues|workers-queues]]) собирает запись на каждую `Org` за вчера. Тумблеры через `AdminSetting`: `operations.daily_digest.enabled`, `operations.daily_digest.deliver_to_telegram` (default false). Telegram-рассылка через `ConversationalService.sendNotification(eventType='operations.daily_digest')` — получатели **только `coo+owner`** (admin исключён). Метрики Prometheus: `coo_daily_digest_generated_total`, `coo_daily_digest_failed_total{reason}`, `coo_daily_digest_delivered_total{channel}`, `coo_daily_digest_age_seconds` (gauge).
+
+**Расширение «День компании» (2026-06-29):** к `DailyOperationsDigest` добавлены 3 nullable JSONB-поля для owner-героя на `/dashboard` (миграция `20260629000000_add_day_company_fields_to_digest`, аддитивная — 3× `ADD COLUMN JSONB`):
+- `verdictJson` — вердикт дня: `overall{state, emoji, title, oneLiner}` + `axes[4]{key∈team|clients|execution|overall, state∈ok|warn|risk, label, why}`.
+- `letterJson` — письмо-проза: `[{key, title, prose, cites?}]`.
+- `goalAlignmentDayJson` — дневной компас: `{direction∈to_goal|drift|against, score, todayDelta, why, pro[], contra[], goalId, goalName}`.
+
+Поля заполняются ОДНИМ capable LLM-вызовом (`taskType operations-daily-digest`, json_schema strict) в `DailyDigestService.generate`; при провале LLM/JSON — «сухой» fallback (NULL новых полей). Дневные AI-резюме `risksSummary`/`ideasSummary` персистятся в `metricsJson`. Крон перенесён `0 22 * * *` → `0 3 * * *` (03:00 UTC, после ночных синков). Это **расширение** существующего дайджеста, НЕ новая модель/пайплайн. Подробности — [[../01_projects/director-dashboard]] §«День компании».
+
+### MonthlyOperationsDigest — «Месяц компании» (2026-06-30)
+
+**Источник:** `plans/tz/2026-06-29-month-company-monthly-brief.md`.
+
+**`MonthlyOperationsDigest` (новая, третий ритм рядом с Weekly/Daily; миграция `20260630000000_add_monthly_operations_digest`):**
+
+```prisma
+model MonthlyOperationsDigest {
+  id                      String   @id @default(cuid())
+  tenantId                String
+  periodYm                String   @db.VarChar(7)   // YYYY-MM, месяц в локали Org
+  verdictJson             Json?    // вердикт месяца (4 оси + overall)
+  letterJson              Json?    // письмо-проза «как прошёл месяц»
+  goalAlignmentMonthJson  Json?    // месячный компас к цели + pace (факт/план/ETA)
+  weekTrendJson           Json?    // тренд осей по неделям месяца (детерминированно)
+  shortSummary            String?  @db.Text
+  deliveredAt             DateTime?
+  metricsJson             Json?
+  sourcesJson             Json?
+  llmTaskRouteId          String?
+  externalSource          String?
+  createdAt               DateTime @default(now())
+  @@unique([tenantId, periodYm])                    // идемпотентность cron'а
+  @@map("monthly_operations_digests")
+}
+```
+
+Заполняется ОДНИМ capable LLM-вызовом (`taskType operations-monthly-digest`, json_schema strict + lenient Zod), который сводит **4 недельных `WeeklyOperationsDigest`** месяца (компресс-вход: select без `letterJson`; пропущенные недели — graceful) в `MonthlyDigestService.generate`. Post-LLM `clampMonthVerdict` (нельзя зелёный при красном клиенте); `weekTrendJson` всегда детерминирован; `pace` (факт/план/ETA) считает **КОД** — LLM отдаёт только текст `leadingSignal`; при провале — «сухой» fallback. Это **новая модель**, но зеркало Weekly/Daily-пайплайна (новый извлекающий agent НЕ вводился). Подробности — [[../01_projects/director-dashboard]] §«Месяц компании», [[../01_projects/ai-jobs]] §«operations-monthly-digest».
+
+Сопутствующие расширения DTO-формы (новых DB-колонок нет): строка зависшей задачи `getStuckCrossProject` (execution-dashboard) += `assigneeUserId`/`assigneeName`/`dueDate`; value-strip директора (director-dashboard) += `tasksResolved` (`Issue.completedAt` в периоде) + `ideasCollected` (`Idea.createdAt` в периоде).
 
 ### SBA β-8.2 — IdeaBlock.commitment* + ребро `resolves` (2026-05-25)
 
@@ -1107,6 +1203,33 @@ Autonomy W2 (2026-06-12) добавила **ещё два значения** (м
 
 Автономизация — убрать лишние подтверждения (2026-06-23, Блок D) добавила **ещё одно значение** (миграция `20260623151703_add_probe_suppressed_by_memory`, `ALTER TYPE "ProbeStatus" ADD VALUE 'suppressed_by_memory'`, аддитивно):
 - **`suppressed_by_memory`** — висящий **pending-probe погашен дочисткой по выученному правилу** `SubjectMemory` (`SubjectMemoryService.sweepPendingDuplicates`): при активации нового правила самообучения близкие к нему ожидающие probe закрываются, человека не переспрашивают то, что Кора уже выучила. Kill-switch `subjectMemory.sweepPendingOnLearnEnabled` (ON), метрика `subject_memory_pending_swept_total`. См. [[../01_projects/probe-agent]] §«Наблюдаемость самообучения SubjectMemory».
+
+### Диалоговое уточнение probe — `ProbeDialogState` + `ProbeDialogPhase` + 4 значения `ProbeStatus` (2026-06-27)
+
+**Источник:** ТЗ [`plans/tz/2026-06-27-probe-clarify-dialog-tz.md`](../../plans/tz/2026-06-27-probe-clarify-dialog-tz.md). Полная карта движка — [[../01_projects/probe-agent]] §«Диалоговое уточнение probe». Миграция `20260627000000_probe_dialog_state` (CREATE TYPE + ALTER TYPE + CREATE TABLE, аддитивная, без потери данных, backfill не нужен).
+
+Новая модель **`ProbeDialogState`** — состояние диалоговой петли probe, 1:1 с `ProbeEvent`:
+
+| Поле | Тип | Значение |
+|---|---|---|
+| `probeEventId` | string `@unique` | FK → `probe_events` (`ON DELETE CASCADE`); 1:1, одна активная строка на probe |
+| `phase` | ProbeDialogPhase | текущая фаза петли |
+| `outcome` | string? | сохранённый исход последнего хода классификатора (`apply`/`delete`/`refine`/`counter_question`/`unclear`) |
+| `collectedValue` | string? | извлечённое значение (новое имя/срок/итог) — применяется при подтверждении, НЕ текст «да» |
+| `confidence` | float? | уверенность последнего хода (только маршрутизация, не запись) |
+| `turnCount` | int | счётчик ходов диалога (инкремент в `recordTurn`); `> probe.dialogMaxTurns` → эскалация owner/admin |
+| `tenantId` | string | tenant-изоляция |
+| `recipientUserId` | string? | адресат петли |
+
+Индексы: unique по `probeEventId` + 2 индекса (по выборке активных/tenant). Сервис `ProbeDialogService.finalizeIfPending` использует CAS `phase → resolved` как **идемпотентный ключ финализации** (ровно одно применение).
+
+Новый enum **`ProbeDialogPhase`** (4 значения): `awaiting_answer` → `awaiting_clarification` (отправлен уточняющий `probe.clarify`) / `awaiting_confirmation` (отправлен echo-back `probe.confirm`) → `resolved` (применено / эскалировано / abandoned).
+
+**+4 аддитивных значения `ProbeStatus`** (`ALTER TYPE "ProbeStatus" ADD VALUE`, аддитивно, поверх прежних `pending`/`dispatched`/`dropped_*`/`expired`/`queued_digest`/`suppressed_stale`/`dropped_low_value`/`routed_to_digest`/`suppressed_by_memory`):
+- **`awaiting_dialog`** — probe в активной диалоговой петле (отправлен уточняющий ход / echo-back, ждём доответа).
+- **`applied`** — намерение ответа применено детерминированным apply-слоем (после подтверждения echo-back).
+- **`escalated_to_human`** — диалог превысил `probe.dialogMaxTurns` → передан owner/admin терминальным FYI.
+- **`abandoned`** — диалог не доведён до подтверждения дольше `probe.dialogConfirmTtlHours` → закрыт `ProbeDialogTtlCron`.
 
 ## PersonLeave — отпуска / отсутствия сотрудника (2026-06-21)
 
@@ -1963,5 +2086,15 @@ enum PersonaStatus {
 - **`ConflictItem`** (Б7) — `uq_conflict_open ON "ConflictItem"("tenantId","resourceType","existingId","newId") WHERE status='open'` — один открытый конфликт на пару (full-unique со `status` запретил бы повторное открытие той же пары после закрытия).
 - **`KnowledgeGroup`** (Б18) — `uq_knowledge_group_singleton ON "KnowledgeGroup"("tenantId","kind") WHERE "refId" IS NULL` — один синглтон-singleton группы (leadership/council) на Org для `refId IS NULL` (department/personal с непустым refId проходят как раньше).
 - **`ExecutablePersona`** (Б... K11) — два partial-unique по версионированию персоны роли: `uq_executable_persona_role_version` (уникальность версии) + `uq_executable_persona_role_active` (одна активная персона на роль) — против гонки `nextVersion`, плодившей две active.
+
+## Единый чат — Ф6a push-фундамент + модерация (2026-06-28, миграция `20260628205102_push_tokens`)
+
+**Источник:** [`plans/tz/2026-06-21-unified-chat-kora-tz.md`](../../plans/tz/2026-06-21-unified-chat-kora-tz.md) Ф6a. Push доставляется как обычный conversational-канал — `enum ChannelKind += push`, per-tenant `Channel(kind=push)` + per-user `ChannelBinding` создаются лениво при регистрации первого токена/web-подписки (`PushService.ensurePushBinding`). `EVENT_TYPE_CHANNEL_POLICY['chat.new_message'] += 'push'`.
+
+- **`PushToken`** (новая) — токен устройства per-транспорт. Поля: `userId`/`tenantId`, `transport` (`apns`/`fcm`/`rustore`/`webpush`), `token` (Text), `deviceInfo` (Json?), `isActive`, `failureCount`, `lastSeenAt`. `@@unique([userId, transport, token])` (идемпотентный upsert при регистрации), `@@index([tenantId, userId])`, FK → `User` `ON DELETE CASCADE`. Невалидный токен (410/404 от провайдера) или `failureCount ≥ PUSH_MAX_FAILURES` → `isActive=false`. Транспорт-агностичность (R34): `PushService.sendToUser` шлёт во все активные токены, отсутствие кредов любого транспорта → его sender no-op, остальные шлют. `webpush` делегируется существующему `WebPushSender` (читает `PushSubscription`). Payload без тела/имён (ФЗ-41): title=«Кора», body=«Новое сообщение», data={kind, conversationId}.
+- **`UserBlock`** (новая) — блокировка собеседника. Поля: `tenantId`, `blockerUserId`, `blockedUserId`. `@@unique([tenantId, blockerUserId, blockedUserId])`, `@@index([tenantId, blockedUserId])`, FK ×2 → `User` `ON DELETE CASCADE`. В dm-разговоре `MessageService.sendMessage` проверяет `UserBlockService.isSendBlockedInConversation` (только `kind='dm'`, кроме `authorType='system'`) → заблокированный автор получает `403 BLOCKED_BY_RECIPIENT`. UGC-модерация App Store 1.2 / Play.
+- **`MessageReport`** (новая) — жалоба на сообщение (UGC report). Поля: `tenantId`, `messageId`, `conversationId`, `reporterUserId`, `reason` (VarChar(500)?). `@@index([tenantId, messageId])`, `@@index([tenantId, conversationId])`. Только запись/лог (модераторский разбор — follow-up).
+
+**Удаление аккаунта (App Review 5.1.1(v)):** `POST /api/v1/account/delete` → `AccountsService.deleteAccount` в транзакции: `User.deletedAt=now()` (идемпотентно — если уже удалён, не перетирается) + `PushToken.deleteMany` + `ChannelBinding.deleteMany` + `ConversationMember.deleteMany` + revoke всех `UserSession`. Полная анонимизация PII (email/name) — осознанный follow-up (см. `04_не-сделано`).
 
 [[../index|← index]]

@@ -119,7 +119,7 @@ describe('BlockDistillWorker — Ф3 диспатч на canonical-перехо�
     await (worker as any).markCanonical(block);
 
     expect(deps.prisma.ideaBlock.update).toHaveBeenCalledWith({
-      where: { id: 'block-1' },
+      where: { id_tenantId: { id: 'block-1', tenantId: 'tenant-1' } },
       data: { status: 'canonical' },
     });
     expect(deps.coreQueue.enqueueBlockLinker).toHaveBeenCalledWith('block-1');
@@ -193,7 +193,7 @@ function canonicalUpdateData(
   tx: { ideaBlock: { update: ReturnType<typeof vi.fn> } },
 ): Record<string, unknown> | undefined {
   const call = tx.ideaBlock.update.mock.calls.find(
-    (c) => (c[0] as { where: { id: string } }).where.id === 'canon-1',
+    (c) => (c[0] as { where: { id_tenantId: { id: string } } }).where.id_tenantId.id === 'canon-1',
   );
   return call?.[0]?.data as Record<string, unknown> | undefined;
 }

@@ -1,5 +1,8 @@
 import { apiClient } from "./api-client";
 
+import { ApiError } from "./api-error";
+import type { AvailablePeriodsApi } from "./available-periods.api";
+
 export interface WeeklyDigestMetricsApi {
   totalCheckIns: number;
   greenShare: number;
@@ -31,6 +34,50 @@ export interface WeeklyDigestMetricsApi {
     statement: string;
     ageDays: number;
   }>;
+  risksSummary?: string | null;
+  ideasSummary?: string | null;
+}
+
+export interface WeeklyDigestVerdictAxisApi {
+  key: "team" | "clients" | "execution" | "overall";
+  state: "ok" | "warn" | "risk";
+  label: string;
+  why: string;
+}
+
+export interface WeeklyDigestVerdictApi {
+  overall: {
+    state: "ok" | "warn" | "risk";
+    emoji: string;
+    title: string;
+    oneLiner: string;
+  };
+  axes: WeeklyDigestVerdictAxisApi[];
+}
+
+export interface WeeklyDigestLetterSectionApi {
+  key: string;
+  title: string;
+  prose: string;
+  cites?: Array<{ label: string; ref: string }>;
+}
+
+export interface WeeklyDigestGoalAlignmentWeekApi {
+  direction: "to_goal" | "drift" | "against";
+  score: number | null;
+  weekDelta: string;
+  why: string;
+  pro: string[];
+  contra: string[];
+  goalId?: string | null;
+  goalName?: string | null;
+}
+
+export type WeeklyDayTrendStateApi = "ok" | "warn" | "risk" | "none";
+
+export interface WeeklyDayTrendAxisApi {
+  key: "team" | "clients" | "execution" | "overall";
+  days: Array<{ dateLocal: string; state: WeeklyDayTrendStateApi }>;
 }
 
 export interface WeeklyDigestSourcesApi {
@@ -101,6 +148,23 @@ export interface WeeklyOperationsDigestApi {
     ideas: WeeklyDeltaApi;
   };
   trend: WeeklyDigestTrendPointApi[];
+  verdict?: WeeklyDigestVerdictApi | null;
+  letter?: WeeklyDigestLetterSectionApi[] | null;
+  goalAlignmentWeek?: WeeklyDigestGoalAlignmentWeekApi | null;
+  dayTrend?: WeeklyDayTrendAxisApi[] | null;
+}
+
+async function tolerantGet(
+  path: string,
+): Promise<WeeklyOperationsDigestApi | null> {
+  try {
+    return await apiClient.get<WeeklyOperationsDigestApi>(path);
+  } catch (e) {
+    if (e instanceof ApiError && e.code === "digest_not_found") {
+      return null;
+    }
+    throw e;
+  }
 }
 
 export const weeklyDigestApi = {
@@ -108,9 +172,15 @@ export const weeklyDigestApi = {
     apiClient.get<WeeklyOperationsDigestApi>(
       `/api/v1/dashboard/operations/weekly-digest?weekStart=${weekStart}`,
     ),
+  getLatest: () =>
+    tolerantGet("/api/v1/dashboard/operations/weekly-digest/latest"),
   generate: (weekStart: string) =>
     apiClient.post<WeeklyOperationsDigestApi>(
       `/api/v1/dashboard/operations/weekly-digest/generate?weekStart=${weekStart}`,
       undefined,
+    ),
+  availablePeriods: (limit?: number) =>
+    apiClient.get<AvailablePeriodsApi>(
+      `/api/v1/dashboard/operations/weekly-digest/available-periods${limit ? `?limit=${limit}` : ""}`,
     ),
 };

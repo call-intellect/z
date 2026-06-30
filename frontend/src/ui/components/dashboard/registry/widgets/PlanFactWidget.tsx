@@ -5,10 +5,7 @@ import { useMemo, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
 import useSWR from "swr";
 
-import {
-  operationsDashboardApi,
-  type OperationsTeamTemperaturePersonApi,
-} from "@/api/operations-dashboard.api";
+import { operationsDashboardApi } from "@/api/operations-dashboard.api";
 import {
   fromCheckinDisciplineApi,
   localDateString,
@@ -25,7 +22,7 @@ import {
 import { Skeleton } from "@/ui/shadcn/skeleton";
 
 import type { Rhythm } from "../types";
-import { Chip, PeopleDrawer, PersonRow } from "../_kit";
+import { PeopleDrawer, PersonRow } from "../_kit";
 
 const RHYTHM_DAYS: Record<Rhythm, number> = {
   today: 1,
@@ -92,6 +89,7 @@ export const PlanFactWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   const morningCompleted = totals?.morningCompleted ?? 0;
   const eveningExpected = totals?.eveningExpected ?? 0;
   const eveningCompleted = totals?.eveningCompleted ?? 0;
+  const totalEmployees = missingSwr.data?.totalEmployees ?? 0;
 
   const totalCheckIns = temperature?.totalCheckIns ?? 0;
   const hasData =
@@ -126,30 +124,7 @@ export const PlanFactWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
     { name: "Тяжело", value: totalRed, c: CHART.red },
   ];
 
-  const missing = missingSwr.data?.missing ?? [];
-  const redPersons: OperationsTeamTemperaturePersonApi[] = (
-    temperature?.byPerson ?? []
-  ).filter((p) => p.red > 0);
-
-  const missingIds = new Set(missing.map((m) => m.personId));
-  const driftRows: {
-    id: string;
-    name: string;
-    sub: string;
-  }[] = [
-    ...missing.map((m) => ({
-      id: m.personId,
-      name: m.personName ?? "Без имени",
-      sub: "не отчитался сегодня",
-    })),
-    ...redPersons
-      .filter((p) => !missingIds.has(p.personId))
-      .map((p) => ({
-        id: p.personId,
-        name: p.personName ?? "Без имени",
-        sub: `тяжело: ${p.red} из ${p.total}`,
-      })),
-  ];
+  const byPerson = discipline?.byPerson ?? [];
 
   return (
     <GlassCard>
@@ -158,20 +133,56 @@ export const PlanFactWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
       </CardTitle>
 
       <div className="mt-4 grid gap-4 md:grid-cols-3">
-        <StatCard
-          icon={<ClipboardCheck size={18} />}
-          grad={GRAD.teal}
-          label="Отчитались утром"
-          value={`${morningCompleted} из ${morningExpected}`}
-          tone={CHART.teal}
-        />
-        <StatCard
-          icon={<ClipboardCheck size={18} />}
-          grad={GRAD.blue}
-          label="Подвели итог вечером"
-          value={`${eveningCompleted} из ${eveningExpected}`}
-          tone={CHART.blue}
-        />
+        <div
+          className="rounded-2xl p-4"
+          style={{ background: "var(--surface-inset)" }}
+        >
+          <div
+            className="flex items-center gap-2 text-sm"
+            style={{ color: CHART.dim }}
+          >
+            <ClipboardCheck size={16} /> Отчитались утром
+          </div>
+          <div className="mt-2 text-sm" style={{ color: CHART.text }}>
+            сдали{" "}
+            <span className="font-semibold tabular-nums">{morningCompleted}</span>{" "}
+            / ожидалось{" "}
+            <span className="font-semibold tabular-nums">{morningExpected}</span>{" "}
+            / всего{" "}
+            <span className="font-semibold tabular-nums">{totalEmployees}</span>{" "}
+            сотрудников
+          </div>
+          {morningExpected < totalEmployees ? (
+            <div className="mt-1 text-xs" style={{ color: CHART.faint }}>
+              ожидался {morningExpected} из {totalEmployees}
+            </div>
+          ) : null}
+        </div>
+        <div
+          className="rounded-2xl p-4"
+          style={{ background: "var(--surface-inset)" }}
+        >
+          <div
+            className="flex items-center gap-2 text-sm"
+            style={{ color: CHART.dim }}
+          >
+            <ClipboardCheck size={16} /> Подвели итог вечером
+          </div>
+          <div className="mt-2 text-sm" style={{ color: CHART.text }}>
+            сдали{" "}
+            <span className="font-semibold tabular-nums">{eveningCompleted}</span>{" "}
+            / ожидалось{" "}
+            <span className="font-semibold tabular-nums">{eveningExpected}</span>{" "}
+            / всего{" "}
+            <span className="font-semibold tabular-nums">{totalEmployees}</span>{" "}
+            сотрудников
+          </div>
+          {eveningExpected < totalEmployees ? (
+            <div className="mt-1 text-xs" style={{ color: CHART.faint }}>
+              ожидался {eveningExpected} из {totalEmployees}
+            </div>
+          ) : null}
+        </div>
         <StatCard
           icon={<ClipboardCheck size={18} />}
           grad={GRAD.violet}
@@ -207,26 +218,20 @@ export const PlanFactWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
       <PeopleDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
-        title="По людям — где реальность отстаёт"
-        subtitle="Кому помочь, чтобы план сходился с фактом"
+        title="По людям — кто отметился"
+        subtitle="Клик по человеку — его чек-ины и пульс"
       >
-        {driftRows.length === 0 ? (
+        {byPerson.length === 0 ? (
           <p className="text-sm" style={{ color: CHART.faint }}>
-            Все на связи, расхождений нет.
+            Пока нет данных по людям.
           </p>
         ) : (
-          driftRows.map((row) => (
+          byPerson.map((p) => (
             <PersonRow
-              key={row.id}
-              name={row.name}
-              sub={row.sub}
-              right={
-                row.sub.startsWith("не отчитался") ? (
-                  <Chip tone="warn">молчит</Chip>
-                ) : (
-                  <Chip tone="risk">тяжело</Chip>
-                )
-              }
+              key={p.personId}
+              href={`/persons/${p.personId}/pulse`}
+              name={p.personName}
+              sub={`утро ${p.morningCompleted}/${p.morningExpected} · вечер ${p.eveningCompleted}/${p.eveningExpected}`}
             />
           ))
         )}

@@ -4,11 +4,13 @@
 
 ## REST API
 
-- `POST /api/v1/concierge/messages` — SSE-стрим ответа (`started → thinking → tool_call → tool_result → message → done`).
-- `POST /api/v1/concierge/messages/once` — polling fallback, один JSON.
-- `GET /api/v1/concierge/conversations` / `:id` — история диалогов пользователя.
+- `POST /api/v1/concierge/messages` — SSE-стрим ответа (`started → thinking → tool_call → tool_result → message → done`). Body (`PostConciergeMessageBodySchema`) с 2026-06-28 принимает опц. `scope?` / `scopeRefId?` / `asOf?` — Мастер протаскивает их в `chatV2.askEphemeral` (оба пути: `dispatchAskChatV2` и `resumeClarify`), питая scoped-чат (issue/org/…) и снимок «на дату».
+- `POST /api/v1/concierge/messages/once` — polling fallback, один JSON. Те же `scope?/scopeRefId?/asOf?`.
+- `GET /api/v1/concierge/conversations` — история диалогов пользователя; с 2026-06-28 каждая запись несёт `titlePreview` (первое user-сообщение, обрезано до 80 симв., хелпер `backend/src/modules/concierge/concierge-title-preview.ts`) — фронт берёт его для названия диалога вместо «Новый диалог». `:id` — конкретный диалог.
 - `POST /api/v1/concierge/undo/:logId` — откат мутирующего tool-call'а.
 - `GET /api/v1/concierge/quota` — текущая квота.
+
+**SSE-эвент `message`** несёт (фронт `ConciergeStreamEvent`, 2026-06-28): текст + `citations` (passthrough из chat-v2) + `needsClarification`; добавлен эвент `confirm_required` (preview подтверждения мутации). Эти поля питают единый дом Мастера `/chat` (`MasterChatHome`) и scoped-чат `MasterScopedChat` — см. [[frontend-pages]] §`/chat`.
 
 ## Квоты — две ступени (ТЗ 2026-05-31)
 
@@ -19,20 +21,21 @@ Concierge участвует в **единой per-user дневной квот�
 
 Порядок проверки в pipeline: per-user сначала (через `AiChatQuotaService.tryConsume`), затем per-Org safety-net.
 
-## Pipeline (после ТЗ 2026-06-14 assistant-router-dedup)
+## Pipeline — single-pass (после ТЗ 2026-06-25 «Единый помощник» Ф2, заменил ReAct-петлю)
 
-Помощник **больше не владеет пониманием запроса**: инъекция `DialogService` убрана, нет `dialog.process()` и предпоиска (`preRetrieve`). Понимание-цепочка (контекстуализация) и синтез считаются **один раз внутри chat-v2** — через терминальный tool `ask_chat_v2`. Запрос идёт в LLM как есть.
+> ТЗ [`plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md`](../../plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md) (Ф2, коммиты `6a430537`/`e5fb42d6`/`01bb3958`). **ReAct-петля `for i<maxSteps` убрана** (корень прод-бага с сырым JSON-дампом). Удалены: loop-guard (`concierge/utils/loop-guard.ts`), `buildPartialAnswer`, `passthrough` как частный случай, обёртка-инструмент `ask_chat_v2`, мёртвый `clarifyMinConfidence`-gate, крутилки `concierge.max_steps` / `rag.loop_guard_threshold`. Понимание/синтез по-прежнему считаются **один раз внутри chat-v2** (помощник не владеет пониманием запроса).
 
-1. **Quota check** — per-user (`AiChatQuotaService.tryConsume`, ТЗ 2026-05-31) + per-Org safety-net (`OrgConciergeQuota`, Redis token-bucket).
-2. **Conversation** — создать/найти `ConciergeConversation`, записать user-message.
-3. **effectiveQuestion = userMessage** — без контекстуализации и multi-query expansion на стороне помощника. `clarifyMinConfidence` (крутилка AdminSetting) читается, но жёсткого numeric-gate нет — уточнение управляется промптом + валидацией required-параметров в `ToolRouter`.
-4. **Tool-use loop**:
-   - LLM `taskType='concierge-respond'` получает system (контекст + tool whitelist) + user (effectiveQuestion + история + tool results).
-   - Native function-calling (прод-дефолт ON, `concierge.native_tools_enabled`); legacy regex-парсер `{"tool_call":{...}}` — fallback. При tool-call — `ToolRouterService.execute()` с RBAC от userId (не bypass), результат идёт обратно в LLM. Если нет — финальный текст.
-   - При терминальном `ask_chat_v2` (чистый вопрос к памяти) итоговый ответ помощника = захваченный ответ chat-v2 (текст + цитаты) напрямую, без второго прохода LLM.
-5. **Persist** — assistant-message с `toolCallsJson`. Bump `lastMessageAt`.
+1. **Quota check** — per-user (`AiChatQuotaService.tryConsume`) + per-Org safety-net (`OrgConciergeQuota`, Redis token-bucket).
+2. **Conversation** — создать/найти `ConciergeConversation`, записать user-message; `summary` пишется cron'ом `concierge-conversation-summarizer.cron`.
+3. **Слой 1 — детерминированный перехват ДО LLM** (`isClarifyPending(history)` и др.): открытый probe → probe-handler; pending confirm → выполнить/отменить; **pending clarify → реплика возвращается в исходный вопрос chat-v2** (`resumeClarify` → `chatV2.askEphemeral`); ждём чек-ин → handler. Канальный перехват — Redis-ключ `concierge:clarify:<bindingId>` (`assistant-channel.bridge` ставит/снимает; telegram+max адаптеры читают первым → форсят `assistant_turn`).
+4. **Слой 2 — один LLM-вызов `concierge-respond`** (диспетчер): system (контекст + «Сейчас»+TZ + tool whitelist + company-about tail) + user (вопрос + история + summary). Возврат: `answer | action{tool,args} | note | checkin_self`. Native function-calling (прод-дефолт ON, `concierge.native_tools_enabled`); legacy regex-парсер `{"tool_call":{...}}` — fallback.
+5. **Слой 3 — один проход, ≤1 инструмент:**
+   - `answer` → `chatV2.askEphemeral({history,summary,intent,scope?,scopeRefId?})` **в процессе** (memoryless — без своей `ChatV2Conversation`); ответ (текст + цитаты) отдаётся **слово-в-слово** (passthrough — правило для всего `answer`-пути: не порвать `[BLOCK:id]`, не вернуть выдумку, не просадить качество вторым проходом).
+   - `action` → один инструмент через `ToolRouterService.execute()` (RBAC от userId, не bypass; мутация → confirm) + один **render-вызов** статуса (отдельный `CONCIERGE_RENDER_SYSTEM_PROMPT`, без JSON-утечки).
+   - `note` → ingest (короткий статус), `checkin_self` → DailyCheckIn.
+6. **Persist** — assistant-message с `toolCallsJson`. Bump `lastMessageAt`. Confirm-hold (канал) / inline (кабинет), undo (`ConciergeUndoLog`), quota, события — сохранены.
 
-`ConciergeConversation.summary` пишется cron'ом `concierge-conversation-summarizer.cron`.
+**Модель Мастера** — `concierge-respond`→`gpt-5.4-mini` через `LlmTaskRoute` (Ф6, сид `seed-llm-task-routes-edinyy-pomoshnik.ts`). Цепочка chat-v2 (4 вызова) — [[chat-v2]] / [[../02_architecture/knowledge-core]] §«Единый помощник».
 
 **«Сейчас» + таймзона в контексте (ТЗ 2026-06-18 assistant-calendar, Ф2).** `ConciergeContextBuilderService.build` первой строкой системного контекста кладёт «Сейчас: дата (день недели), время по таймзоне (IANA)…», чтобы помощник правильно понимал «сегодня»/«на этой неделе» и считал окно дня для `find_free_slot`. Таймзона человека резолвится по цепочке **`Person.timezone → Org.timezone → Europe/Moscow`** (у `User` поля `timezone` НЕТ). Утилиты локального времени — `operations/utils/local-date.ts`. Когда `Person.timezone` пуст — добавляется контекст-подсказка, и помощник проактивно спрашивает таймзону (инструмент `set_my_work_profile`).
 

@@ -22,6 +22,85 @@ export type DialogIntent =
   | 'note'
   | 'probe_reply';
 
+export type QueryClass = 'list' | 'topic' | 'temporal' | 'overview' | 'fact';
+
+export const QUERY_CLASSES: readonly QueryClass[] = [
+  'list',
+  'topic',
+  'temporal',
+  'overview',
+  'fact',
+] as const;
+
+export function isQueryClass(v: unknown): v is QueryClass {
+  return typeof v === 'string' && (QUERY_CLASSES as readonly string[]).includes(v);
+}
+
+export interface QueryClassResult {
+  class: QueryClass;
+  confidence: number;
+}
+
+const LIST_PATTERNS: RegExp[] = [
+  /(?:какие|каких|какими)\s+встреч/i,
+  /все\s+встреч/i,
+  /встречи\s+(?:с|со|где|по)\s/i,
+  /список/i,
+  /покажи\s+(?:все|всё|список)/i,
+  /перечисли/i,
+  /с\s+кем\s+(?:встреч|общ|говор)/i,
+  /документы\s+(?:про|по|о)\s/i,
+  /все\s+(?:задачи|решения|документы|звонки)/i,
+];
+
+const TEMPORAL_PATTERNS: RegExp[] = [
+  /итог[аи]?\s+(?:за|недел|месяц|квартал|спринт)/i,
+  /что\s+было\s+за\s/i,
+  /как\s+прош(?:ла|ёл|ел|ло)\s+(?:недел|месяц|квартал|спринт|день)/i,
+  /результаты\s+за\s/i,
+  /сводка\s+за\s/i,
+  /за\s+(?:прошл(?:ую|ый|ое)|эт[уо]й?)\s+(?:недел|месяц|квартал)/i,
+];
+
+const OVERVIEW_PATTERNS: RegExp[] = [
+  /что\s+у\s+нас\s+(?:по|с)\s/i,
+  /обзор\s+по\s/i,
+  /расскажи\s+про\s+(?:направлени|продаж|маркетинг|продукт|команд|финанс|операц)/i,
+  /как\s+дела\s+(?:с|по)\s/i,
+  /общ(?:ая|ее)\s+(?:картин|ситуац|положени)/i,
+  /в\s+цел(?:ом|ое)\s+по\s/i,
+];
+
+const FACT_PATTERNS: RegExp[] = [
+  /что\s+решили\s+по\s/i,
+  /какое\s+решение/i,
+  /когда/i,
+  /сколько/i,
+  /какой\s+статус/i,
+  /какая\s+(?:дата|сумма|цена|стоимость)/i,
+  /кто\s+(?:отвечает|ответствен)/i,
+];
+
+const TOPIC_PATTERNS: RegExp[] = [
+  /обсуждали/i,
+  /что\s+говорили\s+про\s/i,
+  /что\s+известно\s+про\s/i,
+  /про\s+что/i,
+];
+
+const QUERY_CLASS_CONFIDENT = 0.9;
+const QUERY_CLASS_DEFAULT = 0.4;
+
+export function classifyQueryClass(question: string): QueryClassResult {
+  const q = typeof question === 'string' ? question : '';
+  for (const p of LIST_PATTERNS) if (p.test(q)) return { class: 'list', confidence: QUERY_CLASS_CONFIDENT };
+  for (const p of TEMPORAL_PATTERNS) if (p.test(q)) return { class: 'temporal', confidence: QUERY_CLASS_CONFIDENT };
+  for (const p of OVERVIEW_PATTERNS) if (p.test(q)) return { class: 'overview', confidence: QUERY_CLASS_CONFIDENT };
+  for (const p of FACT_PATTERNS) if (p.test(q)) return { class: 'fact', confidence: QUERY_CLASS_CONFIDENT };
+  for (const p of TOPIC_PATTERNS) if (p.test(q)) return { class: 'topic', confidence: 0.7 };
+  return { class: 'topic', confidence: QUERY_CLASS_DEFAULT };
+}
+
 export type ChatDialogIntent = 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay';
 
 export function narrowToChatIntent(intent: DialogIntent): ChatDialogIntent {

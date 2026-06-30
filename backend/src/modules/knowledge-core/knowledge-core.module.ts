@@ -5,6 +5,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CurationModule } from '../curation/curation.module';
 import { S3Service } from '../recordings/s3.service';
 import { TablesModule } from '../tables/tables.module';
+import { TrackerModule } from '../tracker/tracker.module';
 
 import { SearchService } from './api/search.service';
 import { AxisClassifierService } from './services/axis-classifier.service';
@@ -68,7 +69,6 @@ import { StructuredDocumentCompilerService } from './services/structured-documen
 import { SprintHelperService } from './services/sprint-helper.service';
 import { SprintReviewService } from './services/sprint-review.service';
 import { TaskAssigneeResolverService } from './services/task-assignee-resolver.service';
-import { TaskEvidenceLinkerService } from './services/task-evidence-linker.service';
 import { TemporalConflictService } from './services/temporal-conflict.service';
 import { TemporalProbeService } from './services/temporal-probe.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
@@ -82,7 +82,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
 
 @Global()
 @Module({
-  imports: [ConfigModule, PrismaModule, CurationModule, TablesModule],
+  imports: [ConfigModule, PrismaModule, CurationModule, TablesModule, TrackerModule],
   providers: [
     RoleClonePersonaVersioningHandler,
     S3Service,
@@ -158,7 +158,6 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     GoalThemeLinkerService,
     GoalTaskLinkerService,
     MeetingTitleService,
-    TaskEvidenceLinkerService,
   ],
   exports: [
     SegmentBuilderService,
@@ -226,7 +225,6 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     GoalThemeLinkerService,
     GoalTaskLinkerService,
     MeetingTitleService,
-    TaskEvidenceLinkerService,
   ],
 })
 export class KnowledgeCoreModule {}

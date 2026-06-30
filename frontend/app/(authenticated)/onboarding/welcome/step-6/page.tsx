@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { onboardingApi } from "@/api/onboarding.api";
 import { OnboardingShell } from "../OnboardingShell";
 import { Button } from "@/ui/shadcn/button";
+import { toast } from "sonner";
+import { humanizeApiError } from "@/api/api-error";
 
 const FEATURES = [
   {
@@ -56,6 +58,23 @@ export default function Step6Page() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (!currentOrgId) return;
+    let active = true;
+    onboardingApi
+      .getWelcome(currentOrgId)
+      .then((w) => {
+        if (!active) return;
+        if (w.plannedFeatures.length > 0) {
+          setSelected((prev) => (prev.size === 0 ? new Set(w.plannedFeatures) : prev));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [currentOrgId]);
+
   const toggle = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -66,17 +85,25 @@ export default function Step6Page() {
   };
 
   const handleComplete = async () => {
-    if (saving || !currentOrgId) return;
+    if (saving) return;
+    if (!currentOrgId) {
+      toast.error("Данные профиля ещё загружаются — подождите пару секунд и попробуйте снова.");
+      return;
+    }
     setSaving(true);
     try {
       await onboardingApi.patchWelcome(currentOrgId, {
         plannedFeatures: [...selected],
       });
       const { redirectTo } = await onboardingApi.completeWelcome(currentOrgId);
-      await refresh();
-      router.push(redirectTo || "/dashboard");
-    } catch {
+      const fresh = await refresh();
+      if (fresh && !fresh.profileCompletedAt) {
+        await refresh();
+      }
+      router.replace(redirectTo || "/dashboard");
+    } catch (e) {
       setSaving(false);
+      toast.error(humanizeApiError(e, "Не удалось завершить. Попробуйте ещё раз."));
     }
   };
 

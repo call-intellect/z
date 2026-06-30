@@ -213,8 +213,8 @@ export class ValueRecapService {
           meeting: { tenantId, createdAt: { gte: from, lte: to } },
         },
       }),
-      this.prisma.task.count({
-        where: { tenantId, createdAt: { gte: from, lte: to } },
+      this.prisma.issue.count({
+        where: { tenantId, createdAt: { gte: from, lte: to }, deletedAt: null, archivedAt: null },
       }),
       this.prisma.decision.count({
         where: { tenantId, createdAt: { gte: from, lte: to }, deletedAt: null },

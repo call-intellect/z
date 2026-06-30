@@ -83,6 +83,8 @@ export interface DirectorDashboardValueStripDto {
   decisionsExtracted: number;
   questionsAnsweredByMemory: number;
   commitmentsKept: number;
+  tasksResolved: number;
+  ideasCollected: number;
 }
 
 export interface DirectorDashboardAlertGoalDto {

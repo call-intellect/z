@@ -162,43 +162,20 @@ export class PersonalDailyBriefService {
         title: true,
         identifier: true,
         dueDate: true,
+        sourceBlockIds: true,
       },
       orderBy: [{ dueDate: 'asc' }],
       take: PersonalDailyBriefService.MAX_ITEMS,
     });
     for (const i of issues) {
-      out.push({
-        kind: 'task',
-        dedupKey: i.id,
-        title: `${i.identifier}: ${i.title}`.slice(0, 200),
-        dueDateIso: i.dueDate ? i.dueDate.toISOString() : null,
-        overdue: this.isOverdue(i.dueDate, args.dayEnd),
-        priority: 10,
-      });
-    }
-
-    const tasks = await this.prisma.task.findMany({
-      where: {
-        tenantId: args.tenantId,
-        assigneeUserId: args.userId,
-        status: { not: 'done' },
-        OR: [{ dueDate: { lte: args.dayEnd } }, { dueDate: null }],
-      },
-      select: { id: true, title: true, dueDate: true, evidenceBlockIds: true },
-      orderBy: [{ dueDate: 'asc' }],
-      take: PersonalDailyBriefService.MAX_ITEMS,
-    });
-    for (const t of tasks) {
       const dedupKey =
-        Array.isArray(t.evidenceBlockIds) && t.evidenceBlockIds.length > 0
-          ? t.evidenceBlockIds[0]!
-          : t.id;
+        Array.isArray(i.sourceBlockIds) && i.sourceBlockIds.length > 0 ? i.sourceBlockIds[0]! : i.id;
       out.push({
         kind: 'task',
         dedupKey,
-        title: t.title.slice(0, 200),
-        dueDateIso: t.dueDate ? t.dueDate.toISOString() : null,
-        overdue: this.isOverdue(t.dueDate, args.dayEnd),
+        title: `${i.identifier}: ${i.title}`.slice(0, 200),
+        dueDateIso: i.dueDate ? i.dueDate.toISOString() : null,
+        overdue: this.isOverdue(i.dueDate, args.dayEnd),
         priority: 10,
       });
     }

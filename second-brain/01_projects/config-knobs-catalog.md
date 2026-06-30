@@ -224,6 +224,9 @@
 | Ключ | Что делает | Дефолт |
 |---|---|---|
 | operations.daily_digest.enabled | Дневной отчёт операционного директора | вкл |
+| betaOps.monthlyDigestEnabled | «Месяц компании» — месячный отчёт владельца (kill-switch) | вкл |
+| betaOps.monthlyDigestLocalHour | Час доставки месячного отчёта (1-е число, МСК) | 6 |
+| operations.report_archive.recent_limit | Размер архива «Недавние отчёты» в навигаторе периодов | 12 |
 | operations.daily_digest.deliver_to_webpush | Утренний web-push «Требует тебя сегодня» | вкл |
 | operations.dashboard_rework.enabled | Новая раскладка COO-дашборда | вкл |
 | operations.per_person_self_view.enabled | Self-просмотр своего план-факта | вкл |

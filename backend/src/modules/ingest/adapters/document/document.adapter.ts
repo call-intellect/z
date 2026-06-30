@@ -13,6 +13,7 @@ import { RedisService } from '../../../../common/redis/redis.service';
 import { CoreQueueService } from '../../../core-queue/core-queue.service';
 import { CORE_QUEUE_NAMES, type DocumentUploadedJobData } from '../../../core-queue/queues';
 import { DocumentAttributionService } from '../../../documents/document-attribution.service';
+import { DocumentSummaryService } from '../../../documents/document-summary.service';
 import { SIGNAL_TYPE_VALUES } from '../../../knowledge-core/prompts/block-ingest.prompt';
 import { S3Service } from '../../../recordings/s3.service';
 import { IngestService } from '../../ingest.service';
@@ -110,6 +111,8 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(DocumentAttributionService)
     private readonly attribution: DocumentAttributionService,
+    @Inject(DocumentSummaryService)
+    private readonly summary: DocumentSummaryService,
   ) {}
 
   onModuleInit(): void {
@@ -197,11 +200,20 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
 
       const source = await this.upsertDocumentSource(tenantId);
 
+      const aiSummary = await this.summary.summarize({
+        tenantId,
+        documentId: doc.id,
+        fileName: doc.name,
+        parsedText: parsed.text,
+        dataClass: source.dataClass,
+      });
+
       const signalTypeHint = docTypeToSignalTypeHint(doc.docType);
       const result = await this.ingest.ingest({
         tenantId,
         sourceId: source.id,
         sourceExternalId: `doc:${doc.id}`,
+        sourceTitle: aiSummary.title,
         occurredAt: doc.createdAt,
         payload: {
           documentId: doc.id,
@@ -214,6 +226,7 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
           docType: doc.docType,
           // Ф6 — block-ingest применит override типа карточки, если задано.
           ...(signalTypeHint ? { signalTypeHint } : {}),
+          documentSummary: aiSummary.summary,
           parsedText: parsed.text,
           metadata: parsed.metadata,
         },

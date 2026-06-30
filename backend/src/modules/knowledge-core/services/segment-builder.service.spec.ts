@@ -605,3 +605,49 @@ describe('SegmentBuilderService — notification_response (clone-method Э3.1)',
     expect(segments[0]!.text).toContain('notification_response');
   });
 });
+
+describe('SegmentBuilderService — chat_message (Ф0 мост-загрузки)', () => {
+  const makeSvc = () =>
+    new SegmentBuilderService({
+      knowledgeCore: {
+        blockIngestMaxTokensPerSegment: 2000,
+        segmentMaxTokens: 2000,
+        segmentOverlapRatio: 0,
+      },
+    } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0]);
+
+  it('chat_message с непустым text → ровно 1 сегмент с чистым текстом', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'chat_message' as const,
+      channel: 'telegram_export',
+      threadExternalId: 'chat-1',
+      authorName: 'Иван',
+      text: 'Клиент просит скидку на финале сделки',
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe('Клиент просит скидку на финале сделки');
+    expect(segments[0]!.text).not.toContain('chat_message');
+    expect(segments[0]!.text).not.toContain('threadExternalId');
+    expect(segments[0]!.text).not.toContain('{');
+    expect(segments[0]!.speakers).toEqual([]);
+  });
+
+  it('chat_message с пустым text → fallback (tryGetChatMessageText вернул null)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'chat_message' as const,
+      channel: 'bitrix',
+      threadExternalId: 'd-1',
+      text: '   ',
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toContain('chat_message');
+  });
+});

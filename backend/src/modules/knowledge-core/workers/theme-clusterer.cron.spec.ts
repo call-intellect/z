@@ -174,7 +174,7 @@ function makeCronForEdges(cap: number) {
   const upsertSpy = vi.fn(
     async (_arg: {
       where: {
-        fromBlockId_toBlockId_relationType: {
+        fromBlockId_toBlockId_relationType_tenantId: {
           fromBlockId: string;
           toBlockId: string;
           relationType: string;
@@ -205,14 +205,14 @@ describe('ThemeClustererCron — Ф8: structural shares_topic edges', () => {
     expect(upsertSpy).toHaveBeenCalledTimes(6);
     for (const call of upsertSpy.mock.calls) {
       const arg = call[0];
-      expect(arg.where.fromBlockId_toBlockId_relationType.relationType).toBe(
-        'shares_topic',
-      );
+      expect(
+        arg.where.fromBlockId_toBlockId_relationType_tenantId.relationType,
+      ).toBe('shares_topic');
       expect(arg.create.createdBy).toBe('system');
       expect(arg.create.status).toBe('active');
-      expect(arg.where.fromBlockId_toBlockId_relationType.fromBlockId).not.toBe(
-        arg.where.fromBlockId_toBlockId_relationType.toBlockId,
-      );
+      expect(
+        arg.where.fromBlockId_toBlockId_relationType_tenantId.fromBlockId,
+      ).not.toBe(arg.where.fromBlockId_toBlockId_relationType_tenantId.toBlockId);
     }
   });
 

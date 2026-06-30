@@ -23,6 +23,7 @@ import { DocumentsService } from '../../../documents/documents.service';
 import { S3Service } from '../../../recordings/s3.service';
 import { ChannelRegistry } from '../../channel-registry';
 import { ConversationalLinkCodeService } from '../../link-code.service';
+import { channelClarifyKey } from '../../types/channel-clarify-key';
 import type { ConversationalJson, IChannel, InboundMessage } from '../../types/channel.types';
 
 import { formatCheckinAck } from './format-checkin-ack';
@@ -373,6 +374,17 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
 
     this.metrics.incBotInbound({ channel: 'telegram_bot', kind: 'text' });
 
+    if (await this.isClarifyPending(binding.id)) {
+      return {
+        type: 'assistant_turn',
+        userId: binding.userId,
+        tenantId,
+        text: rawText,
+        metadata: { source: 'telegram_bot', chatId: msg.chat.id, clarifyResume: true },
+        originChannelBindingId: binding.id,
+      };
+    }
+
     if (msg.reply_to_message) {
       const probeMatch = await this.tryMatchReplyToProbe({
         reply: msg.reply_to_message,
@@ -697,6 +709,23 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
+    if (await this.isClarifyPending(args.binding.id)) {
+      return {
+        type: 'assistant_turn',
+        userId: args.binding.userId,
+        tenantId: args.tenantId,
+        text: transcript,
+        metadata: {
+          source: 'telegram_bot',
+          kind: 'voice',
+          chatId: args.msg.chat.id,
+          clarifyResume: true,
+          ...(audioS3Key ? { audioS3Key } : {}),
+        },
+        originChannelBindingId: args.binding.id,
+      };
+    }
+
     const intent = await this.classifyIntent({
       text: transcript,
       tenantId: args.tenantId,
@@ -900,6 +929,19 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     return count <= TelegramBotChannelAdapter.VOICE_PER_HOUR_PER_USER;
   }
 
+  private async isClarifyPending(bindingId: string): Promise<boolean> {
+    try {
+      const raw = await this.redis.client.get(channelClarifyKey(bindingId));
+      return raw != null;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'telegram inbound: Redis get clarify-ключа упал — обрабатываем как обычный ход',
+      );
+      return false;
+    }
+  }
+
   private async requireVerifiedBinding(args: {
     tgUserId: string;
     channelId: string;
@@ -1037,12 +1079,15 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     tenantId: string;
     userId: string;
   }): Promise<{ id: string; question: string } | null> {
+    const maxAgeDays = await this.getProbeImplicitMatchMaxAgeDays();
+    const minCreatedAt = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
     const openProbe = await this.prisma.notification.findFirst({
       where: {
         tenantId: args.tenantId,
         recipientUserId: args.userId,
-        eventType: { in: ['probe.question', 'probe.digest'] },
+        eventType: { in: ['probe.question', 'probe.digest', 'probe.clarify', 'probe.confirm'] },
         responseStatus: 'pending',
+        createdAt: { gte: minCreatedAt },
       },
       orderBy: { createdAt: 'desc' },
       select: { id: true, payload: true },
@@ -1071,6 +1116,18 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     }
   }
 
+  private async getProbeImplicitMatchMaxAgeDays(): Promise<number> {
+    try {
+      return await this.cfg.getDynamic<number>(
+        'probe.implicit_match_max_age_days',
+        undefined,
+        3,
+      );
+    } catch {
+      return 3;
+    }
+  }
+
   private renderText(notification: Notification): string {
     const payload = (notification.payload as Record<string, unknown> | null) ?? {};
     switch (notification.eventType) {
@@ -1081,6 +1138,20 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         const body = escapeHtml(q);
         const tail = ctx ? `\n\n<i>${escapeHtml(ctx)}</i>` : '';
         return `${head}\n\n${body}${tail}\n\nОтветьте текстом этим же сообщением.`.slice(0, 4000);
+      }
+      case 'probe.clarify': {
+        const q = (payload['question'] as string | undefined) ?? '';
+        return `<b>Кора уточняет</b>\n\n${escapeHtml(q)}\n\nОтветьте текстом этим же сообщением.`.slice(
+          0,
+          4000,
+        );
+      }
+      case 'probe.confirm': {
+        const q = (payload['question'] as string | undefined) ?? '';
+        return `<b>Кора уточняет, всё ли верно</b>\n\n${escapeHtml(q)}\n\nОтветьте «да» или поправьте.`.slice(
+          0,
+          4000,
+        );
       }
       case 'specialist.probe': {
         const msg = (payload['message'] as string | undefined) ?? '';
@@ -1256,6 +1327,44 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           rawLines.length > 0 ? `\n\n${rawLines.map((l) => escapeHtml(l)).join('\n')}` : '';
         const link = actionUrl ? `\n\nОткрыть:\n${escapeHtml(actionUrl)}` : '';
         return `${head}${list}${link}`.slice(0, 4000);
+      }
+      case 'tasks.daily_open': {
+        const title = (payload['title'] as string | undefined) ?? 'Ваши задачи на сегодня';
+        const isEmpty = payload['isEmpty'] === true;
+        const groups = Array.isArray(payload['groups'])
+          ? (payload['groups'] as Array<Record<string, unknown>>)
+          : [];
+        const overflowCount = Number(payload['overflowCount'] ?? 0);
+        if (isEmpty || groups.length === 0) {
+          return `<b>${escapeHtml(title)}</b>\n\nНа сегодня открытых задач нет — хорошего дня.`.slice(
+            0,
+            4000,
+          );
+        }
+        const fmtDay = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' });
+        const blocks = groups
+          .map((group) => {
+            const label = (group['label'] as string | undefined) ?? '';
+            const items = Array.isArray(group['items'])
+              ? (group['items'] as Array<Record<string, unknown>>)
+              : [];
+            const itemLines = items
+              .map((item) => {
+                const identifier = (item['identifier'] as string | undefined) ?? '';
+                const itemTitle = (item['title'] as string | undefined) ?? '';
+                const dueDate = item['dueDate'] as string | null | undefined;
+                const due =
+                  dueDate && !Number.isNaN(new Date(dueDate).getTime())
+                    ? ` · до ${escapeHtml(fmtDay.format(new Date(dueDate)))}`
+                    : '';
+                return `${escapeHtml(identifier)} — ${escapeHtml(itemTitle)}${due}`;
+              })
+              .join('\n');
+            return `<b>${escapeHtml(label)}</b>\n${itemLines}`;
+          })
+          .join('\n\n');
+        const tail = overflowCount > 0 ? `\n\n…и ещё ${overflowCount}` : '';
+        return `<b>${escapeHtml(title)}</b>\n\n${blocks}${tail}`.slice(0, 4000);
       }
       default:
         break;

@@ -33,6 +33,19 @@ import {
   type CustomerRiskWeights,
 } from './customer-risk.scoring';
 
+export function dedupeLatestSnapshotPerCustomer<
+  T extends { customerEntityId: string; snapshotAt: Date },
+>(rows: T[]): T[] {
+  const latest = new Map<string, T>();
+  for (const row of rows) {
+    const prev = latest.get(row.customerEntityId);
+    if (!prev || row.snapshotAt.getTime() > prev.snapshotAt.getTime()) {
+      latest.set(row.customerEntityId, row);
+    }
+  }
+  return [...latest.values()];
+}
+
 @Injectable()
 export class CustomerRiskRadarService {
   private readonly logger = new Logger(CustomerRiskRadarService.name);
@@ -312,21 +325,27 @@ export class CustomerRiskRadarService {
     const rows = await this.prisma.customerRiskSnapshot.findMany({
       where,
       orderBy: [{ snapshotAt: 'desc' }, { riskScore: 'desc' }],
-      take: args.query.limit,
+      take: 500,
       include: {
         customerEntity: { select: { canonicalName: true } },
         responsible: { select: { name: true } },
       },
     });
 
-    const items: CustomerRiskSnapshotDto[] = [];
+    const deduped = dedupeLatestSnapshotPerCustomer(rows).sort(
+      (a, b) => Number(b.riskScore) - Number(a.riskScore),
+    );
+
     let criticalCount = 0;
     let warningCount = 0;
-    for (const row of rows) {
-      const dto = await this.toDto(row);
-      items.push(dto);
-      if (dto.riskLevel === 'critical') criticalCount++;
-      else if (dto.riskLevel === 'warning') warningCount++;
+    for (const row of deduped) {
+      if (row.riskLevel === 'critical') criticalCount++;
+      else if (row.riskLevel === 'warning') warningCount++;
+    }
+
+    const items: CustomerRiskSnapshotDto[] = [];
+    for (const row of deduped.slice(0, args.query.limit)) {
+      items.push(await this.toDto(row));
     }
     return { items, criticalCount, warningCount };
   }
@@ -345,21 +364,27 @@ export class CustomerRiskRadarService {
     const rows = await this.prisma.customerRiskSnapshot.findMany({
       where,
       orderBy: [{ snapshotAt: 'desc' }, { riskScore: 'desc' }],
-      take: args.query.limit,
+      take: 500,
       include: {
         customerEntity: { select: { canonicalName: true } },
         responsible: { select: { name: true } },
       },
     });
 
-    const items: CustomerRiskSnapshotDto[] = [];
+    const deduped = dedupeLatestSnapshotPerCustomer(rows).sort(
+      (a, b) => Number(b.riskScore) - Number(a.riskScore),
+    );
+
     let criticalCount = 0;
     let warningCount = 0;
-    for (const row of rows) {
-      const dto = await this.toDto(row);
-      items.push(dto);
-      if (dto.riskLevel === 'critical') criticalCount++;
-      else if (dto.riskLevel === 'warning') warningCount++;
+    for (const row of deduped) {
+      if (row.riskLevel === 'critical') criticalCount++;
+      else if (row.riskLevel === 'warning') warningCount++;
+    }
+
+    const items: CustomerRiskSnapshotDto[] = [];
+    for (const row of deduped.slice(0, args.query.limit)) {
+      items.push(await this.toDto(row));
     }
     return { items, criticalCount, warningCount };
   }
@@ -378,10 +403,13 @@ export class CustomerRiskRadarService {
         riskLevel: { in: ['critical', 'warning'] },
       },
       orderBy: [{ snapshotAt: 'desc' }, { riskScore: 'desc' }],
-      take: args.limit,
+      take: 500,
       include: { customerEntity: { select: { canonicalName: true } } },
     });
-    return rows.map((row) => ({
+    const deduped = dedupeLatestSnapshotPerCustomer(rows)
+      .sort((a, b) => Number(b.riskScore) - Number(a.riskScore))
+      .slice(0, args.limit);
+    return deduped.map((row) => ({
       customerName: row.customerEntity?.canonicalName ?? 'Клиент',
       riskLevel: row.riskLevel as CustomerRiskLevel,
       riskScore: Number(row.riskScore),

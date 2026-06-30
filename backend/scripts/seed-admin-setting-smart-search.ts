@@ -17,24 +17,6 @@ interface SettingSeed {
 
 const SEEDS: SettingSeed[] = [
   {
-    key: 'concierge.max_steps',
-    value: 6,
-    category: 'ai',
-    section: 'smart_search',
-    severity: 'medium',
-    description:
-      'Лимит шагов петли инструментов помощника «Мастер» на один шаг плана. При достижении — честный частичный ответ «не хватило шагов», не пустота. По умолчанию 6.',
-  },
-  {
-    key: 'rag.loop_guard_threshold',
-    value: 1,
-    category: 'ai',
-    section: 'smart_search',
-    severity: 'medium',
-    description:
-      'Сколько раз допускается повтор нормализованного поискового запроса до остановки детерминированным сторожем зацикливания (без LLM). По умолчанию 1.',
-  },
-  {
     key: 'rag.rrf_k',
     value: 60,
     category: 'ai',
@@ -44,6 +26,24 @@ const SEEDS: SettingSeed[] = [
       'Параметр k для слияния рангов RRF при объединении результатов нескольких подзапросов поиска (стандартно 60). По умолчанию 60.',
   },
   {
+    key: 'rag.k_retrieve',
+    value: 30,
+    category: 'ai',
+    section: 'smart_search',
+    severity: 'medium',
+    description:
+      'Сколько блоков-кандидатов поднимать в пул поиска (до реранка): больший пул даёт реранку из чего выбирать. По умолчанию 30.',
+  },
+  {
+    key: 'rag.k_context',
+    value: 18,
+    category: 'ai',
+    section: 'smart_search',
+    severity: 'medium',
+    description:
+      'Сколько отобранных блоков уходит в контекст синтеза ответа (после реранка). Должно быть ≤ rag.k_retrieve. По умолчанию 18.',
+  },
+  {
     key: 'rag.rerank_min_pool',
     value: 12,
     category: 'ai',
@@ -51,6 +51,15 @@ const SEEDS: SettingSeed[] = [
     severity: 'medium',
     description:
       'Минимальный размер пула кандидатов, при котором включается LLM-реранк (на меньшем/чистом пуле реранк бесполезен и только дороже). По умолчанию 12.',
+  },
+  {
+    key: 'rag.rerank_pool_size',
+    value: 30,
+    category: 'ai',
+    section: 'smart_search',
+    severity: 'medium',
+    description:
+      'Сколько верхних кандидатов (после both-ways слияния/RRF) уходит в LLM-реранк на финальную переранжировку. По умолчанию 30.',
   },
   {
     key: 'rag.multiquery_count',
@@ -87,6 +96,15 @@ const SEEDS: SettingSeed[] = [
     severity: 'medium',
     description:
       'Нижний порог объёма памяти Org (число канонических блоков), ниже которого тяжёлая многошаговая ветка не запускается — простой одношаговый режим (защита от cold-start у новых тенантов). По умолчанию 20.',
+  },
+  {
+    key: 'rag.understanding_merged',
+    value: true,
+    category: 'ai',
+    section: 'smart_search',
+    severity: 'medium',
+    description:
+      'Аварийный рубильник слитого модуля понимания запроса: ВКЛ — один LLM-вызов выдаёт сразу 3 переформулировки и план фильтров (быстрее, дешевле). ВЫКЛ — старый путь из двух вызовов (мульти-запрос + извлечение плана). По умолчанию ВКЛ.',
   },
 ];
 

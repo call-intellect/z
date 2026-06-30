@@ -12,6 +12,7 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { AdminSettingsService } from '../../admin/settings/admin-settings.service';
 import {
   type LlmCallResult,
   LlmRouterService,
@@ -83,7 +84,19 @@ export class Specialist36Service {
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
+    @Optional()
+    @Inject(AdminSettingsService)
+    private readonly settings?: AdminSettingsService,
   ) {}
+
+  private async getMinExtractConfidence(): Promise<number> {
+    const v = await this.settings
+      ?.get<number>('knowledge.ideasExtractMinConfidence')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v)
+      ? v
+      : Specialist36Service.MIN_EXTRACT_CONFIDENCE;
+  }
 
   /**
    * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
@@ -101,7 +114,7 @@ export class Specialist36Service {
     blockId: string;
   }): Promise<void> {
     const block = await this.prisma.ideaBlock.findUnique({
-      where: { id: args.blockId },
+      where: { id_tenantId: { id: args.blockId, tenantId: args.tenantId } },
       include: { evidence: true },
     });
     if (!block) return;
@@ -137,6 +150,15 @@ export class Specialist36Service {
       },
     });
     if (alreadyMaterialized) {
+      await this.upgradeIdeaQuality({ existing: alreadyMaterialized, block }).catch((err) =>
+        this.logger.warn(
+          {
+            ideaId: alreadyMaterialized.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-6: upgradeIdeaQuality упал — продолжаем обогащение',
+        ),
+      );
       try {
         await this.updateExistingIdea({ existing: alreadyMaterialized, block });
       } catch (err) {
@@ -453,7 +475,11 @@ export class Specialist36Service {
       return { matched: false, ideaId: null };
     }
     if (!embedding) return { matched: false, ideaId: null };
-    const threshold = this.cfg.ideas.clusterThreshold;
+    const threshold = await this.cfg.getDynamic<number>(
+      'knowledge.ideaClusterThreshold',
+      undefined,
+      this.cfg.ideas.clusterThreshold,
+    );
     try {
       const vec = `[${embedding.join(',')}]`;
       const rows = await this.prisma.$queryRawUnsafe<
@@ -508,7 +534,11 @@ export class Specialist36Service {
       return null;
     }
     if (!embedding) return null;
-    const threshold = this.cfg.ideas.clusterThreshold;
+    const threshold = await this.cfg.getDynamic<number>(
+      'knowledge.ideaClusterThreshold',
+      undefined,
+      this.cfg.ideas.clusterThreshold,
+    );
     try {
       const vec = `[${embedding.join(',')}]`;
       const rows = await this.prisma.$queryRawUnsafe<
@@ -573,6 +603,48 @@ export class Specialist36Service {
         supporterCount: merged.length,
         weight: new Prisma.Decimal(weight),
         lastDiscussedAt: new Date(),
+      },
+    });
+  }
+
+  async reextractIdeaForBackfill(args: {
+    tenantId: string;
+    ideaId: string;
+  }): Promise<'updated' | 'skipped' | 'no_block' | 'not_idea'> {
+    const idea = await this.prisma.idea.findFirst({
+      where: { id: args.ideaId, tenantId: args.tenantId },
+    });
+    if (!idea) return 'skipped';
+    if (idea.createdByUserId !== null || idea.rationale !== null) return 'skipped';
+    const blockId = idea.sourceBlockIds[0];
+    if (!blockId) return 'no_block';
+    const block = await this.prisma.ideaBlock.findUnique({
+      where: { id_tenantId: { id: blockId, tenantId: args.tenantId } },
+      include: { evidence: true },
+    });
+    if (!block) return 'no_block';
+    const draft = await this.extractDraft(block);
+    if (!draft || draft.isIdea === false) return 'not_idea';
+    await this.prisma.idea.update({
+      where: { id: idea.id },
+      data: { statement: draft.statement, rationale: draft.rationale ?? null },
+    });
+    return 'updated';
+  }
+
+  private async upgradeIdeaQuality(args: {
+    existing: Idea;
+    block: IdeaBlock & { evidence: IdeaBlockEvidence[] };
+  }): Promise<void> {
+    if (args.existing.createdByUserId !== null) return;
+    if (args.existing.rationale !== null) return;
+    const draft = await this.extractDraft(args.block);
+    if (!draft || draft.isIdea === false) return;
+    await this.prisma.idea.update({
+      where: { id: args.existing.id },
+      data: {
+        statement: draft.statement,
+        rationale: draft.rationale ?? null,
       },
     });
   }
@@ -670,7 +742,8 @@ export class Specialist36Service {
       );
       return null;
     }
-    if (parsed.confidence < Specialist36Service.MIN_EXTRACT_CONFIDENCE) {
+    const minConfidence = await this.getMinExtractConfidence();
+    if (parsed.confidence < minConfidence) {
       return null;
     }
     return parsed;

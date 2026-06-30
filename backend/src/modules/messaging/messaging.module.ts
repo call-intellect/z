@@ -1,0 +1,91 @@
+import { forwardRef, Module } from '@nestjs/common';
+
+import { ChatV2Module } from '../chat-v2/chat-v2.module';
+import { TrackerModule } from '../tracker/tracker.module';
+
+import { ConversationController } from './conversation.controller';
+import { AccessLinkService } from './external/access-link.service';
+import { ExternalConversationController } from './external/external-conversation.controller';
+import { ExternalConversationService } from './external/external-conversation.service';
+import { ExternalGuestController } from './external/external-guest.controller';
+import { ExternalGuestGuard } from './external/external-guest.guard';
+import { InboxController } from './inbox.controller';
+import { HrMembershipListener } from './listeners/hr-membership.listener';
+import { MessageRetentionCron } from './message-retention.cron';
+import { ChatIngestQueueService } from './queue/chat-ingest.queue.service';
+import { MessageOutboxQueueService } from './queue/message-outbox.queue.service';
+import { VoiceTranscribeQueueService } from './queue/voice-transcribe.queue.service';
+import { AskKoraService } from './services/ask-kora.service';
+import { ChatIngestService } from './services/chat-ingest.service';
+import { ChatSummaryService } from './services/chat-summary.service';
+import { ConversationService } from './services/conversation.service';
+import { HuddleService } from './services/huddle.service';
+import { InboxService } from './services/inbox.service';
+import { MessageActionsService } from './services/message-actions.service';
+import { MessageReportService } from './services/message-report.service';
+import { MessageRetentionService } from './services/message-retention.service';
+import { MessageService } from './services/message.service';
+import { PollService } from './services/poll.service';
+import { PresenceService } from './services/presence.service';
+import { ReadCursorService } from './services/read-cursor.service';
+import { UserBlockService } from './services/user-block.service';
+import { WorkChatService } from './services/work-chat.service';
+
+@Module({
+  imports: [ChatV2Module, forwardRef(() => TrackerModule)],
+  controllers: [
+    ConversationController,
+    InboxController,
+    ExternalConversationController,
+    ExternalGuestController,
+  ],
+  providers: [
+    ConversationService,
+    MessageService,
+    ReadCursorService,
+    PresenceService,
+    MessageOutboxQueueService,
+    ChatIngestQueueService,
+    ChatIngestService,
+    VoiceTranscribeQueueService,
+    WorkChatService,
+    InboxService,
+    AccessLinkService,
+    ExternalConversationService,
+    ExternalGuestGuard,
+    ChatSummaryService,
+    AskKoraService,
+    MessageActionsService,
+    UserBlockService,
+    MessageReportService,
+    MessageRetentionService,
+    MessageRetentionCron,
+    HrMembershipListener,
+    PollService,
+    HuddleService,
+  ],
+  exports: [
+    ConversationService,
+    MessageService,
+    ReadCursorService,
+    PresenceService,
+    MessageOutboxQueueService,
+    ChatIngestQueueService,
+    ChatIngestService,
+    VoiceTranscribeQueueService,
+    WorkChatService,
+    InboxService,
+    AccessLinkService,
+    ExternalConversationService,
+    ExternalGuestGuard,
+    ChatSummaryService,
+    AskKoraService,
+    MessageActionsService,
+    UserBlockService,
+    MessageReportService,
+    MessageRetentionService,
+    PollService,
+    HuddleService,
+  ],
+})
+export class MessagingModule {}

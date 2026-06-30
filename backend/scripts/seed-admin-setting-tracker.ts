@@ -134,15 +134,6 @@ const SEEDS: SettingSeed[] = [
       'Приоритет уточняющего вопроса об исполнителе задачи (0–1). По умолчанию 0.7.',
   },
   {
-    key: 'tracker.chatboxTasksInTriageEnabled',
-    value: true,
-    category: 'ai',
-    section: 'tracker',
-    severity: 'medium',
-    description:
-      'Показывать задачи из чатов в общей ленте триажа /intake (read-union). Рубильник, по умолчанию вкл (Ship-On).',
-  },
-  {
     key: 'tracker.meetingTasksAlwaysPromote',
     value: true,
     category: 'ai',
@@ -150,15 +141,6 @@ const SEEDS: SettingSeed[] = [
     severity: 'medium',
     description:
       'Задача со встречи всегда становится Issue в трекере (неназначенной, проект «Из встреч»), даже если Кора не распознала исполнителя/срок. Рубильник, по умолчанию вкл (Ship-On). Выкл → встречные задачи без исполнителя остаются в /intake.',
-  },
-  {
-    key: 'tracker.taskExtractionMode',
-    value: 'spine',
-    category: 'tracker',
-    section: 'workers',
-    severity: 'high',
-    description:
-      'Режим извлечения задач из не-meeting каналов. `spine` (по умолчанию, Ship-On) — единый спайн-специалист 3-15-tasks материализует задачи в IntakeIssue; `legacy` — аварийный откат на старые кустарные пути (chatbox task-extraction и т.д.). Рубильник.',
   },
   {
     key: 'tracker.taskDedupLinkSemantics',
@@ -221,7 +203,25 @@ const SEEDS: SettingSeed[] = [
     section: 'tracker',
     severity: 'high',
     description:
-      'Живая карточка задачи: когда в разговоре всплывает уже существующая открытая задача, но это прогресс, а не закрытие (LLM-вердикт «не выполнено»), деталь дописывается в карточку отдельной заметкой (IssueActivity, verb conversation_note), не перезатирая описание. Идемпотентно по блоку-источнику. Рубильник, по умолчанию вкл (Ship-On). Выкл → деталь прогресса теряется (старое поведение).',
+      'Живая карточка задачи: когда в разговоре всплывает уже существующая открытая задача, но это прогресс, а не закрытие (LLM-вердикт «не выполнено»), ход выполнения дописывается в карточку отдельной записью прогресса (IssueProgressUpdate, authorType ai_agent, draftState pending), не перезатирая описание. Идемпотентно по блоку-источнику. Рубильник, по умолчанию вкл (Ship-On). Выкл → ход прогресса из разговора теряется (старое поведение).',
+  },
+  {
+    key: 'tracker.progressFromConversationMinConfidence',
+    value: 0.6,
+    category: 'ai',
+    section: 'tracker',
+    severity: 'medium',
+    description:
+      'Порог уверенности для записи хода выполнения задачи из разговорного блока (живая карточка). Если уверенность LLM-вердикта (или близость матча) ниже порога, запись прогресса не создаётся — анти-fatigue. По умолчанию 0.6, диапазон 0–1.',
+  },
+  {
+    key: 'taskClosure.embedMaxAttempts',
+    value: 3,
+    category: 'operations',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Сколько раз пробовать посчитать embedding текста сигнала при единичном сбое LLM-эмбеддера (ретрай). По умолчанию 3, минимум 1. null возвращается только если все попытки провалились.',
   },
 ];
 

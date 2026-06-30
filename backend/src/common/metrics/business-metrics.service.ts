@@ -55,6 +55,8 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── семантический дедуп задач встречи (Ф5 Р2) ────────────────────────
   private taskDedupeTotal!: Counter<'result'>;
 
+  private morningTasksDigestTotal!: Counter<'is_empty'>;
+
   // ── петля закрытия задачи (TZ task-loop Ф2b) ─────────────────────────
   private taskClosureOutcomeTotal!: Counter<'outcome'>;
 
@@ -133,6 +135,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private queryPlanExtractionTotal!: Counter<'result'>;
   private queryPlanRetrievalFilteredTotal!: Counter<'filtered'>;
   private queryPlanEmptyPoolTotal!: Counter<'result'>;
+  private routerQueryClassTotal!: Counter<'class'>;
+  private routerBothWaysTotal!: Counter<'triggered'>;
 
   // ── task assignee resolver (ТЗ 2026-05-25 hard-participant-identification) ─
   // Инкрементируется в `TaskAssigneeResolverService`, когда участников с
@@ -478,6 +482,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // 'llm_error', 'json_parse', 'schema_validation', 'arbiter_skip', ...).
   private coreSpecialistExtractionFailuresTotal!: Counter<'type' | 'reason'>;
   private corePartialLossTotal!: Counter<'reason'>;
+  private strategicAlignmentParseSkipTotal!: Counter<'reason'>;
+  private rawEventRecoveryReenqueuedTotal!: Counter<string>;
+  private rawEventRecoveryDeadLetteredTotal!: Counter<string>;
   private blockWithoutEvidenceTotal!: Counter<'reason'>;
   private riskEdgeTotal!: Counter<'relation' | 'outcome'>;
   private ragAbstainTotal!: Counter<'mode'>;
@@ -652,6 +659,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeResponseUnclearTotal!: Counter<'original_reason'>;
   // ── Probe Фаза 5 (2026-06-11) — исход probe (калибровка Фазы 2) ──
   private probeOutcomeTotal!: Counter<'outcome' | 'reason'>;
+  // ── Probe-clarify Фаза 6 (2026-06-27) — диалоговое уточнение ──
+  private probeDialogTransitionTotal!: Counter<'from' | 'to'>;
+  private probeDialogOutcomeTotal!: Counter<'outcome'>;
+  private probeDialogDegradedTotal!: Counter<'reason'>;
   // ── Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки вопроса ──
   private probeQualityJudgedTotal!: Counter<'verdict'>;
   // ── Probe Фаза 4 (2026-06-20) — LLM-гейт ценности probe-вопроса ──
@@ -864,6 +875,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private cooDailyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooDailyDigestDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
   private cooDailyDigestAgeSeconds!: Gauge<'tenant_top'>;
+
+  // ── «Месяц компании» — месячный отчёт COO ─────────────────────────
+  private cooMonthlyDigestGeneratedTotal!: Counter<'tenant_top'>;
+  private cooMonthlyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
+  private cooMonthlyDigestDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
 
   // ── TZ-1 Ф3.D (daily-value-engine) — фиксы достоверности агентов ────
   // Cardinality-safe: tenant_top — top-100 bucket; trigger — фиксированный
@@ -1264,6 +1280,12 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['result'] as const,
     });
 
+    this.morningTasksDigestTotal = this.getOrCreateCounter({
+      name: 'z_tracker_morning_digest_total',
+      help: 'Утренняя сводка задач: отправлено уведомлений. is_empty=true|false (пустой день или со списком).',
+      labelNames: ['is_empty'] as const,
+    });
+
     this.taskClosureOutcomeTotal = this.getOrCreateCounter({
       name: 'z_task_closure_outcome_total',
       help: 'TZ task-loop Ф2b — исход TaskCompletionHandler. outcome=created|no_match|not_done|embed_fail|disabled|skipped_tracker|dropped_merged|no_text. Падение created при росте сигналов → петля закрытия деградирует.',
@@ -1406,6 +1428,16 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_query_plan_empty_pool_total',
       help: 'Query Understanding Волна 1 — misroute-proxy: применённый структурный фильтр дал ПУСТОЙ пул (честный ответ «в памяти нет»). Рост может означать слишком узкий/неверный фильтр.',
       labelNames: ['result'] as const,
+    });
+    this.routerQueryClassTotal = this.getOrCreateCounter({
+      name: 'z_router_query_class_total',
+      help: 'Слой источника Ф3 — детерминированный роутер запроса: распределение запросов по 5 классам (list/topic/temporal/overview/fact).',
+      labelNames: ['class'] as const,
+    });
+    this.routerBothWaysTotal = this.getOrCreateCounter({
+      name: 'z_router_both_ways_total',
+      help: 'Слой источника Ф3 — confidence-gated both-ways в retrieval: triggered="yes" запущены структурный И семантический маршруты параллельно (RRF), "no" только семантика (уверенный topic/fact).',
+      labelNames: ['triggered'] as const,
     });
 
     this.taskAssigneeAmbiguousTotal = this.getOrCreateCounter({
@@ -2438,6 +2470,19 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'block-ingest: частичная/полная потеря блоков (reason). reason: extraction_window_failed | persist_null',
       labelNames: ['reason'] as const,
     });
+    this.strategicAlignmentParseSkipTotal = this.getOrCreateCounter({
+      name: 'strategic_alignment_parse_skip_total',
+      help: 'strategic-alignment.worker: ответ LLM не разобран → graceful skip (job НЕ падает). reason: empty | invalid_json | schema_mismatch',
+      labelNames: ['reason'] as const,
+    });
+    this.rawEventRecoveryReenqueuedTotal = this.getOrCreateCounter({
+      name: 'raw_event_recovery_reenqueued_total',
+      help: 'raw-event-recovery.cron: RawEvent застрял в processingStatus=received и повторно поставлен в block-ingest.',
+    });
+    this.rawEventRecoveryDeadLetteredTotal = this.getOrCreateCounter({
+      name: 'raw_event_recovery_dead_lettered_total',
+      help: 'raw-event-recovery.cron: RawEvent старше maxAge всё ещё в processingStatus=received → dead-letter алерт (НЕ реэнкьюим).',
+    });
     this.blockWithoutEvidenceTotal = this.getOrCreateCounter({
       name: 'kc_block_without_evidence_total',
       help: 'block-ingest: блок отброшен провенанс-инвариантом (нет непустой evidence-цитаты). reason: empty_quote',
@@ -2763,6 +2808,21 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'probe_outcome_total',
       help: 'Probe Фаза 5 — исход probe: answered (ответил) | ignored (истёк без ответа), по reason. Калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса).',
       labelNames: ['outcome', 'reason'] as const,
+    });
+    this.probeDialogTransitionTotal = this.getOrCreateCounter({
+      name: 'probe_dialog_transition_total',
+      help: 'Probe-clarify Ф6 — переход фазы диалогового уточнения (from → to).',
+      labelNames: ['from', 'to'] as const,
+    });
+    this.probeDialogOutcomeTotal = this.getOrCreateCounter({
+      name: 'probe_dialog_outcome_total',
+      help: 'Probe-clarify Ф6 — терминальный исход диалога: applied | escalated_to_human | abandoned.',
+      labelNames: ['outcome'] as const,
+    });
+    this.probeDialogDegradedTotal = this.getOrCreateCounter({
+      name: 'probe_dialog_degraded_total',
+      help: 'Probe-clarify Ф6 — откат к детерминированному one-shot из-за недоступности LLM-классификатора.',
+      labelNames: ['reason'] as const,
     });
     // ── Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки вопроса ──
     this.probeQualityJudgedTotal = this.getOrCreateCounter({
@@ -3462,6 +3522,23 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'coo_daily_digest_age_seconds',
       help: 'SBA β-8.3 — возраст последнего ежедневного дайджеста (now − createdAt) в секундах. Тревога Grafana при > 25 часов.',
       labelNames: ['tenant_top'] as const,
+    });
+
+    // ── «Месяц компании» — месячный отчёт COO ──
+    this.cooMonthlyDigestGeneratedTotal = this.getOrCreateCounter({
+      name: 'coo_monthly_digest_generated_total',
+      help: '«Месяц компании» — успешно сгенерированный месячный дайджест операционного директора.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.cooMonthlyDigestFailedTotal = this.getOrCreateCounter({
+      name: 'coo_monthly_digest_failed_total',
+      help: '«Месяц компании» — провал генерации месячного дайджеста (reason ∈ llm_failed|aggregation_failed|notify_failed|exception).',
+      labelNames: ['tenant_top', 'reason'] as const,
+    });
+    this.cooMonthlyDigestDeliveredTotal = this.getOrCreateCounter({
+      name: 'coo_monthly_digest_delivered_total',
+      help: '«Месяц компании» — счётчик удачных доставок месячного дайджеста (channel ∈ conversational).',
+      labelNames: ['tenant_top', 'channel'] as const,
     });
 
     // ── TZ-1 Ф3.D — фиксы достоверности агентов ──
@@ -4201,6 +4278,16 @@ export class BusinessMetricsService implements OnModuleInit {
     this.queryPlanRetrievalFilteredTotal.inc({ filtered: args.filtered });
   }
   /** Query Understanding Волна 1 — применённый фильтр дал пустой пул (misroute-proxy). */
+  incRouterQueryClass(args: {
+    class: 'list' | 'topic' | 'temporal' | 'overview' | 'fact';
+  }): void {
+    this.routerQueryClassTotal.inc({ class: args.class });
+  }
+
+  incRouterBothWays(args: { triggered: 'yes' | 'no' }): void {
+    this.routerBothWaysTotal.inc({ triggered: args.triggered });
+  }
+
   incQueryPlanEmptyPool(args: { result: 'empty' }): void {
     this.queryPlanEmptyPoolTotal.inc({ result: args.result });
   }
@@ -4537,6 +4624,10 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incTaskDedupe(args: { result: string }): void {
     this.taskDedupeTotal?.inc({ result: args.result });
+  }
+
+  incMorningTasksDigest(args: { isEmpty: boolean }): void {
+    this.morningTasksDigestTotal?.inc({ is_empty: String(args.isEmpty) });
   }
 
   /**
@@ -6042,6 +6133,18 @@ export class BusinessMetricsService implements OnModuleInit {
     this.corePartialLossTotal.inc({ reason: args.reason }, args.count ?? 1);
   }
 
+  incStrategicAlignmentParseSkip(args: { reason: string }): void {
+    this.strategicAlignmentParseSkipTotal.inc({ reason: args.reason });
+  }
+
+  incRawEventRecoveryReenqueued(count = 1): void {
+    this.rawEventRecoveryReenqueuedTotal.inc(count);
+  }
+
+  incRawEventRecoveryDeadLettered(count = 1): void {
+    this.rawEventRecoveryDeadLetteredTotal.inc(count);
+  }
+
   incBlockWithoutEvidence(args: { reason: string }): void {
     this.blockWithoutEvidenceTotal.inc({ reason: args.reason });
   }
@@ -6441,6 +6544,20 @@ export class BusinessMetricsService implements OnModuleInit {
     reason: string;
   }): void {
     this.probeOutcomeTotal.inc({ outcome: args.outcome, reason: args.reason });
+  }
+
+  incProbeDialogTransition(args: { from: string; to: string }): void {
+    this.probeDialogTransitionTotal.inc({ from: args.from, to: args.to });
+  }
+
+  incProbeDialogOutcome(args: {
+    outcome: 'applied' | 'escalated_to_human' | 'abandoned';
+  }): void {
+    this.probeDialogOutcomeTotal.inc({ outcome: args.outcome });
+  }
+
+  incProbeDialogDegraded(): void {
+    this.probeDialogDegradedTotal.inc({ reason: 'classify_failed' });
   }
 
   /**
@@ -7535,6 +7652,35 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       Math.max(0, args.value),
     );
+  }
+
+  // ────────────────────── «Месяц компании» — Monthly Digest ───────────
+
+  /** Counter `coo_monthly_digest_generated_total{tenant_top}`. */
+  incCooMonthlyDigestGenerated(args: { tenantTop: string }): void {
+    this.cooMonthlyDigestGeneratedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `coo_monthly_digest_failed_total{tenant_top, reason}`. */
+  incCooMonthlyDigestFailed(args: {
+    tenantTop: string;
+    reason: string;
+  }): void {
+    this.cooMonthlyDigestFailedTotal.inc({
+      tenant_top: args.tenantTop,
+      reason: args.reason,
+    });
+  }
+
+  /** Counter `coo_monthly_digest_delivered_total{tenant_top, channel}`. */
+  incCooMonthlyDigestDelivered(args: {
+    tenantTop: string;
+    channel: string;
+  }): void {
+    this.cooMonthlyDigestDeliveredTotal.inc({
+      tenant_top: args.tenantTop,
+      channel: args.channel,
+    });
   }
 
   // ────────────────────── TZ-1 Ф3.D — фиксы достоверности ──────────────

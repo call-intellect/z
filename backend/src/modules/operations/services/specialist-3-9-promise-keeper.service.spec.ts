@@ -192,7 +192,7 @@ describe('Specialist39PromiseKeeperService', () => {
     });
     expect(res.sent).toBe(true);
     expect(prisma.ideaBlock.update).toHaveBeenCalledWith({
-      where: { id: 'b1' },
+      where: { id_tenantId: { id: 'b1', tenantId: 't1' } },
       data: expect.objectContaining({ commitmentStatus: 'asked' }),
     });
     expect(metrics.incCommitmentsAsked).toHaveBeenCalled();

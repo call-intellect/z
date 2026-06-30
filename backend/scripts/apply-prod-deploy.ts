@@ -68,6 +68,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-llm-task-routes-default.ts',
     hint: 'дефолтные цепочки',
   },
+  {
+    phase: 'seed-llm-core',
+    script: 'scripts/seed-llm-task-routes-month-company.ts',
+    hint: 'маршрут operations-monthly-digest (Месяц компании Ф6)',
+  },
 
   { phase: 'seed-base', script: 'scripts/seed-entitlements.ts' },
   { phase: 'seed-base', script: 'scripts/seed-retention-policies.ts' },
@@ -81,6 +86,16 @@ const STEPS: Step[] = [
     hint: '6 ключей billing.* для tier_standard',
   },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-report-archive.ts',
+    hint: 'operations.report_archive.recent_limit (навигатор/архив отчётов день/неделя/месяц)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-month-company.ts',
+    hint: 'betaOps.monthlyDigest{Enabled,LocalHour} (Месяц компании Ф6)',
+  },
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-dashboard-main.ts',
@@ -128,6 +143,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-chat.ts',
+    hint: 'chat_presence_ttl_seconds + chat_outbox_sweep_{stale_seconds,batch_limit} — крутилки presence-TTL и backstop-sweep transactional outbox единого чата (unified-chat Ф1b); external_link_ttl_hours + external_inbound_rate_limit — крутилки внешней переписки (unified-chat Ф3.5); huddle_max_participants — лимит участников созвона из чата (unified-chat Ф7b)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-worker-knobs.ts',
     hint: 'knowledge.axisClassifyEnabled + roleProfiles.minBlocks + curation.consistencyChecker* + curation.completenessScannerEnabled + tracker.goalAlignmentLowEnabled + conversational.telegramDigestHourLocal + recording.trackWatchdog{Enabled,TimeoutMinutes} — крутилки воркеров (config-knobs-to-admin-settings)',
   },
@@ -135,6 +155,16 @@ const STEPS: Step[] = [
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-tracker.ts',
     hint: 'tracker.progressAutoDraft{Enabled,MinSignals,Cron} — крутилки воркера авто-черновика прогресса задач (tracker-card-redesign-and-progress Ф7) + tracker.{assigneeClarifyEnabled,dueDateClarifyEnabled,assigneeProbePriorityHint} — дозапрос исполнителя/срока задачи через probe (Блок A Ф1)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-morning-tasks-digest.ts',
+    hint: 'tracker.morningDigest.{enabled,hourMsk,channels,maxItemsTotal,sendWhenEmpty} — крутилки утренней сводки открытых задач сотруднику',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-knowledge-extract.ts',
+    hint: 'knowledge.{decisions,ideas,insights}ExtractMinConfidence — пороги уверенности извлекателей решений/идей/инсайтов (task-decision-disambiguation Ф5)',
   },
   {
     phase: 'seed-base',
@@ -224,7 +254,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-smart-search.ts',
-    hint: 'concierge.max_steps + rag.* (умный поэтапный поиск Мастера Ф4: сторож, RRF, реранк, достаточность, гейт честности, cold-start)',
+    hint: 'rag.* (умный поэтапный поиск Мастера Ф4: RRF, реранк, достаточность, гейт честности, cold-start)',
   },
   {
     phase: 'seed-base',
@@ -266,7 +296,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-support-project.ts',
-    hint: 'Support-проект SUP + 6 states + SupportSlaPolicy (TZ support-desk Ф1); no-op без support.vendor_org_id',
+    hint: 'SupportSlaPolicy (60/480) для вендор-Org (TZ support-desk; тикеты на Conversation/Message, не Issue); no-op без support.vendor_org_id',
   },
   {
     phase: 'seed-base',
@@ -335,6 +365,8 @@ const STEPS: Step[] = [
     'conflict-arbiter',
     'clone-method',
     'day-signal',
+    'edinyy-pomoshnik',
+    'chat',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -462,7 +494,7 @@ const STEPS: Step[] = [
     script: 'scripts/patch-enable-shipped-flags.ts',
     skipBootstrap: true,
     everyDeploy: true,
-    hint: 'Ship-On: включить готовые фичи (meetingTasksToTrackerOnly, tables_text_to_schema, curationAutotuneEnabled)',
+    hint: 'Ship-On: включить готовые фичи (tables_text_to_schema, curationAutotuneEnabled)',
   },
   {
     phase: 'patch',
@@ -570,6 +602,7 @@ const STEPS: Step[] = [
   },
 
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
+  { phase: 'backfill', script: 'scripts/backfill-idea-quality.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-meeting-linked-ids.ts', hint: 'IntakeIssue.meetingId → Issue.linkedMeetingIds backfill (intake-issue-linked-meeting-ids-fix, только meeting:-формат externalId)', skipBootstrap: true },
@@ -732,12 +765,7 @@ const STEPS: Step[] = [
     skipBootstrap: true,
     hint: 'ChatBox клиенты Person{external} → Customer/Entity{customer} + контакты Entity{person}; осиротевшие Person soft-delete',
   },
-  {
-    phase: 'backfill',
-    script: 'scripts/backfill-task-source-type.ts',
-    hint: "Task.sourceType='meeting' где пусто (chatbox-tasks Ф5)",
-    skipBootstrap: true,
-  },
+  { phase: 'backfill', script: 'scripts/backfill-purge-junk-entities.ts', skipBootstrap: true },
   {
     phase: 'backfill',
     script: 'scripts/backfill-role-clone-single-bearer.ts',
@@ -759,7 +787,19 @@ const STEPS: Step[] = [
   {
     phase: 'backfill',
     script: 'scripts/backfill-provenance-preview.ts',
-    hint: 'previewQuote+previewSourceRef для Decision/Issue/Regulation, previewSourceRef для Task (провенанс Ф2)',
+    hint: 'previewQuote+previewSourceRef для Decision/Issue/Regulation (провенанс Ф2)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-source-layer.ts',
+    hint: 'SourceEpisode/SourceParticipant/SourceEntity для существующих RawEvent (слой источника Ф2); embedding=null, проставится при ре-эмбеддинге',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-context-header-reembed.ts',
+    hint: 'ре-эмбеддинг IdeaBlock с contextual-header v2 (компании/состав/заголовок источника) + REINDEX HNSW; идемпотентно по contextHeaderVersion (Ф7). Запускать ПОСЛЕ backfill-source-layer',
     skipBootstrap: true,
   },
   {
@@ -768,9 +808,22 @@ const STEPS: Step[] = [
     skipBootstrap: true,
   },
   {
-    phase: 'migrate',
-    script: 'scripts/migrate-task-to-issue.ts',
-    args: ['--apply'],
+    phase: 'backfill',
+    script: 'scripts/backfill-chat-bridge-telegram.ts',
+    hint: 'мост-загрузка Telegram-экспорта в граф (Ф0): требует --tenant=<orgId> --file=<result.json>; запускается оператором вручную, идемпотентно по messageExternalId',
+    skipBootstrap: true,
+    skipUpdate: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-issuecomment-to-message.ts',
+    hint: 'перенос legacy IssueComment → Message в work_chat (единый чат Ф2.5b); ensureWorkChat + insertHistorical, перепривязка attachments/recognition, маркер IssueComment.messageId. Идемпотентно (messageId!=null пропускается, clientMessageId=ic:<id> дедуп)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-message-contentstripped.ts',
+    hint: 'plaintext в Message.contentStripped для GIN-поиска (единый чат Ф4a); decrypt(content)→stripToPlain. Идемпотентно (contentStripped=null фильтр)',
     skipBootstrap: true,
   },
 ];
@@ -1042,8 +1095,17 @@ async function runSchemaPhase(
 
   if (!(await ensureBaseline())) return false;
 
+  const preMigrate: Step[] = [
+    { phase: 'migrate', script: 'scripts/migrate-task-to-issue.ts', args: ['--apply'] },
+    { phase: 'backfill', script: 'scripts/backfill-collapse-legacy-task-duplicates.ts', args: ['--apply'] },
+  ];
+  for (const s of preMigrate) {
+    const r = await runOne(s, false, verbose);
+    if (!r.ok && !continueOnFail) return false;
+  }
+
   const dbUrl = process.env['DATABASE_URL'];
-   
+
   console.log('\n>>> [schema] bunx prisma migrate deploy');
   const push = Bun.spawn(['bunx', 'prisma', 'migrate', 'deploy'], {
     stdout: 'inherit',

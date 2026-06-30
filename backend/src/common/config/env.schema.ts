@@ -253,8 +253,6 @@ const AiFeatureFlagsSchema = z.object({
   CLIENT_PROTOCOL_ENABLED: zBool(true),
   DOC_COMPILER_ENABLED: zBool(true),
   REGULATION_GATE_STRICT_ENABLED: zBool(true),
-  CHATBOX_TASK_EXTRACTION_ENABLED: zBool(true),
-  TASKS_CROSS_SOURCE_DEDUPE_ENABLED: zBool(true),
   ASSIGNMENT_NOTIFICATIONS_ENABLED: zBool(true),
 });
 
@@ -339,6 +337,18 @@ const KnowledgeCoreSchema = z.object({
   MEETING_REPORT_FAST_ENABLED: zBool(true),
 
   REPORT_INGEST_ENABLED: zBool(true),
+
+  MESSAGE_BRIDGE_ENABLED: zBool(true),
+
+  CHAT_ENABLED: zBool(true),
+
+  CHAT_INGEST_ENABLED: zBool(true),
+
+  CHAT_PUSH_ENABLED: zBool(true),
+
+  EXTERNAL_CHAT_ENABLED: zBool(true),
+
+  HUDDLES_ENABLED: zBool(true),
 
   CHAT_V2_ENABLED: zBool(false),
   CHAT_V2_TOP_BLOCKS: z.coerce.number().int().positive().default(12),
@@ -442,6 +452,26 @@ const ConversationalSchema = z.object({
 const TelegramBotChannelSchema = z.object({
   TELEGRAM_BOT_API_BASE: z.string().url().default('https://api.telegram.org'),
   TELEGRAM_BOT_GLOBAL_RPS: z.coerce.number().int().positive().default(25),
+});
+
+const PushSchema = z.object({
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:noreply@kora.app'),
+  PUSH_MAX_FAILURES: z.coerce.number().int().positive().default(5),
+
+  APNS_KEY_ID: z.string().optional(),
+  APNS_TEAM_ID: z.string().optional(),
+  APNS_PRIVATE_KEY: z.string().optional(),
+  APNS_BUNDLE_ID: z.string().optional(),
+  APNS_USE_SANDBOX: zBool(false),
+
+  FCM_PROJECT_ID: z.string().optional(),
+  FCM_CLIENT_EMAIL: z.string().optional(),
+  FCM_PRIVATE_KEY: z.string().optional(),
+
+  RUSTORE_PROJECT_ID: z.string().optional(),
+  RUSTORE_SERVICE_TOKEN: z.string().optional(),
 });
 
 const TelegramProxySchema = z.object({
@@ -606,6 +636,9 @@ const BetaOpsSchema = z.object({
 
   COO_DAILY_DIGEST_ENABLED: z.coerce.boolean().default(true),
   COO_DAILY_DIGEST_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(22),
+
+  COO_MONTHLY_DIGEST_ENABLED: zBool(true),
+  COO_MONTHLY_DIGEST_LOCAL_HOUR: z.coerce.number().int().min(0).max(23).default(6),
 
   COMMITMENT_FOLLOWUP_ENABLED: zBool(true),
   COMMITMENT_FOLLOWUP_LOCAL_HOUR: z.coerce.number().int().min(0).max(23).default(9),
@@ -826,6 +859,7 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any)
   .merge(DocumentIngestSchema)
   .merge(ExtractionSchema)
   .merge(ConversationalSchema)
+  .merge(PushSchema)
   .merge(TelegramBotChannelSchema)
   .merge(TelegramProxySchema)
   .merge(MaxBotChannelSchema)

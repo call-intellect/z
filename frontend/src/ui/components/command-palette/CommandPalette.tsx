@@ -29,7 +29,7 @@ import {
 
 import { searchApi, type SearchResponse } from "@/api/search.api";
 import { conciergeApi } from "@/api/concierge.api";
-import { chatV2Api, type ChatV2AskResponseApi } from "@/api/chat-v2.api";
+import type { ChatV2CitationApi } from "@/api/chat-v2.api";
 import { voiceApi } from "@/api/voice.api";
 import { ApiError, humanizeApiError } from "@/api/api-error";
 import { toast } from "sonner";
@@ -54,6 +54,12 @@ import {
   type PaletteRecentItem,
 } from "./recent-storage";
 
+type PaletteAiAnswer = {
+  text: string;
+  citations: ChatV2CitationApi[];
+  conversationId: string;
+};
+
 export function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
@@ -73,7 +79,7 @@ export function CommandPalette() {
   const [loading, setLoading] = useState(false);
   const [commandBusy, setCommandBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
-  const [aiAnswer, setAiAnswer] = useState<ChatV2AskResponseApi | null>(null);
+  const [aiAnswer, setAiAnswer] = useState<PaletteAiAnswer | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [lastAskedQuestion, setLastAskedQuestion] = useState<string | null>(
     null,
@@ -319,8 +325,8 @@ export function CommandPalette() {
       if (res.quotaExceeded) {
         toast.error(
           res.quotaExceeded === "daily"
-            ? "Дневная квота Concierge исчерпана"
-            : "Месячная квота Concierge исчерпана",
+            ? "Дневная квота Мастера исчерпана"
+            : "Месячная квота Мастера исчерпана",
         );
       } else if (res.error) {
         toast.error(res.error.message);
@@ -350,7 +356,7 @@ export function CommandPalette() {
       close();
       setQuery("");
     } catch {
-      toast.error("Concierge недоступен");
+      toast.error("Мастер недоступен");
     } finally {
       setCommandBusy(false);
     }
@@ -364,12 +370,25 @@ export function CommandPalette() {
     setAiAnswer(null);
     setLastAskedQuestion(text);
     try {
-      const res = await chatV2Api.ask({
-        question: text,
-        scope: "org",
-        mode: "synthetic",
+      const res = await conciergeApi.askOnce({
+        userMessage: text,
+        pageContext: { clientPath: pathname ?? undefined },
       });
-      setAiAnswer(res);
+      if (res.quotaExceeded) {
+        setAiError(
+          res.quotaExceeded === "daily"
+            ? "Дневная квота Мастера исчерпана"
+            : "Месячная квота Мастера исчерпана",
+        );
+      } else if (res.error) {
+        setAiError(res.error.message);
+      } else {
+        setAiAnswer({
+          text: res.text,
+          citations: res.citations ?? [],
+          conversationId: res.conversationId,
+        });
+      }
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -419,7 +438,7 @@ export function CommandPalette() {
     >
       <div className="relative">
         <CommandInput
-          placeholder="Поиск, ? — спросить Кору, > — действие Concierge"
+          placeholder="Поиск, ? — спросить Кору, > — действие Мастера"
           value={query}
           onValueChange={setQuery}
         />
@@ -581,7 +600,7 @@ export function CommandPalette() {
                 onSelect={() => {
                   trackRecent({
                     id: "mode:concierge",
-                    label: "Дать команду Concierge…",
+                    label: "Дать команду Мастеру…",
                     subtitle: "Действие",
                     action: { kind: "set-query", value: "> " },
                   });
@@ -590,7 +609,7 @@ export function CommandPalette() {
               >
                 <ResultRow
                   icon={MessageCircle}
-                  title="Дать команду Concierge…"
+                  title="Дать команду Мастеру…"
                   subtitle="> — действие (создать задачу, перенести встречу и т.п.)"
                 />
               </CommandItem>
@@ -625,7 +644,7 @@ export function CommandPalette() {
                     ? "Кора ищет ответ…"
                     : `Спросить Кору: «${trimmed.replace(/^\?+\s*/, "")}»`
                 }
-                subtitle="Enter — отправить (chat-v2 · org · synthetic)"
+                subtitle="Enter — отправить"
               />
             </CommandItem>
           </CommandGroup>
@@ -633,7 +652,7 @@ export function CommandPalette() {
 
         {}
         {isCommandMode && (
-          <CommandGroup heading="Concierge — действие">
+          <CommandGroup heading="Мастер — действие">
             <CommandItem
               value="concierge-execute"
               onSelect={() => void runCommand()}
@@ -644,8 +663,8 @@ export function CommandPalette() {
                 iconClassName={commandBusy ? "animate-spin" : undefined}
                 title={
                   commandBusy
-                    ? "Concierge выполняет…"
-                    : `Спросить Concierge: «${trimmed.replace(/^>+\s*/, "")}»`
+                    ? "Мастер выполняет…"
+                    : `Спросить Мастера: «${trimmed.replace(/^>+\s*/, "")}»`
                 }
                 subtitle="Enter — отправить"
               />
@@ -681,11 +700,6 @@ export function CommandPalette() {
                   <div className="whitespace-pre-wrap text-sm text-fg-primary">
                     {aiAnswer.text}
                   </div>
-                  {aiAnswer.uncertaintyNote && (
-                    <div className="text-xs text-fg-tertiary">
-                      {aiAnswer.uncertaintyNote}
-                    </div>
-                  )}
                   {aiAnswer.citations.length > 0 && (
                     <div className="space-y-1">
                       <div className="text-xs font-medium text-fg-tertiary">
@@ -720,17 +734,12 @@ export function CommandPalette() {
                       </ul>
                     </div>
                   )}
-                  <div className="flex items-center justify-between pt-1">
-                    {aiAnswer.cacheHit && (
-                      <span className="text-[10px] uppercase tracking-wider text-fg-tertiary">
-                        из кэша
-                      </span>
-                    )}
+                  <div className="flex items-center pt-1">
                     <button
                       type="button"
                       onClick={() =>
                         go(
-                          `/chat-v2?conversationId=${encodeURIComponent(
+                          `/chat?conversationId=${encodeURIComponent(
                             aiAnswer.conversationId,
                           )}`,
                         )
@@ -989,7 +998,7 @@ const QUICK_NAV_ITEMS: QuickNavItem[] = [
     icon: Brain,
   },
   {
-    href: "/chat-v2",
+    href: "/chat",
     label: "Помощник компании",
     subtitle: "Полноценный диалог с памятью компании",
     icon: Sparkles,

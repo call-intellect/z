@@ -1,16 +1,26 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { $Enums } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import { EntityResolutionService } from '../../knowledge-core/services/entity-resolution.service';
 import {
   EXTRACT_PLAN_JSON_SCHEMA,
   EXTRACT_PLAN_SYSTEM_PROMPT,
   buildExtractPlanUserPrompt,
 } from '../prompts/extract-plan.prompt';
+import {
+  DIALOG_UNDERSTAND_JSON_SCHEMA,
+  DIALOG_UNDERSTAND_SYSTEM_PROMPT,
+  buildUnderstandUserPrompt,
+} from '../prompts/understand.prompt';
 
 import { type PeriodExpr, resolvePeriod } from './period-resolver';
+import { classifyQueryClass, isQueryClass, type QueryClass } from './query-classifier.service';
 
 export interface QueryPlanFilters {
   dateFrom: Date | null;
@@ -18,6 +28,7 @@ export interface QueryPlanFilters {
   signalTypes: string[];
   themeBranches: string[];
   entityHints: string[];
+  personHints: string[];
   personScope: boolean;
   aggregation: boolean;
   needsAction: boolean;
@@ -29,12 +40,32 @@ export interface StructuralRetrievalFilters {
   dateTo: Date | null;
   signalTypes: string[];
   entityIds: string[];
+  personIds: string[];
   themeBranches: string[];
   bitemporalActiveOnly: boolean;
 }
 
+/**
+ * Слой источника Ф4 (R14) — сигнал настоящей неоднозначности имени в К1.
+ * Возникает, когда подсказка-имя дала ≥2 равноуверенных кандидата И контекст-
+ * сущность не сузила выбор до одного. Помощник короткозамыкает на уточняющий
+ * вопрос (свободный текст), не подставляя personIds вслепую.
+ */
+export interface StructuralFilterClarification {
+  question: string;
+  hint: string;
+  candidatePersonIds: string[];
+}
+
+export interface ResolvedStructuralFilters {
+  filters: StructuralRetrievalFilters | null;
+  clarification: StructuralFilterClarification | null;
+}
+
 export interface QueryPlanResult {
   filters: QueryPlanFilters;
+  queryClass: QueryClass;
+  queryClassConfidence: number;
   confidence: number;
   applied: boolean;
   durationSeconds: number;
@@ -49,7 +80,25 @@ export interface QueryPlanExtractInput {
   conversationId: string | null;
 }
 
+export interface UnderstandInput {
+  tenantId: string;
+  userId: string;
+  question: string;
+  summary: string | null;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  todayIso: string;
+  orgTimezone: string | null;
+  conversationId: string | null;
+}
+
+export interface UnderstandResult {
+  queries: string[];
+  queryPlan: QueryPlanResult;
+}
+
 export const QUERY_PLAN_MIN_CONFIDENCE = 0.6;
+
+const QUERY_CLASS_TIEBREAK_FLOOR = 0.7;
 
 const ENTITY_HINT_MAX_LENGTH = 200;
 const ENTITY_HINT_MAX_COUNT = 10;
@@ -60,6 +109,8 @@ interface RawPlan {
   signalTypes?: unknown;
   themeBranches?: unknown;
   entityHints?: unknown;
+  personHints?: unknown;
+  queryClass?: unknown;
   personScope?: unknown;
   aggregation?: unknown;
   needsAction?: unknown;
@@ -88,7 +139,101 @@ export class QueryPlanExtractorService {
   constructor(
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(EntityResolutionService)
+    private readonly entityResolution?: EntityResolutionService,
   ) {}
+
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
+
+  async understand(input: UnderstandInput): Promise<UnderstandResult> {
+    const startedAt = Date.now();
+    const orgTimezone = input.orgTimezone ?? 'Europe/Moscow';
+
+    let rawText: string;
+    try {
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      if (guardOn) {
+        const sanitized = sanitizeCustomPrompt(input.question);
+        for (const pattern of sanitized.reasons) {
+          this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
+        }
+      }
+      const rawUser = buildUnderstandUserPrompt({
+        summary: input.summary,
+        history: input.history,
+        question: input.question,
+        todayIso: input.todayIso,
+        orgTimezone,
+      });
+      const systemPrompt = guardOn
+        ? withInjectionGuard(DIALOG_UNDERSTAND_SYSTEM_PROMPT)
+        : DIALOG_UNDERSTAND_SYSTEM_PROMPT;
+      const userMessage = guardOn ? wrapUserData(rawUser) : rawUser;
+
+      const result = await this.llm.call({
+        taskType: 'dialog-understand',
+        tenantId: input.tenantId,
+        userId: input.userId,
+        systemPrompt,
+        userMessage,
+        maxTokens: 1500,
+        responseFormat: {
+          type: 'json_schema',
+          name: 'dialog_understand_v1',
+          strict: true,
+          schema: DIALOG_UNDERSTAND_JSON_SCHEMA,
+        },
+        sourceRef: input.conversationId
+          ? { type: 'chat_v2_conversation', id: input.conversationId }
+          : null,
+      });
+      rawText = result.text;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        { conversationId: input.conversationId, err: message },
+        'Understand LLM упал — fail-open (только оригинальный вопрос, без плана)',
+      );
+      return {
+        queries: [input.question],
+        queryPlan: this.failOpen(startedAt, input.question),
+      };
+    }
+
+    const parsed = this.parseUnderstandJson(rawText);
+    if (parsed === null) {
+      this.metrics.incPromptInvalidResponse({
+        taskType: 'dialog-understand',
+        model: 'unknown',
+        reason: 'json_parse',
+      });
+      return {
+        queries: [input.question],
+        queryPlan: this.failOpen(startedAt, input.question),
+      };
+    }
+
+    const queries = this.buildQueries(input.question, parsed.queries);
+    const queryPlan = this.buildPlanFromRaw(
+      parsed.plan,
+      parsed.confidence,
+      input.todayIso,
+      orgTimezone,
+      startedAt,
+      input.question,
+    );
+    return { queries, queryPlan };
+  }
 
   async extract(input: QueryPlanExtractInput): Promise<QueryPlanResult> {
     const startedAt = Date.now();
@@ -128,32 +273,73 @@ export class QueryPlanExtractorService {
         { conversationId: input.conversationId, err: message },
         'QueryPlanExtractor LLM упал — fail-open (план не применяется)',
       );
-      return this.failOpen(startedAt);
+      return this.failOpen(startedAt, input.questions.join(' '));
     }
 
     const parsed = this.parsePlanJson(rawText);
     if (parsed === null) {
-      return this.failOpen(startedAt);
+      return this.failOpen(startedAt, input.questions.join(' '));
     }
 
-    const periodExpr = this.coercePeriodExpr(parsed.periodExpr);
-    const periodDays = this.coercePeriodDays(parsed.periodDays);
-    const signalTypes = this.sanitizeEnumArray(parsed.signalTypes, this.validSignalTypes);
-    const themeBranches = this.sanitizeEnumArray(parsed.themeBranches, this.validThemeBranches);
-    const entityHints = this.sanitizeEntityHints(parsed.entityHints);
-    const personScope = this.coerceBool(parsed.personScope);
-    const aggregation = this.coerceBool(parsed.aggregation);
-    const needsAction = this.coerceBool(parsed.needsAction);
-    const activeNow = this.coerceBool(parsed.activeNow);
-    const confidence = this.coerceConfidence(parsed.confidence);
+    return this.buildPlanFromRaw(
+      parsed,
+      this.coerceConfidence(parsed.confidence),
+      input.todayIso,
+      orgTimezone,
+      startedAt,
+      input.questions.join(' '),
+    );
+  }
 
-    const period = resolvePeriod(periodExpr, input.todayIso, orgTimezone, periodDays);
+  private resolveQueryClass(
+    raw: RawPlan,
+    question: string,
+  ): { queryClass: QueryClass; queryClassConfidence: number } {
+    const deterministic = classifyQueryClass(question);
+    if (deterministic.confidence >= QUERY_CLASS_TIEBREAK_FLOOR) {
+      return {
+        queryClass: deterministic.class,
+        queryClassConfidence: deterministic.confidence,
+      };
+    }
+    if (isQueryClass(raw.queryClass)) {
+      return { queryClass: raw.queryClass, queryClassConfidence: 0.6 };
+    }
+    return {
+      queryClass: deterministic.class,
+      queryClassConfidence: deterministic.confidence,
+    };
+  }
+
+  private buildPlanFromRaw(
+    raw: RawPlan,
+    confidence: number,
+    todayIso: string,
+    orgTimezone: string,
+    startedAt: number,
+    question: string,
+  ): QueryPlanResult {
+    const periodExpr = this.coercePeriodExpr(raw.periodExpr);
+    const periodDays = this.coercePeriodDays(raw.periodDays);
+    const signalTypes = this.sanitizeEnumArray(raw.signalTypes, this.validSignalTypes);
+    const themeBranches = this.sanitizeEnumArray(raw.themeBranches, this.validThemeBranches);
+    const entityHints = this.sanitizeEntityHints(raw.entityHints);
+    const personHints = this.sanitizeEntityHints(raw.personHints);
+    const personScope = this.coerceBool(raw.personScope);
+    const aggregation = this.coerceBool(raw.aggregation);
+    const needsAction = this.coerceBool(raw.needsAction);
+    const activeNow = this.coerceBool(raw.activeNow);
+
+    const { queryClass, queryClassConfidence } = this.resolveQueryClass(raw, question);
+
+    const period = resolvePeriod(periodExpr, todayIso, orgTimezone, periodDays);
 
     const hasAnyFilter =
       !!(period.dateFrom || period.dateTo) ||
       signalTypes.length > 0 ||
       themeBranches.length > 0 ||
       entityHints.length > 0 ||
+      personHints.length > 0 ||
       personScope ||
       activeNow;
 
@@ -163,6 +349,8 @@ export class QueryPlanExtractorService {
     if (!applied) {
       return {
         filters: this.emptyFilters(),
+        queryClass,
+        queryClassConfidence,
         confidence,
         applied: false,
         durationSeconds,
@@ -176,15 +364,57 @@ export class QueryPlanExtractorService {
         signalTypes,
         themeBranches,
         entityHints,
+        personHints,
         personScope,
         aggregation,
         needsAction,
         activeNow,
       },
+      queryClass,
+      queryClassConfidence,
       confidence,
       applied: true,
       durationSeconds,
     };
+  }
+
+  private buildQueries(question: string, rawQueries: unknown): string[] {
+    const expansions = Array.isArray(rawQueries)
+      ? rawQueries
+          .filter((q): q is string => typeof q === 'string' && q.trim().length > 0)
+          .slice(0, 3)
+      : [];
+    const seen = new Set<string>();
+    return [question, ...expansions]
+      .map((q) => q.trim())
+      .filter((q) => {
+        if (q.length === 0) return false;
+        const k = q.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .slice(0, 3);
+  }
+
+  private parseUnderstandJson(
+    text: string,
+  ): { queries: unknown; plan: RawPlan; confidence: number } | null {
+    try {
+      const cleaned = this.stripCodeFence(text).trim();
+      const parsed = JSON.parse(cleaned) as unknown;
+      if (parsed === null || typeof parsed !== 'object') return null;
+      const obj = parsed as { queries?: unknown; plan?: unknown; confidence?: unknown };
+      const plan =
+        obj.plan !== null && typeof obj.plan === 'object' ? (obj.plan as RawPlan) : {};
+      return {
+        queries: obj.queries,
+        plan,
+        confidence: this.coerceConfidence(obj.confidence),
+      };
+    } catch {
+      return null;
+    }
   }
 
   async resolveSelfPersonId(tenantId: string, userId: string): Promise<string | null> {
@@ -213,11 +443,23 @@ export class QueryPlanExtractorService {
         }
       }
 
+      const personIds = await this.resolvePersonHints(tenantId, [
+        ...plan.filters.personHints,
+        ...plan.filters.entityHints,
+      ]);
+      if (plan.filters.personScope) {
+        const selfPersonId = await this.resolveSelfPersonId(tenantId, userId);
+        if (selfPersonId && !personIds.includes(selfPersonId)) {
+          personIds.push(selfPersonId);
+        }
+      }
+
       const filters: StructuralRetrievalFilters = {
         dateFrom: plan.filters.dateFrom,
         dateTo: plan.filters.dateTo,
         signalTypes: plan.filters.signalTypes,
         entityIds,
+        personIds,
         themeBranches: plan.filters.themeBranches,
         bitemporalActiveOnly: plan.filters.activeNow,
       };
@@ -227,6 +469,7 @@ export class QueryPlanExtractorService {
         !filters.dateTo &&
         filters.signalTypes.length === 0 &&
         filters.entityIds.length === 0 &&
+        filters.personIds.length === 0 &&
         filters.themeBranches.length === 0 &&
         !filters.bitemporalActiveOnly;
       if (nothingToFilter) return null;
@@ -240,6 +483,155 @@ export class QueryPlanExtractorService {
       );
       return null;
     }
+  }
+
+  /**
+   * Слой источника Ф4 (R14) — резолв структурных фильтров с детектом настоящей
+   * неоднозначности имени для маршрута К1 (class='list'). Имена-подсказки
+   * резолвятся через нечёткий `resolvePersonCandidates` (НЕ точное равенство):
+   *   - единственный уверенный кандидат / контекст сузил → personIds, как обычно;
+   *   - ≥2 кандидата с близкой уверенностью (дельта < knowledge.
+   *     person_resolve_ambiguity_delta) И контекст-сущность не сузила до одного
+   *     → clarification (свободный вопрос), personIds НЕ подставляются.
+   * Остальные оси (дата/тип/тема/сущности) — как в resolveStructuralFilters.
+   * Fail-open: при сбое — без фильтра и без clarification.
+   */
+  async resolveStructuralFiltersWithClarify(args: {
+    tenantId: string;
+    userId: string;
+    plan: QueryPlanResult;
+  }): Promise<ResolvedStructuralFilters> {
+    const { tenantId, userId, plan } = args;
+    if (!plan.applied) return { filters: null, clarification: null };
+
+    try {
+      const entityIds = await this.resolveEntityHints(tenantId, plan.filters.entityHints);
+
+      if (plan.filters.personScope) {
+        const selfEntityId = await this.resolveSelfEntityId(tenantId, userId);
+        if (selfEntityId && !entityIds.includes(selfEntityId)) {
+          entityIds.push(selfEntityId);
+        }
+      }
+
+      const isList = plan.queryClass === 'list';
+      const personHints = isList
+        ? [...plan.filters.personHints, ...plan.filters.entityHints]
+        : [];
+
+      const { personIds, clarification } = isList
+        ? await this.resolvePersonHintsWithClarify(tenantId, personHints, entityIds)
+        : { personIds: [] as string[], clarification: null };
+
+      if (clarification) {
+        return { filters: null, clarification };
+      }
+
+      if (plan.filters.personScope) {
+        const selfPersonId = await this.resolveSelfPersonId(tenantId, userId);
+        if (selfPersonId && !personIds.includes(selfPersonId)) {
+          personIds.push(selfPersonId);
+        }
+      }
+
+      const filters: StructuralRetrievalFilters = {
+        dateFrom: plan.filters.dateFrom,
+        dateTo: plan.filters.dateTo,
+        signalTypes: plan.filters.signalTypes,
+        entityIds,
+        personIds,
+        themeBranches: plan.filters.themeBranches,
+        bitemporalActiveOnly: plan.filters.activeNow,
+      };
+
+      const nothingToFilter =
+        !filters.dateFrom &&
+        !filters.dateTo &&
+        filters.signalTypes.length === 0 &&
+        filters.entityIds.length === 0 &&
+        filters.personIds.length === 0 &&
+        filters.themeBranches.length === 0 &&
+        !filters.bitemporalActiveOnly;
+      if (nothingToFilter) return { filters: null, clarification: null };
+
+      return { filters, clarification: null };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        { tenantId, err: message },
+        'resolveStructuralFiltersWithClarify упал — fail-open (без фильтра и без уточнения)',
+      );
+      return { filters: null, clarification: null };
+    }
+  }
+
+  /**
+   * Слой источника Ф4 (R14) — резолв имён-подсказок в personIds с детектом
+   * неоднозначности. На каждую уникальную подсказку берёт ранжированных
+   * кандидатов (`resolvePersonCandidates`, контекст-сущности сужают):
+   *   - 0 кандидатов → пропуск (семантическая страховка позже);
+   *   - 1 кандидат → personId;
+   *   - ≥2 кандидата, дельта top1−top2 < delta → clarification (короткое замыкание);
+   *   - ≥2 кандидата, дельта ≥ delta → берём top1 (контекст/уверенность развели).
+   * Первая встреченная неоднозначность возвращается как clarification.
+   */
+  private async resolvePersonHintsWithClarify(
+    tenantId: string,
+    hints: string[],
+    contextEntityIds: string[],
+  ): Promise<{
+    personIds: string[];
+    clarification: StructuralFilterClarification | null;
+  }> {
+    if (!this.entityResolution) return { personIds: [], clarification: null };
+
+    const delta =
+      (await this.cfg
+        .getDynamic<number>('knowledge.person_resolve_ambiguity_delta', undefined, 0.1)
+        .catch(() => 0.1)) ?? 0.1;
+
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const seenHints = new Set<string>();
+
+    for (const rawHint of hints) {
+      const hint = rawHint.trim();
+      if (!hint) continue;
+      const hintKey = hint.toLowerCase();
+      if (seenHints.has(hintKey)) continue;
+      seenHints.add(hintKey);
+
+      const candidates = await this.entityResolution
+        .resolvePersonCandidates({ tenantId, hint, contextEntityIds })
+        .catch(() => [] as Array<{ personId: string; confidence: number }>);
+
+      if (candidates.length === 0) continue;
+
+      const top = candidates[0]!;
+      const second = candidates[1];
+      const ambiguous =
+        candidates.length >= 2 &&
+        second !== undefined &&
+        top.confidence - second.confidence < delta;
+
+      if (ambiguous) {
+        return {
+          personIds: [],
+          clarification: {
+            question: `Уточните, пожалуйста: про какого «${hint}» речь? В памяти есть несколько разных людей с таким именем. Подскажите компанию, отдел или о чём была встреча — и я найду нужные источники.`,
+            hint,
+            candidatePersonIds: candidates.map((c) => c.personId),
+          },
+        };
+      }
+
+      if (seen.has(top.personId)) continue;
+      seen.add(top.personId);
+      out.push(top.personId);
+      if (out.length >= ENTITY_HINT_MAX_COUNT) break;
+    }
+
+    return { personIds: out, clarification: null };
   }
 
   private async resolveEntityHints(tenantId: string, hints: string[]): Promise<string[]> {
@@ -268,6 +660,29 @@ export class QueryPlanExtractorService {
     return out;
   }
 
+  private async resolvePersonHints(tenantId: string, hints: string[]): Promise<string[]> {
+    if (!this.entityResolution) return [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const seenHints = new Set<string>();
+    for (const rawHint of hints) {
+      const hint = rawHint.trim();
+      if (!hint) continue;
+      const hintKey = hint.toLowerCase();
+      if (seenHints.has(hintKey)) continue;
+      seenHints.add(hintKey);
+      const personId = await this.entityResolution
+        .resolvePersonByHint(tenantId, hint)
+        .catch(() => null);
+      if (!personId) continue;
+      if (seen.has(personId)) continue;
+      seen.add(personId);
+      out.push(personId);
+      if (out.length >= ENTITY_HINT_MAX_COUNT) break;
+    }
+    return out;
+  }
+
   private async resolveSelfEntityId(tenantId: string, userId: string): Promise<string | null> {
     const person = await this.prisma.person.findFirst({
       where: { tenantId, userId, deletedAt: null },
@@ -283,6 +698,7 @@ export class QueryPlanExtractorService {
       signalTypes: [],
       themeBranches: [],
       entityHints: [],
+      personHints: [],
       personScope: false,
       aggregation: false,
       needsAction: false,
@@ -290,9 +706,12 @@ export class QueryPlanExtractorService {
     };
   }
 
-  private failOpen(startedAt: number): QueryPlanResult {
+  private failOpen(startedAt: number, question?: string): QueryPlanResult {
+    const deterministic = classifyQueryClass(question ?? '');
     return {
       filters: this.emptyFilters(),
+      queryClass: deterministic.class,
+      queryClassConfidence: deterministic.confidence,
       confidence: 0,
       applied: false,
       durationSeconds: (Date.now() - startedAt) / 1000,

@@ -48,7 +48,24 @@ export function BottleneckHeatmapWidget({ data, loading, error }: Props) {
             </p>
           </div>
         )}
-        {!loading && !error && data && data.departments.length >= 2 && (
+        {!loading &&
+          !error &&
+          data &&
+          data.departments.length >= 2 &&
+          maxValue === 0 &&
+          data.topPairs.length === 0 && (
+            <div className="flex flex-col items-center gap-2 rounded-lg bg-bg-overlay/40 p-6 text-center">
+              <Grid2x2 size={28} className="text-fg-tertiary" />
+              <p className="text-sm text-fg-secondary">
+                Пересечений между командами пока нет.
+              </p>
+            </div>
+          )}
+        {!loading &&
+          !error &&
+          data &&
+          data.departments.length >= 2 &&
+          !(maxValue === 0 && data.topPairs.length === 0) && (
           <div className="space-y-4">
             <div className="overflow-x-auto">
               <table className="min-w-full text-xs">

@@ -526,7 +526,7 @@ export class RouterService {
 
     // Загружаем содержимое блока для cache-key + промпта.
     const full = await this.prisma.ideaBlock.findUnique({
-      where: { id: block.id },
+      where: { id_tenantId: { id: block.id, tenantId: block.tenantId } },
       select: {
         criticalQuestion: true,
         trustedAnswer: true,

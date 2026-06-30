@@ -25,6 +25,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Порог длины (в символах): если вставленный текст короче, форма предлагает отправить его в «Идеи», а не сохранять документом. По умолчанию 200, диапазон 1–5000.',
   },
+  {
+    key: 'knowledge.document_summary_input_chars',
+    value: 12000,
+    category: 'documents',
+    section: 'documents',
+    severity: 'low',
+    description:
+      'Лимит символов parsedText, передаваемых в LLM для AI-заголовка и резюме документа (Ф8 «слой источника»). Текст обрезается до этого предела перед вызовом. По умолчанию 12000, диапазон 500–60000.',
+  },
 ];
 
 interface Counters {

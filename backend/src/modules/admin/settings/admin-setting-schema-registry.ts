@@ -32,22 +32,39 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAutotuneStep', UNIT_INTERVAL],
   ['knowledge.curationMaxProvisionalOverride', UNIT_INTERVAL],
   ['knowledge.insightSpikeRatio', z.number().min(0).max(100)],
+  ['knowledge.decisionsExtractMinConfidence', UNIT_INTERVAL],
+  ['knowledge.ideasExtractMinConfidence', UNIT_INTERVAL],
+  ['knowledge.insightsExtractMinConfidence', UNIT_INTERVAL],
+  ['knowledge.decisionsDedupeThreshold', UNIT_INTERVAL],
+  ['knowledge.decisionsDedupeGrayBand', UNIT_INTERVAL],
 
   ['knowledge.distillDebounceMs', POSITIVE_INT],
   ['knowledge.distillKnnTopK', POSITIVE_INT],
   ['knowledge.regulationDedupeTopK', POSITIVE_INT],
   ['knowledge.blockIngestWindowSegments', POSITIVE_INT],
   ['knowledge.blockIngestMaxTokensPerSegment', POSITIVE_INT],
+  ['knowledge.document_summary_input_chars', z.number().int().min(500).max(60000)],
   ['knowledge.segment_max_tokens', z.number().int().min(200).max(2000)],
   ['knowledge.segment_overlap_ratio', UNIT_INTERVAL],
   ['knowledge.contextual_header_enabled', z.boolean()],
   ['knowledge.theme_summary_enabled', z.boolean()],
+  ['knowledge.rawEventRecoveryEnabled', z.boolean()],
+  ['knowledge.rawEventRecoveryStaleMinutes', POSITIVE_INT],
+  ['knowledge.rawEventRecoveryMaxAgeHours', POSITIVE_INT],
+  ['knowledge.rawEventRecoveryBatchLimit', POSITIVE_INT],
   ['knowledge.linkerMinBlocks', POSITIVE_INT],
   ['knowledge.linker_min_canonical', POSITIVE_INT],
   ['knowledge.linker_candidate_topk', POSITIVE_INT],
   ['knowledge.structural_shares_entity_topk', POSITIVE_INT],
   ['knowledge.search_expand_hops', z.number().int().min(0).max(3)],
   ['knowledge.search_rrf_k', POSITIVE_INT],
+  ['knowledge.hnsw_ef_search', z.number().int().min(1).max(1000)],
+  ['knowledge.router_confidence_threshold', UNIT_INTERVAL],
+  ['knowledge.router_v2_enabled', z.boolean()],
+  ['knowledge.overview_top_themes', POSITIVE_INT],
+  ['knowledge.list_episodes_limit', POSITIVE_INT],
+  ['knowledge.person_resolve_trgm_threshold', UNIT_INTERVAL],
+  ['knowledge.person_resolve_ambiguity_delta', UNIT_INTERVAL],
   ['knowledge.linkKnnTopK', POSITIVE_INT],
   ['knowledge.blockDynamicScoreDecayDays', POSITIVE_INT],
   ['knowledge.entityGraphMinComentions', POSITIVE_INT],
@@ -78,7 +95,6 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAutotuneEnabled', z.boolean()],
   ['knowledge.subjectAttributionEnabled', z.boolean()],
   ['knowledge.subjectAttributionAllTypes', z.boolean()],
-  ['knowledge.meetingTasksToTrackerOnly', z.boolean()],
   ['knowledge.ideaDirectPathEnabled', z.boolean()],
 
   ['clone.regulations.retrieval.top_n', POSITIVE_INT],
@@ -101,14 +117,16 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['graph.ageEnabled', z.boolean()],
 
-  ['concierge.max_steps', POSITIVE_INT],
-  ['rag.loop_guard_threshold', POSITIVE_INT],
   ['rag.rrf_k', POSITIVE_INT],
+  ['rag.k_retrieve', POSITIVE_INT],
+  ['rag.k_context', POSITIVE_INT],
   ['rag.rerank_min_pool', POSITIVE_INT],
+  ['rag.rerank_pool_size', POSITIVE_INT],
   ['rag.multiquery_count', POSITIVE_INT],
   ['rag.groundedness_mode', z.enum(['off', 'shadow', 'on'])],
   ['rag.iterative_enabled', z.boolean()],
   ['rag.cold_start_min_blocks', NON_NEGATIVE_INT],
+  ['rag.understanding_merged', z.boolean()],
 
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
   ['aiFeatures.regulationMinMaterializeConfidence', UNIT_INTERVAL],
@@ -170,6 +188,7 @@ const registry = new Map<string, ZodTypeAny>([
   // Probe Фаза 2 (2026-06-17) — порог уверенности для распознавания свободного
   // ответа на probe во входном классификаторе (Telegram без reply / MAX).
   ['probe.replyClassifyMinConfidence', UNIT_INTERVAL],
+  ['probe.implicit_match_max_age_days', POSITIVE_INT],
   // Probe Фаза 2 (2026-06-17) — kill-switch LLM-судьи качества формулировки
   // probe-вопроса (один регенерат при браке). ON.
   ['probe.qualityJudgeEnabled', z.boolean()],
@@ -203,6 +222,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.existenceConfirmEnabled', z.boolean()],
   ['probe.machineFillableReasons', z.array(z.string())],
   ['probe.draftReasons', z.array(z.string())],
+  ['probe.dialogEnabled', z.boolean()],
+  ['probe.dialogEscalateMaxConfidence', UNIT_INTERVAL],
+  ['probe.dialogMaxTurns', POSITIVE_INT],
+  ['probe.dialogConfirmTtlHours', POSITIVE_INT],
 
   ['subjectMemory.enabled', z.boolean()],
   ['subjectMemory.retrieveBeforeAskEnabled', z.boolean()],
@@ -316,6 +339,17 @@ const registry = new Map<string, ZodTypeAny>([
   ['router.llmFallbackEnabled', z.boolean()],
   ['router.fallbackCacheTtlSeconds', POSITIVE_INT],
 
+  ['chat_presence_ttl_seconds', POSITIVE_INT],
+  ['chat_outbox_sweep_stale_seconds', POSITIVE_INT],
+  ['chat_outbox_sweep_batch_limit', POSITIVE_INT],
+  ['chat_summary_min_messages', POSITIVE_INT],
+  ['chat_summary_idle_days', POSITIVE_INT],
+  ['external_link_ttl_hours', POSITIVE_INT],
+  ['external_inbound_rate_limit', POSITIVE_INT],
+  ['message_retention_days', NON_NEGATIVE_INT],
+  ['hr_auto_subscribe_enabled', z.boolean()],
+  ['huddle_max_participants', POSITIVE_INT],
+
   ['orchestrator.enabled', z.boolean()],
   ['orchestrator.maxSubagentsPerRun', POSITIVE_INT],
   ['orchestrator.runTimeoutMinutes', POSITIVE_INT],
@@ -339,9 +373,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.assigneeClarifyEnabled', z.boolean()],
   ['tracker.dueDateClarifyEnabled', z.boolean()],
   ['tracker.assigneeProbePriorityHint', UNIT_INTERVAL],
-  ['tracker.chatboxTasksInTriageEnabled', z.boolean()],
   ['tracker.meetingTasksAlwaysPromote', z.boolean()],
-  ['tracker.taskExtractionMode', z.enum(['spine', 'legacy'])],
   ['tracker.taskDedupLinkSemantics', z.enum(['link', 'delete'])],
   ['tracker.selfAssignAuthorFallbackEnabled', z.boolean()],
   ['tracker.taskExtractMinConfidence', UNIT_INTERVAL],
@@ -349,12 +381,22 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.completionDetailGateEnabled', z.boolean()],
   ['tracker.closureNotifyCreatorEnabled', z.boolean()],
   ['tracker.livingCardEnabled', z.boolean()],
-  ['chatbox.taskExtraction.enabled', z.boolean()],
+  ['tracker.progressFromConversationMinConfidence', UNIT_INTERVAL],
+
+  ['tracker.morningDigest.enabled', z.boolean()],
+  ['tracker.morningDigest.hourMsk', z.number().int().min(0).max(23)],
+  [
+    'tracker.morningDigest.channels',
+    z.array(z.enum(['in_app', 'email_smtp', 'telegram_bot', 'max_bot', 'push'])),
+  ],
+  ['tracker.morningDigest.maxItemsTotal', z.number().int().min(1).max(500)],
+  ['tracker.morningDigest.sendWhenEmpty', z.boolean()],
   ['chatbox.analyze.stuckAnalyzingMin', POSITIVE_INT],
 
   ['taskClosure.enabled', z.boolean()],
   ['taskClosure.matchThreshold', UNIT_INTERVAL],
   ['taskClosure.embedTimeoutMs', POSITIVE_INT],
+  ['taskClosure.embedMaxAttempts', POSITIVE_INT],
   ['taskClosure.candidateTtlDays', POSITIVE_INT],
   ['taskClosure.lexicalFallbackMinOverlap', UNIT_INTERVAL],
 
@@ -433,11 +475,14 @@ const registry = new Map<string, ZodTypeAny>([
   ['ai.mainReport.primary', z.enum(['minimax', 'deepseek'])],
   ['mail.dryRun', z.boolean()],
   ['operations.daily_digest.deliver_to_webpush', z.boolean()],
+  ['operations.report_archive.recent_limit', z.number().int().min(1).max(50)],
 
   ['betaOps.morningLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.eveningLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.weeklyDigestLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.weeklyDigestLocalDay', z.number().int().min(0).max(6)],
+  ['betaOps.monthlyDigestEnabled', z.boolean()],
+  ['betaOps.monthlyDigestLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.dailyDigestHourUtc', z.number().int().min(0).max(23)],
   ['betaOps.commitmentFollowupLocalHour', z.number().int().min(0).max(23)],
 
@@ -445,6 +490,9 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['recording.trackWatchdogEnabled', z.boolean()],
   ['recording.trackWatchdogTimeoutMinutes', z.coerce.number()],
+
+  ['push_debounce_seconds', z.number().int().nonnegative()],
+  ['unread_smart_badge', z.boolean()],
 ]);
 
 export function getSchemaForKey(key: string): ZodTypeAny {

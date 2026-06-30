@@ -65,6 +65,7 @@ describe('AccountsService', () => {
   let passwords: {
     hash: ReturnType<typeof vi.fn>;
     verify: ReturnType<typeof vi.fn>;
+    needsRehash: ReturnType<typeof vi.fn>;
   };
   let sessions: {
     issue: ReturnType<typeof vi.fn>;
@@ -117,6 +118,7 @@ describe('AccountsService', () => {
     passwords = {
       hash: vi.fn(async () => 'hashed'),
       verify: vi.fn(async () => true),
+      needsRehash: vi.fn(() => false),
     };
     sessions = {
       issue: vi.fn(async () => ({ session: { id: 's1', jti: 'jti-1' }, token: 'jwt' })),
@@ -701,8 +703,8 @@ describe('AccountsService', () => {
     });
   });
 
-  describe('getMe: default membership prefers demo_observer', () => {
-    it('есть demo + owner → currentOrgRole=demo_observer (предпочтение demo)', async () => {
+  describe('getMe: default membership prefers own org', () => {
+    it('есть demo + owner → currentOrgRole=owner (своя орга первична)', async () => {
       repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
       prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
       prisma.membership.findFirst
@@ -712,8 +714,8 @@ describe('AccountsService', () => {
       const svc = make();
       const me = await svc.getMe('u1');
 
-      expect(me?.currentOrgRole).toBe('demo_observer');
-      expect(me?.currentOrgId).toBe('demo-org');
+      expect(me?.currentOrgRole).toBe('owner');
+      expect(me?.currentOrgId).toBe('own-org');
     });
 
     it('нет demo, есть owner → currentOrgRole=owner', async () => {

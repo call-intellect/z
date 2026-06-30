@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { MessagingModule } from '../messaging/messaging.module';
 
 import { ActivityDigestController } from './controllers/activity-digest.controller';
 import { AttachmentsController } from './controllers/attachments.controller';
@@ -62,6 +63,7 @@ import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { MeTasksService } from './services/me-tasks.service';
 import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
+import { MorningTasksDigestService } from './services/morning-tasks-digest.service';
 import { MyMentionsService } from './services/my-mentions.service';
 import { OverviewService } from './services/overview.service';
 import { PersonLeaveService } from './services/person-leave.service';
@@ -93,12 +95,13 @@ import { ImportTrackerWorker } from './workers/import-tracker.worker';
 import { IntakeAutoTriageWorker } from './workers/intake-auto-triage.worker';
 import { IssueOverdueDetectorCron } from './workers/issue-overdue-detector.cron';
 import { IssueStateGaugeCron } from './workers/issue-state-gauge.cron';
+import { MorningTasksDigestCron } from './workers/morning-tasks-digest.cron';
 import { ProgressAutoDraftCron } from './workers/progress-auto-draft.cron';
 import { RecurrenceMaterializeCron } from './workers/recurrence-materialize.cron';
 import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, forwardRef(() => MessagingModule)],
   controllers: [
     ProjectsController,
     BoardsController,
@@ -147,6 +150,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     BoardsService,
     IssuesService,
     MeTasksService,
+    MorningTasksDigestService,
     SimilarIssuesService,
     SkillRoutingService,
     // TZ task-dedup (2026-06-16, Ф1) — единый дедуп-гейт перед записью задачи
@@ -180,6 +184,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     WebhookDeliveryWorker,
     TrackerEmitterService,
     IssueOverdueDetectorCron,
+    MorningTasksDigestCron,
     IssueStateGaugeCron,
     GoalAlignmentLowCron,
     ProgressAutoDraftCron,
@@ -210,6 +215,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     ActivityRecorderService,
     TrackerEventsService,
     TrackerEmitterService,
+    TrackerGateway,
     MeetingExtractActionsService,
     IntakeService,
     CommentsService,
@@ -219,6 +225,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     PersonLeaveService,
     SprintAnalystService,
     SkillRoutingService,
+    MorningTasksDigestService,
     // TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler (operations)
     // переиспользует findSimilarByVector для семантического матча
     // сигнал-блок «сделал X» → открытая Issue (кандидат на закрытие).

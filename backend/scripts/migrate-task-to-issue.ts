@@ -14,14 +14,49 @@ interface OrgStats {
   projectCreated: boolean;
   statesCreated: number;
   tasksTotal: number;
-  migrated: number;
-  skipped: number;
+  created: number;
+  linkedToSpine: number;
+  skippedAlreadyMigrated: number;
+  taskSourceMoved: number;
   unmatchedAssignee: number;
+}
+
+interface LegacyTaskRow {
+  id: string;
+  tenantId: string;
+  meetingId: string | null;
+  sourceType: string;
+  sourceChatSessionId: string | null;
+  sourceChatId: string | null;
+  userId: string;
+  title: string;
+  description: string | null;
+  status: string;
+  assigneeRaw: string | null;
+  assigneeUserId: string | null;
+  dueDate: Date | null;
+  sourceQuote: string | null;
+  confidence: number | null;
+  createdManually: boolean;
+  evidenceBlockIds: string[];
+  previewSourceRef: Prisma.JsonValue | null;
+  createdAt: Date;
+}
+
+interface LegacyTaskSourceRow {
+  sourceType: string;
+  sourceRefId: string;
+  chatId: string | null;
+  quote: string | null;
 }
 
 const VIRTUAL_PROJECT_SLUG = 'from-meetings';
 const VIRTUAL_PROJECT_IDENTIFIER = 'MTG';
 const VIRTUAL_PROJECT_NAME = 'Из встреч';
+
+const CHATBOX_PROJECT_SLUG = 'inbox-chatbox';
+const CHATBOX_PROJECT_IDENTIFIER = 'INBOX';
+const CHATBOX_PROJECT_NAME = 'Входящие из переписки';
 
 const DEFAULT_STATES: ReadonlyArray<{
   name: string;
@@ -36,18 +71,90 @@ const DEFAULT_STATES: ReadonlyArray<{
   { name: 'Отменено', category: 'cancelled', color: '#EF4444', sequence: 4, isDefault: false },
 ];
 
-const TASK_STATUS_TO_CATEGORY: Record<string, IssueStateCategory> = {
+export const TASK_STATUS_TO_CATEGORY: Record<string, IssueStateCategory> = {
   open: 'backlog',
   in_progress: 'started',
   done: 'completed',
   cancelled: 'cancelled',
 };
 
+export function statusToCategory(status: string): IssueStateCategory {
+  return TASK_STATUS_TO_CATEGORY[status] ?? 'backlog';
+}
+
+function normalizeTitle(title: string): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/ё/gu, 'е');
+}
+
+export function isSpineTwin(
+  task: { title: string; evidenceBlockIds: string[] },
+  candidate: { title: string; sourceBlockIds: string[] },
+): boolean {
+  const taskBlocks = new Set(task.evidenceBlockIds ?? []);
+  if (taskBlocks.size > 0) {
+    for (const b of candidate.sourceBlockIds ?? []) {
+      if (taskBlocks.has(b)) return true;
+    }
+  }
+  const tt = normalizeTitle(task.title);
+  const ct = normalizeTitle(candidate.title);
+  return tt.length > 0 && tt === ct;
+}
+
 function parseFlags(argv: string[]): CliFlags {
   const apply = argv.includes('--apply');
   const orgIdx = argv.indexOf('--org-id');
   const orgId = orgIdx !== -1 && orgIdx + 1 < argv.length ? (argv[orgIdx + 1] ?? null) : null;
   return { apply, orgId };
+}
+
+async function legacyTaskTableExists(prisma: PrismaClient): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ reg: string | null }>>`
+    SELECT to_regclass('public."Task"')::text AS reg
+  `;
+  return rows[0]?.reg != null;
+}
+
+async function countLegacyTasks(prisma: PrismaClient, tenantId: string): Promise<number> {
+  const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(*)::bigint AS count FROM "Task" WHERE "tenantId" = ${tenantId}
+  `;
+  return Number(rows[0]?.count ?? 0n);
+}
+
+async function fetchLegacyTaskBatch(
+  prisma: PrismaClient,
+  tenantId: string,
+  cursorId: string | null,
+  limit: number,
+): Promise<LegacyTaskRow[]> {
+  const sql = `
+    SELECT
+      "id","tenantId","meetingId","sourceType","sourceChatSessionId","sourceChatId",
+      "userId","title","description","status","assigneeRaw","assigneeUserId","dueDate",
+      "sourceQuote","confidence","createdManually","evidenceBlockIds","previewSourceRef","createdAt"
+    FROM "Task"
+    WHERE "tenantId" = $1
+      ${cursorId ? 'AND "id" > $2' : ''}
+    ORDER BY "id" ASC
+    LIMIT ${limit}
+  `;
+  const params = cursorId ? [tenantId, cursorId] : [tenantId];
+  return prisma.$queryRawUnsafe<LegacyTaskRow[]>(sql, ...params);
+}
+
+async function fetchLegacyTaskSources(
+  prisma: PrismaClient,
+  taskId: string,
+): Promise<LegacyTaskSourceRow[]> {
+  return prisma.$queryRaw<LegacyTaskSourceRow[]>`
+    SELECT "sourceType","sourceRefId","chatId","quote"
+    FROM "TaskSource"
+    WHERE "taskId" = ${taskId}
+  `;
 }
 
 async function resolveOwnerUserId(prisma: PrismaClient, orgId: string): Promise<string | null> {
@@ -72,17 +179,15 @@ async function resolveOwnerUserId(prisma: PrismaClient, orgId: string): Promise<
   return org?.ownerId ?? null;
 }
 
-async function ensureVirtualProject(
+async function ensureProject(
   prisma: PrismaClient,
   orgId: string,
   ownerUserId: string,
   apply: boolean,
-): Promise<{
-  project: { id: string; identifier: string } | null;
-  created: boolean;
-}> {
+  cfg: { slug: string; identifier: string; name: string; description: string },
+): Promise<{ project: { id: string; identifier: string } | null; created: boolean }> {
   const existing = await prisma.project.findUnique({
-    where: { tenantId_slug: { tenantId: orgId, slug: VIRTUAL_PROJECT_SLUG } },
+    where: { tenantId_slug: { tenantId: orgId, slug: cfg.slug } },
     select: { id: true, identifier: true },
   });
   if (existing) return { project: existing, created: false };
@@ -94,15 +199,43 @@ async function ensureVirtualProject(
   const created = await prisma.project.create({
     data: {
       tenantId: orgId,
-      slug: VIRTUAL_PROJECT_SLUG,
-      identifier: VIRTUAL_PROJECT_IDENTIFIER,
-      name: VIRTUAL_PROJECT_NAME,
-      description: 'Задачи, перенесённые из встреч.',
+      slug: cfg.slug,
+      identifier: cfg.identifier,
+      name: cfg.name,
+      description: cfg.description,
       ownerId: ownerUserId,
     },
     select: { id: true, identifier: true },
   });
   return { project: created, created: true };
+}
+
+async function ensureVirtualProject(
+  prisma: PrismaClient,
+  orgId: string,
+  ownerUserId: string,
+  apply: boolean,
+): Promise<{ project: { id: string; identifier: string } | null; created: boolean }> {
+  return ensureProject(prisma, orgId, ownerUserId, apply, {
+    slug: VIRTUAL_PROJECT_SLUG,
+    identifier: VIRTUAL_PROJECT_IDENTIFIER,
+    name: VIRTUAL_PROJECT_NAME,
+    description: 'Задачи, перенесённые из встреч.',
+  });
+}
+
+async function ensureChatboxProject(
+  prisma: PrismaClient,
+  orgId: string,
+  ownerUserId: string,
+  apply: boolean,
+): Promise<{ project: { id: string; identifier: string } | null; created: boolean }> {
+  return ensureProject(prisma, orgId, ownerUserId, apply, {
+    slug: CHATBOX_PROJECT_SLUG,
+    identifier: CHATBOX_PROJECT_IDENTIFIER,
+    name: CHATBOX_PROJECT_NAME,
+    description: 'Задачи, перенесённые из переписки.',
+  });
 }
 
 async function ensureProjectStates(
@@ -211,64 +344,159 @@ async function resolveAssigneeUserId(
   return null;
 }
 
-async function migrateTaskToIssue(
+function isMeetingTask(task: LegacyTaskRow): boolean {
+  return task.sourceType === 'meeting' || (task.meetingId != null && task.meetingId.length > 0);
+}
+
+async function findSelfMigratedIssue(
   prisma: PrismaClient,
   tenantId: string,
-  projectId: string,
-  projectIdentifier: string,
-  task: {
-    id: string;
-    meetingId: string;
-    title: string;
-    description: string | null;
-    status: string;
-    assigneeUserId: string | null;
-    assigneeRaw: string | null;
-    dueDate: Date | null;
-    createdAt: Date;
-    evidenceBlockIds: string[];
-  },
-  ownerUserId: string,
+  taskId: string,
+): Promise<{ id: string } | null> {
+  return prisma.issue.findFirst({
+    where: {
+      tenantId,
+      externalId: taskId,
+      externalSource: { in: ['meeting', 'meeting_legacy', 'chatbox'] },
+    },
+    select: { id: true },
+  });
+}
+
+async function findSpineTwin(
+  prisma: PrismaClient,
+  task: LegacyTaskRow,
+): Promise<{ id: string } | null> {
+  if (isMeetingTask(task)) {
+    if (!task.meetingId) return null;
+    const candidates = await prisma.$queryRaw<
+      Array<{ id: string; title: string; sourceBlockIds: string[]; externalId: string | null }>
+    >`
+      SELECT "id","title","sourceBlockIds","externalId"
+      FROM "Issue"
+      WHERE "tenantId" = ${task.tenantId}
+        AND "deletedAt" IS NULL
+        AND ("linkedMeetingIds" @> ARRAY[${task.meetingId}]::text[] OR "meetingId" = ${task.meetingId})
+    `;
+    for (const c of candidates) {
+      if (c.externalId === task.id) continue;
+      if (isSpineTwin(task, { title: c.title, sourceBlockIds: c.sourceBlockIds ?? [] })) {
+        return { id: c.id };
+      }
+    }
+    return null;
+  }
+
+  if (task.sourceType === 'chatbox') {
+    const candidates = await prisma.issue.findMany({
+      where: {
+        tenantId: task.tenantId,
+        externalSource: 'chatbox',
+        deletedAt: null,
+      },
+      select: { id: true, title: true, sourceBlockIds: true, externalId: true },
+    });
+    for (const c of candidates) {
+      if (c.externalId === task.id) continue;
+      if (isSpineTwin(task, { title: c.title, sourceBlockIds: c.sourceBlockIds })) {
+        return { id: c.id };
+      }
+    }
+  }
+
+  return null;
+}
+
+async function moveTaskSources(
+  prisma: PrismaClient,
+  tenantId: string,
+  task: LegacyTaskRow,
+  targetIssueId: string,
+  apply: boolean,
+): Promise<number> {
+  const sources = await fetchLegacyTaskSources(prisma, task.id);
+
+  const links: LegacyTaskSourceRow[] = sources.length > 0 ? sources : [];
+
+  if (task.sourceType === 'chatbox') {
+    const refId = task.sourceChatSessionId ?? task.id;
+    if (!links.some((l) => l.sourceType === 'chatbox' && l.sourceRefId === refId)) {
+      links.push({
+        sourceType: 'chatbox',
+        sourceRefId: refId,
+        chatId: task.sourceChatId,
+        quote: task.sourceQuote,
+      });
+    }
+  } else if (isMeetingTask(task) && task.meetingId) {
+    if (!links.some((l) => l.sourceType === 'meeting' && l.sourceRefId === task.meetingId)) {
+      links.push({
+        sourceType: 'meeting',
+        sourceRefId: task.meetingId,
+        chatId: null,
+        quote: task.sourceQuote,
+      });
+    }
+  }
+
+  if (!apply) {
+    return links.length;
+  }
+
+  let moved = 0;
+  for (const s of links) {
+    try {
+      await prisma.taskSource.create({
+        data: {
+          tenantId,
+          issueId: targetIssueId,
+          sourceType: s.sourceType,
+          sourceRefId: s.sourceRefId,
+          chatId: s.chatId,
+          quote: s.quote,
+        },
+      });
+      moved += 1;
+    } catch (e) {
+      if ((e as { code?: string })?.code !== 'P2002') throw e;
+    }
+  }
+
+  await prisma.$executeRaw`DELETE FROM "TaskSource" WHERE "taskId" = ${task.id}`;
+
+  return moved;
+}
+
+async function createIssueFromTask(
+  prisma: PrismaClient,
+  task: LegacyTaskRow,
+  project: { id: string; identifier: string },
   states: {
     byCategory: Map<IssueStateCategory, { id: string }>;
     fallbackBacklogId: string | null;
   },
-  apply: boolean,
-): Promise<{ migrated: boolean; assigneeMatched: boolean }> {
-  const existingIssue = await prisma.issue.findFirst({
-    where: {
-      tenantId,
-      externalSource: 'meeting_legacy',
-      externalId: task.id,
-    },
-    select: { id: true },
-  });
-  if (existingIssue) {
-    return { migrated: false, assigneeMatched: false };
-  }
+): Promise<string> {
+  const cat = statusToCategory(task.status);
+  const stateId = states.byCategory.get(cat)?.id ?? states.fallbackBacklogId ?? null;
 
-  const cat = TASK_STATUS_TO_CATEGORY[task.status];
-  const stateId = (cat ? states.byCategory.get(cat)?.id : null) ?? states.fallbackBacklogId ?? null;
+  const meeting = isMeetingTask(task);
+  const externalSource = meeting ? 'meeting' : 'chatbox';
+  const linkedMeetingIds = meeting && task.meetingId ? [task.meetingId] : [];
 
-  const assigneeUserId = await resolveAssigneeUserId(prisma, tenantId, task);
-  const assigneeMatched = assigneeUserId !== null;
+  const assigneeUserId = await resolveAssigneeUserId(prisma, task.tenantId, task);
 
-  if (!apply) {
-    return { migrated: true, assigneeMatched };
-  }
-
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     const maxRow = await tx.issue.aggregate({
-      where: { projectId },
+      where: { projectId: project.id },
       _max: { sequenceId: true },
     });
     const sequenceId = (maxRow._max.sequenceId ?? 0) + 1;
-    const identifier = `${projectIdentifier}-${sequenceId}`;
+    const identifier = `${project.identifier}-${sequenceId}`;
 
     const issue = await tx.issue.create({
       data: {
-        tenantId,
-        projectId,
+        tenantId: task.tenantId,
+        projectId: project.id,
         identifier,
         sequenceId,
         title: task.title,
@@ -276,13 +504,18 @@ async function migrateTaskToIssue(
         priority: 'none',
         stateId,
         dueDate: task.dueDate,
-        meetingId: task.meetingId,
-        linkedMeetingIds: [task.meetingId],
+        linkedMeetingIds,
         sourceBlockIds: task.evidenceBlockIds,
-        externalSource: 'meeting_legacy',
+        previewQuote: task.sourceQuote,
+        previewSourceRef:
+          task.previewSourceRef === null
+            ? undefined
+            : (task.previewSourceRef as Prisma.InputJsonValue),
+        confidence: task.confidence,
+        externalSource,
         externalId: task.id,
-        createdById: ownerUserId,
-        createdManually: false,
+        createdById: task.userId,
+        createdManually: task.createdManually,
         createdAt: task.createdAt,
       },
       select: { id: true },
@@ -293,7 +526,7 @@ async function migrateTaskToIssue(
         data: {
           issueId: issue.id,
           userId: assigneeUserId,
-          assignedById: ownerUserId,
+          assignedById: task.userId,
         },
       });
     }
@@ -307,7 +540,7 @@ async function migrateTaskToIssue(
 
     await tx.issueActivity.create({
       data: {
-        tenantId,
+        tenantId: task.tenantId,
         issueId: issue.id,
         actorUserId: null,
         actorType: 'system',
@@ -316,9 +549,9 @@ async function migrateTaskToIssue(
         epoch: BigInt(Date.now()) * 1000n,
       },
     });
-  });
 
-  return { migrated: true, assigneeMatched };
+    return issue.id;
+  });
 }
 
 async function processOrg(
@@ -332,12 +565,14 @@ async function processOrg(
     projectCreated: false,
     statesCreated: 0,
     tasksTotal: 0,
-    migrated: 0,
-    skipped: 0,
+    created: 0,
+    linkedToSpine: 0,
+    skippedAlreadyMigrated: 0,
+    taskSourceMoved: 0,
     unmatchedAssignee: 0,
   };
 
-  const taskCount = await prisma.task.count({ where: { tenantId: org.id } });
+  const taskCount = await countLegacyTasks(prisma, org.id);
   if (taskCount === 0) {
     console.log(`  [${org.id}] ${org.name}: задач нет — пропуск.`);
     return stats;
@@ -352,94 +587,94 @@ async function processOrg(
     return stats;
   }
 
-  const { project, created: projectCreated } = await ensureVirtualProject(
+  const meetingProj = await ensureVirtualProject(prisma, org.id, ownerUserId, apply);
+  stats.projectCreated = meetingProj.created;
+  const meetingStates = await ensureProjectStates(
     prisma,
     org.id,
-    ownerUserId,
+    meetingProj.project?.id ?? null,
     apply,
   );
-  stats.projectCreated = projectCreated;
+  stats.statesCreated += meetingStates.createdCount;
 
-  const states = await ensureProjectStates(prisma, org.id, project?.id ?? null, apply);
-  stats.statesCreated = states.createdCount;
-
-  if (!project) {
-    const tasks = await prisma.task.findMany({
-      where: { tenantId: org.id },
-      select: {
-        id: true,
-        meetingId: true,
-        title: true,
-        description: true,
-        status: true,
-        assigneeUserId: true,
-        assigneeRaw: true,
-        dueDate: true,
-        createdAt: true,
-        evidenceBlockIds: true,
-      },
-    });
-    for (const t of tasks) {
-      const existing = await prisma.issue.findFirst({
-        where: {
-          tenantId: org.id,
-          externalSource: 'meeting_legacy',
-          externalId: t.id,
-        },
-        select: { id: true },
-      });
-      if (existing) {
-        stats.skipped += 1;
-        continue;
-      }
-      stats.migrated += 1;
-      const matched = await resolveAssigneeUserId(prisma, org.id, t);
-      if (!matched) stats.unmatchedAssignee += 1;
-    }
-    return stats;
-  }
+  let chatboxProj: { project: { id: string; identifier: string } | null; created: boolean } | null =
+    null;
+  let chatboxStates: Awaited<ReturnType<typeof ensureProjectStates>> | null = null;
 
   const BATCH = 200;
   let cursorId: string | null = null;
   for (;;) {
-    const tasks = await prisma.task.findMany({
-      where: { tenantId: org.id },
-      orderBy: { id: 'asc' },
-      take: BATCH,
-      ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
-      select: {
-        id: true,
-        meetingId: true,
-        title: true,
-        description: true,
-        status: true,
-        assigneeUserId: true,
-        assigneeRaw: true,
-        dueDate: true,
-        createdAt: true,
-        evidenceBlockIds: true,
-      },
-    });
+    const tasks = await fetchLegacyTaskBatch(prisma, org.id, cursorId, BATCH);
     if (tasks.length === 0) break;
 
     for (const t of tasks) {
       try {
-        const { migrated, assigneeMatched } = await migrateTaskToIssue(
-          prisma,
-          org.id,
-          project.id,
-          project.identifier,
-          t,
-          ownerUserId,
-          states,
-          apply,
-        );
-        if (migrated) {
-          stats.migrated += 1;
-          if (!assigneeMatched) stats.unmatchedAssignee += 1;
-        } else {
-          stats.skipped += 1;
+        const meeting = isMeetingTask(t);
+
+        const selfMigrated = await findSelfMigratedIssue(prisma, org.id, t.id);
+        if (selfMigrated) {
+          stats.skippedAlreadyMigrated += 1;
+          const moved = await moveTaskSources(prisma, org.id, t, selfMigrated.id, apply);
+          stats.taskSourceMoved += moved;
+          continue;
         }
+
+        const twin = await findSpineTwin(prisma, t);
+        if (twin) {
+          stats.linkedToSpine += 1;
+          const moved = await moveTaskSources(prisma, org.id, t, twin.id, apply);
+          stats.taskSourceMoved += moved;
+          console.log(
+            `  [${org.id}] task=${t.id} → linked-to-spine issue=${twin.id}, skip create${apply ? '' : ' (dry-run)'}`,
+          );
+          continue;
+        }
+
+        let project: { id: string; identifier: string } | null;
+        let states: typeof meetingStates;
+        if (meeting) {
+          project = meetingProj.project;
+          states = meetingStates;
+        } else {
+          if (!chatboxProj) {
+            chatboxProj = await ensureChatboxProject(prisma, org.id, ownerUserId, apply);
+            if (chatboxProj.created && !meetingProj.created) stats.projectCreated = true;
+            chatboxStates = await ensureProjectStates(
+              prisma,
+              org.id,
+              chatboxProj.project?.id ?? null,
+              apply,
+            );
+            stats.statesCreated += chatboxStates.createdCount;
+          }
+          project = chatboxProj.project;
+          states = chatboxStates!;
+        }
+
+        if (!project) {
+          stats.created += 1;
+          const matched = await resolveAssigneeUserId(prisma, org.id, t);
+          if (!matched) stats.unmatchedAssignee += 1;
+          const moved = await moveTaskSources(prisma, org.id, t, 'dry-run-issue', false);
+          stats.taskSourceMoved += moved;
+          continue;
+        }
+
+        if (!apply) {
+          stats.created += 1;
+          const matched = await resolveAssigneeUserId(prisma, org.id, t);
+          if (!matched) stats.unmatchedAssignee += 1;
+          const moved = await moveTaskSources(prisma, org.id, t, project.id, false);
+          stats.taskSourceMoved += moved;
+          continue;
+        }
+
+        const issueId = await createIssueFromTask(prisma, t, project, states);
+        stats.created += 1;
+        const moved = await moveTaskSources(prisma, org.id, t, issueId, apply);
+        stats.taskSourceMoved += moved;
+        const matched = await resolveAssigneeUserId(prisma, org.id, t);
+        if (!matched) stats.unmatchedAssignee += 1;
       } catch (err) {
         console.error(
           `  [${org.id}] task=${t.id} migration FAILED:`,
@@ -466,6 +701,11 @@ async function main(): Promise<void> {
   const allStats: OrgStats[] = [];
 
   try {
+    if (!(await legacyTaskTableExists(prisma))) {
+      console.log('[migrate] таблица Task отсутствует — перенос не нужен');
+      return;
+    }
+
     const orgs = await prisma.org.findMany({
       where: {
         deletedAt: null,
@@ -487,8 +727,10 @@ async function main(): Promise<void> {
       const stats = await processOrg(prisma, org, flags.apply);
       allStats.push(stats);
       console.log(
-        `  total=${stats.tasksTotal}  migrated=${stats.migrated}  skipped=${stats.skipped}  unmatched=${stats.unmatchedAssignee}` +
-          `  project=${stats.projectCreated ? 'CREATED' : 'reused'}  states=${stats.statesCreated}`,
+        `  total=${stats.tasksTotal}  created=${stats.created}  linkedToSpine=${stats.linkedToSpine}` +
+          `  alreadyMigrated=${stats.skippedAlreadyMigrated}  taskSourceMoved=${stats.taskSourceMoved}` +
+          `  unmatched=${stats.unmatchedAssignee}  project=${stats.projectCreated ? 'CREATED' : 'reused'}` +
+          `  states=${stats.statesCreated}`,
       );
     }
 
@@ -496,8 +738,10 @@ async function main(): Promise<void> {
       (acc, s) => ({
         orgs: acc.orgs + 1,
         tasksTotal: acc.tasksTotal + s.tasksTotal,
-        migrated: acc.migrated + s.migrated,
-        skipped: acc.skipped + s.skipped,
+        created: acc.created + s.created,
+        linkedToSpine: acc.linkedToSpine + s.linkedToSpine,
+        skippedAlreadyMigrated: acc.skippedAlreadyMigrated + s.skippedAlreadyMigrated,
+        taskSourceMoved: acc.taskSourceMoved + s.taskSourceMoved,
         unmatched: acc.unmatched + s.unmatchedAssignee,
         projectsCreated: acc.projectsCreated + (s.projectCreated ? 1 : 0),
         statesCreated: acc.statesCreated + s.statesCreated,
@@ -505,8 +749,10 @@ async function main(): Promise<void> {
       {
         orgs: 0,
         tasksTotal: 0,
-        migrated: 0,
-        skipped: 0,
+        created: 0,
+        linkedToSpine: 0,
+        skippedAlreadyMigrated: 0,
+        taskSourceMoved: 0,
         unmatched: 0,
         projectsCreated: 0,
         statesCreated: 0,
@@ -516,8 +762,10 @@ async function main(): Promise<void> {
     console.log(`Mode:               ${mode}`);
     console.log(`Orgs обработано:    ${sum.orgs}`);
     console.log(`Task всего:         ${sum.tasksTotal}`);
-    console.log(`Issue мигрировано:  ${sum.migrated}`);
-    console.log(`Skipped (повтор):   ${sum.skipped}`);
+    console.log(`Issue создано:      ${sum.created}`);
+    console.log(`Linked-to-spine:    ${sum.linkedToSpine}`);
+    console.log(`Уже мигрировано:    ${sum.skippedAlreadyMigrated}`);
+    console.log(`TaskSource moved:   ${sum.taskSourceMoved}`);
     console.log(`Assignee unmatched: ${sum.unmatched}`);
     console.log(`Виртуальных проектов создано: ${sum.projectsCreated}`);
     console.log(`Дефолтных IssueState создано: ${sum.statesCreated}`);
@@ -530,7 +778,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error('migrate-task-to-issue FAILED:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('migrate-task-to-issue FAILED:', err);
+    process.exit(1);
+  });
+}

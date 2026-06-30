@@ -30,7 +30,7 @@ export const DashboardCanvas: React.FC<{
     );
 
   return (
-    <div className="grid grid-cols-12 gap-4">
+    <div className="grid grid-cols-12 gap-4 grid-flow-row-dense">
       {descriptors.map((descriptor) => {
         const { Component } = descriptor;
         return (

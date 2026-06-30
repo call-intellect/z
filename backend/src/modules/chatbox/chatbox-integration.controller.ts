@@ -251,8 +251,8 @@ export class ChatboxIntegrationController {
       this.prisma.ideaBlock.count({
         where: { tenantId: t, status: 'canonical' },
       }),
-      this.prisma.task.count({
-        where: { tenantId: t, sourceType: 'chatbox' },
+      this.prisma.issue.count({
+        where: { tenantId: t, externalSource: 'chatbox', deletedAt: null },
       }),
     ]);
 

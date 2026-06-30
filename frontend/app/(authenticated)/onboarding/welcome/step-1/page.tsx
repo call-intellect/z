@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { onboardingApi } from '@/api/onboarding.api';
 import { OnboardingShell } from '../OnboardingShell';
+import { toast } from 'sonner';
+import { humanizeApiError } from '@/api/api-error';
 
 const ROLES = [
   { value: 'founder', label: 'Собственник или основатель' },
@@ -26,8 +28,9 @@ export default function Step1Page() {
     try {
       await onboardingApi.patchUserRole({ companyRole: value });
       router.push('/onboarding/welcome/step-2');
-    } catch {
+    } catch (e) {
       setSaving(null);
+      toast.error(humanizeApiError(e, 'Не удалось сохранить. Попробуйте ещё раз.'));
     }
   };
 

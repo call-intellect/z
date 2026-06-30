@@ -127,6 +127,7 @@ export async function buildKnowledgeCoreFixture(
     });
     await tx.ideaBlockEvidence.create({
       data: {
+        tenantId: orgAId,
         blockId: blockAId,
         rawEventId: rawEventAId,
         sourceType: 'meeting',
@@ -145,6 +146,7 @@ export async function buildKnowledgeCoreFixture(
     });
     await tx.ideaBlockEntity.create({
       data: {
+        tenantId: orgAId,
         blockId: blockAId,
         entityId: entityAId,
         mentionContext: `${prefix} mention context`,
@@ -160,10 +162,10 @@ export async function buildKnowledgeCoreFixture(
       },
     });
     await tx.themeIdeaBlock.create({
-      data: { themeId: themeAId, blockId: blockAId },
+      data: { tenantId: orgAId, themeId: themeAId, blockId: blockAId },
     });
     await tx.themeEntity.create({
-      data: { themeId: themeAId, entityId: entityAId },
+      data: { tenantId: orgAId, themeId: themeAId, entityId: entityAId },
     });
   });
 

@@ -3,12 +3,15 @@ import type {
   DailyDigestChronicBlockerApi,
   DailyDigestCustomerAtRiskApi,
   DailyDigestEventApi,
+  DailyDigestGoalAlignmentDayApi,
+  DailyDigestLetterSectionApi,
   DailyDigestMetricsApi,
   DailyDigestPersonShinedApi,
   DailyDigestPersonStruggledApi,
   DailyDigestSourcesApi,
   DailyDigestTrendPointApi,
   DailyDigestUrgentItemApi,
+  DailyDigestVerdictApi,
 } from "@/api/operations-daily-digest.api";
 
 export interface DailyDigestMetricsDomain extends DailyDigestMetricsApi {}
@@ -49,6 +52,9 @@ export interface DailyDigestDomain {
   customersAtRisk: DailyDigestCustomerAtRiskDomain[];
   chronicBlockers: DailyDigestChronicBlockerDomain[];
   trend: DailyDigestTrendPointApi[];
+  verdict: DailyDigestVerdictApi | null;
+  letter: DailyDigestLetterSectionApi[] | null;
+  goalAlignmentDay: DailyDigestGoalAlignmentDayApi | null;
 }
 
 export function fromDailyDigestApi(dto: DailyDigestApi): DailyDigestDomain {
@@ -70,5 +76,8 @@ export function fromDailyDigestApi(dto: DailyDigestApi): DailyDigestDomain {
     customersAtRisk: dto.customersAtRisk ?? [],
     chronicBlockers: dto.chronicBlockers ?? [],
     trend: dto.trend ?? [],
+    verdict: dto.verdict ?? null,
+    letter: dto.letter ?? null,
+    goalAlignmentDay: dto.goalAlignmentDay ?? null,
   };
 }

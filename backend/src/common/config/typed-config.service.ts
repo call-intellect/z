@@ -8,10 +8,7 @@ export interface DynamicAdminSettingsReader {
 
 export const ADMIN_SETTINGS_READER_TOKEN = 'AdminSettingsService' as const;
 
-const SUBJECT_MEMORY_DEFAULT_JUDGE_MODELS = [
-  'deepseek-v4-flash',
-  'gpt-5.4-mini',
-] as const;
+const SUBJECT_MEMORY_DEFAULT_JUDGE_MODELS = ['deepseek-v4-flash', 'gpt-5.4-mini'] as const;
 
 @Injectable()
 export class TypedConfigService {
@@ -50,7 +47,11 @@ export class TypedConfigService {
 
   get logging() {
     return {
-      dbLoggingEnabled: this.resolveSync<boolean>('logging.dbLoggingEnabled', 'LOG_DB_ENABLED', true),
+      dbLoggingEnabled: this.resolveSync<boolean>(
+        'logging.dbLoggingEnabled',
+        'LOG_DB_ENABLED',
+        true,
+      ),
       minLevel: this.resolveSync<string>('logging.minLevel', 'LOG_DB_MIN_LEVEL', 'INFO'),
       batchSize: this.resolveSync<number>('logging.batchSize', 'LOG_DB_BATCH_SIZE', 50),
       flushIntervalMs: this.resolveSync<number>(
@@ -59,11 +60,7 @@ export class TypedConfigService {
         5_000,
       ),
       maxBufferSize: this.resolveSync<number>('logging.maxBufferSize', 'LOG_DB_MAX_BUFFER', 5_000),
-      retentionDays: this.resolveSync<number>(
-        'logging.retentionDays',
-        'LOG_DB_RETENTION_DAYS',
-        30,
-      ),
+      retentionDays: this.resolveSync<number>('logging.retentionDays', 'LOG_DB_RETENTION_DAYS', 30),
       logStackTraces: this.resolveSync<boolean>(
         'logging.logStackTraces',
         'LOG_DB_STACK_TRACES',
@@ -215,7 +212,11 @@ export class TypedConfigService {
     return {
       anthropic: {
         apiKey: this.get('ANTHROPIC_API_KEY'),
-        model: this.resolveSync<string>('ai.anthropic.model', 'ANTHROPIC_MODEL', 'claude-sonnet-4-6'),
+        model: this.resolveSync<string>(
+          'ai.anthropic.model',
+          'ANTHROPIC_MODEL',
+          'claude-sonnet-4-6',
+        ),
         useProxy: this.get('ANTHROPIC_USE_PROXY'),
         proxyUrl: this.get('ANTHROPIC_PROXY_URL'),
       },
@@ -559,16 +560,6 @@ export class TypedConfigService {
         undefined,
         true,
       ),
-      chatboxTaskExtractionEnabled: this.resolveSync<boolean>(
-        'chatbox.taskExtraction.enabled',
-        'CHATBOX_TASK_EXTRACTION_ENABLED',
-        true,
-      ),
-      tasksCrossSourceDedupeEnabled: this.resolveSync<boolean>(
-        'tasks.crossSourceDedupe.enabled',
-        'TASKS_CROSS_SOURCE_DEDUPE_ENABLED',
-        true,
-      ),
       crossSourceDedupeThreshold: this.resolveSync<number>(
         'tasks.cross_source_dedupe_threshold',
         undefined,
@@ -704,6 +695,7 @@ export class TypedConfigService {
       meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),
       meetingReportFastEnabled: this.get('MEETING_REPORT_FAST_ENABLED'),
       reportIngestEnabled: this.get('REPORT_INGEST_ENABLED'),
+      messageBridgeEnabled: this.get('MESSAGE_BRIDGE_ENABLED'),
       chatV2Enabled: this.get('CHAT_V2_ENABLED'),
       chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),
       chatV2GraphHops: this.get('CHAT_V2_GRAPH_HOPS'),
@@ -730,6 +722,25 @@ export class TypedConfigService {
   get graph() {
     return {
       ageEnabled: this.resolveSync<boolean>('graph.ageEnabled', 'GRAPH_AGE_ENABLED', true),
+    } as const;
+  }
+
+  get chat() {
+    return {
+      enabled: this.get('CHAT_ENABLED'),
+      ingestEnabled: this.get('CHAT_INGEST_ENABLED'),
+    } as const;
+  }
+
+  get externalChat() {
+    return {
+      enabled: this.get('EXTERNAL_CHAT_ENABLED'),
+    } as const;
+  }
+
+  get huddles() {
+    return {
+      enabled: this.get('HUDDLES_ENABLED'),
     } as const;
   }
 
@@ -1212,16 +1223,13 @@ export class TypedConfigService {
         'PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE',
         0.5,
       ),
-      draftReasons: this.resolveSync<readonly string[]>(
-        'probe.draftReasons',
-        undefined,
-        [
-          'experiment.result_without_lesson',
-          'companyprofile.missing_mission',
-          'companyprofile.missing_vision',
-          'companyprofile.missing_strategy',
-        ],
-      ),
+      dialogEnabled: this.resolveSync<boolean>('probe.dialogEnabled', undefined, true),
+      draftReasons: this.resolveSync<readonly string[]>('probe.draftReasons', undefined, [
+        'experiment.result_without_lesson',
+        'companyprofile.missing_mission',
+        'companyprofile.missing_vision',
+        'companyprofile.missing_strategy',
+      ]),
     } as const;
   }
 
@@ -1296,8 +1304,16 @@ export class TypedConfigService {
   get taskRouting() {
     return {
       enabled: this.resolveSync<boolean>('taskRouting.enabled', undefined, true),
-      suggestMinConfidence: this.resolveSync<number>('taskRouting.suggestMinConfidence', undefined, 0.6),
-      autoAssignMinConfidence: this.resolveSync<number>('taskRouting.autoAssignMinConfidence', undefined, 0.75),
+      suggestMinConfidence: this.resolveSync<number>(
+        'taskRouting.suggestMinConfidence',
+        undefined,
+        0.6,
+      ),
+      autoAssignMinConfidence: this.resolveSync<number>(
+        'taskRouting.autoAssignMinConfidence',
+        undefined,
+        0.75,
+      ),
       topK: this.resolveSync<number>('taskRouting.topK', undefined, 3),
     } as const;
   }
@@ -1545,12 +1561,22 @@ export class TypedConfigService {
       weeklyDigestLocalHour: this.resolveSync<number>(
         'betaOps.weeklyDigestLocalHour',
         'COO_WEEKLY_DIGEST_LOCAL_HOUR',
-        8,
+        6,
       ),
       weeklyDigestLocalDay: this.resolveSync<number>(
         'betaOps.weeklyDigestLocalDay',
         'COO_WEEKLY_DIGEST_LOCAL_DAY',
         1,
+      ),
+      monthlyDigestEnabled: this.resolveSync<boolean>(
+        'betaOps.monthlyDigestEnabled',
+        'COO_MONTHLY_DIGEST_ENABLED',
+        true,
+      ),
+      monthlyDigestLocalHour: this.resolveSync<number>(
+        'betaOps.monthlyDigestLocalHour',
+        'COO_MONTHLY_DIGEST_LOCAL_HOUR',
+        6,
       ),
       dailyDigestEnabled: this.get('COO_DAILY_DIGEST_ENABLED') !== false,
       dailyDigestHourUtc: this.resolveSync<number>(
@@ -1630,7 +1656,9 @@ export class TypedConfigService {
       ),
       1,
     );
-    const loopbackBaseUrlRaw = (this.get('CONCIERGE_LOOPBACK_BASE_URL') as string | undefined)?.trim();
+    const loopbackBaseUrlRaw = (
+      this.get('CONCIERGE_LOOPBACK_BASE_URL') as string | undefined
+    )?.trim();
     let loopbackBaseUrl = 'http://127.0.0.1:3000';
     if (loopbackBaseUrlRaw) {
       try {
@@ -1743,20 +1771,10 @@ export class TypedConfigService {
         undefined,
         0.7,
       ),
-      chatboxTasksInTriageEnabled: this.resolveSync<boolean>(
-        'tracker.chatboxTasksInTriageEnabled',
-        undefined,
-        true,
-      ),
       meetingTasksAlwaysPromote: this.resolveSync<boolean>(
         'tracker.meetingTasksAlwaysPromote',
         undefined,
         true,
-      ),
-      taskExtractionMode: this.resolveSync<'spine' | 'legacy'>(
-        'tracker.taskExtractionMode',
-        undefined,
-        'spine',
       ),
       taskDedupLinkSemantics: this.resolveSync<'link' | 'delete'>(
         'tracker.taskDedupLinkSemantics',
@@ -1783,11 +1801,7 @@ export class TypedConfigService {
         undefined,
         true,
       ),
-      livingCardEnabled: this.resolveSync<boolean>(
-        'tracker.livingCardEnabled',
-        undefined,
-        true,
-      ),
+      livingCardEnabled: this.resolveSync<boolean>('tracker.livingCardEnabled', undefined, true),
     } as const;
   }
 
@@ -1839,12 +1853,50 @@ export class TypedConfigService {
   get push() {
     const publicKey = String(this.get('VAPID_PUBLIC_KEY') ?? '').trim();
     const privateKey = String(this.get('VAPID_PRIVATE_KEY') ?? '').trim();
+
+    const apnsKeyId = String(this.get('APNS_KEY_ID') ?? '').trim();
+    const apnsTeamId = String(this.get('APNS_TEAM_ID') ?? '').trim();
+    const apnsPrivateKey = String(this.get('APNS_PRIVATE_KEY') ?? '').trim();
+    const apnsBundleId = String(this.get('APNS_BUNDLE_ID') ?? '').trim();
+
+    const fcmProjectId = String(this.get('FCM_PROJECT_ID') ?? '').trim();
+    const fcmClientEmail = String(this.get('FCM_CLIENT_EMAIL') ?? '').trim();
+    const fcmPrivateKey = String(this.get('FCM_PRIVATE_KEY') ?? '').trim();
+
+    const rustoreProjectId = String(this.get('RUSTORE_PROJECT_ID') ?? '').trim();
+    const rustoreServiceToken = String(this.get('RUSTORE_SERVICE_TOKEN') ?? '').trim();
+
     return {
       vapidPublicKey: publicKey.length > 0 ? publicKey : undefined,
       vapidPrivateKey: privateKey.length > 0 ? privateKey : undefined,
       vapidSubject: String(this.get('VAPID_SUBJECT') ?? 'mailto:noreply@kora.app'),
       maxFailures: Number(this.get('PUSH_MAX_FAILURES') ?? 5),
       isSendEnabled: publicKey.length > 0 && privateKey.length > 0,
+      chatPushEnabled: this.get('CHAT_PUSH_ENABLED') === true,
+      apns: {
+        keyId: apnsKeyId.length > 0 ? apnsKeyId : undefined,
+        teamId: apnsTeamId.length > 0 ? apnsTeamId : undefined,
+        privateKey: apnsPrivateKey.length > 0 ? apnsPrivateKey : undefined,
+        bundleId: apnsBundleId.length > 0 ? apnsBundleId : undefined,
+        useSandbox: this.get('APNS_USE_SANDBOX') === true,
+        isConfigured:
+          apnsKeyId.length > 0 &&
+          apnsTeamId.length > 0 &&
+          apnsPrivateKey.length > 0 &&
+          apnsBundleId.length > 0,
+      },
+      fcm: {
+        projectId: fcmProjectId.length > 0 ? fcmProjectId : undefined,
+        clientEmail: fcmClientEmail.length > 0 ? fcmClientEmail : undefined,
+        privateKey: fcmPrivateKey.length > 0 ? fcmPrivateKey : undefined,
+        isConfigured:
+          fcmProjectId.length > 0 && fcmClientEmail.length > 0 && fcmPrivateKey.length > 0,
+      },
+      rustore: {
+        projectId: rustoreProjectId.length > 0 ? rustoreProjectId : undefined,
+        serviceToken: rustoreServiceToken.length > 0 ? rustoreServiceToken : undefined,
+        isConfigured: rustoreProjectId.length > 0 && rustoreServiceToken.length > 0,
+      },
     } as const;
   }
 

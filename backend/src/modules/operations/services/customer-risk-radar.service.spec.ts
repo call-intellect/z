@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { CustomerRiskRadarService } from './customer-risk-radar.service';
+import {
+  CustomerRiskRadarService,
+  dedupeLatestSnapshotPerCustomer,
+} from './customer-risk-radar.service';
 
 describe('CustomerRiskRadarService', () => {
   const dateLocal = '2026-06-07';
@@ -204,5 +207,46 @@ describe('CustomerRiskRadarService', () => {
       expect(delta.signalDelta).toBe(-3);
       expect(delta.scoreDelta).toBe(-15);
     });
+  });
+});
+
+describe('dedupeLatestSnapshotPerCustomer', () => {
+  it('3 клиента × 5 снапшотов → 3 строки (последние по snapshotAt)', () => {
+    const rows: Array<{
+      customerEntityId: string;
+      snapshotAt: Date;
+      riskScore: number;
+    }> = [];
+    for (const c of ['c1', 'c2', 'c3']) {
+      for (let d = 0; d < 5; d++) {
+        rows.push({
+          customerEntityId: c,
+          snapshotAt: new Date(2026, 5, 1 + d),
+          riskScore: d,
+        });
+      }
+    }
+    const out = dedupeLatestSnapshotPerCustomer(rows);
+    expect(out).toHaveLength(3);
+    for (const c of ['c1', 'c2', 'c3']) {
+      const row = out.find((r) => r.customerEntityId === c);
+      expect(row).toBeDefined();
+      expect(row!.snapshotAt.getTime()).toBe(new Date(2026, 5, 5).getTime());
+    }
+  });
+
+  it('пустой вход → пустой массив', () => {
+    expect(dedupeLatestSnapshotPerCustomer([])).toEqual([]);
+  });
+
+  it('один клиент, снимки вразнобой → один последний', () => {
+    const rows = [
+      { customerEntityId: 'c1', snapshotAt: new Date(2026, 0, 1), riskScore: 1 },
+      { customerEntityId: 'c1', snapshotAt: new Date(2026, 0, 3), riskScore: 9 },
+      { customerEntityId: 'c1', snapshotAt: new Date(2026, 0, 2), riskScore: 5 },
+    ];
+    const out = dedupeLatestSnapshotPerCustomer(rows);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.riskScore).toBe(9);
   });
 });

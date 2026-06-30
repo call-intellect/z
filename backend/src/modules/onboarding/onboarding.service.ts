@@ -21,6 +21,14 @@ export interface SetupProgressDto {
   };
 }
 
+export interface WelcomeAnswersDto {
+  teamSize: string | null;
+  industry: string | null;
+  painPoints: string[];
+  currentStack: string[];
+  plannedFeatures: string[];
+}
+
 @Injectable()
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
@@ -70,6 +78,32 @@ export class OnboardingService {
     return { completed, total: 6, steps };
   }
 
+  async getWelcome(orgId: string): Promise<WelcomeAnswersDto> {
+    const org = await this.prisma.org.findUnique({
+      where: { id: orgId },
+      select: {
+        teamSize: true,
+        industry: true,
+        painPoints: true,
+        currentStack: true,
+        plannedFeatures: true,
+      },
+    });
+    if (!org) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'org_not_found', message: 'Org не найдена' },
+      });
+    }
+    return {
+      teamSize: org.teamSize,
+      industry: org.industry,
+      painPoints: org.painPoints,
+      currentStack: org.currentStack,
+      plannedFeatures: org.plannedFeatures,
+    };
+  }
+
   async patchWelcome(args: {
     orgId: string;
     userId: string;
@@ -112,12 +146,22 @@ export class OnboardingService {
         painPoints: true,
         currentStack: true,
         plannedFeatures: true,
+        isReferenceDemo: true,
       },
     });
     if (!org) {
       throw new NotFoundException({
         ok: false,
         error: { code: 'org_not_found', message: 'Org не найдена' },
+      });
+    }
+    if (org.isReferenceDemo) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'cannot_complete_on_demo_org',
+          message: 'Онбординг нельзя завершить в общей демо-компании — переключитесь на свою.',
+        },
       });
     }
 
@@ -151,6 +195,11 @@ export class OnboardingService {
           status: 'uploaded',
         },
       });
+    } else {
+      this.logger.warn(
+        { orgId, userId },
+        'completeWelcome: у пользователя нет Person в своей Org — документ «Знакомство с компанией» не создан',
+      );
     }
 
     const now = new Date();

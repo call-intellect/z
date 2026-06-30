@@ -21,6 +21,7 @@ export interface GoalVectorByPersonApi {
   goalId: string | null;
   goalTitle: string | null;
   rows: GoalVectorByPersonRowApi[];
+  goalState: "primary" | "active_fallback" | "none";
 }
 
 export type IssueChainRelationType = "blocks" | "blocked_by";
@@ -57,6 +58,23 @@ export interface OperationsTrendApi {
   current: Record<string, number> | null;
   previous: Record<string, number> | null;
   deltas: Record<string, number>;
+}
+
+export interface StuckIssueRowApi {
+  issueId: string;
+  identifier: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  daysStuck: number;
+  assigneeUserId: string | null;
+  assigneeName: string | null;
+  dueDate: string | null;
+}
+
+export interface StuckIssuesResponseApi {
+  items: StuckIssueRowApi[];
+  staleDaysThreshold: number;
 }
 
 export const executionDashboardApi = {
@@ -99,6 +117,12 @@ export const executionDashboardApi = {
       `/api/v1/dashboard/operations/trend?period=${encodeURIComponent(
         params.period,
       )}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  stuckCrossProject: (orgId: string) =>
+    apiClient.get<StuckIssuesResponseApi>(
+      "/api/v1/dashboard/stuck/cross-project",
       { headers: orgHeaders(orgId) },
     ),
 };

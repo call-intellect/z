@@ -63,6 +63,9 @@ export class TaskCompletionHandler {
   /** Code-fallback крутилки (§7.6). Источник правды — AdminSetting. */
   private static readonly DEFAULT_MATCH_THRESHOLD = 0.85;
   private static readonly DEFAULT_EMBED_TIMEOUT_MS = 2500;
+  private static readonly DEFAULT_EMBED_MAX_ATTEMPTS = 3;
+  private static readonly EMBED_RETRY_PAUSE_MS = 150;
+  private static readonly DEFAULT_PROGRESS_FROM_CONVERSATION_MIN_CONFIDENCE = 0.6;
   /** Сколько открытых задач передавать в KNN (берём лучшую). */
   private static readonly KNN_LIMIT = 5;
   private static readonly LLM_RETRIES = 2;
@@ -124,7 +127,7 @@ export class TaskCompletionHandler {
 
       // 2. Блок-сигнал.
       const block = await this.prisma.ideaBlock.findUnique({
-        where: { id: event.blockId },
+        where: { id_tenantId: { id: event.blockId, tenantId: event.tenantId } },
         select: {
           id: true,
           tenantId: true,
@@ -188,12 +191,18 @@ export class TaskCompletionHandler {
       if (!verdict || !verdict.done) {
         if (this.config?.tracker?.livingCardEnabled ?? true) {
           try {
-            await this.appendLivingCardNote({
+            await this.writeConversationProgress({
               tenantId: event.tenantId,
               issueId: matched.id,
-              sourceBlockId: block.id,
+              block: {
+                id: block.id,
+                criticalQuestion: block.criticalQuestion,
+                trustedAnswer: block.trustedAnswer,
+              },
               quote: block.trustedAnswer,
               question: block.criticalQuestion,
+              verdict,
+              matchSimilarity: matched.similarity,
             });
           } catch (err) {
             this.logger.warn(
@@ -203,7 +212,7 @@ export class TaskCompletionHandler {
                 blockId: block.id,
                 err: err instanceof Error ? err.message : String(err),
               },
-              'living-card: дозапись заметки не удалась — пропускаю',
+              'living-card: запись хода из разговора не удалась — пропускаю',
             );
           }
         }
@@ -337,6 +346,24 @@ export class TaskCompletionHandler {
       : TaskCompletionHandler.DEFAULT_EMBED_TIMEOUT_MS;
   }
 
+  private async embedMaxAttempts(): Promise<number> {
+    const v = await this.settings
+      .get<number>('taskClosure.embedMaxAttempts')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v) && v >= 1
+      ? Math.floor(v)
+      : TaskCompletionHandler.DEFAULT_EMBED_MAX_ATTEMPTS;
+  }
+
+  private async progressFromConversationMinConfidence(): Promise<number> {
+    const v = await this.settings
+      .get<number>('tracker.progressFromConversationMinConfidence')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1
+      ? v
+      : TaskCompletionHandler.DEFAULT_PROGRESS_FROM_CONVERSATION_MIN_CONFIDENCE;
+  }
+
   private async lexicalFallbackMinOverlap(): Promise<number> {
     const v = await this.settings
       .get<number>('taskClosure.lexicalFallbackMinOverlap')
@@ -365,12 +392,41 @@ export class TaskCompletionHandler {
     return `${q}\n\n${a.slice(0, 500)}`;
   }
 
-  /**
-   * Embed одного текста с таймаутом. Возвращает pgvector text-литерал
-   * `'[v1,v2,...]'` или null (таймаут/ошибка/пустой вектор). Best-effort.
-   */
   private async embedWithTimeout(text: string): Promise<string | null> {
     const timeoutMs = await this.embedTimeoutMs();
+    const maxAttempts = await this.embedMaxAttempts();
+    let lastErr: unknown = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const vector = await this.embedOnce(text, timeoutMs);
+        if (!vector || vector.length === 0) return null;
+        return `[${vector.join(',')}]`;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < maxAttempts) {
+          this.logger.debug(
+            {
+              attempt,
+              maxAttempts,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'task-closure: embed блока сбоил — ретрай',
+          );
+          await this.pause(TaskCompletionHandler.EMBED_RETRY_PAUSE_MS);
+        }
+      }
+    }
+    this.logger.warn(
+      { err: lastErr instanceof Error ? lastErr.message : String(lastErr) },
+      'task-closure: embed блока не посчитался — пропуск матча',
+    );
+    return null;
+  }
+
+  private async embedOnce(
+    text: string,
+    timeoutMs: number,
+  ): Promise<number[] | undefined> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const timeout = new Promise<never>((_, reject) => {
@@ -383,18 +439,14 @@ export class TaskCompletionHandler {
         this.embeddings.embed([text]),
         timeout,
       ]);
-      const vector = vectors[0];
-      if (!vector || vector.length === 0) return null;
-      return `[${vector.join(',')}]`;
-    } catch (err) {
-      this.logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        'task-closure: embed блока не посчитался — пропуск матча',
-      );
-      return null;
+      return vectors[0];
     } finally {
       if (timer) clearTimeout(timer);
     }
+  }
+
+  private pause(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -525,41 +577,62 @@ export class TaskCompletionHandler {
     return parts.join('\n').slice(0, 2_000);
   }
 
-  private async appendLivingCardNote(args: {
+  private async writeConversationProgress(args: {
     tenantId: string;
     issueId: string;
-    sourceBlockId: string;
+    block: { id: string; criticalQuestion: string; trustedAnswer: string };
     quote: string;
     question: string;
+    verdict: ClosureVerdict | null;
+    matchSimilarity: number;
   }): Promise<boolean> {
-    const existing = await this.prisma.issueActivity.findFirst({
+    const existing = await this.prisma.issueProgressUpdate.findFirst({
       where: {
         issueId: args.issueId,
-        verb: 'conversation_note',
-        metadata: { path: ['sourceBlockId'], equals: args.sourceBlockId },
+        tenantId: args.tenantId,
+        sourceBlockIds: { has: args.block.id },
       },
       select: { id: true },
     });
     if (existing) return false;
 
-    await this.prisma.issueActivity.create({
+    const conf =
+      typeof args.verdict?.confidence === 'number' &&
+      Number.isFinite(args.verdict.confidence)
+        ? args.verdict.confidence
+        : args.matchSimilarity;
+    const minConfidence = await this.progressFromConversationMinConfidence();
+    if (conf < minConfidence) return false;
+
+    const quote = (args.quote ?? '').trim();
+    const health = this.conversationProgressHealth(args.verdict);
+    const doneText = quote.slice(0, 2_000);
+    const body = `Из разговора: ${quote}`.slice(0, 2_000);
+
+    await this.prisma.issueProgressUpdate.create({
       data: {
         tenantId: args.tenantId,
         issueId: args.issueId,
-        actorUserId: null,
-        actorType: 'ai_agent',
-        agentName: 'living-card',
-        verb: 'conversation_note',
-        newValue: { text: `Из разговора: ${args.quote}`.slice(0, 2000) },
-        metadata: {
-          sourceBlockId: args.sourceBlockId,
-          quote: args.quote.slice(0, 2000),
-          question: args.question.slice(0, 500),
-        },
-        epoch: BigInt(Date.now()) * 1000n,
+        authorType: 'ai_agent',
+        draftState: 'pending',
+        health,
+        doneText,
+        nextText: null,
+        body,
+        sourceBlockIds: [args.block.id],
+        evidenceQuote: quote.slice(0, 2_000),
+        confidence: new Prisma.Decimal(conf.toFixed(3)),
+        previewQuote: quote.slice(0, 500),
+        previewSourceRef: Prisma.JsonNull,
       },
     });
     return true;
+  }
+
+  private conversationProgressHealth(verdict: ClosureVerdict | null): string {
+    if (!verdict) return 'on_track';
+    if (hasBlockerSignal(verdict.negativeSignals)) return 'at_risk';
+    return 'on_track';
   }
 
   private async calibrate(raw: number): Promise<number> {
@@ -578,6 +651,32 @@ export class TaskCompletionHandler {
       return true;
     }
   }
+}
+
+const BLOCKER_MARKERS = [
+  'блок',
+  'заблок',
+  'не получается',
+  'не смог',
+  'не удалось',
+  'застрял',
+  'ждём',
+  'ждем',
+  'ожидаем',
+  'мешает',
+  'препятств',
+  'риск',
+];
+
+function hasBlockerSignal(negativeSignals: string[]): boolean {
+  if (!Array.isArray(negativeSignals) || negativeSignals.length === 0) {
+    return false;
+  }
+  const joined = negativeSignals
+    .join(' ')
+    .toLowerCase()
+    .replace(/ё/g, 'е');
+  return BLOCKER_MARKERS.some((marker) => joined.includes(marker));
 }
 
 function tokenize(text: string): Set<string> {

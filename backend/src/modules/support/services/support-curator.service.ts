@@ -91,7 +91,7 @@ export class SupportCuratorService {
     const since = new Date(now.getTime() - SIGNALS_WINDOW_MS);
     const signals = await this.prisma.supportDraftOutcome.findMany({
       where: { tenantId: vendorOrgId, createdAt: { gte: since } },
-      select: { issueId: true, outcome: true, editType: true },
+      select: { conversationId: true, outcome: true, editType: true },
     });
 
     let proposals: CuratorProposal[];
@@ -243,19 +243,19 @@ export class SupportCuratorService {
       const targetValid = !!target && target.id !== blockId && target.status === 'canonical';
       if (targetValid) {
         await this.prisma.ideaBlock.update({
-          where: { id: blockId },
+          where: { id_tenantId: { id: blockId, tenantId: vendorOrgId } },
           data: { status: 'merged_into', mergedIntoId: proposal.targetBlockId },
         });
         appliedTargetBlockId = proposal.targetBlockId;
       } else {
         await this.prisma.ideaBlock.update({
-          where: { id: blockId },
+          where: { id_tenantId: { id: blockId, tenantId: vendorOrgId } },
           data: { status: 'archived', supersededAt: now },
         });
       }
     } else {
       await this.prisma.ideaBlock.update({
-        where: { id: blockId },
+        where: { id_tenantId: { id: blockId, tenantId: vendorOrgId } },
         data: { status: 'archived', supersededAt: now },
       });
     }

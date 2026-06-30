@@ -149,6 +149,8 @@ export function OperationsDashboardClient({
       ? pulseSwr.error.message
       : "Не удалось загрузить аналитику"
     : null;
+  const teamFrictionsCount = pulse?.bottlenecks?.topPairs?.length ?? 0;
+  const lowRoiMeetingsCount = pulse?.lowRoiMeetings?.meetings?.length ?? 0;
 
   const reworkEnabled = data.reworkEnabled;
   const maturityDomainCount = new Set(
@@ -453,9 +455,16 @@ export function OperationsDashboardClient({
           </CardTitle>
           <div className="mt-4">
             {data.topRecentTeamFrictions.length === 0 ? (
-              <p className="text-sm" style={{ color: CHART.dim }}>
-                На текущий момент конфликтов в команде не зафиксировано.
-              </p>
+              teamFrictionsCount === 0 && lowRoiMeetingsCount === 0 ? (
+                <p className="text-sm" style={{ color: CHART.dim }}>
+                  Пока спокойно: 0 конфликтов · 0 трений · 0 встреч с низкой
+                  отдачей.
+                </p>
+              ) : (
+                <p className="text-sm" style={{ color: CHART.dim }}>
+                  На текущий момент конфликтов в команде не зафиксировано.
+                </p>
+              )
             ) : (
               <ul className="space-y-3">
                 {data.topRecentTeamFrictions.map((f) => (

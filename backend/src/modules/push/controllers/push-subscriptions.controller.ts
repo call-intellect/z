@@ -24,6 +24,7 @@ import {
   type PushSubscriptionListResponse,
 } from '../dto/push-subscription.dto';
 import { PushSubscriptionsService } from '../services/push-subscriptions.service';
+import { PushService } from '../services/push.service';
 
 @ApiTags('me-push-subscriptions')
 @Controller('api/v1/me/push-subscriptions')
@@ -32,6 +33,8 @@ export class PushSubscriptionsController {
   constructor(
     @Inject(PushSubscriptionsService)
     private readonly svc: PushSubscriptionsService,
+    @Inject(PushService)
+    private readonly push: PushService,
   ) {}
 
   @Post()
@@ -57,6 +60,7 @@ export class PushSubscriptionsController {
       ...(body.userAgent ? { userAgent: body.userAgent } : {}),
       expiresAt,
     });
+    await this.push.ensurePushBinding({ tenantId: t, userId: user.id });
     return { ok: true, id: sub.id };
   }
 

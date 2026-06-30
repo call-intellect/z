@@ -25,6 +25,8 @@ import { JwtService } from '../auth/services/jwt.service';
 import { ConversationalService } from '../conversational/conversational.service';
 import { MailService } from '../mail/mail.service';
 import { MeetingsBalanceService } from '../meetings-balance/meetings-balance.service';
+import { MessageService } from '../messaging/services/message.service';
+import { WorkChatService } from '../messaging/services/work-chat.service';
 import { isPresentParticipant } from '../participants/participant-presence';
 import { UsersService } from '../users/users.service';
 
@@ -73,6 +75,8 @@ export class MeetingsService {
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
     @Inject(MeetingVisibilityService) private readonly visibility: MeetingVisibilityService,
+    @Inject(WorkChatService) private readonly workChat: WorkChatService,
+    @Inject(MessageService) private readonly messages: MessageService,
   ) {}
 
   private async resolveDefaultTenant(
@@ -759,13 +763,13 @@ export class MeetingsService {
       reason?: string;
     } = {},
   ): Promise<Meeting> {
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const current = await tx.meeting.findUnique({ where: { id: meetingId } });
       if (!current) throw new MeetingNotFoundError(meetingId);
 
       assertTransition(current.status, toStatus);
 
-      const updated = await tx.meeting.update({
+      const row = await tx.meeting.update({
         where: { id: meetingId },
         data: {
           status: toStatus,
@@ -787,8 +791,112 @@ export class MeetingsService {
         },
       });
 
-      return updated;
+      return row;
     });
+
+    if (toStatus === 'ai_ready' || toStatus === 'ai_failed') {
+      await this.postMeetingClosedToLinkedChats(meetingId).catch((err) => {
+        this.logger.warn(
+          `postMeetingClosedToLinkedChats(${meetingId}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    }
+
+    return updated;
+  }
+
+  private async postMeetingClosedToLinkedChats(meetingId: string): Promise<void> {
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: {
+        id: true,
+        title: true,
+        ownerId: true,
+        huddleConversationId: true,
+        recording: { select: { mainVideoUrl: true } },
+        aiResult: { select: { summaryFast: true, summary: true } },
+      },
+    });
+    if (!meeting) return;
+
+    const content = this.buildMeetingClosedContent(
+      meeting.title,
+      meeting.recording?.mainVideoUrl ?? null,
+      meeting.aiResult?.summaryFast ?? meeting.aiResult?.summary ?? null,
+    );
+
+    if (meeting.huddleConversationId) {
+      try {
+        const conversation = await this.prisma.conversation.findUnique({
+          where: { id: meeting.huddleConversationId },
+          select: { tenantId: true },
+        });
+        if (conversation) {
+          await this.messages.appendSystemMessage({
+            tenantId: conversation.tenantId,
+            conversationId: meeting.huddleConversationId,
+            authorUserId: meeting.ownerId,
+            content,
+            access: 'normal',
+            clientMessageId: `huddle-closed:${meetingId}`,
+          });
+        }
+      } catch (err) {
+        this.logger.warn(
+          `postMeetingClosedToLinkedChats huddle=${meeting.huddleConversationId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    const issues = await this.prisma.issue.findMany({
+      where: { linkedMeetingIds: { has: meetingId } },
+      select: { id: true },
+    });
+    if (issues.length === 0) return;
+
+    const clientMessageId = `meeting-closed:${meetingId}`;
+
+    for (const issue of issues) {
+      try {
+        const { conversationId } = await this.workChat.ensureWorkChat(issue.id);
+        const conversation = await this.prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: { tenantId: true },
+        });
+        if (!conversation) continue;
+        await this.messages.appendSystemMessage({
+          tenantId: conversation.tenantId,
+          conversationId,
+          authorUserId: meeting.ownerId,
+          content,
+          access: 'normal',
+          clientMessageId,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `postMeetingClosedToLinkedChats issue=${issue.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  private buildMeetingClosedContent(
+    title: string,
+    recordingUrl: string | null,
+    summary: string | null,
+  ): string {
+    const parts = ['Встреча завершена.'];
+    if (recordingUrl) {
+      parts.push(`Запись: ${recordingUrl}`);
+    }
+    if (summary && summary.trim().length > 0) {
+      const snippet = summary.trim();
+      const max = 500;
+      parts.push(
+        `Резюме: ${snippet.length > max ? `${snippet.slice(0, max)}…` : snippet}`,
+      );
+    }
+    return parts.join('\n\n');
   }
 
   async getResult(

@@ -38,15 +38,17 @@ Lead-style: пользователь оставляет `email + name` на `/si
 
 ## Поток 3 — Admin local login (низкоуровневый, теперь за единым логином)
 
-`AdminLoginService.login(email, password)` → проверяет bcrypt-хеш в `User.passwordHash` для `role='admin'`, выдаёт JWT (без `jti`). Доступ к `/admin/*` через `SuperAdminGuard` (флаг `User.isSuperAdmin`).
+`AdminLoginService.login(email, password)` → сверяет `User.passwordHash` для `role='admin'` через **общий `PasswordService.verify`** (распознаёт формат хэша: argon2id и легаси bcrypt), выдаёт JWT (без `jti`). Доступ к `/admin/*` через `SuperAdminGuard` (флаг `User.isSuperAdmin`).
 
 Файлы: `backend/src/modules/auth/services/admin-login.service.ts`, endpoint `POST /api/v1/auth/admin-login` (deprecated — оставлен для обратной совместимости).
+
+**Единая схема хэширования (2026-06-29):** все потоки пишут argon2id через единый `PasswordService` (`backend/src/modules/accounts/password.service.ts`, расшарен `PasswordModule` в accounts/auth/orgs). `verify` принимает оба формата (`$argon2*` → argon2, `$2*` → bcrypt), `needsRehash` запускает **ленивую миграцию** legacy-bcrypt → argon2id при следующем успешном входе (в `accounts.login` и `admin-login`). Старые хэши (argon2 у пользователей, bcrypt у админов из прежнего `set-admin-password`) продолжают входить без смены пароля. `set-admin-password.ts` с 2026-06-29 пишет argon2id. Это устранило двойную несовместимую схему на колонке `User.passwordHash` и риск локаута админа при смене пароля через `/accounts/me/change-password`.
 
 ## Поток 4 — Единый логин `/login` (2026-05-29)
 
 Одна форма для всех — обычных пользователей И супер-админов. `POST /api/v1/auth/login` (`UnifiedLoginController`, `backend/src/modules/accounts/unified-login.controller.ts`) пробует по очереди:
 1. standalone (`AccountsService.login`, argon2id);
-2. admin (`AdminLoginService.login`, bcrypt, `role='admin'`).
+2. admin (`AdminLoginService.login`, `role='admin'`; verify через общий `PasswordService` — argon2id + bcrypt-fallback).
 
 Любой неуспех — единый `LoginInvalidError` (защита от user-enumeration: каждый путь сам тратит время на фейковый verify своего хеша). Общий cookie `z_session`, domain `COOKIE_STANDALONE_DOMAIN ?? COOKIE_DOMAIN`, throttle 5/15мин. Ответ: `{ user, role, isSuperAdmin, mustChangePassword }`.
 

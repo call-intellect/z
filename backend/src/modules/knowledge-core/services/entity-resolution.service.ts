@@ -144,7 +144,7 @@ export class EntityResolutionService {
     if (strongHit) {
       const merged = this.mergeMetadata(strongHit.metadata, args.metadata);
       const updated = await this.prisma.entity.update({
-        where: { id: strongHit.id },
+        where: { id_tenantId: { id: strongHit.id, tenantId: args.tenantId } },
         data: {
           mentionsCount: { increment: 1 },
           // Заполняем пустые strong-поля (если новый вызов принёс данные,
@@ -171,13 +171,13 @@ export class EntityResolutionService {
     const cachedId = await this.readCache(cacheKey);
     if (cachedId) {
       const cached = await this.prisma.entity.findUnique({
-        where: { id: cachedId },
+        where: { id_tenantId: { id: cachedId, tenantId: args.tenantId } },
       });
       // mergedIntoId ≠ null означает, что cache устарел: сущность слита.
       if (cached && cached.mergedIntoId === null) {
         const merged = this.mergeMetadata(cached.metadata, args.metadata);
         const updated = await this.prisma.entity.update({
-          where: { id: cached.id },
+          where: { id_tenantId: { id: cached.id, tenantId: args.tenantId } },
           data: {
             mentionsCount: { increment: 1 },
             ...(merged !== undefined ? { metadata: merged } : {}),
@@ -200,12 +200,12 @@ export class EntityResolutionService {
     );
     if (exact) {
       const found = await this.prisma.entity.findUnique({
-        where: { id: exact.id },
+        where: { id_tenantId: { id: exact.id, tenantId: args.tenantId } },
       });
       if (found) {
         const merged = this.mergeMetadata(found.metadata, args.metadata);
         const updated = await this.prisma.entity.update({
-          where: { id: found.id },
+          where: { id_tenantId: { id: found.id, tenantId: args.tenantId } },
           data: {
             mentionsCount: { increment: 1 },
             // W3.4 backfill: если caller передал strong-ID, которого нет у
@@ -251,7 +251,7 @@ export class EntityResolutionService {
     if (knnHit) {
       const merged = this.mergeMetadata(knnHit.metadata, args.metadata);
       const updated = await this.prisma.entity.update({
-        where: { id: knnHit.id },
+        where: { id_tenantId: { id: knnHit.id, tenantId: args.tenantId } },
         data: {
           mentionsCount: { increment: 1 },
           // Б44 [K4] W3.4 backfill: если caller передал strong-ID, которого
@@ -457,7 +457,7 @@ export class EntityResolutionService {
     const similarity = 1 - dist;
     if (similarity < threshold) return null;
     const entity = await this.prisma.entity.findUnique({
-      where: { id: best.id },
+      where: { id_tenantId: { id: best.id, tenantId: args.tenantId } },
     });
     return entity;
   }
@@ -547,7 +547,9 @@ export class EntityResolutionService {
       );
       const hit = rows[0];
       if (!hit) return null;
-      return this.prisma.entity.findUnique({ where: { id: hit.id } });
+      return this.prisma.entity.findUnique({
+        where: { id_tenantId: { id: hit.id, tenantId: args.tenantId } },
+      });
     };
 
     if (args.inn) {
@@ -836,6 +838,191 @@ export class EntityResolutionService {
   }
 
   /**
+   * Слой источника Ф4 (R14) — нечёткий резолв имени в РАНЖИРОВАННЫХ кандидатов
+   * Person с уверенностью (0..1). Каскад без точного равенства строки как
+   * решающего: EntityAlias (кэш) → триграммное сходство (pg_trgm) →
+   * близость Person→Entity.embedding. Кандидаты дедупятся по personId с
+   * максимумом уверенности. `contextEntityIds` (например «Молочные реки») сужают
+   * выбор: кандидаты, связанные с контекст-сущностью через общий источник
+   * (SourceParticipant↔SourceEntity) или IdeaBlockEntity, остаются; если хотя бы
+   * один такой найден — несвязанные отбрасываются (контекст сужает до одного).
+   * Возвращает по убыванию уверенности. Детерминизм К1 — в ОБХОДЕ по этим id,
+   * не в этом резолве.
+   */
+  async resolvePersonCandidates(args: {
+    tenantId: string;
+    hint: string;
+    contextEntityIds?: string[];
+  }): Promise<Array<{ personId: string; confidence: number }>> {
+    const { tenantId } = args;
+    const normalized = this.normalizeName(args.hint);
+    if (normalized.length === 0) return [];
+    const lowered = normalized.toLowerCase();
+
+    const byPerson = new Map<string, number>();
+    const bump = (personId: string, confidence: number): void => {
+      const prev = byPerson.get(personId);
+      if (prev === undefined || confidence > prev) {
+        byPerson.set(personId, confidence);
+      }
+    };
+
+    const cached = await this.prisma.entityAlias
+      .findUnique({
+        where: { tenantId_alias: { tenantId, alias: lowered } },
+        select: { personId: true },
+      })
+      .catch(() => null);
+    if (cached?.personId) {
+      const alive = await this.prisma.person
+        .findFirst({
+          where: { id: cached.personId, tenantId, deletedAt: null },
+          select: { id: true },
+        })
+        .catch(() => null);
+      if (alive) bump(alive.id, 1);
+    }
+
+    for (const c of await this.resolvePersonByTrigram(tenantId, normalized)) {
+      bump(c.id, c.score);
+    }
+
+    for (const c of await this.resolvePersonByEmbedding(tenantId, normalized)) {
+      bump(c.id, c.score);
+    }
+
+    let candidates = [...byPerson.entries()]
+      .map(([personId, confidence]) => ({ personId, confidence }))
+      .sort((a, b) => b.confidence - a.confidence);
+
+    if (
+      candidates.length > 1 &&
+      args.contextEntityIds &&
+      args.contextEntityIds.length > 0
+    ) {
+      const narrowed = await this.narrowByContextEntities(
+        tenantId,
+        candidates.map((c) => c.personId),
+        args.contextEntityIds,
+      );
+      if (narrowed.size > 0) {
+        candidates = candidates.filter((c) => narrowed.has(c.personId));
+      }
+    }
+
+    return candidates;
+  }
+
+  /**
+   * Триграммное сходство имени Person (pg_trgm). Возвращает кандидатов
+   * `similarity(name, hint) >= порог` (knowledge.person_resolve_trgm_threshold,
+   * default 0.3), top-5 по убыванию. tenantId + deletedAt IS NULL в WHERE.
+   * Параметризованный SQL; при недоступности pg_trgm — пустой массив.
+   */
+  private async resolvePersonByTrigram(
+    tenantId: string,
+    name: string,
+  ): Promise<Array<{ id: string; score: number }>> {
+    const threshold =
+      (await this.cfg
+        ?.getDynamic<number>('knowledge.person_resolve_trgm_threshold', undefined, 0.3)
+        .catch(() => 0.3)) ?? 0.3;
+
+    interface Row {
+      id: string;
+      score: string | number;
+    }
+    let rows: Row[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT id, similarity("name", $2) AS score
+        FROM "persons"
+        WHERE "tenantId" = $1
+          AND "deletedAt" IS NULL
+          AND similarity("name", $2) >= $3
+        ORDER BY score DESC
+        LIMIT 5
+        `,
+        tenantId,
+        name,
+        threshold,
+      );
+    } catch {
+      return [];
+    }
+    const out: Array<{ id: string; score: number }> = [];
+    for (const r of rows) {
+      const score = typeof r.score === 'string' ? Number(r.score) : r.score;
+      if (Number.isFinite(score)) out.push({ id: r.id, score });
+    }
+    return out;
+  }
+
+  /**
+   * Контекст-сужение: возвращает подмножество personId, которые встречаются в
+   * одном источнике с контекст-сущностью (через SourceParticipant↔SourceEntity
+   * по общему rawEventId) ИЛИ совместно упомянуты в блоке (IdeaBlockEntity).
+   * Резолвит merged-сущности в канон до сравнения. tenantId во всех WHERE.
+   */
+  private async narrowByContextEntities(
+    tenantId: string,
+    personIds: string[],
+    contextEntityIds: string[],
+  ): Promise<Set<string>> {
+    if (personIds.length === 0 || contextEntityIds.length === 0) {
+      return new Set();
+    }
+    const canonIds = await this.canonicalizeEntityIds(tenantId, contextEntityIds);
+    if (canonIds.length === 0) return new Set();
+
+    interface Row {
+      personId: string;
+    }
+    let rows: Row[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT DISTINCT sp."personId" AS "personId"
+        FROM "SourceParticipant" sp
+        JOIN "SourceEntity" se
+          ON se."rawEventId" = sp."rawEventId"
+         AND se."tenantId" = sp."tenantId"
+        WHERE sp."tenantId" = $1
+          AND sp."personId" = ANY($2::text[])
+          AND se."entityId" = ANY($3::text[])
+        `,
+        tenantId,
+        personIds,
+        canonIds,
+      );
+    } catch {
+      return new Set();
+    }
+    return new Set(rows.map((r) => r.personId));
+  }
+
+  /**
+   * Резолв merged-сущностей в канон: для каждого entityId, если у него задан
+   * mergedIntoId — берём канон. tenantId в WHERE. Дедуп.
+   */
+  private async canonicalizeEntityIds(
+    tenantId: string,
+    entityIds: string[],
+  ): Promise<string[]> {
+    if (entityIds.length === 0) return [];
+    const rows = await this.prisma.entity.findMany({
+      where: { id: { in: entityIds }, tenantId },
+      select: { id: true, mergedIntoId: true },
+    });
+    const out = new Set<string>();
+    for (const r of rows) {
+      out.add(r.mergedIntoId ?? r.id);
+    }
+    return [...out];
+  }
+
+  /**
    * Per-Org alias-cache: upsert EntityAlias по (tenantId, alias)→personId.
    * Best-effort — на ошибке debug-лог, не бросаем (резолв уже состоялся).
    */
@@ -1111,7 +1298,7 @@ export class EntityResolutionService {
     entityId: string;
   }): Promise<void> {
     const entity = await this.prisma.entity.findUnique({
-      where: { id: args.entityId },
+      where: { id_tenantId: { id: args.entityId, tenantId: args.tenantId } },
       select: { tenantId: true, type: true, canonicalName: true },
     });
     if (
@@ -1411,11 +1598,11 @@ export class EntityResolutionService {
       });
       if (byInn) {
         const ent = await this.prisma.entity.findUnique({
-          where: { id: byInn.entityId },
+          where: { id_tenantId: { id: byInn.entityId, tenantId: args.tenantId } },
         });
         if (ent) {
           await this.prisma.entity.update({
-            where: { id: ent.id },
+            where: { id_tenantId: { id: ent.id, tenantId: args.tenantId } },
             data: { mentionsCount: { increment: 1 } },
           });
           return { entity: ent, vendorId: byInn.id, created: false };
@@ -1486,11 +1673,11 @@ export class EntityResolutionService {
       });
       if (byCrm) {
         const ent = await this.prisma.entity.findUnique({
-          where: { id: byCrm.entityId },
+          where: { id_tenantId: { id: byCrm.entityId, tenantId: args.tenantId } },
         });
         if (ent) {
           const updated = await this.prisma.entity.update({
-            where: { id: ent.id },
+            where: { id_tenantId: { id: ent.id, tenantId: args.tenantId } },
             data: { mentionsCount: { increment: 1 } },
           });
           return { entity: updated, customerId: byCrm.id, created: false };
@@ -1575,11 +1762,11 @@ export class EntityResolutionService {
     });
     if (existing) {
       const ent = await this.prisma.entity.findUnique({
-        where: { id: existing.entityId },
+        where: { id_tenantId: { id: existing.entityId, tenantId: args.tenantId } },
       });
       if (ent) {
         await this.prisma.entity.update({
-          where: { id: ent.id },
+          where: { id_tenantId: { id: ent.id, tenantId: args.tenantId } },
           data: { mentionsCount: { increment: 1 } },
         });
         return { entity: ent, eventId: existing.id, created: false };

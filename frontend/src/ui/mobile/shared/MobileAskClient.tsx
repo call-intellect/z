@@ -3,12 +3,11 @@
 import { MessageCircle } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
-import { OrgChatPanel } from "@/ui/components/chat/OrgChatPanel";
+import { MasterScopedChat } from "@/ui/chat/MasterScopedChat";
 import { askPromptsForRole } from "./ask-prompts";
 
 export function MobileAskClient() {
-  const { currentOrgRole } = useAuth();
-  const prompts = [...askPromptsForRole(currentOrgRole)];
+  const { currentOrgId, currentOrgRole } = useAuth();
 
   return (
     <div className="mx-auto flex h-full w-full max-w-md flex-col px-4 py-5">
@@ -20,12 +19,18 @@ export function MobileAskClient() {
         Кора ответит по памяти компании — с цитатами из источников.
       </p>
 
-      <OrgChatPanel
-        className="min-h-0 flex-1"
-        suggestedPrompts={prompts}
-        voiceInput
-        placeholder="Спросите Кору о памяти компании…"
-      />
+      {currentOrgId ? (
+        <MasterScopedChat
+          scope="org"
+          orgId={currentOrgId}
+          enableVoice
+          suggestedPrompts={[...askPromptsForRole(currentOrgRole)]}
+          placeholder="Спросите Кору о памяти компании…"
+          emptyTitle="Спросите Кору"
+          emptyHint="Кора ответит по памяти компании — с цитатами из источников."
+          className="min-h-0 flex-1"
+        />
+      ) : null}
     </div>
   );
 }

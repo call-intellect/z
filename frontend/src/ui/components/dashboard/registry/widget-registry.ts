@@ -40,7 +40,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
     title: "План и факт",
     rhythm: ["today", "week", "month"],
     roles: ["owner", "coo"],
-    size: "lg",
+    size: "md",
     Component: PlanFactWidget,
   },
   "weekly-plan-fact": {
@@ -56,7 +56,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
     title: "Идём лучше или хуже",
     rhythm: ["week", "month"],
     roles: ["owner", "coo"],
-    size: "lg",
+    size: "md",
     Component: TrendWidget,
   },
   "month-recap": {
@@ -80,7 +80,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
     title: "Динамика по неделям",
     rhythm: ["month"],
     roles: ["owner", "coo"],
-    size: "lg",
+    size: "md",
     Component: WeeklyDynamicsWidget,
   },
   maturity: {
@@ -88,7 +88,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
     title: "Зрелость компании",
     rhythm: ["month"],
     roles: ["owner", "coo"],
-    size: "lg",
+    size: "md",
     Component: MaturityCardWidget,
   },
   "bus-factor": {
@@ -128,7 +128,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
     title: "Что мешает — по темам",
     rhythm: ["today", "week", "month"],
     roles: ["owner", "coo"],
-    size: "lg",
+    size: "md",
     Component: BlockersByThemeWidget,
   },
   ideas: {
@@ -152,7 +152,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
     title: "Лента",
     rhythm: ["today", "week", "month"],
     roles: ["owner", "coo"],
-    size: "lg",
+    size: "xl",
     Component: FeedWidget,
   },
   value: {

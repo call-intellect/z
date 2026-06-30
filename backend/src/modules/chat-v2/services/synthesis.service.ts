@@ -4,11 +4,14 @@ import type { ChatV2Mode, ChatV2Scope, DataClass } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { BrandVoiceService } from '../../brand-voice/services/brand-voice.service';
 import { ClonesService } from '../../clones/services/clones.service';
+import type { QueryClass } from '../../dialog-layer/services/query-classifier.service';
 import type { StructuralRetrievalFilters } from '../../dialog-layer/services/query-plan-extractor.service';
 import { RetrievalCacheService } from '../../dialog-layer/services/retrieval-cache.service';
 import {
   ChatV2Service as KnowledgeCoreChatV2Service,
+  type ChatV2AnswerKind,
   type ChatV2Citation,
+  type ChatV2Episode,
   type ChatV2Output,
   type ChatV2Scope as KnowledgeChatV2Scope,
   type ChatV2Stage,
@@ -31,6 +34,8 @@ export interface SynthesisInput {
   tableAggregation?: boolean;
   conversationSummary?: string | null;
   intent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay' | null;
+  queryClass?: QueryClass | null;
+  queryClassConfidence?: number | null;
   onStage?: (stage: ChatV2Stage) => void;
 }
 
@@ -41,6 +46,9 @@ export interface SynthesisResult {
   llmMeta: Record<string, unknown>;
   uncertaintyNote: string | null;
   dataClass: DataClass;
+  needsClarification: boolean;
+  answerKind: ChatV2AnswerKind;
+  episodes?: ChatV2Episode[];
 }
 
 @Injectable()
@@ -84,6 +92,9 @@ export class SynthesisService {
           llmMeta: { mode: 'clone_style' },
           uncertaintyNote: null,
           dataClass: 'sensitive',
+          needsClarification: false,
+          answerKind: 'prose',
+          episodes: undefined,
         };
       } catch (err) {
         this.logger.warn(
@@ -148,6 +159,8 @@ export class SynthesisService {
       tableEntityIds: input.tableEntityIds,
       tableAggregation: input.tableAggregation,
       intent: input.intent ?? undefined,
+      queryClass: input.queryClass ?? undefined,
+      queryClassConfidence: input.queryClassConfidence ?? undefined,
       systemPromptOverride,
       precomputedBlockIds: cachedRetrieval?.blockIds,
       onStage: input.onStage,
@@ -186,6 +199,9 @@ export class SynthesisService {
       llmMeta,
       uncertaintyNote,
       dataClass: result.dataClass,
+      needsClarification: result.needsClarification,
+      answerKind: result.answerKind,
+      episodes: result.episodes,
     };
   }
 

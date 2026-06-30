@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { AdminSettingsService } from '../../admin/settings/admin-settings.service';
 import {
   type LlmCallResult,
   LlmRouterService,
@@ -29,6 +30,7 @@ import { CurationService } from '../../curation/services/curation.service';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
 import { LogService } from '../../logging/log.service';
 import { linkDerivedTasksForDecision } from '../../tracker/services/decision-task-link.util';
+import { IntakeService } from '../../tracker/services/intake.service';
 import {
   DECISION_EXTRACT_JSON_SCHEMA,
   DECISION_EXTRACT_SCHEMA_NAME,
@@ -75,6 +77,8 @@ export class Specialist33Service {
   static readonly SPECIALIST_NAME = '3-3-decisions';
   /** Top-K для cosine KNN арбитра дедупа / supersede-detect. */
   private static readonly KNN_TOP_K = 5;
+  private static readonly DEDUPE_THRESHOLD_DEFAULT = 0.86;
+  private static readonly DEDUPE_GRAY_BAND_DEFAULT = 0.07;
   /** Минимальная уверенность extraction, ниже которой пропускаем triage. */
   private static readonly MIN_EXTRACT_CONFIDENCE = 0.4;
   /** Окно ±2 минуты для контекста rationale-extraction. */
@@ -110,7 +114,52 @@ export class Specialist33Service {
     @Optional()
     @Inject(Specialist36Service)
     private readonly specialist36?: Specialist36Service,
+    @Optional()
+    @Inject(AdminSettingsService)
+    private readonly settings?: AdminSettingsService,
+    @Optional()
+    @Inject(IntakeService)
+    private readonly intake?: IntakeService,
   ) {}
+
+  private async getMinExtractConfidence(): Promise<number> {
+    const v = await this.settings
+      ?.get<number>('knowledge.decisionsExtractMinConfidence')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v)
+      ? v
+      : Specialist33Service.MIN_EXTRACT_CONFIDENCE;
+  }
+
+  static classifyDedupeGate(
+    similarity: number | null | undefined,
+    threshold: number,
+    grayBand: number,
+  ): 'merge' | 'new' | 'llm' {
+    if (typeof similarity !== 'number' || !Number.isFinite(similarity))
+      return 'llm';
+    if (similarity >= threshold) return 'merge';
+    if (similarity < threshold - grayBand) return 'new';
+    return 'llm';
+  }
+
+  private async getDedupeThreshold(): Promise<number> {
+    const v = await this.settings
+      ?.get<number>('knowledge.decisionsDedupeThreshold')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v)
+      ? v
+      : Specialist33Service.DEDUPE_THRESHOLD_DEFAULT;
+  }
+
+  private async getDedupeGrayBand(): Promise<number> {
+    const v = await this.settings
+      ?.get<number>('knowledge.decisionsDedupeGrayBand')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v)
+      ? v
+      : Specialist33Service.DEDUPE_GRAY_BAND_DEFAULT;
+  }
 
   /**
    * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
@@ -141,7 +190,7 @@ export class Specialist33Service {
     blockId: string;
   }): Promise<void> {
     const block = await this.prisma.ideaBlock.findUnique({
-      where: { id: args.blockId },
+      where: { id_tenantId: { id: args.blockId, tenantId: args.tenantId } },
       include: { evidence: true },
     });
     if (!block) return;
@@ -414,6 +463,8 @@ export class Specialist33Service {
         }
       }
 
+      await this.maybeEnqueueActionableTask(decision, draft, block);
+
       // Triage — Decision всегда critical → deep review.
       await this.triageProposed({
         tenantId: block.tenantId,
@@ -583,7 +634,8 @@ export class Specialist33Service {
       );
       return null;
     }
-    if ((parsed.confidence ?? 0) < Specialist33Service.MIN_EXTRACT_CONFIDENCE) {
+    const minConfidence = await this.getMinExtractConfidence();
+    if ((parsed.confidence ?? 0) < minConfidence) {
       this.logger.debug(
         { blockId: block.id, confidence: parsed.confidence },
         'specialist-3-3.extractDraft: confidence слишком низкий — skip',
@@ -620,9 +672,11 @@ export class Specialist33Service {
             decidedAt: Date | null;
             status: string;
             text: string | null;
+            similarity: number;
           }>
         >(
-          `SELECT "id", "statement", "rationale", "decidedAt", "status", "text"
+          `SELECT "id", "statement", "rationale", "decidedAt", "status", "text",
+                  1 - ("embedding" <=> $2::vector) AS "similarity"
            FROM "decisions"
            WHERE "tenantId" = $1
              AND "deletedAt" IS NULL
@@ -640,6 +694,7 @@ export class Specialist33Service {
             rationale: r.rationale,
             decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
             status: r.status,
+            similarity: r.similarity,
           }));
         }
       } catch (err) {
@@ -688,6 +743,7 @@ export class Specialist33Service {
       rationale: r.rationale,
       decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
       status: r.status,
+      similarity: null,
     }));
   }
 
@@ -700,6 +756,29 @@ export class Specialist33Service {
   }): Promise<SupersedeVerdict> {
     if (args.candidates.length === 0) {
       return { verdict: 'new', targetId: null, reasoning: 'нет кандидатов' };
+    }
+
+    const best = args.candidates[0];
+    const threshold = await this.getDedupeThreshold();
+    const grayBand = await this.getDedupeGrayBand();
+    const gate = Specialist33Service.classifyDedupeGate(
+      best?.similarity,
+      threshold,
+      grayBand,
+    );
+    if (gate === 'merge' && best) {
+      return {
+        verdict: 'merge',
+        targetId: best.id,
+        reasoning: `cosine ${best.similarity?.toFixed(3)} ≥ ${threshold} — авто-merge без LLM-арбитра`,
+      };
+    }
+    if (gate === 'new') {
+      return {
+        verdict: 'new',
+        targetId: null,
+        reasoning: `cosine ${best?.similarity?.toFixed(3)} < ${(threshold - grayBand).toFixed(3)} — далеко, точно новое`,
+      };
     }
 
     // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate под флагом.
@@ -1022,6 +1101,7 @@ export class Specialist33Service {
           validFrom: args.validFrom ?? args.decidedAt ?? null,
           raisedCount: 1,
           lastRaisedAt: new Date(),
+          impliesAction: args.draft.impliesAction ?? false,
         },
       });
 
@@ -1419,6 +1499,89 @@ export class Specialist33Service {
     }
   }
 
+  // ─────────────────────────── actionable → задача ───────────────────────────
+
+  private async maybeEnqueueActionableTask(
+    decision: Decision,
+    draft: DecisionDraft,
+    block: IdeaBlock,
+  ): Promise<void> {
+    if (!this.intake) return;
+    if (!(draft.impliesAction === true || decision.impliesAction === true)) {
+      return;
+    }
+    if (decision.impliesAction !== true) {
+      try {
+        await this.prisma.decision.update({
+          where: { id: decision.id },
+          data: { impliesAction: true },
+        });
+        decision = { ...decision, impliesAction: true };
+      } catch (err) {
+        this.logger.warn(
+          {
+            decisionId: decision.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-3: пометка impliesAction=true на merge-решении упала (best-effort)',
+        );
+      }
+    }
+    if (decision.actionExtractedAt) return;
+
+    const blockIds = (decision.sourceBlockIds ?? []).filter(
+      (s) => typeof s === 'string' && s.length > 0,
+    );
+    if (blockIds.length === 0) return;
+
+    const already = await this.prisma.intakeIssue.findFirst({
+      where: {
+        tenantId: decision.tenantId,
+        sourceBlockIds: { hasSome: blockIds },
+      },
+      select: { id: true },
+    });
+    if (already) {
+      await this.prisma.decision.update({
+        where: { id: decision.id },
+        data: { actionExtractedAt: new Date() },
+      });
+      return;
+    }
+
+    const title = (draft.actionTitle && draft.actionTitle.trim()) || draft.statement;
+    const confidenceNum =
+      decision.confidence != null ? Number(decision.confidence) : draft.confidence ?? 0.7;
+    try {
+      await this.intake.create(
+        {
+          source: 'decision',
+          externalSource: 'decision',
+          externalId: block.id,
+          rawContent: draft.statement,
+          extractedTitle: title.slice(0, 300),
+          extractedDescription: draft.statement,
+          sourceBlockIds: blockIds,
+          suggestedLabels: [],
+          confidence: confidenceNum,
+        },
+        decision.tenantId,
+      );
+      await this.prisma.decision.update({
+        where: { id: decision.id },
+        data: { actionExtractedAt: new Date() },
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          decisionId: decision.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-3: завести задачу из actionable-решения не удалось (best-effort)',
+      );
+    }
+  }
+
   // ─────────────────────────── triage ───────────────────────────
 
   private async triageProposed(args: {
@@ -1567,6 +1730,8 @@ export interface DecisionDraft {
   deadline?: string | null;
   status?: DecisionStatus | string | null;
   confidence: number;
+  impliesAction?: boolean;
+  actionTitle?: string | null;
 }
 
 interface DecisionKnnCandidate {
@@ -1575,6 +1740,7 @@ interface DecisionKnnCandidate {
   rationale: string | null;
   decidedAt: string | null;
   status: string;
+  similarity?: number | null;
 }
 
 interface SupersedeVerdict {

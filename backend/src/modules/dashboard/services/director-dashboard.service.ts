@@ -202,6 +202,8 @@ export class DirectorDashboardService {
         decisionsExtracted: 0,
         questionsAnsweredByMemory: 0,
         commitmentsKept: 0,
+        tasksResolved: 0,
+        ideasCollected: 0,
       }),
       safe(
         'mainReworkEnabled',
@@ -702,8 +704,15 @@ export class DirectorDashboardService {
 
     type CountRow = { cnt: bigint | number };
 
-    const [meetingsProtocoled, tasksExtracted, decisionsExtracted, questionsRows, commitmentsKept] =
-      await Promise.all([
+    const [
+      meetingsProtocoled,
+      tasksExtracted,
+      decisionsExtracted,
+      questionsRows,
+      commitmentsKept,
+      tasksResolved,
+      ideasCollected,
+    ] = await Promise.all([
         this.prisma.meeting.count({
           where: {
             tenantId,
@@ -714,8 +723,8 @@ export class DirectorDashboardService {
             ],
           },
         }),
-        this.prisma.task.count({
-          where: { tenantId, createdAt: { gte: since } },
+        this.prisma.issue.count({
+          where: { tenantId, createdAt: { gte: since }, deletedAt: null, archivedAt: null },
         }),
         this.prisma.decision.count({
           where: { tenantId, createdAt: { gte: since }, deletedAt: null },
@@ -742,6 +751,12 @@ export class DirectorDashboardService {
             createdAt: { gte: since },
           },
         }),
+        this.prisma.issue.count({
+          where: { tenantId, completedAt: { gte: since }, deletedAt: null },
+        }),
+        this.prisma.idea.count({
+          where: { tenantId, createdAt: { gte: since } },
+        }),
       ]);
 
     const questionsAnsweredByMemory = Number(questionsRows[0]?.cnt ?? 0);
@@ -752,6 +767,8 @@ export class DirectorDashboardService {
       decisionsExtracted,
       questionsAnsweredByMemory,
       commitmentsKept,
+      tasksResolved,
+      ideasCollected,
     };
   }
 

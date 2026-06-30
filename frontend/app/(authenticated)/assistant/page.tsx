@@ -1,12 +1,5 @@
-import type { Metadata } from "next";
-import type { ReactElement } from "react";
+import { redirect } from "next/navigation";
 
-import { AssistantClient } from "./AssistantClient";
-
-export const metadata: Metadata = {
-  title: "Concierge — помощник кабинета",
-};
-
-export default function AssistantPage(): ReactElement {
-  return <AssistantClient />;
+export default function AssistantPage(): never {
+  redirect("/chat");
 }

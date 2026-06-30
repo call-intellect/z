@@ -73,7 +73,7 @@ export class FactSupersedeService {
     const cosineThreshold = this.cfg?.bitemporal.factSupersedeCosineThreshold ?? 0.85;
     const topK = this.cfg?.bitemporal.factSupersedeKnnTopK ?? 5;
 
-    const block = await this.prisma.ideaBlock.findUnique({
+    const block = await this.prisma.ideaBlock.findFirst({
       where: { id: blockId },
       include: {
         evidence: { take: 1, orderBy: { sourceTimestamp: 'asc' } },
@@ -184,7 +184,7 @@ export class FactSupersedeService {
 
       if (this.blockLink) {
         const targetBlock = await this.prisma.ideaBlock.findUnique({
-          where: { id: targetBlockId },
+          where: { id_tenantId: { id: targetBlockId, tenantId: block.tenantId } },
         });
         if (!targetBlock) {
           this.logger.debug(
@@ -354,10 +354,11 @@ export class FactSupersedeService {
     try {
       await this.prisma.ideaBlockLink.upsert({
         where: {
-          fromBlockId_toBlockId_relationType: {
+          fromBlockId_toBlockId_relationType_tenantId: {
             fromBlockId: args.newBlockId,
             toBlockId: args.targetBlockId,
             relationType: 'contradicts',
+            tenantId: args.tenantId,
           },
         },
         update: {
@@ -419,10 +420,11 @@ export class FactSupersedeService {
 
         await tx.ideaBlockLink.upsert({
           where: {
-            fromBlockId_toBlockId_relationType: {
+            fromBlockId_toBlockId_relationType_tenantId: {
               fromBlockId: args.newBlockId,
               toBlockId: args.targetBlockId,
               relationType: 'supersedes',
+              tenantId: args.tenantId,
             },
           },
           update: {

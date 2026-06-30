@@ -10,8 +10,10 @@ import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { tryParseJson } from '../../ai/services/json-extract.util';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { AuditLogService } from '../../audit/audit-log.service';
@@ -48,6 +50,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
+    @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
@@ -191,11 +194,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
     const guardOn = this.isPromptInjectionGuardEnabled();
     const guardedSystem = guardOn ? withInjectionGuard(systemPrompt) : systemPrompt;
     const guardedUser = guardOn ? wrapUserData(userMessage) : userMessage;
-    let parsed: {
-      score: number;
-      explanation: string;
-      signals: { pro: string[]; contra: string[] };
-    };
+    let rawText: string;
     try {
       const result = await this.llm.call({
         taskType: GOAL_ALIGNMENT_TASK_TYPE,
@@ -211,12 +210,12 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
         },
         maxTokens: 2_000,
       });
-      parsed = parseLlmResponse(result.text);
+      rawText = result.text;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(
         { goalId, tenantId, err: message },
-        'strategic-alignment: LLM/parse fail — snapshot не создаём',
+        'strategic-alignment: LLM-вызов упал — snapshot не создаём (ретрай)',
       );
       void this.audit.log({
         action: 'goal.alignment.failed',
@@ -229,6 +228,26 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
       });
       throw err;
     }
+
+    const parseResult = parseLlmResponse(rawText);
+    if (!parseResult.ok) {
+      this.logger.warn(
+        { goalId, tenantId, reason: parseResult.reason },
+        'strategic-alignment: ответ LLM не разобран — graceful skip (job НЕ падает)',
+      );
+      this.metrics.incStrategicAlignmentParseSkip({ reason: parseResult.reason });
+      void this.audit.log({
+        action: 'goal.alignment.parse_skipped',
+        resourceId: goalId,
+        metadata: {
+          tenantId,
+          manual: manual ?? false,
+          reason: parseResult.reason,
+        },
+      });
+      return;
+    }
+    const parsed = parseResult.data;
 
     const prevFrom = new Date(Date.now() - PREV_SNAPSHOT_MAX_HOURS * 60 * 60 * 1000);
     const prevTo = new Date(Date.now() - PREV_SNAPSHOT_MIN_HOURS * 60 * 60 * 1000);
@@ -360,34 +379,30 @@ function decimalToNumber(v: unknown): number {
   return 0;
 }
 
-function parseLlmResponse(raw: string): {
+type GoalAlignmentParsed = {
   score: number;
   explanation: string;
   signals: { pro: string[]; contra: string[] };
-} {
-  const trimmed = raw.trim();
-  if (!trimmed) throw new Error('LLM вернул пустой ответ');
-  const jsonStart = trimmed.indexOf('{');
-  const jsonEnd = trimmed.lastIndexOf('}');
-  const candidate =
-    jsonStart >= 0 && jsonEnd > jsonStart ? trimmed.slice(jsonStart, jsonEnd + 1) : trimmed;
-  let parsedRaw: unknown;
-  try {
-    parsedRaw = JSON.parse(candidate);
-  } catch (err) {
-    throw new Error(
-      `LLM вернул невалидный JSON: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err },
-    );
-  }
+};
+
+type ParseLlmResult =
+  | { ok: true; data: GoalAlignmentParsed }
+  | { ok: false; reason: string };
+
+function parseLlmResponse(raw: string): ParseLlmResult {
+  if (!raw || !raw.trim()) return { ok: false, reason: 'empty' };
+  const parsedRaw = tryParseJson(raw);
   const validated = GoalAlignmentResponseSchema.safeParse(parsedRaw);
   if (!validated.success) {
-    throw new Error(
-      `LLM JSON не прошёл схему: ${validated.error.issues
-        .slice(0, 3)
-        .map((i) => i.message)
-        .join('; ')}`,
-    );
+    if (
+      parsedRaw &&
+      typeof parsedRaw === 'object' &&
+      'raw' in parsedRaw &&
+      Object.keys(parsedRaw as Record<string, unknown>).length === 1
+    ) {
+      return { ok: false, reason: 'invalid_json' };
+    }
+    return { ok: false, reason: 'schema_mismatch' };
   }
-  return validated.data;
+  return { ok: true, data: validated.data };
 }

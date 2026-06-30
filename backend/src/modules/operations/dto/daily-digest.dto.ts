@@ -39,6 +39,43 @@ export interface DailyDigestMetricsDto {
     statement: string;
     status: string;
   }>;
+  risksSummary?: string | null;
+  ideasSummary?: string | null;
+}
+
+export interface DailyDigestVerdictAxisDto {
+  key: 'team' | 'clients' | 'execution' | 'overall';
+  state: 'ok' | 'warn' | 'risk';
+  label: string;
+  why: string;
+}
+
+export interface DailyDigestVerdictDto {
+  overall: {
+    state: 'ok' | 'warn' | 'risk';
+    emoji: string;
+    title: string;
+    oneLiner: string;
+  };
+  axes: DailyDigestVerdictAxisDto[];
+}
+
+export interface DailyDigestLetterSectionDto {
+  key: string;
+  title: string;
+  prose: string;
+  cites?: Array<{ label: string; ref: string }>;
+}
+
+export interface DailyDigestGoalAlignmentDayDto {
+  direction: 'to_goal' | 'drift' | 'against';
+  score: number | null;
+  todayDelta: string;
+  why: string;
+  pro: string[];
+  contra: string[];
+  goalId?: string | null;
+  goalName?: string | null;
 }
 
 export interface DailyDigestSourcesDto {
@@ -128,6 +165,9 @@ export interface DailyOperationsDigestDto {
   customersAtRisk: DailyDigestCustomerAtRiskDto[];
   chronicBlockers: DailyDigestChronicBlockerDto[];
   trend: DailyDigestTrendPointDto[];
+  verdict?: DailyDigestVerdictDto | null;
+  letter?: DailyDigestLetterSectionDto[] | null;
+  goalAlignmentDay?: DailyDigestGoalAlignmentDayDto | null;
 }
 
 export interface DailyDigestAggregates {

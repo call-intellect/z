@@ -58,8 +58,11 @@ export interface SendNotificationInput {
 }
 
 const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
+  'chat.new_message': ['in_app', 'telegram_bot', 'max_bot', 'push'],
   'probe.question': ['telegram_bot', 'max_bot', 'in_app'],
   'probe.digest': ['telegram_bot', 'max_bot', 'in_app'],
+  'probe.clarify': ['telegram_bot', 'max_bot', 'in_app'],
+  'probe.confirm': ['telegram_bot', 'max_bot', 'in_app'],
   'probe.answer_acknowledged': ['telegram_bot', 'max_bot', 'in_app'],
   'curation.pending': ['in_app', 'email_smtp'],
   'system.message': ['in_app', 'email_smtp'],
@@ -83,6 +86,7 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'checkin.prompt': ['telegram_bot', 'max_bot', 'in_app'],
   'support.ticket_created': ['telegram_bot', 'email_smtp', 'in_app'],
   'support.ticket_reply': ['telegram_bot', 'email_smtp', 'in_app'],
+  'tasks.daily_open': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];
@@ -141,7 +145,12 @@ export class ConversationalService {
         contextCardId: input.contextCardId ?? null,
         expiresAt,
         priorityTier: input.priorityTier ?? 2,
-        responseStatus: input.eventType === 'probe.question' ? 'pending' : null,
+        responseStatus:
+          input.eventType === 'probe.question' ||
+          input.eventType === 'probe.clarify' ||
+          input.eventType === 'probe.confirm'
+            ? 'pending'
+            : null,
       },
     });
 

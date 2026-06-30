@@ -122,7 +122,7 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     const block = await this.prisma.ideaBlock.findUnique({
-      where: { id: blockId },
+      where: { id_tenantId: { id: blockId, tenantId } },
       select: {
         id: true,
         tenantId: true,

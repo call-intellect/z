@@ -1,10 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
-import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
-
-const FLAG_KEY = 'knowledge.meetingTasksToTrackerOnly';
 
 export interface MeetingActionItem {
   id: string;
@@ -46,28 +43,14 @@ function issueCategoryToStatus(category: string | null | undefined): string {
 
 @Injectable()
 export class MeetingActionItemsService {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-  ) {}
-
-  private async trackerOnly(): Promise<boolean> {
-    return this.cfg.getDynamic<boolean>(FLAG_KEY, undefined, false);
-  }
-
-  async isTrackerOnly(): Promise<boolean> {
-    return this.trackerOnly();
-  }
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async listForMeeting(args: {
     meetingId: string;
     tenantId: string;
     userId?: string;
   }): Promise<MeetingActionItem[]> {
-    if (await this.trackerOnly()) {
-      return this.listIssuesForMeeting(args);
-    }
-    return this.listTasksForMeeting(args);
+    return this.listIssuesForMeeting(args);
   }
 
   async searchTitlesForUser(args: {
@@ -76,62 +59,7 @@ export class MeetingActionItemsService {
     query: string;
     limit: number;
   }): Promise<MeetingActionItemSearchRow[]> {
-    if (await this.trackerOnly()) {
-      return this.searchMeetingIssues(args);
-    }
-    return this.searchTasks(args);
-  }
-
-  private async listTasksForMeeting(args: {
-    meetingId: string;
-    tenantId: string;
-    userId?: string;
-  }): Promise<MeetingActionItem[]> {
-    const rows = await this.prisma.task.findMany({
-      where: {
-        meetingId: args.meetingId,
-        ...(args.tenantId ? { tenantId: args.tenantId } : {}),
-        ...(args.userId ? { userId: args.userId } : {}),
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-    return rows.map((t) => ({
-      id: t.id,
-      meetingId: t.meetingId,
-      title: t.title,
-      description: t.description ?? null,
-      status: t.status,
-      assigneeRaw: t.assigneeRaw ?? null,
-      assigneeUserId: t.assigneeUserId ?? null,
-      dueDate: t.dueDate ?? null,
-      sourceQuote: t.sourceQuote ?? null,
-      confidence: t.confidence ?? null,
-      extractorVersion: t.extractorVersion ?? null,
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
-    }));
-  }
-
-  private async searchTasks(args: {
-    userId: string;
-    query: string;
-    limit: number;
-  }): Promise<MeetingActionItemSearchRow[]> {
-    const rows = await this.prisma.task.findMany({
-      where: {
-        userId: args.userId,
-        title: { contains: args.query, mode: 'insensitive' },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: args.limit,
-      select: { id: true, title: true, status: true, meetingId: true },
-    });
-    return rows.map((t) => ({
-      id: t.id,
-      title: t.title,
-      status: t.status,
-      meetingId: t.meetingId,
-    }));
+    return this.searchMeetingIssues(args);
   }
 
   private async listIssuesForMeeting(args: {

@@ -229,6 +229,8 @@ export type DirectorDashboardValueStripApi = {
   decisionsExtracted: number;
   questionsAnsweredByMemory: number;
   commitmentsKept: number;
+  tasksResolved: number;
+  ideasCollected: number;
 };
 
 export type DirectorDashboardValueStripDomain = DirectorDashboardValueStripApi;
@@ -396,6 +398,8 @@ const EMPTY_VALUE_STRIP: DirectorDashboardValueStripDomain = {
   decisionsExtracted: 0,
   questionsAnsweredByMemory: 0,
   commitmentsKept: 0,
+  tasksResolved: 0,
+  ideasCollected: 0,
 };
 
 function valueStripFromApi(
@@ -408,6 +412,8 @@ function valueStripFromApi(
     decisionsExtracted: api.decisionsExtracted ?? 0,
     questionsAnsweredByMemory: api.questionsAnsweredByMemory ?? 0,
     commitmentsKept: api.commitmentsKept ?? 0,
+    tasksResolved: api.tasksResolved ?? 0,
+    ideasCollected: api.ideasCollected ?? 0,
   };
 }
 

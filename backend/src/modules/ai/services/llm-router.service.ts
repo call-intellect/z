@@ -254,6 +254,9 @@ export type LlmTaskType =
   // запроса (период/типы сигналов/ветки тем/сущности/«я»/агрегация) для
   // recall-safe фильтрации chat-v2. Дешёвый, частый — primary flash (Р9).
   | 'dialog-extract-plan'
+  // Ф4b (edinyy-pomoshnik) — слитый модуль понимания: один вызов выдаёт
+  // 3 переформулировки + 8-осевой план фильтров. Дешёвый, частый.
+  | 'dialog-understand'
   // Support desk Ф3 (support-desk-clone) — клон техподдержки: черновик ответа
   // из закрытого контура (capable, Б9), critic-проверка обоснованности и
   // классификация типа правки (оба дёшево, deepseek-v4-flash, Б9).
@@ -350,6 +353,8 @@ export type LlmTaskType =
   //   агрегата за вчерашние сутки. Один вызов в день на Org. Та же цепочка
   //   провайдеров, что и у operations-weekly-digest.
   | 'operations-daily-digest'
+  // «Месяц компании» — свод 4 недельных дайджестов в месячный executive-брифинг.
+  | 'operations-monthly-digest'
   // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском.
   // 'customer-risk-digest' — ТОЛЬКО финальная человекочитаемая формулировка
   //   подсказки по клиенту под риском (агрегация — чистый SQL/TS, без LLM).
@@ -656,6 +661,10 @@ export type LlmTaskType =
   // Cache-friendly: SYSTEM статичен (инструкция + enum DocumentType + JSON-форма),
   // переменное (текст + темы) в КОНЦЕ user.
   | 'document-attribution-suggest'
+  // Слой источника Ф8 (2026-06-27) — document-summarize: AI-заголовок + резюме
+  // загруженного документа из parsedText (cache-friendly: стабильный SYSTEM,
+  // текст в конце user). Дешёвый, едет по DEFAULT_FALLBACK_CHAIN, best-effort.
+  | 'document-summarize'
   // Волна 4 B0 (2026-06-10) — client-meeting-split: нейтральный ПРОТОКОЛ встречи
   // НАРУЖУ для клиента (free-text Markdown, как summary; без tool/JSON-схемы).
   // Запускается в analyze.worker для клиентских типов (sales/customer_success/
@@ -673,7 +682,13 @@ export type LlmTaskType =
   //   Capable модель + tool-use. Primary = deepseek-v4-pro; secondary = gpt-5.4
   //   (proxy); tertiary = ollama qwen3.5:9b (см. seed-маршрут). За kill-switch
   //   docCompilerEnabled (дефолт ON).
-  | 'compile-org-document';
+  | 'compile-org-document'
+  // Единый чат Ф5b (2026-06-28) — chat-summary «Что пропустил»: сводка
+  //   непрочитанной переписки разговора с цитатами [MSG:<id>]. Стабильный
+  //   SYSTEM, переменное (непрочитанные сообщения) в КОНЦЕ user (prompt
+  //   caching). Дешёвая задача — primary deepseek-v4-flash, secondary
+  //   openai-via-proxy.
+  | 'chat-summary';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -789,6 +804,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'dialog-summarize',
   // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0)
   'dialog-extract-plan',
+  // Ф4b (edinyy-pomoshnik) — слитый модуль понимания (queries + план)
+  'dialog-understand',
   // Support desk Ф3 (support-desk-clone)
   'support-clone-draft',
   'support-answer-critic',
@@ -821,6 +838,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'operations-weekly-digest',
   // SBA β-8.3 — ежедневный отчёт COO
   'operations-daily-digest',
+  // «Месяц компании» — свод 4 недель в месячный брифинг
+  'operations-monthly-digest',
   // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском
   'customer-risk-digest',
   // TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день»
@@ -929,12 +948,18 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // ТЗ-4 Ф10 (2026-06-09) — document-attribution-suggest (подсказка docType +
   // темы для загруженного документа без явной атрибуции; human-in-the-loop).
   'document-attribution-suggest',
+  // Слой источника Ф8 (2026-06-27) — document-summarize (AI-заголовок + резюме
+  // документа из parsedText; DEFAULT-маршрут, best-effort).
+  'document-summarize',
   // Волна 4 B0 (2026-06-10) — client-meeting-split (нейтральный протокол встречи
   // наружу для клиента, free-text; DEFAULT-маршрут, за kill-switch ON).
   'client-meeting-split',
   // Волна 6 Стадия C, A7 (2026-06-10) — compile-org-document (агент-компилятор
   // contentMd орг-документа; tool-use, capable; за kill-switch docCompilerEnabled ON).
   'compile-org-document',
+  // Единый чат Ф5b (2026-06-28) — chat-summary («Что пропустил»: сводка
+  // непрочитанной переписки с цитатами [MSG:<id>]; стабильный SYSTEM, дешёвый).
+  'chat-summary',
 ] as const;
 
 /**

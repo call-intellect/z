@@ -4,6 +4,7 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
+import type { ChatV2OrchestrationService } from '../../chat-v2/chat-v2.service';
 import { CONCIERGE_RESPOND_SYSTEM_PROMPT } from '../prompts/concierge-respond.prompt';
 
 import type { ConciergeContextBuilderService } from './concierge-context-builder.service';
@@ -17,8 +18,13 @@ interface BuildOpts {
   llmResponseText?: string;
   conversationSummary?: string | null;
   nativeToolsEnabled?: boolean;
-  history?: Array<{ role: string; content: string }>;
+  history?: Array<{ role: string; content: string; toolCallsJson?: unknown }>;
   historyPairs?: number;
+  ephemeralAnswer?: {
+    text: string;
+    citations?: unknown[];
+    needsClarification?: boolean;
+  };
 }
 
 interface MockLlmCallResult {
@@ -76,7 +82,7 @@ function buildConciergeService(opts: BuildOpts) {
         conversationId,
         role: m.role,
         content: m.content,
-        toolCallsJson: null,
+        toolCallsJson: m.toolCallsJson ?? null,
         createdAt: new Date(2026, 0, 1, 0, i),
         updatedAt: new Date(),
       }))
@@ -110,11 +116,23 @@ function buildConciergeService(opts: BuildOpts) {
       monthlyMessagesLimit: 3000,
       sseHeartbeatSeconds: 15,
       nativeToolsEnabled: opts.nativeToolsEnabled ?? false,
+      prmShadowEnabled: false,
     },
     getDynamic,
   } as unknown as TypedConfigService;
 
   const llm = { call: llmCall } as unknown as LlmRouterService;
+
+  const askEphemeral = vi.fn(async () => ({
+    text: opts.ephemeralAnswer?.text ?? 'Ответ из памяти.',
+    citations: opts.ephemeralAnswer?.citations ?? [],
+    needsClarification: opts.ephemeralAnswer?.needsClarification ?? false,
+    dataClass: 'internal' as const,
+    usedBlockIds: [],
+    uncertaintyNote: null,
+    mode: 'factual' as const,
+  }));
+  const chatV2 = { askEphemeral } as unknown as ChatV2OrchestrationService;
 
   const contextBuilder = {
     build: vi.fn(async () => ''),
@@ -126,6 +144,13 @@ function buildConciergeService(opts: BuildOpts) {
       description: 'Действия-задачи из встреч',
       method: 'GET' as const,
       path: '/api/v1/tasks',
+      parameters: { type: 'object' as const, properties: {} },
+    },
+    {
+      name: 'list_meetings',
+      description: 'Список встреч',
+      method: 'GET' as const,
+      path: '/api/v1/meetings',
       parameters: { type: 'object' as const, properties: {} },
     },
     {
@@ -148,6 +173,14 @@ function buildConciergeService(opts: BuildOpts) {
       description: 'Отменить встречу',
       method: 'POST' as const,
       path: '/api/v1/meetings/:id/cancel',
+      parameters: { type: 'object' as const, properties: {} },
+    },
+    {
+      name: 'create_event',
+      description: 'Создать событие в календаре',
+      method: 'POST' as const,
+      path: '/api/v1/events',
+      undoableVia: 'delete_event',
       parameters: { type: 'object' as const, properties: {} },
     },
     {
@@ -194,7 +227,7 @@ function buildConciergeService(opts: BuildOpts) {
   } as unknown as ToolRouterService;
 
   const undoLog = {
-    record: vi.fn(),
+    record: vi.fn(async () => ({ id: 'undo-1' })),
   } as unknown as ConciergeUndoLogService;
 
   const quota = {
@@ -227,12 +260,14 @@ function buildConciergeService(opts: BuildOpts) {
     quota,
     aiChatQuota,
     metrics,
+    chatV2,
   );
 
   return {
     svc,
     mocks: {
       llmCall,
+      askEphemeral,
       conversationCreate,
       conversationFindFirst,
       conversationUpdate,
@@ -260,15 +295,28 @@ async function collect(
   return out;
 }
 
-describe('CONCIERGE_RESPOND_SYSTEM_PROMPT — содержание (Приложение A)', () => {
-  it('содержит границы, ingest_note, уточнение и отказ', () => {
+function nativeToolCall(name: string, input: unknown): MockLlmCallResult {
+  return {
+    text: '',
+    modelUsed: 'mock',
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedTokens: 0,
+    durationMs: 0,
+    toolCalls: [{ name, input }],
+  };
+}
+
+describe('CONCIERGE_RESPOND_SYSTEM_PROMPT — содержание', () => {
+  it('содержит границы, ingest_note, уточнение и отказ; без многошагового фрейминга', () => {
     expect(CONCIERGE_RESPOND_SYSTEM_PROMPT).toContain('ТВОИ ГРАНИЦЫ');
     expect(CONCIERGE_RESPOND_SYSTEM_PROMPT).toContain('ingest_note');
     expect(CONCIERGE_RESPOND_SYSTEM_PROMPT).toContain('записал в память');
     expect(CONCIERGE_RESPOND_SYSTEM_PROMPT).toContain('уточняющий вопрос');
     expect(CONCIERGE_RESPOND_SYSTEM_PROMPT).toContain('вежливый отказ');
     expect(CONCIERGE_RESPOND_SYSTEM_PROMPT).not.toContain('{"tool_call"');
-    expect(CONCIERGE_RESPOND_SYSTEM_PROMPT).not.toContain('ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ');
+    expect(CONCIERGE_RESPOND_SYSTEM_PROMPT).not.toContain('вызывай\nпо очереди');
+    expect(CONCIERGE_RESPOND_SYSTEM_PROMPT).not.toContain('сначала память, потом действие');
   });
 
   it('process() подаёт новый SYSTEM в llm.call (native ON)', async () => {
@@ -293,8 +341,8 @@ describe('CONCIERGE_RESPOND_SYSTEM_PROMPT — содержание (Прилож
   });
 });
 
-describe('ConciergeService.process() — история 4 пары через крутилку', () => {
-  it('(в) getDynamic(concierge.history_pairs)=4 → loadRecentHistory(take=8)', async () => {
+describe('ConciergeService.process() — история через крутилку', () => {
+  it('getDynamic(concierge.history_pairs)=4 → loadRecentHistory(take=8)', async () => {
     const { svc, mocks } = buildConciergeService({
       nativeToolsEnabled: true,
       historyPairs: 4,
@@ -336,35 +384,18 @@ describe('ConciergeService.process() — история 4 пары через к
   });
 });
 
-describe('ConciergeService.process() — ask_chat_v2 терминальный (passthrough)', () => {
-  it('(а) единственный ask_chat_v2 успешен → ответ = текст+цитаты chat-v2 напрямую (без 2-го синтеза)', async () => {
+describe('ConciergeService.process() — единый проход: ask_chat_v2 in-process (прод-регресс)', () => {
+  it('(1) dispatch выбирает ask_chat_v2 → askEphemeral → ровно ОДНО message verbatim + done; LLM 1 раз; toolRouter НЕ вызван; без сырого JSON', async () => {
     const { svc, mocks } = buildConciergeService({
       nativeToolsEnabled: true,
-      llmResponseText: 'ПЕРЕПИСАННЫЙ-МОДЕЛЬЮ-ОТВЕТ',
-    });
-    mocks.llmCall.mockResolvedValueOnce({
-      text: '',
-      modelUsed: 'mock',
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedTokens: 0,
-      durationMs: 0,
-      toolCalls: [{ name: 'ask_chat_v2', input: { question: 'что решили?' } }],
-    });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as {
-        execute: ReturnType<typeof vi.fn>;
-      }
-    ).execute;
-    toolRouterExec.mockResolvedValue({
-      ok: true,
-      status: 200,
-      result: {
+      ephemeralAnswer: {
         text: 'Решили взять подрядчика А.',
         citations: [{ blockId: 'b-1', label: 'Встреча 12.06' }],
       },
-      tool: { name: 'ask_chat_v2', method: 'POST', readOnly: true },
     });
+    mocks.llmCall.mockResolvedValueOnce(
+      nativeToolCall('ask_chat_v2', { question: 'что решили?' }),
+    );
 
     const events = await collect(
       svc.process({
@@ -375,13 +406,14 @@ describe('ConciergeService.process() — ask_chat_v2 терминальный (p
       }),
     );
 
-    const messageEvent = events.find((e) => e.type === 'message');
+    const messageEvents = events.filter((e) => e.type === 'message');
+    expect(messageEvents).toHaveLength(1);
+    const messageEvent = messageEvents[0];
     expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe(
       'Решили взять подрядчика А.',
     );
-    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).not.toContain(
-      'ПЕРЕПИСАННЫЙ',
-    );
+    const allText = JSON.stringify(events);
+    expect(allText).not.toContain('"tool_call"');
     expect(
       messageEvent &&
         messageEvent.type === 'message' &&
@@ -389,99 +421,97 @@ describe('ConciergeService.process() — ask_chat_v2 терминальный (p
         messageEvent.citations.length,
     ).toBe(1);
     expect(events[events.length - 1]?.type).toBe('done');
+
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    expect(mocks.askEphemeral).toHaveBeenCalledTimes(1);
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({
+        question: 'что решили?',
+        intent: 'factual',
+        tenantId: 't-1',
+        userId: 'u-1',
+      }),
+    );
+    const execMock = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> }).execute;
+    expect(execMock).not.toHaveBeenCalled();
   });
 
-  it('(б) смешанный turn: ask_chat_v2 + cancel_meeting → НЕ passthrough, финализирует модель', async () => {
+  it('ask_chat_v2 без параметра question → fallback на userMessage', async () => {
     const { svc, mocks } = buildConciergeService({
       nativeToolsEnabled: true,
-      llmResponseText: 'Готово: узнал и отменил.',
+      ephemeralAnswer: { text: 'Ответ.' },
     });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as {
-        execute: ReturnType<typeof vi.fn>;
-      }
-    ).execute;
-    mocks.llmCall
-      .mockResolvedValueOnce({
-        text: '',
-        modelUsed: 'mock',
-        inputTokens: 0,
-        outputTokens: 0,
-        cachedTokens: 0,
-        durationMs: 0,
-        toolCalls: [{ name: 'ask_chat_v2', input: { question: 'кто вёл?' } }],
-      })
-      .mockResolvedValueOnce({
-        text: '',
-        modelUsed: 'mock',
-        inputTokens: 0,
-        outputTokens: 0,
-        cachedTokens: 0,
-        durationMs: 0,
-        toolCalls: [{ name: 'cancel_meeting', input: { id: 'm-1' } }],
-      });
-    toolRouterExec
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        result: { text: 'Вёл Иван.', citations: [{ blockId: 'b-9' }] },
-        tool: { name: 'ask_chat_v2', method: 'POST', readOnly: true },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        result: { id: 'm-1' },
-        tool: { name: 'cancel_meeting', method: 'POST' },
-      });
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('ask_chat_v2', {}));
 
-    const events = await collect(
+    await collect(
       svc.process({
-        userMessage: 'Узнай, кто вёл встречу, и отмени её',
+        userMessage: 'Кто отвечает за логистику?',
         userId: 'u-1',
         tenantId: 't-1',
         baseUrl: 'http://localhost:3000',
       }),
     );
 
-    const messageEvent = events.find((e) => e.type === 'message');
-    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe(
-      'Готово: узнал и отменил.',
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ question: 'Кто отвечает за логистику?' }),
     );
-    expect(
-      messageEvent && messageEvent.type === 'message' && messageEvent.citations,
-    ).toBeUndefined();
-    expect(toolRouterExec).toHaveBeenCalledTimes(2);
-    expect(mocks.llmCall).toHaveBeenCalledTimes(3);
   });
+});
 
-  it('ask_chat_v2 FAIL → НЕ passthrough (нечего отдавать), модель финализирует', async () => {
+describe('ConciergeService.process() — scope проброс', () => {
+  it('process({ scope: issue, scopeRefId }) → askEphemeral получает scope/scopeRefId', async () => {
     const { svc, mocks } = buildConciergeService({
       nativeToolsEnabled: true,
-      llmResponseText: 'Не удалось получить ответ из памяти.',
+      ephemeralAnswer: { text: 'Ответ по задаче.' },
     });
-    mocks.llmCall.mockResolvedValueOnce({
-      text: '',
-      modelUsed: 'mock',
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedTokens: 0,
-      durationMs: 0,
-      toolCalls: [{ name: 'ask_chat_v2', input: { question: 'что?' } }],
-    });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as {
-        execute: ReturnType<typeof vi.fn>;
-      }
-    ).execute;
-    toolRouterExec.mockResolvedValue({
-      ok: false,
-      status: 500,
-      result: null,
-      tool: { name: 'ask_chat_v2', method: 'POST', readOnly: true },
-      errorMessage: 'HTTP 500',
-    });
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('ask_chat_v2', { question: 'что по задаче?' }));
 
-    const events = await collect(
+    await collect(
+      svc.process({
+        userMessage: 'Что по задаче?',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+        scope: 'issue',
+        scopeRefId: 'issue-42',
+      }),
+    );
+
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: 'issue', scopeRefId: 'issue-42' }),
+    );
+  });
+
+  it('process({ asOf }) → askEphemeral получает asOf', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+      ephemeralAnswer: { text: 'Ответ на дату.' },
+    });
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('ask_chat_v2', { question: 'что было?' }));
+
+    await collect(
+      svc.process({
+        userMessage: 'Что было на эту дату?',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+        asOf: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ asOf: '2026-01-01T00:00:00.000Z' }),
+    );
+  });
+
+  it('process() без scope → askEphemeral вызван, без ключей scope/scopeRefId', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+      ephemeralAnswer: { text: 'Ответ.' },
+    });
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('ask_chat_v2', { question: 'что решили?' }));
+
+    await collect(
       svc.process({
         userMessage: 'Что решили?',
         userId: 'u-1',
@@ -490,46 +520,37 @@ describe('ConciergeService.process() — ask_chat_v2 терминальный (p
       }),
     );
 
-    const messageEvent = events.find((e) => e.type === 'message');
-    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe(
-      'Не удалось получить ответ из памяти.',
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ question: expect.any(String) }),
     );
-    expect(
-      messageEvent && messageEvent.type === 'message' && messageEvent.citations,
-    ).toBeUndefined();
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.not.objectContaining({ scope: expect.anything() }),
+    );
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.not.objectContaining({ scopeRefId: expect.anything() }),
+    );
   });
 });
 
-describe('ConciergeService.process() — Ф3 native function-calling', () => {
-  it('(д.1) ON: out.toolCalls → ToolRouter.execute с list_tasks; финал «Готово»', async () => {
+describe('ConciergeService.process() — read-tool рендер', () => {
+  it('(2) list_meetings → execute 1 раз + ровно 1 render-LLM → message = render text (LLM ровно 2)', async () => {
     const { svc, mocks } = buildConciergeService({
       nativeToolsEnabled: true,
-      llmResponseText: 'Готово',
+      llmResponseText: 'У вас 3 встречи на этой неделе.',
     });
-    mocks.llmCall.mockResolvedValueOnce({
-      text: '',
-      modelUsed: 'mock',
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedTokens: 0,
-      durationMs: 0,
-      toolCalls: [{ name: 'list_tasks', input: {} }],
-    });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as {
-        execute: ReturnType<typeof vi.fn>;
-      }
-    ).execute;
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('list_meetings', {}));
+    const toolRouterExec = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> })
+      .execute;
     toolRouterExec.mockResolvedValue({
       ok: true,
       status: 200,
-      result: { items: [] },
-      tool: { name: 'list_tasks', method: 'GET' },
+      result: { items: [{ id: 'm-1' }, { id: 'm-2' }, { id: 'm-3' }] },
+      tool: { name: 'list_meetings', method: 'GET' },
     });
 
     const events = await collect(
       svc.process({
-        userMessage: 'Покажи задачи из встреч',
+        userMessage: 'Покажи встречи',
         userId: 'u-1',
         tenantId: 't-1',
         baseUrl: 'http://localhost:3000',
@@ -537,30 +558,227 @@ describe('ConciergeService.process() — Ф3 native function-calling', () => {
     );
 
     expect(toolRouterExec).toHaveBeenCalledTimes(1);
-    const execArgs = (toolRouterExec.mock.calls[0]?.[0] ?? {}) as {
-      toolName?: string;
-    };
-    expect(execArgs.toolName).toBe('list_tasks');
+    expect(toolRouterExec).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: 'list_meetings' }),
+    );
     const types = events.map((e) => e.type);
     expect(types).toContain('tool_call');
     expect(types).toContain('tool_result');
     expect(mocks.llmCall).toHaveBeenCalledTimes(2);
+    const renderCall = (
+      mocks.llmCall.mock.calls as unknown as Array<Array<{ tools?: unknown; systemPrompt?: string }>>
+    )[1];
+    expect(renderCall?.[0]?.tools).toBeUndefined();
+    expect(renderCall?.[0]?.systemPrompt ?? '').toContain('НЕ выводи JSON');
+    expect(renderCall?.[0]?.systemPrompt ?? '').not.toContain('КАК ТЫ РЕШАЕШЬ');
     const messageEvent = events.find((e) => e.type === 'message');
-    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe('Готово');
+    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe(
+      'У вас 3 встречи на этой неделе.',
+    );
+    expect(mocks.askEphemeral).not.toHaveBeenCalled();
   });
 
-  it('(д.2) ON: ответ без toolCalls → финальный текст, execute НЕ вызван; tools переданы непустым массивом', async () => {
+  it('render-путь использует выделенный render-промпт, а НЕ промпт-диспетчер (защита от утечки tool_call JSON, native OFF)', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: false,
+      llmResponseText: 'У вас одна встреча сегодня.',
+    });
+    mocks.llmCall.mockResolvedValueOnce({
+      text: '{"tool_call": {"name": "list_meetings", "arguments": {}}}',
+      modelUsed: 'mock',
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedTokens: 0,
+      durationMs: 0,
+    });
+    const toolRouterExec = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> })
+      .execute;
+    toolRouterExec.mockResolvedValue({
+      ok: true,
+      status: 200,
+      result: { items: [{ id: 'm-1' }] },
+      tool: { name: 'list_meetings', method: 'GET' },
+    });
+
+    const events = await collect(
+      svc.process({
+        userMessage: 'Покажи встречи',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+      }),
+    );
+
+    expect(mocks.llmCall).toHaveBeenCalledTimes(2);
+    const calls = mocks.llmCall.mock.calls as unknown as Array<
+      Array<{ tools?: unknown; systemPrompt?: string }>
+    >;
+    const dispatchSystem = calls[0]?.[0]?.systemPrompt ?? '';
+    const renderSystem = calls[1]?.[0]?.systemPrompt ?? '';
+    expect(dispatchSystem).toContain('=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===');
+    expect(renderSystem).toContain('НЕ выводи JSON');
+    expect(renderSystem).not.toContain('=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===');
+    expect(renderSystem).not.toContain('{"tool_call":');
+    expect(calls[1]?.[0]?.tools).toBeUndefined();
+    const messageEvent = events.find((e) => e.type === 'message');
+    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe(
+      'У вас одна встреча сегодня.',
+    );
+  });
+});
+
+describe('ConciergeService.process() — мутации и confirm', () => {
+  it('(3) confirmHold=true + cancel_meeting (мутация без undo) → confirm_required + done, execute НЕ вызван, без render', async () => {
     const { svc, mocks } = buildConciergeService({
       nativeToolsEnabled: true,
-      llmResponseText: 'Привет',
     });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as {
-        execute: ReturnType<typeof vi.fn>;
-      }
-    ).execute;
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('cancel_meeting', { id: 'm-1' }));
+    const toolRouterExec = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> })
+      .execute;
 
-    await collect(
+    const events = await collect(
+      svc.process({
+        userMessage: 'отмени встречу m-1',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+        confirmHold: true,
+      }),
+    );
+
+    expect(toolRouterExec).not.toHaveBeenCalled();
+    const confirmEvent = events.find((e) => e.type === 'confirm_required');
+    expect(confirmEvent).toBeDefined();
+    if (confirmEvent && confirmEvent.type === 'confirm_required') {
+      expect(confirmEvent.toolName).toBe('cancel_meeting');
+      expect(confirmEvent.preview).toContain('отменить встречу');
+    }
+    expect(events.some((e) => e.type === 'message')).toBe(false);
+    expect(events[events.length - 1]?.type).toBe('done');
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('(4) кабинет (confirmHold falsy) + cancel_meeting → tool_call(requiresConfirm:true) + execute + undo записан + tool_result + ОДИН render message', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+      llmResponseText: 'Встреча отменена.',
+    });
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('cancel_meeting', { id: 'm-1' }));
+    const toolRouterExec = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> })
+      .execute;
+    toolRouterExec.mockResolvedValue({
+      ok: true,
+      status: 200,
+      result: { id: 'm-1' },
+      tool: { name: 'cancel_meeting', method: 'POST' },
+    });
+    const undoLogRecord = (mocks.undoLog as unknown as { record: ReturnType<typeof vi.fn> }).record;
+
+    const events = await collect(
+      svc.process({
+        userMessage: 'отмени встречу m-1',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+      }),
+    );
+
+    const toolCallEvent = events.find((e) => e.type === 'tool_call');
+    expect(toolCallEvent && toolCallEvent.type === 'tool_call' && toolCallEvent.requiresConfirm).toBe(
+      true,
+    );
+    expect(toolRouterExec).toHaveBeenCalledTimes(1);
+    expect(undoLogRecord).toHaveBeenCalledTimes(1);
+    expect(events.some((e) => e.type === 'tool_result')).toBe(true);
+    expect(mocks.llmCall).toHaveBeenCalledTimes(2);
+    const messageEvents = events.filter((e) => e.type === 'message');
+    expect(messageEvents).toHaveLength(1);
+    expect(messageEvents[0] && messageEvents[0].type === 'message' && messageEvents[0].text).toBe(
+      'Встреча отменена.',
+    );
+  });
+
+  it('undoableVia мутация (create_event) в кабинете → НЕ requiresConfirm, execute + undo + render', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+      llmResponseText: 'Событие создано.',
+    });
+    mocks.llmCall.mockResolvedValueOnce(
+      nativeToolCall('create_event', { title: 'Созвон', startAt: '2026-07-01' }),
+    );
+    const toolRouterExec = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> })
+      .execute;
+    toolRouterExec.mockResolvedValue({
+      ok: true,
+      status: 201,
+      result: { id: 'e-1' },
+      tool: { name: 'create_event', method: 'POST', undoableVia: 'delete_event' },
+    });
+    const undoLogRecord = (mocks.undoLog as unknown as { record: ReturnType<typeof vi.fn> }).record;
+
+    const events = await collect(
+      svc.process({
+        userMessage: 'создай событие',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+        confirmHold: true,
+      }),
+    );
+
+    const toolCallEvent = events.find((e) => e.type === 'tool_call');
+    expect(toolCallEvent && toolCallEvent.type === 'tool_call' && toolCallEvent.requiresConfirm).toBe(
+      false,
+    );
+    expect(events.some((e) => e.type === 'confirm_required')).toBe(false);
+    expect(toolRouterExec).toHaveBeenCalledTimes(1);
+    expect(undoLogRecord).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ConciergeService.process() — ingest_note + final + whitelist', () => {
+  it('(5) ingest_note → исполнен + детерминированный «Записал в память.», без render-LLM', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+    });
+    mocks.llmCall.mockResolvedValueOnce(
+      nativeToolCall('ingest_note', { text: 'Идея про поддержку' }),
+    );
+    const toolRouterExec = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> })
+      .execute;
+    toolRouterExec.mockResolvedValue({
+      ok: true,
+      status: 201,
+      result: { rawEventId: 're-1' },
+      tool: { name: 'ingest_note', method: 'POST', readOnly: true },
+    });
+
+    const events = await collect(
+      svc.process({
+        userMessage: 'Идея: добавить раздел про поддержку',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+      }),
+    );
+
+    expect(toolRouterExec).toHaveBeenCalledTimes(1);
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    const types = events.map((e) => e.type);
+    expect(types).toContain('tool_result');
+    const messageEvent = events.find((e) => e.type === 'message');
+    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe(
+      'Записал в память.',
+    );
+  });
+
+  it('(6) kind:final (без tool) → текст эмитится как message, LLM 1 раз', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+      llmResponseText: 'Привет! Чем помочь по работе?',
+    });
+
+    const events = await collect(
       svc.process({
         userMessage: 'Привет',
         userId: 'u-1',
@@ -569,15 +787,72 @@ describe('ConciergeService.process() — Ф3 native function-calling', () => {
       }),
     );
 
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    const toolRouterExec = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> })
+      .execute;
     expect(toolRouterExec).not.toHaveBeenCalled();
-    const llmCalls = mocks.llmCall.mock.calls as unknown as Array<Array<{ tools?: unknown[] }>>;
-    const llmArgs = llmCalls[0]?.[0] ?? {};
-    expect(Array.isArray(llmArgs.tools)).toBe(true);
-    expect((llmArgs.tools ?? []).length).toBeGreaterThan(0);
-    expect(mocks.serviceMapToLlmTools).toHaveBeenCalled();
+    const messageEvent = events.find((e) => e.type === 'message');
+    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe(
+      'Привет! Чем помочь по работе?',
+    );
+    expect(events[events.length - 1]?.type).toBe('done');
   });
 
-  it('(д.3) OFF: legacy regex-путь — {"tool_call"} в тексте исполняется, tools НЕ передаются', async () => {
+  it('tool вне whitelist → короткое сообщение о недоступности, execute НЕ вызван, без повторов', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+    });
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('get_person_pulse', { personId: 'p-1' }));
+    const toolRouterExec = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> })
+      .execute;
+
+    const events = await collect(
+      svc.process({
+        userMessage: 'что с Иваном?',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+        toolWhitelist: ['list_tasks'],
+      }),
+    );
+
+    expect(toolRouterExec).not.toHaveBeenCalled();
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain('tool_call');
+    const messageEvent = events.find((e) => e.type === 'message');
+    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toContain(
+      'недоступно в этом канале',
+    );
+  });
+
+  it('whitelist → llm.call получил tools ровно из whitelist', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+      llmResponseText: 'Привет',
+    });
+
+    await collect(
+      svc.process({
+        userMessage: 'Привет',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+        toolWhitelist: ['list_tasks'],
+      }),
+    );
+
+    expect(mocks.serviceMapToLlmTools).toHaveBeenCalledWith(['list_tasks']);
+    const llmCalls = mocks.llmCall.mock.calls as unknown as Array<
+      Array<{ tools?: Array<{ name: string }> }>
+    >;
+    const llmArgs = llmCalls[0]?.[0] ?? {};
+    expect((llmArgs.tools ?? []).map((t) => t.name)).toEqual(['list_tasks']);
+  });
+});
+
+describe('ConciergeService.process() — legacy regex-ветка (native OFF)', () => {
+  it('OFF: {"tool_call"} в тексте исполняется, tools НЕ передаются', async () => {
     const { svc, mocks } = buildConciergeService({
       nativeToolsEnabled: false,
       llmResponseText: 'Готово',
@@ -590,11 +865,8 @@ describe('ConciergeService.process() — Ф3 native function-calling', () => {
       cachedTokens: 0,
       durationMs: 0,
     });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as {
-        execute: ReturnType<typeof vi.fn>;
-      }
-    ).execute;
+    const toolRouterExec = (mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> })
+      .execute;
     toolRouterExec.mockResolvedValue({
       ok: true,
       status: 200,
@@ -619,253 +891,70 @@ describe('ConciergeService.process() — Ф3 native function-calling', () => {
   });
 });
 
-describe('ConciergeService.process() — Ф6 канальный whitelist + confirmHold', () => {
-  it('(е.1) toolWhitelist=[list_tasks] (native ON) → llm.call получил tools ровно из whitelist', async () => {
-    const { svc, mocks } = buildConciergeService({
+describe('ConciergeService.process() — clarify resume (concierge владеет тредом)', () => {
+  it('(7) askEphemeral.needsClarification → сообщение помечено clarifyPending; 2-й ход пропускает dispatch и роутит ответ в askEphemeral', async () => {
+    const turn1 = buildConciergeService({
       nativeToolsEnabled: true,
-      llmResponseText: 'Привет',
+      ephemeralAnswer: {
+        text: 'Уточните: какой именно подрядчик?',
+        needsClarification: true,
+      },
     });
+    turn1.mocks.llmCall.mockResolvedValueOnce(
+      nativeToolCall('ask_chat_v2', { question: 'что решили?' }),
+    );
 
     await collect(
-      svc.process({
-        userMessage: 'Привет',
-        userId: 'u-1',
-        tenantId: 't-1',
-        baseUrl: 'http://localhost:3000',
-        toolWhitelist: ['list_tasks'],
-      }),
-    );
-
-    expect(mocks.serviceMapToLlmTools).toHaveBeenCalledWith(['list_tasks']);
-    const llmCalls = mocks.llmCall.mock.calls as unknown as Array<
-      Array<{ tools?: Array<{ name: string }> }>
-    >;
-    const llmArgs = llmCalls[0]?.[0] ?? {};
-    expect((llmArgs.tools ?? []).map((t) => t.name)).toEqual(['list_tasks']);
-  });
-
-  it('(е.2) tool вне whitelist → execute НЕ вызван, следующая итерация получает «недоступен»', async () => {
-    const { svc, mocks } = buildConciergeService({
-      nativeToolsEnabled: true,
-      llmResponseText: 'Хорошо, не буду',
-    });
-    mocks.llmCall.mockResolvedValueOnce({
-      text: '',
-      modelUsed: 'mock',
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedTokens: 0,
-      durationMs: 0,
-      toolCalls: [{ name: 'get_person_pulse', input: { personId: 'p-1' } }],
-    });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as {
-        execute: ReturnType<typeof vi.fn>;
-      }
-    ).execute;
-
-    const events = await collect(
-      svc.process({
-        userMessage: 'что с Иваном?',
-        userId: 'u-1',
-        tenantId: 't-1',
-        baseUrl: 'http://localhost:3000',
-        toolWhitelist: ['list_tasks'],
-      }),
-    );
-
-    expect(toolRouterExec).not.toHaveBeenCalled();
-    const types = events.map((e) => e.type);
-    expect(types).not.toContain('tool_call');
-    const llmCalls = mocks.llmCall.mock.calls as unknown as Array<Array<{ userMessage?: string }>>;
-    const secondArgs = llmCalls[1]?.[0] ?? {};
-    expect(secondArgs.userMessage ?? '').toContain('недоступен');
-  });
-
-  it('(е.3) confirmHold=true + мутирующий-без-undo (cancel_meeting) → confirm_required, execute НЕ вызван, done', async () => {
-    const { svc, mocks } = buildConciergeService({
-      nativeToolsEnabled: true,
-    });
-    mocks.llmCall.mockResolvedValueOnce({
-      text: '',
-      modelUsed: 'mock',
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedTokens: 0,
-      durationMs: 0,
-      toolCalls: [{ name: 'cancel_meeting', input: { id: 'm-1' } }],
-    });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as {
-        execute: ReturnType<typeof vi.fn>;
-      }
-    ).execute;
-
-    const events = await collect(
-      svc.process({
-        userMessage: 'отмени встречу m-1',
-        userId: 'u-1',
-        tenantId: 't-1',
-        baseUrl: 'http://localhost:3000',
-        confirmHold: true,
-      }),
-    );
-
-    expect(toolRouterExec).not.toHaveBeenCalled();
-    const confirmEvent = events.find((e) => e.type === 'confirm_required');
-    expect(confirmEvent).toBeDefined();
-    if (confirmEvent && confirmEvent.type === 'confirm_required') {
-      expect(confirmEvent.toolName).toBe('cancel_meeting');
-      expect(confirmEvent.preview).toContain('отменить встречу');
-    }
-    expect(events[events.length - 1]?.type).toBe('done');
-    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
-  });
-
-  it('(е.4) confirmHold=true + ingest_note (readOnly) → исполнен сразу, confirm НЕ нужен', async () => {
-    const { svc, mocks } = buildConciergeService({
-      nativeToolsEnabled: true,
-      llmResponseText: 'Записал в память.',
-    });
-    mocks.llmCall.mockResolvedValueOnce({
-      text: '',
-      modelUsed: 'mock',
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedTokens: 0,
-      durationMs: 0,
-      toolCalls: [{ name: 'ingest_note', input: { text: 'Идея про поддержку' } }],
-    });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as {
-        execute: ReturnType<typeof vi.fn>;
-      }
-    ).execute;
-    toolRouterExec.mockResolvedValue({
-      ok: true,
-      status: 201,
-      result: { rawEventId: 're-1' },
-      tool: { name: 'ingest_note', method: 'POST', readOnly: true },
-    });
-    const undoLogRecord = (
-      mocks.undoLog as unknown as {
-        record: ReturnType<typeof vi.fn>;
-      }
-    ).record;
-
-    const events = await collect(
-      svc.process({
-        userMessage: 'Идея: добавить раздел про поддержку',
-        userId: 'u-1',
-        tenantId: 't-1',
-        baseUrl: 'http://localhost:3000',
-        confirmHold: true,
-      }),
-    );
-
-    const types = events.map((e) => e.type);
-    expect(types).not.toContain('confirm_required');
-    expect(types).toContain('tool_result');
-    expect(toolRouterExec).toHaveBeenCalledTimes(1);
-    expect(undoLogRecord).not.toHaveBeenCalled();
-  });
-});
-
-describe('ConciergeService.process() — Ф4.1 лимит шагов + сторож зацикливания', () => {
-  it('идентичный поисковый запрос сверх порога → сторож останавливает, ответ НЕ пустой и честный', async () => {
-    const { svc, mocks } = buildConciergeService({ nativeToolsEnabled: true });
-    mocks.llmCall.mockResolvedValue({
-      text: '',
-      modelUsed: 'mock',
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedTokens: 0,
-      durationMs: 0,
-      toolCalls: [{ name: 'ask_chat_v2', input: { question: 'что решили по подрядчику?' } }],
-    });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> }
-    ).execute;
-    toolRouterExec.mockResolvedValue({
-      ok: true,
-      status: 200,
-      result: { text: 'Частичные данные из памяти.', citations: [] },
-      tool: { name: 'ask_chat_v2', method: 'POST', readOnly: true },
-    });
-
-    const events = await collect(
-      svc.process({
+      turn1.svc.process({
         userMessage: 'Что решили по подрядчику?',
         userId: 'u-1',
         tenantId: 't-1',
+        conversationId: 'conv-1',
         baseUrl: 'http://localhost:3000',
       }),
     );
 
-    const keysAsked = (
-      mocks.getDynamic.mock.calls as unknown as Array<[string, unknown, unknown]>
-    ).map((c) => c[0]);
-    expect(keysAsked).toContain('concierge.max_steps');
-    expect(keysAsked).toContain('rag.loop_guard_threshold');
-
-    const messageEvent = events.find((e) => e.type === 'message');
-    expect(messageEvent && messageEvent.type === 'message').toBe(true);
-    const text = messageEvent && messageEvent.type === 'message' ? messageEvent.text : '';
-    expect(text.length).toBeGreaterThan(0);
-    expect(text).not.toBe('Готово. Если нужно — уточните, что сделать дальше.');
-    expect(text).toContain('Не успел собрать полный ответ');
-
-    expect(mocks.llmCall.mock.calls.length).toBeLessThan(6);
-  });
-
-  it('maxSteps=2 исчерпан без финала (разные запросы) → НЕ пустой ответ', async () => {
-    const { svc, mocks } = buildConciergeService({ nativeToolsEnabled: true });
-    mocks.getDynamic.mockImplementation(
-      async (key: string, _env: unknown, def: unknown): Promise<unknown> => {
-        if (key === 'concierge.max_steps') return 2;
-        if (key === 'rag.loop_guard_threshold') return 1;
-        if (key === 'concierge.history_pairs') return 4;
-        if (key === 'concierge.clarify_min_confidence') return 80;
-        return def;
-      },
+    const assistantCreate = (
+      turn1.mocks.messageCreate.mock.calls as unknown as Array<
+        [{ data: { role: string; toolCallsJson?: unknown } }]
+      >
+    ).find((c) => c[0].data.role === 'assistant');
+    expect(assistantCreate?.[0]?.data.toolCallsJson).toEqual(
+      expect.objectContaining({ clarifyPending: true }),
     );
-    let n = 0;
-    mocks.llmCall.mockImplementation(async () => {
-      n++;
-      return {
-        text: '',
-        modelUsed: 'mock',
-        inputTokens: 0,
-        outputTokens: 0,
-        cachedTokens: 0,
-        durationMs: 0,
-        toolCalls: [{ name: 'ask_chat_v2', input: { question: `запрос-${n}` } }],
-      };
-    });
-    const toolRouterExec = (
-      mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> }
-    ).execute;
-    toolRouterExec.mockResolvedValue({
-      ok: true,
-      status: 200,
-      result: { text: 'нашёл кое-что', citations: [] },
-      tool: { name: 'ask_chat_v2', method: 'POST', readOnly: true },
+
+    const turn2 = buildConciergeService({
+      nativeToolsEnabled: true,
+      history: [
+        { role: 'user', content: 'Что решили по подрядчику?' },
+        {
+          role: 'assistant',
+          content: 'Уточните: какой именно подрядчик?',
+          toolCallsJson: { askChatV2Passthrough: true, clarifyPending: true },
+        },
+      ],
+      ephemeralAnswer: { text: 'По подрядчику логистики решили взять А.' },
     });
 
     const events = await collect(
-      svc.process({
-        userMessage: 'долгий вопрос',
+      turn2.svc.process({
+        userMessage: 'по логистике',
         userId: 'u-1',
         tenantId: 't-1',
+        conversationId: 'conv-1',
         baseUrl: 'http://localhost:3000',
       }),
     );
 
-    expect(mocks.llmCall).toHaveBeenCalledTimes(2);
+    expect(turn2.mocks.llmCall).not.toHaveBeenCalled();
+    expect(turn2.mocks.askEphemeral).toHaveBeenCalledTimes(1);
+    expect(turn2.mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ question: 'по логистике', intent: 'factual' }),
+    );
     const messageEvent = events.find((e) => e.type === 'message');
-    const text = messageEvent && messageEvent.type === 'message' ? messageEvent.text : '';
-    expect(text.length).toBeGreaterThan(0);
-    expect(text).toContain('Не успел собрать полный ответ');
+    expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe(
+      'По подрядчику логистики решили взять А.',
+    );
   });
 });
 

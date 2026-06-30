@@ -287,8 +287,41 @@ Kill-switch — [[../../docs/operations/feature-flags|feature-flags]]; прод-
 
 Kill-switch — [[../../docs/operations/feature-flags|feature-flags]]; прод-выкат — `docs/operations/prod-deploy-log.md` (блок 2026-06-23 «Убрать лишние подтверждения…»).
 
+## Диалоговое уточнение probe (probe-clarify-dialog, 2026-06-27)
+
+**Источник:** ТЗ [`plans/tz/2026-06-27-probe-clarify-dialog-tz.md`](../../plans/tz/2026-06-27-probe-clarify-dialog-tz.md) (6 фаз), анализ надёжности [`plans/analysis/2026-06-27-probe-clarify-dialog-reliability.md`](../../plans/analysis/2026-06-27-probe-clarify-dialog-reliability.md). Ветка `feature/probe-clarify-dialog`, коммиты Ф1 `12581516` / Ф2 `0cb7f63b` / Ф3 `8ab2d22d` / Ф4 `77cc81a5` / Ф5 `63aa03a9` / Ф6 `68b1cab2`. Все проверки зелёные (typecheck/lint/build + probe 298 / conversational 273). Ship-On: `probe.dialogEnabled` ON.
+
+Цель: одноразовый probe-ответ → надёжная диалоговая петля. Разделение ответственности: **LLM решает ЧТО человек имел в виду; код решает КАК записать; человек подтверждает echo-back перед записью.** Запись — только детерминированным идемпотентным apply-слоем (`ProbeResponseHandler`), один путь; LLM сам ничего не пишет.
+
+### Ф1 — фундамент apply (детерминированный один путь записи)
+
+Классификатор ответа `probe_response_classify_v1 → probe_response_intent_v1` (`probe/prompts/probe-response-classify.prompt.ts`): `reasoning` (свободное рассуждение) + `outcome ∈ {apply,delete,refine,counter_question,unclear}` + `value` + `confidence` (reason-then-constrain). `ProbeResponseHandler` ветвится по `outcome`, а не по подстроке «удал» (фикс хрупкости: «удалить упоминание про дедлайн» при `refine` НЕ удаляет задачу). `outcome=unclear` → ноль мутаций данных. Человек/дата не распознаны → типизированный `ApplyResult{needs_clarification}` вместо молчаливого return. Идемпотентность set-once: `decision.overdue` пишет `deadline:{not:due}` (повтор = no-op), `experiment.lessonsJson` дедуп по тексту урока, `appendTaskDescription` дедуп по `includes`, `companyprofile.*` guard через `getRaw` (не затирает ручную правку). `approve_with_edits` прокидывает извлечённое `value` (новое имя) в `curation.decide`. `mapExistenceConfirmAnswer` выведен из основного пути → только degraded-fallback.
+
+### Ф2 — состояние диалога (`ProbeDialogState`)
+
+Новая модель `ProbeDialogState` (`probeEventId @unique` → 1:1 с `ProbeEvent`; поля `phase: ProbeDialogPhase`, `outcome`, `collectedValue`, `confidence`, `turnCount`, `tenantId`, `recipientUserId`). enum `ProbeDialogPhase` {`awaiting_answer`, `awaiting_clarification`, `awaiting_confirmation`, `resolved`}. +4 аддитивных значения `ProbeStatus`: `awaiting_dialog`, `applied`, `escalated_to_human`, `abandoned`. Миграция `20260627000000_probe_dialog_state` (CREATE TYPE + ALTER TYPE ×4 + CREATE TABLE + индексы + FK → `probe_events` CASCADE; аддитивная) — см. [[../02_architecture/data-model]] §«probe-clarify-dialog». Сервис `ProbeDialogService` (`probe/probe-dialog.service.ts`): `ensureState` (upsert, идемпотентно — одна активная строка), `getActive` (phase≠resolved), `recordTurn` (turnCount++ + outcome/value/confidence), `setPhase`, `finalizeIfPending` (CAS phase→resolved, `true`=выиграл — **идемпотентный ключ финализации**). Handler best-effort пишет состояние на каждый ответ.
+
+### Ф3 — эскалация clarify (confidence как маршрутизация, не запись)
+
+Крутилки (AdminSetting, секция `probe`, чистые — без новых ENV): `probe.dialogEnabled` (kill-switch ON), `probe.dialogEscalateMaxConfidence` (0.6), `probe.dialogMaxTurns` (2), `probe.dialogConfirmTtlHours` (48). Новый eventType `probe.clarify` (strict Zod в `event-payload.registry.ts`, channel-policy как `probe.question` `['telegram_bot','max_bot','in_app']`, responseStatus='pending'). При `dialogEnabled` и `outcome ∈ {unclear, counter_question, refine}` ИЛИ `confidence < порог` ИЛИ `needs_clarification` → `routeClarifyOrEscalate` вместо apply: отправляет ОДИН уточняющий ход `probe.clarify` тому же получателю, **переуказывает `ProbeEvent.dispatchedNotificationId`** на новое уведомление (round-trip доответа), `phase=awaiting_clarification`, `status=awaiting_dialog`. `turnCount > dialogMaxTurns` → `escalateToHuman`: уведомляет owner/admin (membership role in owner/admin, текст с ответом человека), `status=escalated_to_human`, `phase=resolved`, уведомления разпиннены (`responseStatus=null` — терминальный FYI без orphan-pending). confidence — ТОЛЬКО маршрутизация, не авто-запись. ack подавляется при clarify/escalate.
+
+### Ф4 — echo-back (человек подтверждает перед записью)
+
+eventType `probe.confirm` (Zod + policy + responseStatus pending + рендер в telegram/max адаптерах + фронт-label). При `dialogActive` clear-ответ (`outcome=delete` любой уверенности ИЛИ `outcome=apply` & `conf ≥ порог`) → НЕ применять, а отправить echo-back `probe.confirm` («Понял так: …. Применить? Ответьте „да“ или поправьте»), `phase=awaiting_confirmation`. delete echo-back **обязателен всегда** (необратимое). Ответ «да» (детерминированный `isAffirmation`, кириллице-устойчивый) → применение **сохранённого** намерения из `ProbeDialogState` (outcome+collectedValue прошлого хода, НЕ текста «да») через `finalizeIfPending` (CAS — ровно один раз; повторный «да» = no-op) → `status=applied` + ack + ingest + SubjectMemory как раньше. Поправка на confirm → повторный classify (turnCount++), не применение.
+
+### Ф5 — мост ботов + адресность дайджеста
+
+Новый `ProbeResponseInboundBridge` (`conversational/probe-response-inbound.bridge.ts`) — `subscribeInbound('response')` (раньше отсутствовал → имплицитные ответы ботов `InboundMessage{type:'response'}` терялись) → `respondToProbe`. Адресность дайджеста: `resolveDigestProbeEventId` (детерминированный token-overlap матч ответа к конкретному вопросу пачки) кладёт `probeEventId` в payload; handler предпочитает `event.payload.probeEventId` (загейчен `dispatchedNotificationId = event.notificationId` — within-tenant обход адресности закрыт) над `findFirst by dispatchedNotificationId` (раньше брал произвольный probe из N). `findOpenProbe` (telegram+max) расширен на `probe.clarify` / `probe.confirm`.
+
+### Ф6 — наблюдаемость + graceful degradation
+
+Метрики (`business-metrics.service.ts`): `probe_dialog_transition_total{from,to}`, `probe_dialog_outcome_total{outcome}` (applied/escalated_to_human/abandoned), `probe_dialog_degraded_total{reason}`. Graceful degradation: при падении LLM-классификатора (`tryClassifyResponse` catch) → откат к детерминированному one-shot (`mapExistenceConfirmAnswer`) + инкремент degraded. Новый cron `ProbeDialogTtlCron` (`@Cron('17 * * * *')`): `awaiting_clarification` / `awaiting_confirmation` старше `probe.dialogConfirmTtlHours` → `phase=resolved` + `ProbeEvent.status=abandoned` (идемпотентно, best-effort).
+
+Kill-switch / крутилки — [[../../docs/operations/feature-flags|feature-flags]]; прод-выкат — `docs/operations/prod-deploy-log.md` (блок 2026-06-27 «Диалоговое уточнение probe»). Открытые хвосты vNext — [[../04_не-сделано/README|не-сделано]].
+
 ## См. также
 
+- [[probe-observers-catalog]] — **каталог всех наблюдателей-источников** (кто/что/когда/как ищет пробелы и какие промпты используют). Этот файл — про движок доставки; каталог — про источники вопросов.
 - [[ideas]] — главный потребитель Probe-Agent в β-5.
 - [[channels-foundation]] (α-1) — где живёт `ConversationalService`.
 - [[../02_architecture/module-map|02_architecture/module-map.md]] — раздел «SBA β-5».

@@ -29,10 +29,12 @@ function makeService(): {
     knowledgeAccess: { enforcement: 'off' as const },
     aiFeatures: { promptInjectionGuardEnabled: false },
     dataClassPolicy: { enforcement: 'off' as const },
+    getDynamic: vi.fn(async (_key: string, _env: unknown, def: unknown) => def),
   } as unknown as TypedConfigService;
 
   const metrics = {
     incQueryPlanRetrievalFiltered: vi.fn(),
+    incRouterBothWays: vi.fn(),
     incQueryPlanEmptyPool: vi.fn(),
   } as unknown as BusinessMetricsService;
 

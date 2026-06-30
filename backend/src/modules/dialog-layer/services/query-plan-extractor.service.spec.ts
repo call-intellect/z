@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
@@ -7,6 +9,19 @@ import {
   type QueryPlanExtractInput,
   QueryPlanExtractorService,
 } from './query-plan-extractor.service';
+
+function makeCfg(): TypedConfigService {
+  return {
+    aiFeatures: { promptInjectionGuardEnabled: true },
+  } as unknown as TypedConfigService;
+}
+
+function makeMetrics(): BusinessMetricsService {
+  return {
+    incPromptInjectionAttempt: vi.fn(),
+    incPromptInvalidResponse: vi.fn(),
+  } as unknown as BusinessMetricsService;
+}
 
 const TODAY = '2026-06-10T09:00:00Z';
 
@@ -41,8 +56,9 @@ function makeService(callImpl: () => unknown) {
   const llm = { call: vi.fn(callImpl) } as unknown as LlmRouterService;
   const prisma = {
     person: { findFirst: vi.fn().mockResolvedValue({ id: 'person-1' }) },
+    entity: { findFirst: vi.fn().mockResolvedValue(null) },
   } as unknown as PrismaService;
-  const service = new QueryPlanExtractorService(llm, prisma);
+  const service = new QueryPlanExtractorService(llm, prisma, makeCfg(), makeMetrics());
   return { service, llm, prisma };
 }
 
@@ -181,9 +197,260 @@ describe('QueryPlanExtractorService', () => {
     const prisma = {
       person: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaService;
-    const service = new QueryPlanExtractorService(llm, prisma);
+    const service = new QueryPlanExtractorService(llm, prisma, makeCfg(), makeMetrics());
 
     const id = await service.resolveSelfPersonId('org-1', 'user-x');
     expect(id).toBeNull();
+  });
+});
+
+describe('QueryPlanExtractorService.understand — слитый модуль (Ф4b)', () => {
+  function understandInput() {
+    return {
+      tenantId: 'org-1',
+      userId: 'user-1',
+      question: 'а сколько это стоит?',
+      summary: 'Про продукт Маяк.',
+      history: [{ role: 'user' as const, content: 'Что по Маяк?' }],
+      todayIso: TODAY,
+      orgTimezone: null,
+      conversationId: 'conv-1',
+    };
+  }
+
+  it('валидный объединённый ответ → 3 деду́пнутых запроса + применённый план', async () => {
+    const json = JSON.stringify({
+      queries: [
+        'Сколько стоит продукт Маяк?',
+        'Из чего складывается цена Маяк?',
+        'Есть ли скидки по Маяк?',
+      ],
+      plan: {
+        periodExpr: 'this_week',
+        periodDays: null,
+        signalTypes: ['decision'],
+        themeBranches: ['sales'],
+        entityHints: [],
+        personScope: false,
+        aggregation: true,
+        needsAction: false,
+        activeNow: false,
+      },
+      confidence: 0.9,
+    });
+    const { service, llm } = makeService(() => Promise.resolve(llmResult(json)));
+
+    const res = await service.understand(understandInput());
+
+    expect(res.queries).toEqual([
+      'а сколько это стоит?',
+      'Сколько стоит продукт Маяк?',
+      'Из чего складывается цена Маяк?',
+    ]);
+    expect(res.queryPlan.applied).toBe(true);
+    expect(res.queryPlan.filters.signalTypes).toEqual(['decision']);
+    expect(res.queryPlan.filters.themeBranches).toEqual(['sales']);
+    expect(res.queryPlan.filters.aggregation).toBe(true);
+    expect(res.queryPlan.filters.dateFrom).toBeInstanceOf(Date);
+    expect(llm.call).toHaveBeenCalledWith(
+      expect.objectContaining({ taskType: 'dialog-understand' }),
+    );
+  });
+
+  it('дедуп: вопрос совпал с переформулировкой (без учёта регистра) — без дублей', async () => {
+    const json = JSON.stringify({
+      queries: ['А Сколько Это Стоит?', 'Сколько стоит продукт Маяк?'],
+      plan: {
+        periodExpr: 'none',
+        periodDays: null,
+        signalTypes: [],
+        themeBranches: [],
+        entityHints: [],
+        personScope: false,
+        aggregation: false,
+        needsAction: false,
+        activeNow: false,
+      },
+      confidence: 0.3,
+    });
+    const { service } = makeService(() => Promise.resolve(llmResult(json)));
+
+    const res = await service.understand(understandInput());
+
+    expect(res.queries).toEqual(['а сколько это стоит?', 'Сколько стоит продукт Маяк?']);
+  });
+
+  it('малформенный ответ → fail-open: queries=[question], план не применён', async () => {
+    const { service } = makeService(() => Promise.resolve(llmResult('not json at all')));
+
+    const res = await service.understand(understandInput());
+
+    expect(res.queries).toEqual(['а сколько это стоит?']);
+    expect(res.queryPlan.applied).toBe(false);
+    expect(res.queryPlan.filters.signalTypes).toEqual([]);
+    expect(res.queryPlan.filters.dateFrom).toBeNull();
+  });
+
+  it('llm.call бросает → fail-open', async () => {
+    const { service } = makeService(() => Promise.reject(new Error('all providers failed')));
+
+    const res = await service.understand(understandInput());
+
+    expect(res.queries).toEqual(['а сколько это стоит?']);
+    expect(res.queryPlan.applied).toBe(false);
+  });
+
+  it('низкая уверенность плана (0.4) → план НЕ применён, но queries отдаются', async () => {
+    const json = JSON.stringify({
+      queries: ['Сколько стоит Маяк?'],
+      plan: {
+        periodExpr: 'this_week',
+        periodDays: null,
+        signalTypes: ['decision'],
+        themeBranches: [],
+        entityHints: [],
+        personScope: false,
+        aggregation: false,
+        needsAction: false,
+        activeNow: false,
+      },
+      confidence: 0.4,
+    });
+    const { service } = makeService(() => Promise.resolve(llmResult(json)));
+
+    const res = await service.understand(understandInput());
+
+    expect(res.queries).toEqual(['а сколько это стоит?', 'Сколько стоит Маяк?']);
+    expect(res.queryPlan.applied).toBe(false);
+    expect(res.queryPlan.filters.signalTypes).toEqual([]);
+  });
+});
+
+describe('QueryPlanExtractorService — ось personIds + queryClass (Ф3)', () => {
+  function makeServiceWithResolver(args: {
+    callImpl: () => unknown;
+    resolvePersonByHint?: ReturnType<typeof vi.fn>;
+  }) {
+    const llm = { call: vi.fn(args.callImpl) } as unknown as LlmRouterService;
+    const prisma = {
+      person: { findFirst: vi.fn().mockResolvedValue({ id: 'self-person', entityId: null }) },
+      entity: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const resolvePersonByHint =
+      args.resolvePersonByHint ?? vi.fn().mockResolvedValue(null);
+    const entityResolution = { resolvePersonByHint } as unknown as never;
+    const service = new QueryPlanExtractorService(
+      llm,
+      prisma,
+      makeCfg(),
+      makeMetrics(),
+      entityResolution,
+    );
+    return { service, resolvePersonByHint };
+  }
+
+  it('understand отдаёт queryClass из детерминированного роутера (вопрос-список → list)', async () => {
+    const json = JSON.stringify({
+      queries: ['какие встречи с Ивановым были по логистике?'],
+      plan: {
+        periodExpr: 'none',
+        periodDays: null,
+        signalTypes: [],
+        themeBranches: [],
+        entityHints: ['Иванов'],
+        personHints: ['Иванов'],
+        queryClass: 'topic',
+        personScope: false,
+        aggregation: false,
+        needsAction: false,
+        activeNow: false,
+      },
+      confidence: 0.85,
+    });
+    const { service } = makeServiceWithResolver({
+      callImpl: () => Promise.resolve(llmResult(json)),
+    });
+
+    const res = await service.understand({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      question: 'какие встречи с Ивановым',
+      summary: null,
+      history: [],
+      todayIso: TODAY,
+      orgTimezone: null,
+      conversationId: null,
+    });
+
+    expect(res.queryPlan.queryClass).toBe('list');
+  });
+
+  it('resolveStructuralFilters заполняет personIds через резолвер имён людей', async () => {
+    const resolvePersonByHint = vi.fn().mockResolvedValue('person-iv');
+    const { service } = makeServiceWithResolver({
+      callImpl: () => Promise.resolve(llmResult('{}')),
+      resolvePersonByHint,
+    });
+
+    const plan = {
+      filters: {
+        dateFrom: null,
+        dateTo: null,
+        signalTypes: [],
+        themeBranches: [],
+        entityHints: ['Иванов'],
+        personHints: ['Иванов'],
+        personScope: false,
+        aggregation: false,
+        needsAction: false,
+        activeNow: false,
+      },
+      queryClass: 'list' as const,
+      queryClassConfidence: 0.9,
+      confidence: 0.85,
+      applied: true,
+      durationSeconds: 0.01,
+    };
+
+    const filters = await service.resolveStructuralFilters({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      plan,
+    });
+
+    expect(filters).not.toBeNull();
+    expect(filters?.personIds).toContain('person-iv');
+    expect(resolvePersonByHint).toHaveBeenCalled();
+  });
+
+  it('без EntityResolutionService → personIds пуст (fail-open), не падает', async () => {
+    const { service } = makeService(() => Promise.resolve(llmResult('{}')));
+    const plan = {
+      filters: {
+        dateFrom: null,
+        dateTo: null,
+        signalTypes: ['decision'],
+        themeBranches: [],
+        entityHints: [],
+        personHints: ['Иванов'],
+        personScope: false,
+        aggregation: false,
+        needsAction: false,
+        activeNow: false,
+      },
+      queryClass: 'list' as const,
+      queryClassConfidence: 0.9,
+      confidence: 0.85,
+      applied: true,
+      durationSeconds: 0.01,
+    };
+
+    const filters = await service.resolveStructuralFilters({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      plan,
+    });
+
+    expect(filters?.personIds).toEqual([]);
   });
 });

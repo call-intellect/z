@@ -9,6 +9,24 @@ covers: React-контексты и кросс-компонентные патт
 Точечный реестр кросс-компонентных механизмов фронтенда (`frontend/src/contexts`,
 `frontend/src/hooks` и связанные событийные шины). Пополняется по факту.
 
+## Диалоги Мастера — data-слой дома `/chat` (2026-06-28)
+
+Хуки и маппер для дома Мастера (`MasterChatHome`, см. [[frontend-pages]] §`/chat`) — список
+диалогов слева + история по выбору, на движке concierge (SWR).
+
+- **`src/hooks/useConciergeConversations.ts`** — SWR-список диалогов пользователя
+  (`conciergeApi.listConversations`); каждый несёт `titlePreview` (первое user-сообщение,
+  ≤80 симв., с бэка) — название диалога вместо «Новый диалог», фолбэк на `summary`.
+- **`src/hooks/useConciergeConversation.ts`** — SWR-загрузка истории одного диалога по `id`
+  (`conciergeApi.getConversation`) при выборе в списке.
+- **`src/domain/concierge-conversation.ts`** — маппер ApiDto→DomainModel (`titlePreview`/`summary`
+  → отображаемое название, нормализация сообщений). `concierge.api.ts`: `ConciergeStreamEvent.message`
+  += `citations`/`needsClarification`, добавлен эвент `confirm_required`; body += `scope`/`scopeRefId`/`asOf`;
+  `ConciergeConversationApi` += `titlePreview`.
+- Редьюсер потока сообщений — `src/ui/chat/master-chat-events.ts` (SSE+fallback → состояние нити).
+- Источник: ТЗ [`2026-06-25-edinyy-pomoshnik-chat-surface-convergence.md`](../../plans/tz/2026-06-25-edinyy-pomoshnik-chat-surface-convergence.md)
+  (КФ1–КФ5, коммиты `7d111a94`..`c5b7ec10`). См. [[concierge-agent]] · [[api-layer]].
+
 ## Единый плавающий помощник кабинета (2026-06-06 → пересмотрено 2026-06-20)
 
 > ⚠️ **Пересмотрено 2026-06-20** (см. §«Яркий FAB-помощник + сигналы колокольчика» ниже): теперь единственный плавающий вход — `ConciergeFloatingButton` (вернулась видимая кнопка, чат в 1 клик), а `AssistantSidebar` **удалён**. Запись ниже — исторический контекст промежуточного состояния 2026-06-06.
@@ -120,6 +138,34 @@ FeedClient.tsx) **удалена** (сиблинги `/feed/insights`, `/feed/pr
 [`plans/tz/2026-06-17-cora-feed-into-dashboards.md`](../../plans/tz/2026-06-17-cora-feed-into-dashboards.md),
 коммиты `9aa3945e`+`10dbbe35`. См. также [[frontend-pages]]. Ф5 (визуальная qa) —
 НЕ выполнена.
+
+## «Месяц компании» + навигация по датам/архив (2026-06-30)
+
+Хуки героев-брифингов и общий навигатор периодов (ветка
+`feature/month-company-and-report-navigation`):
+
+- **`useMonthCompany`** (`src/hooks/useMonthCompany.ts`) — SWR к
+  `GET /dashboard/operations/monthly-digest/latest|?period=`; слои
+  `src/api/monthly-digest.api.ts` → `src/domain/operations-monthly-digest.ts`.
+  Питает героя `MonthCompanyHero` на `/month`.
+- **`useDayAvailablePeriods` / `useWeekAvailablePeriods` / `useMonthAvailablePeriods`**
+  — SWR к `…/{daily,weekly,monthly}-digest/available-periods?limit=` → список
+  доступных периодов с `stateHint` + `latest` для навигатора/архива.
+- **`PeriodNavigator`** (`src/ui/components/dashboard/shared/PeriodNavigator.tsx`)
+  — общий stepper по ритму («вперёд» disabled на latest), клик-подпись → попап
+  «Недавние отчёты» (архив с цветной точкой `stateHint`) + «Выбрать дату…»
+  (нативный picker). Подключён к 3 героям (день/неделя/месяц); `value-recap`
+  переведён с локального `PeriodSelector` на него.
+- **`PeriodEmptyState`** — нет данных за период → CTA на ближайший/«К последнему»;
+  первый запуск → обучающий пустой-стейт.
+- **`src/domain/period.ts`** — чистые хелперы дат:
+  `shiftDate/mondayOf/shiftWeek/shiftPeriodYm/shiftPeriod/formatPeriodLabel/currentPeriod/comparePeriods/nearestAvailablePeriod`.
+- **`GoalCompass3D`** (`src/ui/components/dashboard/shared/GoalCompass3D.tsx`,
+  введён 2026-06-29) переиспользован в месячном компасе (`MonthGoalCompass`).
+
+**Источники:** `plans/tz/2026-06-29-month-company-monthly-brief.md`,
+`plans/tz/2026-06-30-report-date-navigation-archive.md`. См.
+[[director-dashboard]] §«Месяц компании», [[frontend-pages]], [[api-layer]].
 
 ---
 

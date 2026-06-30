@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { nanoid } from 'nanoid';
@@ -413,16 +415,22 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
           }
           const text = (sanitizeDescription(c.POST_MESSAGE) ?? '').slice(0, 50_000);
           if (!text.trim()) continue;
-          await services.prisma.issueComment.create({
-            data: {
-              issueId: created.id,
-              authorId,
-              content: text,
-              contentHtml: null,
-              contentStripped: text,
-              access: 'internal',
-              createdAt: c.POST_DATE ? (safeParseDate(c.POST_DATE) ?? new Date()) : new Date(),
-            },
+          const { conversationId } = await services.workChat.ensureWorkChat(created.id);
+          const externalCommentId = c.ID != null ? String(c.ID) : null;
+          const clientMessageId = externalCommentId
+            ? `import:bitrix24:${externalCommentId}`
+            : `import:bitrix24:${created.id}:${createHash('sha1').update(`${authorId}|${c.POST_DATE ?? ''}|${text}`).digest('hex')}`;
+          await services.messageService.insertHistorical({
+            tenantId,
+            conversationId,
+            authorUserId: authorId,
+            content: text,
+            contentHtml: null,
+            contentStripped: text,
+            access: 'internal',
+            authorType: 'human',
+            createdAt: c.POST_DATE ? (safeParseDate(c.POST_DATE) ?? new Date()) : new Date(),
+            clientMessageId,
           });
           commentsCount += 1;
         } catch (err) {

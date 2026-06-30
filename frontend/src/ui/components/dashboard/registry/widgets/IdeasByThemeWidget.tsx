@@ -19,6 +19,7 @@ import type { Rhythm } from "../types";
 import { Chip, PeopleDrawer } from "../_kit";
 
 const GROWING_WEIGHT_THRESHOLD = 3;
+const NO_THEME_CLUSTER_ID = "__no_theme__";
 
 function clusterName(cluster: IdeaClusterApi): string {
   const name = cluster.name?.trim();
@@ -28,6 +29,7 @@ function clusterName(cluster: IdeaClusterApi): string {
 export const IdeasByThemeWidget: FC<{ rhythm: Rhythm }> = () => {
   const { currentOrgId } = useAuth();
   const [active, setActive] = useState<IdeaClusterApi | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const clustersSwr = useSWR(
     currentOrgId ? ["ideas-clusters", currentOrgId] : null,
@@ -55,12 +57,37 @@ export const IdeasByThemeWidget: FC<{ rhythm: Rhythm }> = () => {
     );
   }
 
-  const clusters = clustersSwr.data?.items ?? [];
-  if (clusters.length === 0) return null;
+  const rawClusters = clustersSwr.data?.items ?? [];
+  if (rawClusters.length === 0) return null;
+
+  const namedClusters = rawClusters.filter((c) => clusterName(c) !== "");
+  const unnamedClusters = rawClusters.filter((c) => clusterName(c) === "");
+  const unnamedClusterIds = new Set(unnamedClusters.map((c) => c.id));
+  const noThemeCluster: IdeaClusterApi | null =
+    unnamedClusters.length > 0
+      ? {
+          ...unnamedClusters[0]!,
+          id: NO_THEME_CLUSTER_ID,
+          name: "",
+          ideaIds: unnamedClusters.flatMap((c) => c.ideaIds),
+          clusterWeight: unnamedClusters.reduce(
+            (sum, c) => sum + c.clusterWeight,
+            0,
+          ),
+        }
+      : null;
+  const clusters = noThemeCluster
+    ? [...namedClusters, noThemeCluster]
+    : namedClusters;
 
   const allIdeas = ideasSwr.data?.items ?? [];
   const activeIdeas = active
-    ? allIdeas.filter((idea) => idea.clusterId === active.id)
+    ? active.id === NO_THEME_CLUSTER_ID
+      ? allIdeas.filter(
+          (idea) =>
+            idea.clusterId != null && unnamedClusterIds.has(idea.clusterId),
+        )
+      : allIdeas.filter((idea) => idea.clusterId === active.id)
     : [];
 
   return (
@@ -70,7 +97,7 @@ export const IdeasByThemeWidget: FC<{ rhythm: Rhythm }> = () => {
       </CardTitle>
 
       <div className="mt-4 space-y-2">
-        {clusters.map((cluster) => {
+        {(showAll ? clusters : clusters.slice(0, 5)).map((cluster) => {
           const growing = cluster.clusterWeight >= GROWING_WEIGHT_THRESHOLD;
           const name = clusterName(cluster);
           return (
@@ -102,6 +129,17 @@ export const IdeasByThemeWidget: FC<{ rhythm: Rhythm }> = () => {
           );
         })}
       </div>
+
+      {clusters.length > 5 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-3 text-sm font-medium transition hover:brightness-110"
+          style={{ color: CHART.dim }}
+        >
+          {showAll ? "Свернуть" : `Показать все (${clusters.length})`}
+        </button>
+      )}
 
       <PeopleDrawer
         open={active !== null}

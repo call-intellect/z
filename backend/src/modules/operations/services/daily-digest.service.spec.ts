@@ -35,6 +35,13 @@ describe('DailyDigestService', () => {
       },
       goal: {
         findMany: vi.fn().mockResolvedValue(overrides.goals ?? []),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      goalAlignmentSnapshot: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      idea: {
+        findMany: vi.fn().mockResolvedValue([]),
       },
       insight: {
         findMany: vi.fn().mockResolvedValue(overrides.highInsights ?? []),
@@ -51,6 +58,7 @@ describe('DailyDigestService', () => {
       dailyOperationsDigest: {
         findUnique: vi.fn().mockResolvedValue(overrides.existing ?? null),
         findFirst: vi.fn().mockResolvedValue(overrides.latest ?? null),
+        findMany: vi.fn().mockResolvedValue([]),
         upsert: vi
           .fn()
           .mockImplementation(
@@ -62,6 +70,10 @@ describe('DailyDigestService', () => {
               update: Record<string, unknown>;
             }) => {
               const row = overrides.existing ? { ...update } : { ...create };
+              const unwrapJson = (v: unknown) =>
+                v === null || v === undefined || String(v) === 'Prisma.JsonNull'
+                  ? null
+                  : v;
               return Promise.resolve({
                 id: 'dd1',
                 tenantId: 't1',
@@ -73,6 +85,9 @@ describe('DailyDigestService', () => {
                 shortSummary: (row.shortSummary as string | null) ?? null,
                 deliveredAt: null,
                 createdAt: new Date('2026-05-25T01:00:00Z'),
+                verdictJson: unwrapJson(row.verdictJson),
+                letterJson: unwrapJson(row.letterJson),
+                goalAlignmentDayJson: unwrapJson(row.goalAlignmentDayJson),
               });
             },
           ),
@@ -108,6 +123,9 @@ describe('DailyDigestService', () => {
     const blockerSynthesis = {
       listChronicForTenant: vi.fn().mockResolvedValue([]),
     };
+    const cfg = {
+      getDynamic: vi.fn().mockResolvedValue(5),
+    };
     const svc = new DailyDigestService(
       prisma as never,
       llm as never,
@@ -115,6 +133,7 @@ describe('DailyDigestService', () => {
       pendingActions as never,
       customerRisk as never,
       blockerSynthesis as never,
+      cfg as never,
     );
     return {
       svc,
@@ -124,6 +143,7 @@ describe('DailyDigestService', () => {
       pendingActions,
       customerRisk,
       blockerSynthesis,
+      cfg,
     };
   }
 
@@ -160,28 +180,57 @@ describe('DailyDigestService', () => {
     expect(result.sources.blockerIds).toEqual(['b1']);
   });
 
-  it('generate: при успехе LLM сохраняет bodyMarkdown, shortSummary и llmTaskRouteId', async () => {
+  it('generate: при валидном JSON от LLM пишет непустые verdict/letter/goalAlignmentDay', async () => {
+    const validJson = JSON.stringify({
+      verdict: {
+        overall: {
+          state: 'warn',
+          emoji: '⚠️',
+          title: 'День с трением',
+          oneLiner: 'Команда в норме, но есть просрочки.',
+        },
+        axes: [
+          { key: 'team', state: 'ok', label: 'Норма', why: 'настроение зелёное' },
+          { key: 'clients', state: 'ok', label: 'Норма', why: 'спокойно' },
+          { key: 'execution', state: 'warn', label: 'Буксует', why: 'просрочки' },
+          { key: 'overall', state: 'warn', label: 'Трение', why: '1 жёлтая зона' },
+        ],
+      },
+      letter: [{ key: 'main', title: 'Главное за день', prose: 'Сегодня прошло спокойно.' }],
+      goalAlignmentDay: {
+        direction: 'drift',
+        score: 41,
+        todayDelta: '+1 из 10',
+        why: 'медленно',
+        pro: ['есть движение'],
+        contra: ['далеко до цели'],
+      },
+      risksSummary: 'Повторяется молчание поддержки.',
+      ideasSummary: 'Растёт спрос на онбординг.',
+    });
     const { svc, prisma, metrics } = buildSvc({
       checkIns: [{ sentiment: 'green', id: 'c1' }],
-      llmResult: {
-        text: '## Сводка\nВсё ок.\n\n---SHORT_SUMMARY---\nКороткая выжимка для Telegram.',
-        modelUsed: 'deepseek:deepseek-chat',
-      },
+      llmResult: { text: validJson, modelUsed: 'deepseek:deepseek-chat' },
     });
     const result = await svc.generate({
       tenantId: 't1',
       dateLocal: '2026-05-24',
     });
-    expect(result.bodyMarkdown).toContain('Сводка');
-    expect(result.bodyMarkdown).not.toContain('SHORT_SUMMARY');
-    expect(result.shortSummary).toContain('Короткая выжимка');
+    expect(result.verdict).not.toBeNull();
+    expect(result.verdict!.overall.title).toBe('День с трением');
+    expect(result.letter).not.toBeNull();
+    expect(result.letter!.length).toBeGreaterThan(0);
+    expect(result.goalAlignmentDay).not.toBeNull();
+    expect(result.goalAlignmentDay!.direction).toBe('drift');
+    expect(result.bodyMarkdown).toContain('День с трением');
+    expect(result.shortSummary).toContain('Команда в норме');
     expect(result.llmTaskRouteId).toContain('deepseek:deepseek-chat');
     expect(prisma.dailyOperationsDigest.upsert).toHaveBeenCalledOnce();
     expect(metrics.incCooDailyDigestGenerated).toHaveBeenCalledOnce();
     expect(metrics.setCooDailyDigestAge).toHaveBeenCalledOnce();
   });
 
-  it('generate: при провале LLM сохраняет fallback (llmTaskRouteId=null)', async () => {
+  it('generate: при провале LLM сохраняет fallback (verdict/letter/goalAlignmentDay null, llmTaskRouteId=null)', async () => {
     const { svc, metrics } = buildSvc({
       checkIns: [{ sentiment: 'red', id: 'c1' }],
       llmReject: new Error('LLM down'),
@@ -192,11 +241,29 @@ describe('DailyDigestService', () => {
     });
     expect(result.bodyMarkdown).toContain('Ежедневный отчёт');
     expect(result.llmTaskRouteId).toBeNull();
+    expect(result.verdict).toBeNull();
+    expect(result.letter).toBeNull();
+    expect(result.goalAlignmentDay).toBeNull();
     expect(result.shortSummary).toContain('Связный комментарий не сгенерирован');
     expect(metrics.incCooDailyDigestFailed).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'llm_failed' }),
     );
     expect(metrics.incCooDailyDigestGenerated).toHaveBeenCalledOnce();
+  });
+
+  it('generate: битый JSON от LLM ⇒ fallback (поля null)', async () => {
+    const { svc } = buildSvc({
+      checkIns: [{ sentiment: 'green', id: 'c1' }],
+      llmResult: { text: 'это не json', modelUsed: 'm' },
+    });
+    const result = await svc.generate({
+      tenantId: 't1',
+      dateLocal: '2026-05-24',
+    });
+    expect(result.verdict).toBeNull();
+    expect(result.letter).toBeNull();
+    expect(result.llmTaskRouteId).toBeNull();
+    expect(result.bodyMarkdown).toContain('Ежедневный отчёт');
   });
 
   it('getOrGenerate: если запись уже есть — не вызывает LLM', async () => {
@@ -265,5 +332,28 @@ describe('DailyDigestService', () => {
       userId: 'u1',
     });
     expect(line).toBeNull();
+  });
+
+  it('listAvailablePeriods: DESC-порядок, stateHint/title из verdictJson, legacy→null, latest=первый', async () => {
+    const { svc, prisma } = buildSvc({});
+    prisma.dailyOperationsDigest.findMany.mockResolvedValueOnce([
+      { dateLocal: '2026-06-28', verdictJson: { overall: { state: 'warn', title: 'Сдвиг вправо' } } },
+      { dateLocal: '2026-06-27', verdictJson: { overall: { state: 'ok', title: 'Спокойно' } } },
+      { dateLocal: '2026-06-26', verdictJson: null },
+    ]);
+    const result = await svc.listAvailablePeriods({ tenantId: 't1', limit: 12 });
+    expect(result.rhythm).toBe('day');
+    expect(result.periods.map((p) => p.period)).toEqual([
+      '2026-06-28',
+      '2026-06-27',
+      '2026-06-26',
+    ]);
+    expect(result.periods[0]).toEqual({
+      period: '2026-06-28',
+      stateHint: 'warn',
+      title: 'Сдвиг вправо',
+    });
+    expect(result.periods[2]).toEqual({ period: '2026-06-26', stateHint: null, title: null });
+    expect(result.latest).toBe('2026-06-28');
   });
 });

@@ -18,7 +18,8 @@ export type TrackerWsEventType =
   | "sprint_hint.created"
   | "sprint_hint.updated"
   | "sprint_hint.dismissed"
-  | "sprint_hint.resolved";
+  | "sprint_hint.resolved"
+  | "message.new";
 
 export interface ImportProgressPayload {
   type: "import.progress";

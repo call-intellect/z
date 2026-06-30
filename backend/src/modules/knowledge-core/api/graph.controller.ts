@@ -444,14 +444,14 @@ export class KnowledgeGraphController {
   ): Promise<GraphNodeDto | null> {
     if (nodeType === 'block') {
       const b = await this.prisma.ideaBlock.findUnique({
-        where: { id },
+        where: { id_tenantId: { id, tenantId } },
         select: { id: true, name: true, tenantId: true },
       });
       if (!b || b.tenantId !== tenantId) return null;
       return { id: b.id, type: 'block', label: b.name, depth: 0 };
     }
     const e = await this.prisma.entity.findUnique({
-      where: { id },
+      where: { id_tenantId: { id, tenantId } },
       select: { id: true, canonicalName: true, tenantId: true },
     });
     if (!e || e.tenantId !== tenantId) return null;

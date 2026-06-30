@@ -7,6 +7,7 @@ import {
   MOBILE_MANAGER_TABS,
   getDesktopNavRefs,
   isDesktopNavReachable,
+  resolveDesktopNav,
 } from "./nav-config";
 
 describe("навигация — mobile ⊆ desktop (Ф6)", () => {
@@ -56,5 +57,16 @@ describe("навигация — mobile ⊆ desktop (Ф6)", () => {
   it("«Ваши предложения» (/feedback) присутствует в десктоп-навигации", () => {
     expect(DESKTOP_NAV_HREFS).toContain("/feedback");
     expect(isDesktopNavReachable("/feedback")).toBe(true);
+  });
+
+  it("владелец видит пункт «Спросить» (/chat)", () => {
+    const sections = resolveDesktopNav({
+      role: "owner",
+      isSuperAdmin: false,
+      deskEnabled: false,
+      isSupportAgent: false,
+    });
+    const hrefs = sections.flatMap((s) => s.items).map((it) => it.href);
+    expect(hrefs).toContain("/chat");
   });
 });

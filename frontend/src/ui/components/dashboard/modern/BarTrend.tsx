@@ -30,7 +30,7 @@ export function BarTrend({
         {title}
       </CardTitle>
       <div className="mt-3" style={{ height }}>
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={160}>
           <BarChart
             data={data}
             margin={{ top: 8, right: 8, bottom: 0, left: -22 }}

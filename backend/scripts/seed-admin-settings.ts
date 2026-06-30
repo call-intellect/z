@@ -730,12 +730,6 @@ function buildSettings(): SettingSeed[] {
       'Привязка автора (subject) на ВСЕ типы знания, не только reasoning (false = только reasoning-семейство)',
     ],
     [
-      'knowledge.meetingTasksToTrackerOnly',
-      envBool('KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY', true),
-      'high',
-      'Единая видимая задача из встречи: true = только tracker Issue (Task не создаётся), false = текущее поведение (Task)',
-    ],
-    [
       'knowledge.ideaDirectPathEnabled',
       envBool('KNOWLEDGE_IDEA_DIRECT_PATH_ENABLED', true),
       'high',
@@ -1565,6 +1559,12 @@ function buildSettings(): SettingSeed[] {
       'Минимальная уверенность (0-1) классификатора, с которой свободный текст без reply засчитывается ответом на открытый probe (Telegram/MAX)',
     ],
     [
+      'probe.implicit_match_max_age_days',
+      envInt('PROBE_IMPLICIT_MATCH_MAX_AGE_DAYS', 3),
+      'low',
+      'Окно (дни) для неявного зачёта свободного текста ответом на открытый probe: вопросы старше этого возраста не участвуют в неявном сопоставлении (явный reply-to остаётся всегда). По умолчанию 3',
+    ],
+    [
       'probe.qualityJudgeEnabled',
       envBool('PROBE_QUALITY_JUDGE_ENABLED', true),
       'low',
@@ -1646,6 +1646,20 @@ function buildSettings(): SettingSeed[] {
       ],
       'low',
       'Probe: для каких поводов Кора готовит черновик ответа из памяти',
+    ],
+    ['probe.dialogEnabled', true, 'low', 'Рубильник диалогового уточнения probe (kill-switch, ON)'],
+    [
+      'probe.dialogEscalateMaxConfidence',
+      0.6,
+      'low',
+      'Ниже этого confidence ответ уходит в уточняющий ход, а не применяется',
+    ],
+    ['probe.dialogMaxTurns', 2, 'low', 'Лимит ходов диалога до эскалации probe владельцу/админу'],
+    [
+      'probe.dialogConfirmTtlHours',
+      48,
+      'low',
+      'TTL ожидания подтверждения/уточнения до перевода в abandoned (часы)',
     ],
   ];
   for (const [key, value, severity, description] of probe) {

@@ -37,6 +37,7 @@ import {
   type IdeaStatus,
 } from "@/domain/idea";
 import { Chip } from "@/ui/components/shared/Chip";
+import { ProvenanceChip } from "@/ui/components/provenance/ProvenanceChip";
 import { ConfirmDialog } from "@/ui/components/shared/ConfirmDialog";
 import { EmptyState } from "@/ui/components/shared/EmptyState";
 import { Button } from "@/ui/shadcn/button";
@@ -749,8 +750,18 @@ export function IdeaDetailPane({
       </section>
 
       <section className="text-xs text-fg-tertiary">
-        Источников: {idea.sourceBlockIds.length} · Уверенность Коры:{" "}
-        {(idea.confidence * 100).toFixed(0)}%
+        {idea.sourceBlockIds.length > 0 ? (
+          <ProvenanceChip
+            orgId={currentOrgId}
+            entityType="idea"
+            entityId={idea.id}
+          />
+        ) : (
+          <div>Создано вручную — источника нет</div>
+        )}
+        <div className="mt-2">
+          Уверенность Коры: {(idea.confidence * 100).toFixed(0)}%
+        </div>
       </section>
 
       <section className="rounded-md border border-border-subtle bg-bg-overlay/30 p-3">

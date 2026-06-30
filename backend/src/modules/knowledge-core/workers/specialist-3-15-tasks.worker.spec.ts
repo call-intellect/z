@@ -15,7 +15,6 @@ interface Mocks {
     incCoreSpecialistSkipped: ReturnType<typeof vi.fn>;
     observeCoreSpecialistPipelineDuration: ReturnType<typeof vi.fn>;
   };
-  cfg: { getDynamic: ReturnType<typeof vi.fn> };
 }
 
 function build(): { worker: Specialist315TasksWorker; m: Mocks } {
@@ -26,13 +25,6 @@ function build(): { worker: Specialist315TasksWorker; m: Mocks } {
       incCoreSpecialistSkipped: vi.fn(),
       observeCoreSpecialistPipelineDuration: vi.fn(),
     },
-    cfg: {
-      getDynamic: vi
-        .fn()
-        .mockImplementation(
-          (_key: string, _env: string | undefined, def: unknown) => def,
-        ),
-    },
   };
   const worker = new Specialist315TasksWorker(
 
@@ -41,8 +33,6 @@ function build(): { worker: Specialist315TasksWorker; m: Mocks } {
     m.svc as any,
 
     m.metrics as any,
-
-    m.cfg as any,
   );
   return { worker, m };
 }
@@ -88,23 +78,8 @@ describe('Specialist315TasksWorker.handle', () => {
     );
   });
 
-  it('(j) kill-switch legacy → processBlock НЕ вызван; spine → вызван', async () => {
+  it('(j) action_item + canonical → processBlock вызван', async () => {
     m.prisma.ideaBlock.findUnique.mockResolvedValue(blockOf('action_item'));
-    m.cfg.getDynamic.mockImplementation((key: string) =>
-      key === 'tracker.taskExtractionMode' ? 'legacy' : undefined,
-    );
-
-    await worker.handle(job());
-
-    expect(m.svc.processBlock).not.toHaveBeenCalled();
-    expect(m.metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'mode_legacy' }),
-    );
-
-    m.svc.processBlock.mockClear();
-    m.cfg.getDynamic.mockImplementation(
-      (_key: string, _env: string | undefined, def: unknown) => def,
-    );
 
     await worker.handle(job());
 

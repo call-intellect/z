@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { MessageService } from '../../messaging/services/message.service';
+import type { WorkChatService } from '../../messaging/services/work-chat.service';
 import type { S3Service } from '../../recordings/s3.service';
 import type { TrackerEventsService } from '../services/tracker-events.service';
 
@@ -205,6 +207,9 @@ function buildServices(prisma: PrismaService): {
   s3: S3Service;
   events: TrackerEventsService;
   metrics: BusinessMetricsService;
+  workChat: WorkChatService;
+  messageService: MessageService;
+  insertHistorical: ReturnType<typeof vi.fn>;
 } {
   const s3: S3Service = {
     putObject: vi.fn(async () => undefined),
@@ -215,7 +220,16 @@ function buildServices(prisma: PrismaService): {
   const metrics: BusinessMetricsService = {
     incImportIssueProcessed: vi.fn(),
   } as unknown as BusinessMetricsService;
-  return { prisma, s3, events, metrics };
+  let seq = 0;
+  const insertHistorical = vi.fn(async () => {
+    seq += 1;
+    return { messageId: `msg-${seq}`, deduped: false };
+  });
+  const workChat = {
+    ensureWorkChat: vi.fn(async () => ({ conversationId: 'conv-1' })),
+  } as unknown as WorkChatService;
+  const messageService = { insertHistorical } as unknown as MessageService;
+  return { prisma, s3, events, metrics, workChat, messageService, insertHistorical };
 }
 
 describe('Bitrix24ImportStrategy.run', () => {
@@ -284,7 +298,7 @@ describe('Bitrix24ImportStrategy.run', () => {
     expect(calls.issueCreate).toHaveBeenCalledTimes(3);
     expect(calls.projectCreate).toHaveBeenCalledTimes(2);
     expect(calls.issueStateCreate).toHaveBeenCalledTimes(14);
-    expect(calls.issueCommentCreate).toHaveBeenCalledTimes(1);
+    expect(services.insertHistorical).toHaveBeenCalledTimes(1);
     expect(calls.issueUpdate).toHaveBeenCalled();
   });
 

@@ -7,14 +7,6 @@ import { operationsDashboardApi } from '@/api/operations-dashboard.api';
 import { fromPromiseNetworkApi } from '@/domain/promise-network';
 import { CardTitle, CHART, GlassCard, GRAD } from '@/ui/components/dashboard/modern';
 
-/**
- * ТЗ coo-orphan-agents Ф7 — виджет «Перегруз ответственностью» на COO-доске.
- *
- * Self-fetch через SWR на `operationsDashboardApi.getPromiseNetwork()`. Снапшот
- * `PromiseNetworkSnapshot` пишется cron'ом еженедельно (по понедельникам), поэтому
- * «нет данных» — ожидаемое состояние в первую неделю. Показываем accumulators
- * (топ-5): на ком висит много обещаний (входящих) при малой отдаче (исходящих).
- */
 export function PromiseOverloadWidget() {
   const swr = useSWR(
     ['operations-promise-network'],
@@ -30,6 +22,11 @@ export function PromiseOverloadWidget() {
       <CardTitle icon={<Network size={16} />} grad={GRAD.violet}>
         Перегруз ответственностью
       </CardTitle>
+      {data && data.hasData && accumulators.length > 0 ? (
+        <p className="mt-1 text-xs" style={{ color: CHART.faint }}>
+          в сети {accumulators.length} связанных
+        </p>
+      ) : null}
       <div className="mt-4">
         {swr.isLoading ? (
           <p className="text-sm" style={{ color: CHART.dim }}>Загрузка…</p>

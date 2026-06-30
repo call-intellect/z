@@ -14,6 +14,8 @@ relates_to:
   - plans/tz/2026-06-17-cora-feed-into-dashboards.md
 supersedes_partially: plans/tz/2026-06-02-main-screen-umbrella-tails-finalization.md  # роль FAB у AssistantSidebar
 ---
+> ⚑ **ПОГЛОЩЕНО (2026-06-25):** фронтенд-часть (плавающая кнопка → сразу чат, слим-пикер «Помощник | Клоны», единый колокольчик уведомлений) вошла в Ф1 единого ТЗ [`2026-06-25-edinyy-pomoshnik-arhitektura.md`](2026-06-25-edinyy-pomoshnik-arhitektura.md). Реализацию вести по нему; этот файл — детальная картография фронта (компоненты, маппинг уведомлений, фазы Ф1–Ф4) для копипасты.
+>
 > Анализ: `plans/analysis/2026-06-20-assistant-fab-notifications-and-clone-picker.md` (status: research-complete) · Решения владельца согласованы: 2026-06-20
 
 # ТЗ — Яркий вход в помощника + кликабельные уведомления в колокольчике + пикер собеседника

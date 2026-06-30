@@ -4,6 +4,10 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import {
+  CHANNEL_CLARIFY_TTL_SECONDS,
+  channelClarifyKey,
+} from '../../conversational/types/channel-clarify-key';
 import type { InboundMessage } from '../../conversational/types/channel.types';
 import { RbacService } from '../../rbac/rbac.service';
 import {
@@ -138,6 +142,7 @@ export class AssistantChannelBridge implements OnModuleInit {
       let finalText = '';
       let messageId = '';
       let hadOkToolResult = false;
+      let needsClarification = false;
       let outcome: 'ok' | 'error' | 'quota' = 'ok';
       let confirmRequired: {
         toolName: string;
@@ -160,6 +165,7 @@ export class AssistantChannelBridge implements OnModuleInit {
             break;
           case 'message':
             finalText = event.text;
+            needsClarification = event.needsClarification === true;
             break;
           case 'done':
             messageId = event.messageId;
@@ -219,6 +225,22 @@ export class AssistantChannelBridge implements OnModuleInit {
           this.logger.warn(
             { err: err instanceof Error ? err.message : String(err) },
             'assistant_turn: Redis set упал — память хода не сохранена (non-fatal)',
+          );
+        }
+      }
+
+      if (msg.originChannelBindingId && outcome === 'ok' && !confirmRequired) {
+        const clarifyKey = channelClarifyKey(msg.originChannelBindingId);
+        try {
+          if (needsClarification) {
+            await this.redis.client.set(clarifyKey, '1', 'EX', CHANNEL_CLARIFY_TTL_SECONDS);
+          } else {
+            await this.redis.client.del(clarifyKey);
+          }
+        } catch (err) {
+          this.logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'assistant_turn: Redis set/del clarify-ключа упал (non-fatal)',
           );
         }
       }

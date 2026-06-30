@@ -20,7 +20,13 @@ export function KnowledgeVelocityKpi({ data }: Props) {
   const numericValue = median === null ? Number.MAX_SAFE_INTEGER : median;
 
   const value =
-    median === null ? "—" : <CountUp to={median} format={formatHours} />;
+    median === null ? (
+      <span className="text-base font-medium text-fg-tertiary">
+        Накапливаем данные
+      </span>
+    ) : (
+      <CountUp to={median} format={formatHours} />
+    );
 
   return (
     <KpiHero

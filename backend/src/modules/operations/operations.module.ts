@@ -8,6 +8,7 @@ import { ProbeModule } from '../probe/probe.module';
 import { TrackerModule } from '../tracker/tracker.module';
 
 import { DailyDigestController } from './controllers/daily-digest.controller';
+import { MonthlyDigestController } from './controllers/monthly-digest.controller';
 import { MyCheckInsController } from './controllers/my-check-ins.controller';
 import { MyCustomerRiskController } from './controllers/my-customer-risk.controller';
 import { MyDailyBriefController } from './controllers/my-daily-brief.controller';
@@ -34,6 +35,7 @@ import { DecisionImplementationService } from './services/decision-implementatio
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
 import { KnowsWhoService } from './services/knows-who.service';
+import { MonthlyDigestService } from './services/monthly-digest.service';
 import { OnboardingRampService } from './services/onboarding-ramp.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
 import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
@@ -63,6 +65,7 @@ import { MeetingCheckinListener } from './workers/meeting-checkin.listener';
 import { KnowledgeAtRiskCron } from './workers/knowledge-at-risk.cron';
 import { OnboardingRampCron } from './workers/onboarding-ramp.cron';
 import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cron';
+import { OperationsMonthlyDigestCron } from './workers/operations-monthly-digest.cron';
 import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.cron';
 import { PersonalDailyBriefCron } from './workers/personal-daily-brief.cron';
 import { CheckInConflictDetectorCron } from './workers/personal-relation-builder.worker';
@@ -93,6 +96,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     MyDailyBriefController,
     MyWeeklyPerPersonController,
     MyDailyValueController,
+    MonthlyDigestController,
   ],
   providers: [
     DailyCheckInService,
@@ -112,6 +116,8 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     WeeklyDigestService,
     WeeklyPerPersonService,
     OperationsWeeklyDigestCron,
+    MonthlyDigestService,
+    OperationsMonthlyDigestCron,
     CheckinSentimentAnalyzerWorker,
     CheckinSentimentBatchCron,
     CommitmentsService,
@@ -169,6 +175,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     PersonalRelationService,
     CheckinParserService,
     WeeklyDigestService,
+    MonthlyDigestService,
     CommitmentsService,
     Specialist39PromiseKeeperService,
     DailyDigestService,

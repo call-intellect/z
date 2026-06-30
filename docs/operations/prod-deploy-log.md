@@ -71,6 +71,314 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-29 — Месяц компании + навигация по датам/архив (ветка feature/month-company-and-report-navigation)
+
+> Две парные фичи. **Месяц компании** — месячный executive-брифинг владельца на `/month` (зеркало «Недели компании»): новая модель `MonthlyOperationsDigest` + `MonthlyDigestService` (свод 4 недель одним LLM-вызовом) + `OperationsMonthlyDigestCron` (1-е число) + `MonthCompanyHero` над canvas. **Навигация/архив** — `available-periods` на 3 ритма + общий `PeriodNavigator` (‹ › + клик-дата + архив-список) + empty-state на героях дня/недели/месяца. Коммиты `9c36a0b6..82e3a893`.
+
+- **Шаг 1 — ENV: 2 новых опциональных** (`backend/src/common/config/env.schema.ts`): `COO_MONTHLY_DIGEST_ENABLED` (zBool default true) + `COO_MONTHLY_DIGEST_LOCAL_HOUR` (int 0..23 default 6). Оба — ENV-fallback для крутилок AdminSetting (`betaOps.monthlyDigestEnabled`/`monthlyDigestLocalHour`, читаются через `resolveSync` admin→ENV→code, работают и без ENV). Kill-switch `betaOps.monthlyDigestEnabled` — тип A (ВКЛ, действий владельца не требует). Крутилка лимита архива `operations.report_archive.recent_limit` (default 12) — чистый AdminSetting (getDynamic, ENV не заведён). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260630000000_add_monthly_operations_digest` — `CREATE TABLE "monthly_operations_digests"` (periodYm VarChar(7) + bodyMarkdown/metricsJson/sourcesJson/llmTaskRouteId + verdictJson/letterJson/goalAlignmentMonthJson/weekTrendJson/shortSummary/deliveredAt/externalSource) + INDEX + UNIQUE `[tenantId,periodYm]` + FK → `Org` ON DELETE CASCADE. Аддитивная (один CREATE TABLE, без DROP), без потери данных, **backfill НЕ нужен** (заполнится ближайшим прогоном `operations-monthly-digest` крона 1-го числа; до этого `/month` отдаёт «сухой» fallback / empty-state). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«MonthlyOperationsDigest».
+- **Шаг 7 — Seed (3 сида, УЖЕ в STEPS, идемпотентны):** доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts [--mode all|update]`:
+  - `scripts/seed-llm-task-routes-month-company.ts` (`phase:'seed-llm-core'`) — route taskType `operations-monthly-digest` (primary deepseek-v4-pro, secondary gpt-5.4-mini, tertiary qwen3.5:9b).
+  - `scripts/seed-admin-setting-month-company.ts` (`phase:'seed-base'`) — крутилки `betaOps.monthlyDigestEnabled`=true / `betaOps.monthlyDigestLocalHour`=6 (защита admin-edited).
+  - `scripts/seed-admin-setting-report-archive.ts` (`phase:'seed-base'`) — крутилка `operations.report_archive.recent_limit`=12.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`MonthlyDigestService` + `monthly-digest.prompt.ts` — один capable LLM-вызов json_schema strict → вердикт/письмо/компас/тренд + `clampMonthVerdict`; `OperationsMonthlyDigestCron` `@Cron('0 * * * *')` + МСК-гейт 1-е число/час; `MonthlyDigestController` 4 эндпоинта; `available-periods` на daily/weekly/monthly; `weekly-per-person` goalContributionNet range-sum; метрики `coo_monthly_digest_*`). Frontend (`MonthCompanyHero` на `/month` owner-only; `PeriodNavigator`+`PeriodEmptyState` на героях дня/недели/месяца; value-recap переведён на `PeriodNavigator`).
+- **Шаг 12 — Smoke** (после выката): `psql \d "monthly_operations_digests"` содержит `periodYm`/`verdictJson`/`weekTrendJson`/`deliveredAt`; крон `operations-monthly-digest` в логах виден (часовой, гейт 1-го числа); после `POST /api/v1/dashboard/operations/monthly-digest/generate?period=YYYY-MM` (admin) запись несёт непустой `verdictJson`; Swagger `GET monthly-digest/{latest,available-periods}` + `GET {daily,weekly}-digest/available-periods` → 200 под owner, 403 под member; на `/month` под owner виден «Месяц компании» (вердикт+тренд по неделям → письмо → компас+темп → таблица план/факт → решить/фокус); на героях дня/недели/месяца работает ‹ ›-навигатор + архив-попап + «К последнему». Флаги `betaOps.monthlyDigestEnabled` / `operations.report_archive.recent_limit` в админке.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-29 — День компании: ежедневный брифинг владельца на `/dashboard` (ветка dev)
+
+> Расширение существующего дневного дайджеста (`DailyOperationsDigest` + `operations-daily-digest` taskType + `OperationsDailyDigestCron` + `DailyDigestService`), НЕ новый пайплайн/модель/агент. Owner-герой `DayCompanyHero` над `DashboardCanvas`. Коммиты `dd9b809d..a66e13ee`.
+>
+> **🟢 2 АДДИТИВНЫЕ МИГРАЦИИ PRISMA (авто через `migrate deploy`): `20260629000000_add_day_company_fields_to_digest` (3 nullable JSONB-колонки в `daily_operations_digests`) + `20260629010000_add_week_company_fields_to_digest` (4 nullable JSONB-колонки в `weekly_operations_digests`). 🟢 НОВЫХ ENV/ФЛАГОВ НЕТ** (kill-switch'и `operations.daily_digest.enabled` / `weeklyDigestEnabled` переиспользованы — теперь гейтят «День/Неделю компании»). 🟢 1 ДЕФОЛТ КРУТИЛКИ изменён (`betaOps.weeklyDigestLocalHour` 8→6, доезжает сидом в STEPS). Patch/backfill/postgres-init — **НЕ требуются**. Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Новый флаг НЕ вводился — переиспользован существующий kill-switch `operations.daily_digest.enabled` (он теперь гейтит синтез+доставку «Дня компании»). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260629000000_add_day_company_fields_to_digest` — `ALTER TABLE "daily_operations_digests"` ×3: `ADD COLUMN "verdictJson" JSONB` (вердикт дня: overall + 4 оси) + `ADD COLUMN "letterJson" JSONB` (письмо-проза) + `ADD COLUMN "goalAlignmentDayJson" JSONB` (дневной компас). Аддитивная (3× ADD COLUMN JSONB, без DROP), без потери данных, **backfill НЕ нужен** (поля nullable; заполняются ближайшим прогоном `operations-daily-digest` cron'а в 03:00 UTC; до этого «День компании» отдаёт «сухой» fallback). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«DailyOperationsDigest» (расширение «День компании»).
+- **Шаг 4 — Prisma — обязательно, авто** (тот же `migrate deploy`): `20260629010000_add_week_company_fields_to_digest` — `ALTER TABLE "weekly_operations_digests"` ×4: `ADD COLUMN "verdictJson" JSONB` + `ADD COLUMN "letterJson" JSONB` + `ADD COLUMN "goalAlignmentWeekJson" JSONB` + `ADD COLUMN "dayTrendJson" JSONB`. Аддитивная (4× ADD COLUMN JSONB, без DROP), без потери данных, **backfill НЕ нужен** (поля nullable; заполняются ближайшим прогоном `operations-weekly-digest` cron'а в пн 06:00 локали Org; до этого «Неделя компании» отдаёт «сухой» fallback). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«WeeklyOperationsDigest» («Неделя компании»).
+- **Шаг 7 — Seed (крутилка, сид УЖЕ в STEPS `phase:'seed-base'`):** дефолт `betaOps.weeklyDigestLocalHour` изменён 8→6 (пн 06:00) в `scripts/seed-admin-setting-llm-models-and-gray.ts`. Доезжает автоматически на агрегаторе: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` — upsert обновит `value` (настройка не admin-edited; admin-edited значение сохраняется). Новых ENV нет.
+- **Шаги 5/6/8/9/10 (postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Новых HNSW/GIN-индексов, patch/backfill-скриптов нет. risksSummary/ideasSummary персистятся в существующем `metricsJson`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`DailyDigestService.generate` + `daily-digest.prompt.ts` — один capable LLM-вызов json_schema strict → вердикт/письмо/компас + `clampVerdict`; `OperationsDailyDigestCron` `@Cron('0 3 * * *')`; `getStuckCrossProject` += `assigneeUserId`/`assigneeName`/`dueDate`; value-strip директора += `tasksResolved`/`ideasCollected`). Frontend (`DayCompanyHero` над `DashboardCanvas` на `/dashboard`, owner-only).
+- **Шаг 12 — Smoke** (после выката): `psql \d "daily_operations_digests"` содержит `verdictJson`/`letterJson`/`goalAlignmentDayJson`; крон `operations-daily-digest` в логах стоит на 03:00 UTC; после прогона `POST /api/v1/dashboard/operations/daily-digest/generate` (admin) запись несёт непустые `verdictJson`/`letterJson`; на `/dashboard` под owner виден герой «День компании» (обложка-вердикт → письмо → компас → зависшие задачи → что мешает/идеи → польза Коры). Флаг `operations.daily_digest.enabled` в админке.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-29 — Утренняя сводка задач: ежедневный персональный дайджест открытых задач (ветка feature/morning-tasks-digest)
+
+> ТЗ `plans/tz/2026-06-29-morning-tasks-digest.md`. Новый eventType `tasks.daily_open` + `MorningTasksDigestService` (сбор/группировка) + `MorningTasksDigestCron` (ежечасный тик МСК + гейт по часу + дедуп по `Notification` + отправка через `ConversationalService`). Переиспользует «почтальона», адаптеры, AdminSetting. **Новых Prisma-моделей/колонок/миграций НЕТ** (дедуп по существующей `Notification`). Коммиты `bb3ef20d..d65dfd23`.
+>
+> **🟢 НОВЫХ ENV НЕТ. 🟢 МИГРАЦИЙ НЕТ. 🟢 1 НОВЫЙ СИД** (`seed-admin-setting-morning-tasks-digest.ts`, 5 крутилок, зарегистрирован в STEPS `phase:'seed-base'`). 🟢 1 НОВЫЙ kill-switch `tracker.morningDigest.enabled` (AdminSetting, code-default true, Ship-On ON). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Все 5 настроек — чистые AdminSetting (`tracker.morningDigest.{enabled,hourMsk,channels,maxItemsTotal,sendWhenEmpty}`), читаются через `getDynamic` с code-fallback (работают до сида — Ship-On). kill-switch `tracker.morningDigest.enabled` — тип A (ВКЛ, действий владельца не требует). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 (Prisma) — НЕ затронут.** Новых моделей/колонок нет; идемпотентность рассылки — дедуп по существующей `Notification` (eventType `tasks.daily_open` за МСК-сутки).
+- **Шаги 5/6/8/9/10 (postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.**
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS `phase:'seed-base'`):** `seed-admin-setting-morning-tasks-digest.ts` сидит 5 ключей (`enabled`=true, `hourMsk`=9, `channels`=[in_app,email_smtp,telegram_bot,max_bot], `maxItemsTotal`=50, `sendWhenEmpty`=true), защита admin-edited. Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Повтор = no-op (created=0).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`MorningTasksDigestCron` `@Cron('0 * * * *', Europe/Moscow)`, `MorningTasksDigestService`, рендер `tasks.daily_open` в telegram/max/email-адаптерах, метрика `z_tracker_morning_digest_total`). Frontend (label + рендер сводки в `/me/notifications`, UI-группа «Утренняя сводка задач» в `/admin/tracker`).
+- **Шаг 12 — Smoke** (после выката): `docker compose exec backend grep -rl "tasks.daily_open" dist || true`; в нужный МСК-час лог `MorningTasksDigestCron`/`morning-tasks-digest: проход завершён`; метрика `z_tracker_morning_digest_total` на `/metrics`; группа «Утренняя сводка задач» с 5 полями в `/admin/tracker`; уведомление «Задачи на сегодня» приходит сотруднику с открытыми задачами (in_app/email/telegram/max). Флаг `tracker.morningDigest.enabled` в админке.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-28 — Единый чат: Ф6a backend push-фундамент + удаление аккаунта + блокировка пользователя (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф6a. Транспорт-агностичный `PushService` (APNs/FCM/RuStore/web-push) + `PushToken` + push-канал conversational для офлайн-сигнала `chat.new_message` (ФЗ-41: payload без тела/имён). Самоудаление аккаунта (App Review 5.1.1(v)) + блокировка собеседника в dm + жалоба на сообщение (UGC-модерация App Store/Play).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260628205102_push_tokens` (ALTER TYPE `ChannelKind` += `push` + CREATE TABLE `PushToken`/`UserBlock`/`MessageReport`). 🟡 1 НОВЫЙ ENV-флаг `CHAT_PUSH_ENABLED` (kill-switch ON) + опциональные push-секреты (APNS_*/FCM_*/RUSTORE_*/VAPID_* теперь в env.schema).** 2 новые крутилки (расширен существующий сид `seed-admin-setting-chat.ts`). Docker rebuild backend.
+
+- **Шаг 1 — ENV: 1 новый флаг + push-секреты.** `CHAT_PUSH_ENABLED` (zBool default true, kill-switch тип A — ВКЛ, действий владельца не требует; выкл → `PushChannelAdapter.send` no-op). **Опциональные push-секреты (наличие = отправка по транспорту, отсутствие = транспорт no-op, R34):** `APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_PRIVATE_KEY`/`APNS_BUNDLE_ID`/`APNS_USE_SANDBOX`, `FCM_PROJECT_ID`/`FCM_CLIENT_EMAIL`/`FCM_PRIVATE_KEY`, `RUSTORE_PROJECT_ID`/`RUSTORE_SERVICE_TOKEN`. **Также формализованы в env.schema:** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT`/`PUSH_MAX_FAILURES` (раньше читались мимо схемы — теперь часть `PushSchema`; без значений web-push остаётся no-op как и был). Реестр — `docs/operations/feature-flags.md` (push-секреты в разделе «🔑 НЕ флаг, но ждёт прод-ENV»).
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260628205102_push_tokens` — `ALTER TYPE "ChannelKind" ADD VALUE IF NOT EXISTS 'push'` + `CREATE TABLE "PushToken"` (unique `[userId,transport,token]`, index `[tenantId,userId]`, FK → `User` `ON DELETE CASCADE`) + `CREATE TABLE "UserBlock"` (unique `[tenantId,blockerUserId,blockedUserId]`, FK ×2 → `User` `ON DELETE CASCADE`) + `CREATE TABLE "MessageReport"` (2 индекса). Аддитивная (ADD VALUE + CREATE TABLE, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«PushToken / UserBlock / MessageReport».
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS, расширен существующий):** доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
+  - `seed-admin-setting-chat.ts` (`phase:'seed-base'`) — `push_debounce_seconds` (30 — окно дебаунса push, код-fallback 30) + `unread_smart_badge` (true — умный бейдж непрочитанного, код-fallback true).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (push: `PushService` транспорт-агностичный + `ApnsSender`/`FcmSender`/`RustoreSender` + `PushChannelAdapter` (kind=push, регистрируется в `ChannelRegistry`); `PushTokensController` POST/DELETE `/push/tokens`; `chat.new_message` policy += `push`. accounts: `AccountDeletionController` POST `/account/delete` + `AccountsService.deleteAccount` (soft-delete + чистка push/binding/member + revoke сессий). messaging: `UserBlockService` + `MessageReportService`; `block-member`/`report` эндпоинты; dm-send-гард на `UserBlock`).
+- **Шаг 12 — Smoke** (после выката): Swagger `POST /api/v1/push/tokens` + `DELETE`; `POST /api/v1/account/delete`; `POST /api/v1/conversations/:id/block-member`; `POST /api/v1/messages/:messageId/report`. Флаг `CHAT_PUSH_ENABLED` в админке. `psql \dT "ChannelKind"` содержит `push`; `\d "PushToken"`/`"UserBlock"`/`"MessageReport"` существуют. Боевая отправка push требует прод-кредов (APNS_*/FCM_*/RUSTORE_*/VAPID_*) — без них транспорты no-op, ядро не падает.
+
+---
+
+### 📄 2026-06-28 — Единый чат: Ф3.5a внешняя переписка с клиентами + relay-access фикс (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф3.5a. Ядро внешней переписки (magic-link к одному разговору, sha256-хэш токена) + security-фикс relay: `internal`-сообщения больше не утекают клиенту-члену (эмит только в staff-room).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260628190000_external_chat` (CREATE TABLE `ConversationAccessLink` + `User += kind/verified`). 🟡 1 НОВЫЙ ENV-флаг `EXTERNAL_CHAT_ENABLED` (kill-switch ON).** 2 новые крутилки (расширен существующий сид). Docker rebuild backend.
+
+- **Шаг 1 — ENV: 1 новый флаг** `EXTERNAL_CHAT_ENABLED` (zBool default true, kill-switch тип A — ВКЛ, действий владельца не требует; выкл → `startExternalConversation` бросает `503 EXTERNAL_CHAT_DISABLED`). В `ADMIN_FALLBACK_ENV_KEYS`. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260628190000_external_chat` — `CREATE TABLE "ConversationAccessLink"` (unique `tokenHash`, index `conversationId`, FK → `Conversation` `ON DELETE CASCADE`) + `ALTER TABLE "User" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'member'` + `ADD COLUMN "verified" BOOLEAN NOT NULL DEFAULT false`. Аддитивная (CREATE TABLE + ADD COLUMN, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«ConversationAccessLink / User.kind/verified».
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS, расширен существующий):** доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
+  - `seed-admin-setting-chat.ts` (`phase:'seed-base'`) — `external_link_ttl_hours` (168 — TTL magic-link, код-fallback 168) + `external_inbound_rate_limit` (30 — лимит входящих/час, код-fallback 30).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging/external: `AccessLinkService` create/verify/revoke/claim хэш-токена; `ExternalConversationService` старт внешнего чата + email-приглашение через `MailService.sendPlain` (доставка по телефону — TODO Ф3.5b); `ExternalConversationController POST /external-conversations`; `ExternalGuestGuard` + JWT `signExternalGuestSession`/`verifyExternalGuestSession`; tracker.gateway `conversationStaffRoom` + join staff для не-client; outbox-relay фильтр access internal→staff-room).
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/v1/external-conversations` (POST) присутствует; флаг `EXTERNAL_CHAT_ENABLED` в админке; `psql \d "ConversationAccessLink"` существует; `\d "User"` имеет `kind`/`verified`.
+
+---
+
+### 📄 2026-06-28 — Единый чат: Ф5a AI-крючки — chat.ingest + voice ASR + системное сообщение закрытия встречи (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф5 (R17/R20). Чат кормит граф: после `relay` (доставка) сообщение в `feedsGraph=true`-треде (вкл. dm, кроме `authorType='system'`) ставится job `chat.ingest` → `ChatIngestService` → `ingest.ingest(kind='chat_message', sourceExternalId='msg:<id>')` (один источник `Message`, без двойного ingest; внешний мост Ф0 — отдельный путь). Голосовые: при отправке сообщения с `voiceUrl` ставится `voice.transcribe` → ASR Vox → `Message.voiceTranscript` + пере-enqueue `chat.ingest` (chat-ingest берёт `voiceTranscript`, если `content` пуст). Закрытие встречи (`transitionStatus → ai_ready/ai_failed`) → системное `Message(authorType='system')` в work_chat связанных задач (`Issue.linkedMeetingIds has meetingId`), идемпотентно по `clientMessageId='meeting-closed:<id>'`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟡 1 НОВЫЙ ENV-флаг `CHAT_INGEST_ENABLED` (kill-switch ON). 2 новые BullMQ-очереди (`chat.ingest`, `voice.transcribe`).** Новых seed/patch/backfill/postgres-init НЕТ. Docker rebuild backend.
+
+- **Шаг 1 — ENV: 1 новый флаг** `CHAT_INGEST_ENABLED` (zBool default true, kill-switch тип A — ВКЛ, действий владельца не требует; выкл → relay/voice-transcribe не ставят `chat.ingest`, переписка не втекает в граф; доставка/WS/notify не затронуты). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging: `ChatIngestQueueService`+`ChatIngestWorker`+`ChatIngestService`; `VoiceTranscribeQueueService`+`VoiceTranscribeWorker`; relay-триггер `chat.ingest` после markSent; `MessageService.appendSystemMessage` + enqueue `voice.transcribe` на voice; meetings: `MeetingsService.transitionStatus` → системное сообщение в work_chat). Воркеры — in-process через `WorkersModule`, отдельного процесса нет.
+- **Шаг 12 — Smoke** (после выката): флаг `CHAT_INGEST_ENABLED` в админке; в Redis появляются очереди `chat.ingest` и `voice.transcribe` после отправки сообщения/голосового (`grep` логов воркеров `ChatIngestWorker запущен` / `VoiceTranscribeWorker запущен`); отправка обычного сообщения в feedsGraph-тред → IdeaBlock из `Source(type='chat', name='Сообщения Коры')`; закрытие встречи со связанной задачей → системное сообщение в её work_chat (повтор закрытия не дублирует — `meeting-closed:<id>`).
+
+---
+
+### 📄 2026-06-28 — Единый чат: Ф5b AI-крючки — «Что пропустил» + «Спросить Кору» + сообщение→задача/решение (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф5 (R19). Новый `taskType='chat-summary'` (стабильный SYSTEM, переменное в конце user — prompt caching). `GET /conversations/:id/whats-new` → AI-сводка непрочитанного с цитатами `[MSG:<id>]` при N≥`chat_summary_min_messages`. `POST /conversations/:id/ask` → «Спросить Кору» поверх chat-v2 (`askEphemeral`, scope=org) со ссылками на исходные `Message.id` (маппинг `usedBlockIds`→`IdeaBlockEvidence`→`RawEvent.sourceExternalId LIKE 'msg:%'`). `POST /conversations/:id/messages/:messageId/to-task` → intake-кандидат (`source='chat'`, provenance `externalId='msg:<id>'`); `…/to-decision` → `Decision(status='proposed')` с provenance в `previewSourceRef`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ.** 1 новый seed LLM-routes + 2 новые AdminSetting-крутилки (расширен существующий сид). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** Обе крутилки (`chat_summary_min_messages`=5, `chat_summary_idle_days`=3) — чистые AdminSetting (см. Шаг 7). Новых флагов нет (`POST /ask` уважает существующий `CHAT_V2_ENABLED` — выкл → 503).
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS `phase:'seed-base'`, новых сидов НЕТ — расширен существующий):** `seed-admin-setting-chat.ts` теперь сидит `chat_summary_min_messages` (5 — минимум непрочитанных для AI-сводки) + `chat_summary_idle_days` (3). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 (LLM-routes) — Seed маршрута (идемпотентный, авторитетный upsert, НОВЫЙ сид УЖЕ в STEPS `phase:'seed-llm-routes'`):** `docker compose exec backend bun run scripts/seed-llm-task-routes-chat.ts` — маршрут `chat-summary` (primary `deepseek/deepseek-v4-flash`, secondary `openai-via-proxy/gpt-5.4-mini`, tertiary `ollama/qwen3.5:9b`). Уважает `editedByAdmin`. Прогоняется агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging: `ChatSummaryService`+`AskKoraService`+`MessageActionsService`, 4 новых эндпоинта в `ConversationController`; `MessagingModule` импортирует `ChatV2Module` + `forwardRef(TrackerModule)`; новый prompt `chat-summary.prompt.ts`; `IntakeSourceSchema` += `'chat'`).
+- **Шаг 12 — Smoke** (после выката): маршрут `chat-summary` виден в `/admin/ai-models`; `GET /conversations/:id/whats-new` на тред с ≥5 непрочитанными → сводка с `[MSG:<id>]`; `POST /conversations/:id/ask` → ответ + `sourceMessageIds`; `POST …/to-task` → intake-карточка `source='chat'`; `POST …/to-decision` → `Decision(status='proposed')`. Swagger: 4 эндпоинта в теге `messaging / conversations`.
+
+---
+
+### 📄 2026-06-28 — Единый чат: Ф4a бэкенд экрана «Сообщения» — агрегатор `/message-threads` + GIN-поиск `/message-search` (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф4 (INV-A1/A3). Единый контроллер ленты (`InboxController`): `GET /message-threads` (один запрос по `Conversation` члена, фильтр `type`, `sort=recent|active|unread`, `q=` по людям/группам/PROJ-NN, составной курсор) + `GET /message-threads/unread-count` (Redis-кэш TTL 15с) + `GET /message-search` (полнотекст GIN по `Message.contentStripped`). `MessageService.insertMessageRow` теперь заполняет `contentStripped` плейнтекстом (`stripToPlain`) на записи.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 1 НОВЫЙ GIN-индекс в `postgres-init.sql` (авто). 1 новый backfill (в STEPS, опц.).** Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.**
+- **Шаг 5 — postgres-init (новый GIN-индекс, авто на `apply-postgres-init`):** `Message_contentStripped_gin` — `CREATE INDEX IF NOT EXISTS "Message_contentStripped_gin" ON "Message" USING gin (to_tsvector('russian', coalesce("contentStripped", '')))` (русский словарь, как у `IdeaBlock.search_tsv`/`decisions`/`insights`). Нужен полнотексту `/message-search`. Обёрнут в `DO $$ ... IF table 'Message' exists`, идемпотентно (`IF NOT EXISTS`); едет существующим schema-этапом (`apply-prod-deploy --with-schema` или `docker compose exec backend bun run apply-postgres-init`).
+- **Шаг 8 — Backfill (1 новый, УЖЕ в STEPS `phase:'backfill'`, `skipBootstrap`):** `backfill-message-contentstripped.ts` — расшифровывает `Message.content` → `stripToPlain` → пишет в `contentStripped` для существующих сообщений (новые индексируются на записи). Идемпотентно (фильтр `contentStripped: null`, повтор → no-op). Опционален: без него ищутся только сообщения, созданные после выката. Прогон: `docker compose exec backend bun run scripts/backfill-message-contentstripped.ts` (или агрегатором `--mode update`); `--dry-run` для проверки counts.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging: `InboxController` + `InboxService` listThreads/unreadCount/searchMessages; `stripToPlain` util в `insertMessageRow`; `InboxController`/`InboxService` зарегистрированы в `MessagingModule`).
+- **Шаг 12 — Smoke** (после выката):
+  - Swagger `/api/docs` тег `messaging / inbox` показывает `GET /api/v1/message-threads`, `GET /api/v1/message-threads/unread-count`, `GET /api/v1/message-search`.
+  - GIN: после `apply-postgres-init` — `psql \di "Message_contentStripped_gin"` существует.
+  - Поведение (из сессии члена): `/message-threads?type=all` отдаёт разговоры всех kind; `type=ticket` несёт `status/slaBreachedAt`, `work_chat` — `linkedIssue`, прочие — `null`; `sort=active|unread` меняют порядок; `q=PROJ-` фильтрует work_chat; `/message-search?q=<слово>` находит по телу.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-27 — Задача·решение·исполнение — единый контур (ветка feature/task-decision-execution-unified)
+
+> ТЗ `plans/tz/2026-06-27-task-decision-execution-unified-tz.md` (Ф0–Ф5). P0-фикс краша создания задач (advisory-lock Prisma 7) + три класса извлечения (idea/задача/решение) + actionable-решение авто-заводит задачу (`Decision.impliesAction`) + закрытие из разговора (embed-resilience + журнал хода) + дашборд на исполнении + надёжность пайплайна (не терять RawEvent + JSON-ремонт воркеров). Коммиты `66c69295` (Ф0) … `1b27ff2a` (Ф5).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260627210000` (Decision += impliesAction/actionExtractedAt). 🟢 НОВЫХ ENV НЕТ** (все крутилки — чистые AdminSetting). 1 новый kill-switch `knowledge.rawEventRecoveryEnabled` (ON). 1 новый @Cron `raw-event-recovery` (15 мин). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Все крутилки — чистые AdminSetting (см. Шаг 7). 1 новый kill-switch `knowledge.rawEventRecoveryEnabled` (тип A, ВКЛ — действий владельца не требует; выкл → cron восстановления RawEvent не реэнкьюит застрявшие события). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260627210000_decision_implies_action` — `ALTER TABLE "decisions" ADD COLUMN "impliesAction" BOOLEAN NOT NULL DEFAULT false` + `ADD COLUMN "actionExtractedAt" TIMESTAMP(3)`. Аддитивная (ADD COLUMN, без DROP), без потери данных, backfill не нужен (дефолт `false`). **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«impliesAction». ⚠️ Старые решения по дефолту `impliesAction=false` → выпадают из дашборд-метрик stalled/throughput до LLM-ре-экстракции (бэкфилл отложен — см. `second-brain/04_не-сделано/README.md`).
+- **Шаг 7 — Seed крутилок (идемпотентные, ОБА сида УЖЕ в STEPS, новых сидов НЕТ — расширены существующие):** доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
+  - `seed-admin-setting-tracker.ts` (`phase:'seed-base'`) — `tracker.progressFromConversationMinConfidence` (0.6 — порог записи хода выполнения задачи из разговорного блока, анти-fatigue) + `taskClosure.embedMaxAttempts` (3 — ретраев эмбеддера при флапе, корень P7).
+  - `seed-admin-setting-worker-knobs.ts` (`phase:'seed-base'`) — `knowledge.rawEventRecoveryEnabled` (kill-switch ON) + `knowledge.rawEventRecoveryStaleMinutes` (30) + `knowledge.rawEventRecoveryMaxAgeHours` (24) + `knowledge.rawEventRecoveryBatchLimit` (200).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core: Ф0 advisory-lock `$queryRaw`→`$executeRaw` в `specialist-3-15-tasks.service`/`issues.service`; Ф1 три класса в `block-ingest`/`decision-extract`/`task-decision-examples`; Ф2 `decision-extract` += `impliesAction`/`actionTitle` + `specialist-3-3-decisions.maybeEnqueueActionableTask` → intake `source='decision'`; Ф3 `task-completion.handler` embed-ретрай + `IssueProgressUpdate` из разговора; Ф4 `decision-implementation.scoring`/`.service` += `impliesAction`; Ф5 `raw-event-recovery.cron` + `strategic-alignment.worker` JSON-ремонт). Frontend (Ф4 `DecisionsWidget`: today→индикатор-утечка «Решения без действия», список+throughput только в week/month).
+- **Шаг 12 — Smoke** (после выката):
+  - `docker compose logs backend | grep -i "raw-event-recovery"` — новый @Cron тикает (15 мин); при застрявших RawEvent — `реэнкьюй`/`DEAD-LETTER` в логах, метрики `raw_event_recovery_reenqueued_total`/`raw_event_recovery_dead_lettered_total` в `/metrics`.
+  - **P0-смоук Ф0:** `diag logs --search "3-15-tasks"` без `Failed to deserialize column of type 'void'` / failed-транзакций; новая загрузка/встреча с поручением → задачи реально появляются в трекере (раньше дельта 0).
+  - **Ф2:** новое actionable-решение → авто-`Issue` с `DecisionTaskLink('derived')`; `Decision.impliesAction=true`, `actionExtractedAt` проставлен (идемпотентность — повтор не плодит второй intake).
+  - `/metrics` содержит `strategic_alignment_parse_skip_total` (битый ответ LLM → skip, job не падает).
+- **Откат:** kill-switch `knowledge.rawEventRecoveryEnabled=false` (cron-страховка). Миграция аддитивна — отката схемы не требует.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-27 — Слой источника + маршрутизатор поиска по классу запроса (ветка feature/sloy-istochnika-marshrutizator)
+
+> ТЗ `plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md` (Ф1–Ф10). Многомаршрутный retrieval: роутер 5 классов запроса (`QueryClass`) + confidence-gated both-ways + слой источника как первоклассный объект (`SourceEpisode`/`SourceParticipant`/`SourceEntity`) + партиционирование векторных индексов по тенанту + синтез ответа по классу (`answerKind`). Коммиты `df33ea2a` (Ф1) … `e588df15` (Ф9).
+>
+> **🔴 3 МИГРАЦИИ PRISMA (авто через `migrate deploy`): `20260627120000` — ОПАСНАЯ (HASH-партиционирование `IdeaBlock`/`Entity` по `tenantId`, составной PK + FK-рефактор), `20260627130000` (слой источника, аддитивная), `20260627140000` (`IdeaBlock.contextHeaderVersion`, аддитивная). 🟢 НОВЫХ ENV НЕТ** (8 крутилок — чистые AdminSetting). 1 новый kill-switch `knowledge.router_v2_enabled` (ON). HNSW/триграммы в `postgres-init.sql`. 2 новых backfill (в STEPS). Docker rebuild backend.
+>
+> **⚠️ Партиц-миграция `20260627120000` писалась БЕЗ локальной БД (в среде разработки БД не было) — прогнать на staging/пустом проде ДО выката и проверить swap.** Прод почти пуст → swap дёшев; на масштабе конверсия = простой (решение владельца Р8).
+
+- **Шаг 1 — ENV: новых нет.** 8 крутилок — чистые AdminSetting (см. Шаг 7). 1 новый kill-switch `knowledge.router_v2_enabled` (тип A, ВКЛ — действий владельца не требует; выкл → откат на текущий single-route retrieval). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`):
+  - `20260627120000_partition_idea_block_entity_by_tenant` — **ОПАСНАЯ**: HASH-партиционирование `IdeaBlock`/`Entity` по `tenantId` (64 партиции), PK → составной `@@id([id, tenantId])`, все входящие FK (10 на IdeaBlock, 15 на Entity) → составные `(blockId/entityId, tenantId)` (Cascade переиспользуют tenantId; SetNull/self → nullable-компаньоны `mergedIntoTenantId`/`supersededByTenantId`/`entityTenantId`/`sourceIdeaBlockTenantId`), join-таблицы + 1:1-unique получили `tenantId`. **Swap на пустом/почти-пустом проде.** ✅ **2026-06-28 прогнана и принята на чистой локальной БД** — найден и исправлен баг: `RENAME TO *_old` не переименовывает индекс pkey → коллизия `IdeaBlock_pkey`/`Entity_pkey` при `ADD CONSTRAINT` (упало бы и на проде), добавлен `DROP CONSTRAINT IF EXISTS *_pkey` на `*_old`. ⚠️ На проде: если в `_prisma_migrations` есть failed-запись по этой миграции — сначала `migrate resolve --rolled-back 20260627120000_partition_idea_block_entity_by_tenant`, затем `migrate deploy`; после — проверить swap на реальных данных. Детали — [local-dev-setup.md](./local-dev-setup.md) журнал ошибок.
+  - `20260627130000_source_layer` — аддитивная: `CREATE TABLE SourceEpisode` (партиц. по tenantId, embedding) / `SourceParticipant` / `SourceEntity` + обратные связи в `RawEvent`/`Org`/`Person`/`Entity`. Без потери данных.
+  - `20260627140000_idea_block_context_header_version` — аддитивная: `IdeaBlock.contextHeaderVersion` (nullable, гейт идемпотентности ре-эмбеддинга Ф7).
+  - Соответствует `data-model.md` §«Слой источника» + §«Партиционирование IdeaBlock/Entity по tenantId».
+- **Шаг 5 — postgres-init (HNSW + триграммы, авто на `apply-postgres-init`):** новые HNSW `Theme_embedding_hnsw_cosine_idx` + `SourceEpisode_embedding_hnsw_cosine_idx` (`m=16, ef_construction=128`); HNSW-параметры `m=16, ef_construction=128` на `IdeaBlock`/`Entity` (было дефолтное 64); триграммные GIN `Entity.canonicalName` (`gin_trgm_ops`) + `persons.name` (`gin_trgm_ops`) для нечёткого резолвинга К1. Все идемпотентны (`IF NOT EXISTS`); внутри `runSchemaPhase` едет последним шагом. Прогон: внутри `apply-prod-deploy --with-schema` или вручную `docker compose exec backend bun run apply-postgres-init`.
+- **Шаг 7 — Seed крутилок (идемпотентные, УЖЕ в STEPS `phase:'seed-base'`, новых сидов НЕТ — расширены существующие):** 8 крутилок едут существующими сидами (уважают admin-override):
+  - `seed-admin-setting-knowledge-graph.ts` — `knowledge.hnsw_ef_search` (100), `knowledge.router_v2_enabled` (kill-switch ON), `knowledge.router_confidence_threshold` (0.6), `knowledge.person_resolve_trgm_threshold` (0.3), `knowledge.person_resolve_ambiguity_delta` (0.1), `knowledge.overview_top_themes` (5), `knowledge.list_episodes_limit` (30).
+  - `seed-admin-setting-documents.ts` — `knowledge.document_summary_input_chars` (12000, Ф8).
+  - `seed-admin-setting-smart-search.ts` — расширен `rag.rerank_pool_size` (30, Ф9 — хардкод размера пула → крутилка).
+  - Доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 8 — Backfill (2 новых, УЖЕ в STEPS `phase:'backfill'`, `skipBootstrap`):** оба идемпотентны, **порядок важен** (source-layer ПЕРВЫМ):
+  - `backfill-source-layer.ts` — создаёт `SourceEpisode`/`SourceParticipant`/`SourceEntity` для существующих `RawEvent` (Ф2). Прогон: `docker compose exec backend bun run scripts/backfill-source-layer.ts`. Повтор = no-op.
+  - `backfill-context-header-reembed.ts` — ре-эмбеддинг существующих `IdeaBlock` с contextual-header v2 (компании/состав/заголовок источника) + REINDEX HNSW-партиций (Ф7). Идемпотентно по `IdeaBlock.contextHeaderVersion`. Прогон ПОСЛЕ source-layer: `docker compose exec backend bun run scripts/backfill-context-header-reembed.ts`.
+  - Оба прогоняются агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. **Прод-выкат с опасной миграцией:** через `docker compose exec backend bun run scripts/apply-prod-deploy.ts --with-schema --mode all` (авто-бэкап → `prisma migrate deploy` → `apply-postgres-init` → seed → backfill). Backend (knowledge-core: роутер 5 классов `classifyQueryClass` + both-ways в `runRetrieval`; маршруты К1 `resolvePersonCandidates`/`runStructuralAggregate`, К3 `runTemporalBranch`+фикс tz `period-resolver`, К4 `selectTopThemes`/`runOverviewBranch`; `persistSourceLayer` в `block-ingest.worker`; contextual-header v2 `buildMetaLine`; `DocumentSummaryService` + taskType `document-summarize`; синтез по классу `answerKind`+`episodes[]`; `conditionalRerank` на both-ways-merged).
+- **Шаг 12 — Smoke** (после выката):
+  - Миграция/партиции: `\d+ "IdeaBlock"` показывает `Partition key: HASH ("tenantId")` и ≥1 партицию; `\d "SourceEpisode"` существует (FK на `RawEvent`); `\d "IdeaBlock"` содержит `contextHeaderVersion`.
+  - HNSW/триграммы: в `postgres-init`-выводе присутствуют `Theme_embedding_hnsw_cosine_idx` + `SourceEpisode_embedding_hnsw_cosine_idx`; `\d "Entity"`/`\d "persons"` содержат `gin_trgm`-индексы на `canonicalName`/`name`.
+  - Метрики: `curl -s localhost:3000/metrics | grep -E 'router_query_class|router_both_ways'` → счётчики присутствуют.
+  - Крутилки видны в админке AdminSetting: `knowledge.router_v2_enabled` (ON), `knowledge.hnsw_ef_search` (100), `knowledge.router_confidence_threshold` (0.6), `knowledge.person_resolve_trgm_threshold` (0.3), `knowledge.person_resolve_ambiguity_delta` (0.1), `knowledge.overview_top_themes` (5), `knowledge.list_episodes_limit` (30), `knowledge.document_summary_input_chars` (12000), `rag.rerank_pool_size` (30).
+  - Поведение: «какие встречи с <Имя>» → `answerKind='list'`, перечисление эпизодов; «итоги за месяц» → `answerKind='recap'`; «что у нас по <тема>» → `answerKind='overview'`; обычный вопрос → `answerKind='prose'` (К2/К5 без регресса).
+  - Backfill (после прогона): новые `SourceEpisode`/`SourceParticipant`/`SourceEntity` для исторических `RawEvent`; повтор обоих backfill → no-op.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-27 — Диалоговое уточнение probe (probe-clarify-dialog, ветка feature/probe-clarify-dialog)
+
+> ТЗ `plans/tz/2026-06-27-probe-clarify-dialog-tz.md` (Ф1–Ф6) + анализ `plans/analysis/2026-06-27-probe-clarify-dialog-reliability.md`. Одноразовый probe-ответ → надёжная диалоговая петля: LLM решает ЧТО имел в виду человек, код решает КАК записать (детерминированный идемпотентный apply-слой), человек подтверждает echo-back перед записью. Коммиты `12581516` (Ф1) … `68b1cab2` (Ф6).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (CREATE TYPE/TABLE + ALTER TYPE ADD VALUE ×4, авто через `migrate deploy`, без потери данных). 🟢 НОВЫХ ENV НЕТ** (4 крутилки — чистые AdminSetting). Новые eventType `probe.clarify`/`probe.confirm` + новый cron `ProbeDialogTtlCron` + 3 новые метрики. Docker rebuild backend. Ship-On: `probe.dialogEnabled` ON.
+
+- **Шаг 1 — ENV: новых нет.** Все 4 параметра — чистые AdminSetting-крутилки (см. Шаг 7), без `.env`. 1 новый kill-switch `probe.dialogEnabled` (тип A, ВКЛ — действий владельца не требует; выкл → откат к one-shot без диалога). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260627000000_probe_dialog_state` — `CREATE TYPE "ProbeDialogPhase"` (`awaiting_answer`/`awaiting_clarification`/`awaiting_confirmation`/`resolved`) + `ALTER TYPE "ProbeStatus" ADD VALUE` ×4 (`awaiting_dialog`/`applied`/`escalated_to_human`/`abandoned`) + `CREATE TABLE "ProbeDialogState"` (unique `probeEventId`, 2 индекса, FK → `probe_events` `ON DELETE CASCADE`). Аддитивная (CREATE TYPE/TABLE + ADD VALUE, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«Диалоговое уточнение probe — `ProbeDialogState`».
+- **Шаг 7 — Seed крутилок (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** 4 чистые AdminSetting-крутилки секции `probe` едут существующим `seed-admin-settings.ts` (уважает admin-override): `probe.dialogEnabled` (true, kill-switch), `probe.dialogEscalateMaxConfidence` (0.6 — ниже порога ответ уходит в уточняющий ход, не применяется), `probe.dialogMaxTurns` (2 — лимит ходов до эскалации owner/admin), `probe.dialogConfirmTtlHours` (48 — TTL ожидания подтверждения/уточнения до `abandoned`). Без новых ENV. Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `ProbeResponseHandler` (детерминированный apply-слой, ветвление по `outcome`), `ProbeDialogService` (`ensureState`/`getActive`/`recordTurn`/`setPhase`/`finalizeIfPending` CAS), `routeClarifyOrEscalate`/`escalateToHuman`/echo-back, классификатор `probe_response_classify`, `ProbeResponseInboundBridge` (`subscribeInbound('response')`), `ProbeDialogTtlCron`, eventType `probe.clarify`/`probe.confirm` (Zod + рендер telegram/max + фронт-label).
+- **Шаг 12 — Smoke** (после выката):
+  - Метрики: `curl -s localhost:3000/metrics | grep -E 'probe_dialog_(transition|outcome|degraded)_total'` → счётчики присутствуют (`probe_dialog_transition_total{from,to}`, `probe_dialog_outcome_total{outcome}`, `probe_dialog_degraded_total{reason}`).
+  - eventType зарегистрированы: `probe.clarify` и `probe.confirm` присутствуют в registry/Swagger (channel-policy `['telegram_bot','max_bot','in_app']`, responseStatus='pending').
+  - Cron поднялся: лог `ProbeDialogTtlCron` (`@Cron 17 * * * *`) виден при старте (`docker compose logs backend | grep -i ProbeDialogTtlCron`).
+  - Миграция применилась: `\d "ProbeDialogState"` существует (unique `probeEventId`, FK на `probe_events`); `SELECT unnest(enum_range(NULL::"ProbeStatus"))` содержит `awaiting_dialog`/`applied`/`escalated_to_human`/`abandoned`; `ProbeDialogPhase` существует.
+  - Крутилки видны в админке AdminSetting: `probe.dialogEnabled` (ON), `probe.dialogEscalateMaxConfidence` (0.6), `probe.dialogMaxTurns` (2), `probe.dialogConfirmTtlHours` (48).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-25 — Дроп legacy-модели Task: унификация задач на Issue (ветка feature/drop-legacy-task-unify-issue)
+
+> ТЗ `plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md` (Ф0–Ф10). Полный снос двойной сущности «задача» — единственный слой задач теперь `Issue` (трекер).
+>
+> **🔴 1 ОПАСНАЯ МИГРАЦИЯ PRISMA (DROP TABLE `Task` + DROP TYPE `TaskStatus`, авто через `migrate deploy`). 🟢 НОВЫХ ENV НЕТ** (5 флагов УДАЛЕНО — см. Шаг 1). 1 новый GIN-индекс. Перенос данных Task→Issue идёт **внутри `runSchemaPhase` ПЕРЕД дропом** (НЕ в STEPS). Docker rebuild backend+frontend.
+>
+> **⚠️ Порядок критичен:** на проде выкатывать через `apply-prod-deploy.ts --with-schema` (или `--mode all`), который сам делает: авто-бэкап → перенос данных (`migrate-task-to-issue` + `backfill-collapse`) → `prisma migrate deploy` (дроп таблицы) → `apply-postgres-init` (GIN-индекс). **Не запускать голый `prisma migrate deploy` без предшествующего переноса данных** — иначе `Task` дропнется с непереехавшими задачами.
+
+- **Шаг 1 — ENV: новых нет.** **Удалены 5 ENV/флагов** (можно убрать из прод `.env`, необязательно — лишние ENV безвредны): `CHATBOX_TASK_EXTRACTION_ENABLED`, `TASKS_CROSS_SOURCE_DEDUPE_ENABLED`, `KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY` (+ соответствующие AdminSetting `meetingTasksToTrackerOnly`, `taskExtractionMode`, `chatboxTaskExtractionEnabled`, `tasksCrossSourceDedupeEnabled`, `chatboxTasksInTriageEnabled`). `specialist-3-15-tasks` теперь работает безусловно. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260625000000_drop_legacy_task_model` — `DELETE FROM "TaskSource" WHERE "issueId" IS NULL` → `ALTER TABLE "TaskSource" DROP COLUMN "taskId" CASCADE` → `DROP TABLE "Task" CASCADE` → `DROP TYPE "TaskStatus"`. Снос `model Task`, `enum TaskStatus`, FK back-refs (`User`/`Meeting`/`Org`), `TaskSource.taskId`. **Опасная (DROP TABLE/TYPE).** **ВАЖНО:** перенос данных Task→Issue выполняется в `runSchemaPhase` (`apply-prod-deploy --with-schema`) **ПЕРЕД** этой миграцией — к моменту дропа таблицы данные уже в `Issue`, миграция безопасна. Скрипты переноса guard'ятся на отсутствие таблицы (повторный деплой = no-op). Соответствует `data-model.md` §«Дроп legacy-модели Task».
+- **Шаг 5 — postgres-init (новый GIN-индекс, авто на `apply-postgres-init`):** `Issue_linkedMeetingIds_gin_idx` — `CREATE INDEX IF NOT EXISTS "Issue_linkedMeetingIds_gin_idx" ON "Issue" USING gin ("linkedMeetingIds")`. Нужен дедупу meeting-Issue (пересечение `linkedMeetingIds`) и drill-down карточки встречи. Идемпотентно (`IF NOT EXISTS`); внутри `runSchemaPhase` едет последним шагом (`apply-postgres-init.ts`).
+- **Шаг 8/9 — Backfill/Migrate (pre-migrate в `runSchemaPhase`, НЕ в STEPS):** оба прогоняются автоматически при `--with-schema` ПЕРЕД `prisma migrate deploy`:
+  - `migrate-task-to-issue.ts --apply` (переписан) — перенос legacy `Task` → `Issue`: raw-SQL чтение `Task`, дедуп-гейт против spine-`Issue`, маппинг (`createdById=task.userId`, `previewQuote`/`confidence`/`previewSourceRef`, `evidenceBlockIds→sourceBlockIds`), перенос `TaskSource(taskId)→TaskSource(issueId)`. Идемпотентно (`externalSource='meeting_legacy'`+`externalId`).
+  - `backfill-collapse-legacy-task-duplicates.ts --apply` (новый) — схлопывание дублей `meeting_legacy ↔ meeting` Issue (один артефакт в двух формах после переноса).
+  - _(по желанию, read-only замер до/после)_ `docker compose exec backend bun run scripts/diag-task-issue-overlap.ts` — разведчик дублей Task/Issue, ничего не пишет.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. **Прод-выкат целиком одной командой:** `docker compose exec backend bun run scripts/apply-prod-deploy.ts --with-schema --mode all` (авто-бэкап → перенос данных → дроп-миграция → GIN-индекс). Backend: удалён модуль `tasks/` (7 эндпоинтов); `meeting-action-items` читает только `Issue` по `linkedMeetingIds`; аналитика (director-dashboard/value-recap/personal-daily-brief/weekly-per-person/meeting-roi-scorer) на `Issue`; `shares.service` на `Issue`; фильтр `GET /api/v1/issues?linkedMeetingId`. Frontend: вкладка задач встречи на tracker Issue API (`useMeetingIssues`, `issuesApi.create`+`transitionToCategory`); удалены `tasks.api.ts`/`use-meeting-tasks.ts`/`domain/task.ts`.
+- **Шаг 12 — Smoke** (после выката):
+  - Миграция применилась: `\d "Task"` → не существует; `SELECT 1 FROM pg_type WHERE typname='TaskStatus'` → 0 строк; `\d "TaskSource"` НЕ содержит `taskId`, содержит `issueId`.
+  - GIN-индекс: `\d "Issue"` содержит `Issue_linkedMeetingIds_gin_idx` (gin на `linkedMeetingIds`).
+  - Перенос данных: число `Issue(externalSource='meeting_legacy')` соответствует прежним legacy-`Task` (минус дедуп); повторный `apply-prod-deploy --with-schema` → перенос-скрипты no-op (таблицы `Task` нет).
+  - Swagger `/api/docs`: тег `tasks` / `/api/v1/tasks/*` ОТСУТСТВУЕТ; `GET /api/v1/issues?linkedMeetingId=<id>` отдаёт задачи встречи.
+  - Поведение: задача встречи видна в карточке встречи (Issue-путь); вкладка задач встречи создаёт/двигает Issue; извлечение задач из чата/телеграма идёт через спайн `3-15-tasks`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 2026-06-25 — Гигиена графа знаний + качество идей (ветка feature/knowledge-graph-idea-quality)
+
+> ТЗ `plans/tz/2026-06-25-knowledge-graph-hygiene.md` (граф) + `plans/tz/2026-06-25-idea-quality.md` (идеи). Ветка `feature/knowledge-graph-idea-quality`, 10 коммитов.
+>
+> 2 ТЗ. 🟢 Новых ENV нет. 🟢 Миграций Prisma нет. 🟢 Новых cron/очередей/LLM-taskType нет. 2 новых backfill-скрипта (в STEPS). Гейт сущностей — Ship-On без флага. Docker rebuild backend+frontend.
+
+- **Шаг 1 / 4 — ENV / Prisma: нет.**
+- **Шаг 7 — Seed (идемпотентные, УЖЕ в STEPS, новых сидов НЕТ):** ключи `knowledge.ideaClusterThreshold` (`seed-admin-settings.ts`) и `knowledge.ideasExtractMinConfidence` (`seed-admin-setting-knowledge-extract.ts`) уже сидятся — новизна в том, что их теперь **ЧИТАЕТ** специалист 3.6 / `idea-clusterer.cron` (порог дедупа идей) через `getDynamic`. Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. ⚠️ **Нюанс:** сид `knowledge.ideaClusterThreshold`=0.85, а прежний ENV-fallback=0.8 → после выката порог дедупа идей станет авторитетным **0.85** (крутилка вступает в силу). Владелец калибрует вниз для более агрессивной склейки дублей.
+- **Шаг 8 — Backfill (2 новых, УЖЕ в STEPS `phase:'backfill'`, `skipBootstrap`):**
+  - `backfill-purge-junk-entities.ts` — чистка мусорных сущностей графа. Сначала dry-run: `docker compose exec backend bun run scripts/backfill-purge-junk-entities.ts` — посмотреть кандидатов; затем `--apply`. Идемпотентно. Удаляет `Entity` (каскад `IdeaBlockEntity`/`ThemeEntity`/`Card`) + полиморфные `EntityLink` **вручную** (FK нет). Сущности с бизнес-связями (`customer`/`goal`/…) не трогает.
+  - `backfill-idea-quality.ts` — re-extract обоснований старым идеям (пишет сразу, идемпотентно) + merge дублей по pgvector. Прогон: `docker compose exec backend bun run scripts/backfill-idea-quality.ts` (re-extract применится, merge — превью); ревью merge-пар; затем `--apply` для реальной склейки. `--dry-run` — полное превью без записи.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core: `entity-name-quality.ts` + гейт `TRACKER_ECHO_SIGNALS`/`isJunkEntityName` в `block-ingest.worker`; provenance `entity`/`idea` в `provenance.dto.ts`/`provenance.service.ts`; `upgradeIdeaQuality` в `specialist-3-6-ideas.service.ts`; порог дедупа идей через `getDynamic` в 3 потребителях). Frontend (`<ProvenanceChip entityType="entity">` в `EntityDetailPane`; фикс `IdeasListClient` `entityType="block"`→`"idea"`).
+- **Шаг 12 — Smoke** (после выката):
+  - Гейт сущностей: эхо-блок трекера (`signalType=task_*`) или мусорное имя (`MANA-7`/email/телефон) не создаёт `Entity`; нормальное имя (`Битрикс`) создаёт.
+  - Provenance: `GET /api/v1/provenance/entity/{id}` и `/provenance/idea/{id}` → 200 `{nodes,coverage}`, `nodes.length>0` для записи с источником; несуществующий → `nodes:[]` (не 400). Swagger содержит `entity`/`idea` в enum типа provenance.
+  - Фронт: на карточке сущности и идеи кликабельный «Откуда это» открывает drawer со встречей и цитатой.
+  - Backfill (после прогона `--apply`): из графа исчезают `MANA-7…`/`+7…`/email; повторный `--apply` → «0 кандидатов» (идемпотентность). Доля идей без `rationale` резко падает.
+- **Опционально (диаг, по желанию, требует `DEEPSEEK_API_KEY`):** `docker compose exec backend bun run --env-file=../.env scripts/diag-idea-classifier-test.ts` — доказательство «задача ≠ идея» (≥80% отсева задач-в-идеях, регресс по настоящим идеям = 0). Read-only.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-25 — «Единый помощник»: single-pass Мастер + упрощённый chat-v2 + модель на агента (Ф2–Ф6)
+
+> ТЗ `plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md` (Ф2–Ф6). Ветка `feature/edinyy-pomoshnik-arhitektura`, коммиты `f51e5a0e` (Ф4a) … `8dac5210` (Ф1/Ф5).
+>
+> **Зачем:** убрана ReAct-петля Мастера (корень прод-бага с сырым JSON), цепочка chat-v2 свёрнута с ~10 LLM-вызовов до 4 (понимание → rerank → синтез → groundedness; route/plan/sufficiency законсервированы), замкнута петля уточнения (`[[CLARIFY]]`/`needsClarification`), 5 агентов маршрутизированы на модели из ТЗ §5. Фронт частично: «Память»=дверь к реестрам, `/chat-v2`+`/assistant`→`/chat`, видимые «Concierge»→«Мастер».
+>
+> **🟢 НОВЫХ ENV НЕТ · НОВЫХ МИГРАЦИЙ НЕТ.** Изменения app-кода (Ф2–Ф5 backend + Ф1/Ф5 frontend) едут с rebuild образа. 4 новые крутилки AdminSetting (Ф4/Ф5, чистые — без ENV, едут существующими сидами) + 1 новый seed LLM-routes (зарегистрирован в STEPS `phase:'seed-llm-routes'`) + 1 новый диаг-скрипт (read-only). Docker rebuild backend+frontend.
+>
+> | агент | taskType | primary |
+> |---|---|---|
+> | Мастер (диспетч+действия+render) | `concierge-respond` | `openai-via-proxy` / `gpt-5.4-mini` |
+> | Понимание запроса | `dialog-understand` | `deepseek` / `deepseek-v4-pro` |
+> | Переранжировщик | `rag-rerank` | `deepseek` / `deepseek-v4-flash` |
+> | Синтез ответа | `chat-v2` | `deepseek` / `deepseek-v4-pro` |
+> | Контролёр заземления | `rag-groundedness` | `deepseek` / `deepseek-v4-flash` |
+
+- **Шаг 7 — Seed LLM-routes (идемпотентный, авторитетный upsert, УЖЕ в STEPS `phase:'seed-llm-routes'`):** `docker compose exec backend bun run scripts/seed-llm-task-routes-edinyy-pomoshnik.ts` — маршруты 5 агентов «Единого помощника» (см. таблицу выше + fallback-цепочки secondary/tertiary). Авторитетный: для не-`editedByAdmin` записей создаёт/обновляет `model`/`priority`/`isActive`; `editedByAdmin=true` записи пропускает (защита ручных правок из admin UI). Также прогоняется агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Это once-step (sha256 содержимого) — правка сида ⇒ повторный прогон автоматически.
+- **Шаг 7 — Seed крутилок (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** 4 новые крутилки Ф4/Ф5 (чистые AdminSetting, без ENV) едут существующими сидами:
+  - `docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts` — **расширен 3 новыми ключами** (section `smart_search`): `rag.k_retrieve` (30 — размер пула кандидатов до реранка), `rag.k_context` (18 — сколько блоков уходит в синтез после реранка, ≤ `k_retrieve`), `rag.understanding_merged` (kill-switch ON — слитый модуль понимания: 1 LLM-вызов вместо 2; OFF → старый путь мульти-запрос+извлечение-плана).
+  - `docker compose exec backend bun run scripts/seed-admin-settings.ts` — **расширен 1 ключом**: `probe.implicit_match_max_age_days` (3 — окно свежести implicit-матча probe, лечит ложное «Готово»).
+  - Оба сида уважают admin-override; доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (concierge single-pass + chat-v2 4-вызова + петля уточнения + слитый `dialog-understand`); frontend (Ф1/Ф5: «Память»=дверь, `/chat-v2`+`/assistant`→redirect `/chat`, нейминг «Мастер»).
+- **Шаг 12 — Smoke** (после выката):
+  - `docker compose exec backend bun run scripts/diag-llm-routes.ts` — показывает ожидаемые primary по 5 taskType (`concierge-respond`→`openai-via-proxy:gpt-5.4-mini`, `dialog-understand`→`deepseek:deepseek-v4-pro`, `rag-rerank`→`deepseek:deepseek-v4-flash`, `chat-v2`→`deepseek:deepseek-v4-pro`, `rag-groundedness`→`deepseek:deepseek-v4-flash`). Флаг `--json` — машинный вывод. Read-only, в БД ничего не пишет.
+  - Записи с `[правка-админа]` в выводе сидов НЕ перезаписаны (если admin что-то правил вручную).
+  - Крутилки видны в админке AdminSetting: `rag.k_retrieve` (30), `rag.k_context` (18), `rag.understanding_merged` (ON), `probe.implicit_match_max_age_days` (3).
+  - Прод-регресс `cmqs42gdq01lj01qqsblfdon4` («позиционирование», «сколько встреч с Александром») — чистый текстовый ответ, ни одного сырого JSON, ноль зацикливаний.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-25 — Разведение «задача ↔ решение» в извлечении (пороги в крутилки + cosine-гейт дедупа)
+
+> ТЗ `plans/tz/2026-06-25-task-decision-disambiguation.md` (Ф1–Ф7). Ветка `feature/task-decision-disambiguation`.
+>
+> **Зачем:** реестр решений накапливал переодетые поручения (~треть записей) — извлечение путало «что выбрали» (решение) и «кто что делает» (задача). Симметричные few-shot в `decision-extract`/`task-extract` + усиление `block-ingest` разводят классы по инварименту «решение = ЧТО, задача = КТО»; хардкод-порог извлечения вынесен в крутилки; дедуп решений получил cosine-гейт перед LLM-арбитром.
+>
+> **🟢 НОВЫХ ENV НЕТ · НОВЫХ МИГРАЦИЙ НЕТ** (5 новых ключей — чистые AdminSetting). 1 новый seed (УЖЕ в STEPS `phase:'seed-base'`). Правки промптов knowledge-core (прямой импорт констант, не registry — патчи не нужны). Docker rebuild backend+frontend.
+
+- **Шаг 7 — Seed (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** `docker compose exec backend bun run scripts/seed-admin-setting-knowledge-extract.ts` — `knowledge.{decisions,ideas,insights}ExtractMinConfidence` (пороги извлечения, UNIT_INTERVAL, дефолт 0.4) + `knowledge.decisionsDedupe{Threshold(0.86),GrayBand(0.07)}` (cosine-гейт дедупа решений: sim≥0.86 → авто-merge без LLM, sim<0.79 → новое без LLM, серая зона → прежний арбитр). Часть task-decision-disambiguation Ф5. Чистые AdminSetting (без ENV). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core: единый реестр контрастных пар `prompts/task-decision-examples.ts` → 3 проекции в промпты `decision-extract`/`task-extract`/`block-ingest`; specialist-3-3/3-5/3-6 читают порог извлечения через `@Optional() AdminSettingsService` с code-fallback 0.4; `Specialist33Service.classifyDedupeGate` + KNN-запрос с similarity (1−cosine distance) перед `supersedeDetect`). Frontend (provenance «Откуда это»: IssueSidebar / IssueDetailClient `ProvenancePreviewSnippet` / IdeasListClient `ProvenanceChip`).
+- **Шаг 12 — Smoke** (после выката):
+  - Крутилки видны в админке AdminSetting: `knowledge.{decisions,ideas,insights}ExtractMinConfidence` (0.4), `knowledge.decisionsDedupe{Threshold,GrayBand}` (0.86 / 0.07).
+  - Поведение: реплика-поручение в decision-канале НЕ оседает как Decision (отсекается на `isDecision=false`); зеркальный кейс «решение» не попадает в трекер как задача; два близких решения (sim≥0.86) сливаются без вызова LLM-арбитра.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-24 — ChatBox: полная поддержка групповых чатов
 
 > ТЗ `plans/tz/2026-06-24-chatbox-group-chats.md`. Ветка `feature/chatbox-customer-vs-manager-split`.
@@ -3970,7 +4278,7 @@ docker compose exec backend bun run scripts/seed-llm-default-primary-deepseek-pr
 **Граф знаний v2 + умный поиск (2026-06-24) — 2 новых сид-скрипта крутилок** (оба зарегистрированы в `apply-prod-deploy.ts STEPS` `phase:'seed-base'`, прогоняются агрегатором; защита admin-edited не затирает ручные правки):
 ```bash
 docker compose exec backend bun run scripts/seed-admin-setting-knowledge-graph.ts   # 12 крутилок графа (нарезка/overlap/контекст-заголовок/пороги рёбер/судья/alias/поиск RRF+обход/theme-summary)
-docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts       # 8 крутилок Мастера (concierge.max_steps + rag.*: сторож/RRF/реранк/достаточность/гейт честности/iterative/cold-start)
+docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts       # 6 крутилок Мастера (rag.*: RRF/реранк/достаточность/гейт честности/iterative/cold-start)
 ```
 Либо разом через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (прогонит оба + остальные seed/patch).
 
@@ -4250,7 +4558,7 @@ docker compose up -d --force-recreate postgres
 
 ### B.6 — Бутстрап первого супер-админа
 
-**Интерактивно (рекомендуется)** — вводишь только email и пароль, скрипт сам хеширует (bcrypt 12) и ставит `role='admin'` + `isSuperAdmin=true`:
+**Интерактивно (рекомендуется)** — вводишь только email и пароль, скрипт сам хеширует (**argon2id**, с 2026-06-29; прежние bcrypt-хэши остаются валидны через fallback в `PasswordService`) и ставит `role='admin'` + `isSuperAdmin=true`:
 ```bash
 docker compose exec backend bun run scripts/set-admin-password.ts <email> '<пароль>' --super
 # нет юзера → создаст; есть с role=admin → обновит пароль (+ isSuperAdmin при --super)

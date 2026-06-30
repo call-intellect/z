@@ -77,6 +77,8 @@ const STATUS_LABELS: Record<NotificationStatus, string> = {
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   "probe.question": "Уточняющий вопрос",
+  "probe.clarify": "Уточнение",
+  "probe.confirm": "Подтверждение",
   "probe.digest": "Вопросы от Коры",
   "probe.answer_acknowledged": "Ответ записан",
   "specialist.probe": "Подсказка специалиста",
@@ -84,10 +86,19 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   "curation.pending": "Нужна модерация",
   "system.message": "Системное сообщение",
   "idea.status_changed": "Изменён статус идеи",
+  "operations.daily_digest": "Сводка за день",
   "operations.weekly_digest": "Сводка за неделю",
   "operations.monthly_recap": "Итоги месяца",
   "goals.pulse": "Пульс целей",
   "issue.mention": "Упоминание в задаче",
+  "issue.assigned": "Назначена задача",
+  "issue.created": "Создана задача",
+  "issue.overdue": "Просрочена задача",
+  "task.closed_for_review": "Задача закрыта — нужна проверка",
+  "tasks.daily_open": "Задачи на сегодня",
+  "note.ack": "Заметка принята",
+  "clone.access_requested": "Запрос доступа к клону",
+  "clone.access_granted": "Выдан доступ к клону",
   "event.reminder": "Напоминание о событии",
   "checkin.prompt": "Время чек-ина",
   "checkin.ack": "Чек-ин принят",
@@ -103,7 +114,7 @@ export function notificationStatusLabel(s: NotificationStatus): string {
 }
 
 export function eventTypeLabel(eventType: string): string {
-  return EVENT_TYPE_LABELS[eventType] ?? eventType;
+  return EVENT_TYPE_LABELS[eventType] ?? "Уведомление";
 }
 
 export type Notification = {

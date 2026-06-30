@@ -29,7 +29,7 @@ export class Specialist37SkillWorker {
     const { blockId, tenantId } = job.data;
     try {
       const block = await this.prisma.ideaBlock.findUnique({
-        where: { id: blockId },
+        where: { id_tenantId: { id: blockId, tenantId } },
         select: {
           id: true,
           tenantId: true,

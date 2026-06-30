@@ -389,4 +389,18 @@ relates_to:
 
 ## Итог
 
-(заполняет tz-orchestrator: реализовано целиком / что осталось.)
+**Реализовано целиком (Ф1–Ф8), 2026-06-30, ветка `work/2026-06-29`.** 8 коммитов:
+- Ф1 `b2cf2b2c` — контролёр внедрения + value-recap-доведение сняты (BE).
+- Ф2 `e798907a` — висящие решения + pulse-алерт + forecaster `hanging_decisions` + лента (BE); позиционный DI синхронизирован в 5 спеках, виджет-счётчик 7→6.
+- Ф3 `de20ccab` — решения из дайджестов + «День/Неделя/Месяц компании» (BE); monthly «что решить собственнику» сохранён.
+- Ф7 `53393003` — тихий бейдж «необратимое» (`reversibility==='type-1'`) на карточке решения (BE+FE, additive).
+- Ф4 `e6a0b920` — миграция `20260630020000_drop_decision_implementation_fields` (DROP 2 колонок).
+- Ф5 `d2a108b4` — фронт дашборд-поверхности (DecisionThroughput/Decisions/IrreversibleDecisionsAlert виджеты, kpiHangingDecisions, value-recap-доведение).
+- Ф6 `1b7653fc` — фронт дайджест-клиенты (HangingDecisionsSection, StatCard «Решения», forecast).
+- Ф8 `72e44a2a` — синхронизация second-brain + docs/реестры.
+
+**Верификация:** back+front `typecheck`/`lint`(0 errors)/`build` зелёные на итоговом HEAD; vitest по затронутым модулям зелёный (operations 562, dashboard 52, decisions 37, frontend 624). Все grep-негативы/позитивы из Acceptance пройдены; KEEP-гарды (`Decision`/`DecisionTaskLink`/`impliesAction`/`reversibility`/`decisionsExtracted`/`decision.count`/monthly «что решить собственнику»/decision-hygiene-скорер) целы.
+
+**Что осталось / не входило:** (а) probe/нуджи Коры про решения + чистка обещаний — отдельное ТЗ `operational-inspectors-cleanup` (вне scope, не дублировали); (б) удаление orphan-строк AdminSetting `decision.stale_days`/`operations.decision_controller.enabled` из БД прода — опц. one-off patch позже (мёртвые записи безвредны); (в) 4 предсуществующих падения frontend tracker-тестов (`Board.spec.tsx`/`OrgBoard.spec.tsx`, `IssueCard.tsx:186 sourceChipLabel`) — НЕ связаны с задачей, tracker не в диффе; (г) исторические записи выкатов в `prod-deploy-log.md` (2026-06-16) с упоминанием снятых виджетов — оставлены как история, не переписаны.
+
+**Прод:** миграция авто `migrate deploy` + docker rebuild backend+frontend; smoke в `prod-deploy-log.md` Шаг 12 актуального блока.

@@ -6,7 +6,10 @@ import { ArrowLeft, Loader2, MessagesSquare } from "lucide-react";
 
 import { ApiError, humanizeApiError } from "@/api/api-error";
 import { chatboxApi, type ChatboxChatApi } from "@/api/chatbox.api";
-import { chatboxChannelLabel } from "@/domain/chatbox";
+import {
+  chatboxChannelLabel,
+  chatboxChannelTypeBadgeClass,
+} from "@/domain/chatbox";
 import { useAuth } from "@/contexts/auth-context";
 import { TierGate } from "@/ui/components/TierGate";
 import { EmptyState } from "@/ui/components/shared/EmptyState";
@@ -196,16 +199,25 @@ function ChatboxChatsListContent() {
                   >
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium text-fg-primary">
-                        {c.customer?.name || c.clientName || c.externalId}
+                        {c.title || c.customer?.name || c.clientName || c.externalId}
                       </div>
                       <div className="mt-0.5 truncate text-xs text-fg-tertiary">
-                        {chatboxChannelLabel(c.channelType)}
-                        {c.channelName ? ` · ${c.channelName}` : ""} ·{" "}
+                        {c.channelName ? `${c.channelName} · ` : ""}
                         {fmtDateTime(c.lastMessageAt)} · {c.messageCount} сообщ.
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
-                      {c.isGroup && <Badge variant="secondary">Группа</Badge>}
+                      <Badge
+                        variant="outline"
+                        className={chatboxChannelTypeBadgeClass(c.channelType)}
+                      >
+                        {chatboxChannelLabel(c.channelType)}
+                      </Badge>
+                      {c.isGroup ? (
+                        <Badge variant="default">Группа</Badge>
+                      ) : (
+                        <Badge variant="secondary">Личный</Badge>
+                      )}
                       <Badge variant={c.status === "closed" ? "secondary" : "default"}>
                         {statusLabel(c.status)}
                       </Badge>

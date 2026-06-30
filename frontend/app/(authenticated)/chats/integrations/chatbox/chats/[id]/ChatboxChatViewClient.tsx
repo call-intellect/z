@@ -12,6 +12,7 @@ import {
 } from "@/api/chatbox.api";
 import {
   chatboxChannelLabel,
+  chatboxChannelTypeBadgeClass,
   chatboxContentPlaceholder,
   chatboxParticipantRoleLabel,
   chatboxSenderRoleLabel,
@@ -161,9 +162,19 @@ function ChatboxChatViewContent({ chatId }: { chatId: string }) {
         <CardContent className="py-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-lg font-semibold text-fg-primary">
-              {chat.customer?.name || chat.clientName || chat.externalId}
+              {chat.title || chat.customer?.name || chat.clientName || chat.externalId}
             </span>
-            {chat.isGroup && <Badge variant="secondary">Группа</Badge>}
+            <Badge
+              variant="outline"
+              className={chatboxChannelTypeBadgeClass(chat.channelType)}
+            >
+              {chatboxChannelLabel(chat.channelType)}
+            </Badge>
+            {chat.isGroup ? (
+              <Badge variant="default">Группа</Badge>
+            ) : (
+              <Badge variant="secondary">Личный</Badge>
+            )}
             <Badge variant={chat.status === "closed" ? "secondary" : "default"}>
               {chat.status === "closed" ? "Закрыт" : "Активен"}
             </Badge>

@@ -1,13 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { DataClass } from '@prisma/client';
 import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import {
   BLOCK_INGEST_JSON_SCHEMA,
   ENTITY_TYPE_VALUES,
@@ -364,6 +366,9 @@ export class BlockExtractionService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(MeetingSkeletonService)
     private readonly skeletonService: MeetingSkeletonService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   /**
@@ -436,6 +441,7 @@ export class BlockExtractionService {
 
     const seen = new Map<string, number>();
     const dedupKeys = new Set<string>();
+    let overlapDedupCount = 0;
     let prevSliceEnd = -1;
     let windowIdx = 0;
     for (let i = 0; i < args.segments.length; i += step) {
@@ -465,6 +471,7 @@ export class BlockExtractionService {
         const existing = seen.get(key);
         if (existing != null) {
           localToGlobal.push(existing);
+          overlapDedupCount += 1;
           continue;
         }
         const gi = inOrder.length;
@@ -530,6 +537,10 @@ export class BlockExtractionService {
         typed.tools.push(r);
       }
     }
+    this.metrics?.incBlockOverlapDedup({
+      tenantTop: tenantTopOf(args.tenantId),
+      count: overlapDedupCount,
+    });
     const sorted = [...inOrder].sort(
       (a, b) => a.evidenceStartMs - b.evidenceStartMs,
     );
@@ -624,10 +635,13 @@ export class BlockExtractionService {
         name: b.name,
         signalType: b.signalType,
       }));
+      let roundsRun = 0;
+      let blocksAdded = 0;
       for (let round = 0; round < gleaningRounds; round++) {
         try {
           const extra = await callWindow(exclude);
           if (!extra) break;
+          roundsRun += 1;
           let added = 0;
           const localToWindow: number[] = [];
           for (const block of extra.blocks) {
@@ -645,6 +659,7 @@ export class BlockExtractionService {
             added += 1;
           }
           this.appendTyped(result.typed, extra.typed, localToWindow);
+          blocksAdded += added;
           if (added === 0) break;
         } catch (err) {
           this.logger.warn(
@@ -659,6 +674,9 @@ export class BlockExtractionService {
           break;
         }
       }
+      const tenantTop = tenantTopOf(args.tenantId);
+      this.metrics?.incBlockGleaningRounds({ tenantTop, rounds: roundsRun });
+      this.metrics?.incBlockGleaningBlocks({ tenantTop, count: blocksAdded });
     }
     return result;
   }

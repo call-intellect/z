@@ -58,6 +58,12 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── дедуп-гейт прямого create (TZ task-dedup, WP-J) ──────────────────
   private taskDedupSuggestedTotal!: Counter<'tenant_top'>;
 
+  // ── извлекающий слой Ф12a (наблюдение нового пути) ───────────────────
+  private kcMeetingSkeletonTotal!: Counter<'tenant_top' | 'outcome'>;
+  private kcBlockGleaningRoundsTotal!: Counter<'tenant_top'>;
+  private kcBlockGleaningBlocksTotal!: Counter<'tenant_top'>;
+  private kcBlockOverlapDedupTotal!: Counter<'tenant_top'>;
+
   private morningTasksDigestTotal!: Counter<'is_empty'>;
 
   // ── петля закрытия задачи (TZ task-loop Ф2b) ─────────────────────────
@@ -1280,6 +1286,27 @@ export class BusinessMetricsService implements OnModuleInit {
     this.taskDedupSuggestedTotal = this.getOrCreateCounter({
       name: 'task_dedup_suggested_total',
       help: 'TZ task-dedup WP-J — дедуп-гейт прямого create вернул verdict=same (заведена связь duplicates, suggest).',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    this.kcMeetingSkeletonTotal = this.getOrCreateCounter({
+      name: 'kc_meeting_skeleton_total',
+      help: 'Ф12a — исход скелет-прохода. outcome=built|empty|failed. tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top', 'outcome'] as const,
+    });
+    this.kcBlockGleaningRoundsTotal = this.getOrCreateCounter({
+      name: 'kc_block_gleaning_rounds_total',
+      help: 'Ф12a — число выполненных gleaning-раундов на окно. tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.kcBlockGleaningBlocksTotal = this.getOrCreateCounter({
+      name: 'kc_block_gleaning_blocks_total',
+      help: 'Ф12a — число НОВЫХ блоков, добавленных gleaning. tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.kcBlockOverlapDedupTotal = this.getOrCreateCounter({
+      name: 'kc_block_overlap_dedup_total',
+      help: 'Ф12a — число блоков, отброшенных как дубль на нахлёсте окон в extractFull. tenant_top — top-100 bucket через tenantTopOf.',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -4627,6 +4654,40 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incTaskDedupSuggested(args: { tenantTop: string }): void {
     this.taskDedupSuggestedTotal?.inc({ tenant_top: args.tenantTop });
+  }
+
+  incMeetingSkeleton(args: {
+    tenantTop: string;
+    outcome: 'built' | 'empty' | 'failed';
+  }): void {
+    this.kcMeetingSkeletonTotal?.inc({
+      tenant_top: args.tenantTop,
+      outcome: args.outcome,
+    });
+  }
+
+  incBlockGleaningRounds(args: { tenantTop: string; rounds: number }): void {
+    if (args.rounds <= 0) return;
+    this.kcBlockGleaningRoundsTotal?.inc(
+      { tenant_top: args.tenantTop },
+      args.rounds,
+    );
+  }
+
+  incBlockGleaningBlocks(args: { tenantTop: string; count: number }): void {
+    if (args.count <= 0) return;
+    this.kcBlockGleaningBlocksTotal?.inc(
+      { tenant_top: args.tenantTop },
+      args.count,
+    );
+  }
+
+  incBlockOverlapDedup(args: { tenantTop: string; count: number }): void {
+    if (args.count <= 0) return;
+    this.kcBlockOverlapDedupTotal?.inc(
+      { tenant_top: args.tenantTop },
+      args.count,
+    );
   }
 
   incMorningTasksDigest(args: { isEmpty: boolean }): void {

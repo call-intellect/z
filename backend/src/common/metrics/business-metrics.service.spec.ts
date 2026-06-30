@@ -166,3 +166,81 @@ describe('BusinessMetricsService — метрики ChatBox (Ф3)', () => {
     }).not.toThrow();
   });
 });
+
+describe('BusinessMetricsService — метрики извлекающего слоя (Ф12a)', () => {
+  let service: BusinessMetricsService;
+
+  beforeEach(() => {
+    register.clear();
+    service = new BusinessMetricsService();
+    service.onModuleInit();
+  });
+
+  afterEach(() => {
+    register.clear();
+  });
+
+  async function rows(name: string) {
+    const metrics = await register.getMetricsAsJSON();
+    return metrics.find((m) => m.name === name)?.values ?? [];
+  }
+
+  it('incMeetingSkeleton — kc_meeting_skeleton_total{tenant_top,outcome}', async () => {
+    service.incMeetingSkeleton({ tenantTop: 'b1', outcome: 'built' });
+    service.incMeetingSkeleton({ tenantTop: 'b1', outcome: 'built' });
+    service.incMeetingSkeleton({ tenantTop: 'b1', outcome: 'empty' });
+    service.incMeetingSkeleton({ tenantTop: 'b2', outcome: 'failed' });
+
+    const vals = await rows('kc_meeting_skeleton_total');
+    const built = vals.find(
+      (v) => v.labels.tenant_top === 'b1' && v.labels.outcome === 'built',
+    );
+    const empty = vals.find(
+      (v) => v.labels.tenant_top === 'b1' && v.labels.outcome === 'empty',
+    );
+    const failed = vals.find(
+      (v) => v.labels.tenant_top === 'b2' && v.labels.outcome === 'failed',
+    );
+    expect(built?.value).toBe(2);
+    expect(empty?.value).toBe(1);
+    expect(failed?.value).toBe(1);
+  });
+
+  it('incBlockGleaningRounds/Blocks — счётчики += rounds/count', async () => {
+    service.incBlockGleaningRounds({ tenantTop: 'b1', rounds: 2 });
+    service.incBlockGleaningRounds({ tenantTop: 'b1', rounds: 3 });
+    service.incBlockGleaningBlocks({ tenantTop: 'b1', count: 5 });
+
+    const roundsVals = await rows('kc_block_gleaning_rounds_total');
+    const blocksVals = await rows('kc_block_gleaning_blocks_total');
+    expect(roundsVals.find((v) => v.labels.tenant_top === 'b1')?.value).toBe(5);
+    expect(blocksVals.find((v) => v.labels.tenant_top === 'b1')?.value).toBe(5);
+  });
+
+  it('gleaning rounds/blocks с нулём/отрицательным — no-op', async () => {
+    service.incBlockGleaningRounds({ tenantTop: 'b1', rounds: 0 });
+    service.incBlockGleaningBlocks({ tenantTop: 'b1', count: 0 });
+
+    expect(await rows('kc_block_gleaning_rounds_total')).toEqual([]);
+    expect(await rows('kc_block_gleaning_blocks_total')).toEqual([]);
+  });
+
+  it('incBlockOverlapDedup — счётчик += count', async () => {
+    service.incBlockOverlapDedup({ tenantTop: 'b1', count: 3 });
+    service.incBlockOverlapDedup({ tenantTop: 'b1', count: 2 });
+    service.incBlockOverlapDedup({ tenantTop: 'b1', count: 0 });
+
+    const vals = await rows('kc_block_overlap_dedup_total');
+    expect(vals.find((v) => v.labels.tenant_top === 'b1')?.value).toBe(5);
+  });
+
+  it('методы Ф12a не бросают на «голом» сервисе (Optional-safe)', () => {
+    const bare = new BusinessMetricsService();
+    expect(() => {
+      bare.incMeetingSkeleton({ tenantTop: 'x', outcome: 'built' });
+      bare.incBlockGleaningRounds({ tenantTop: 'x', rounds: 1 });
+      bare.incBlockGleaningBlocks({ tenantTop: 'x', count: 1 });
+      bare.incBlockOverlapDedup({ tenantTop: 'x', count: 1 });
+    }).not.toThrow();
+  });
+});

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { BlockExtractionService } from './block-extraction.service';
@@ -62,18 +63,38 @@ function jsonOf(payload: Record<string, unknown>): { text: string } {
 type LlmCallArg = { userMessage: string };
 type LlmCall = (req: LlmCallArg) => Promise<{ text: string }>;
 
+type Metrics = {
+  incBlockGleaningRounds: ReturnType<typeof vi.fn>;
+  incBlockGleaningBlocks: ReturnType<typeof vi.fn>;
+  incBlockOverlapDedup: ReturnType<typeof vi.fn>;
+};
+
+function makeMetrics(): Metrics {
+  return {
+    incBlockGleaningRounds: vi.fn(),
+    incBlockGleaningBlocks: vi.fn(),
+    incBlockOverlapDedup: vi.fn(),
+  };
+}
+
 function makeService(
   cfg: TypedConfigService,
   call: ReturnType<typeof vi.fn<LlmCall>>,
   buildSkeleton?: (args: {
     segments: Segment[];
   }) => Promise<MeetingSkeleton | null>,
+  metrics?: Metrics,
 ): BlockExtractionService {
   const llm = { call } as unknown as LlmRouterService;
   const skeletonService = {
     buildSkeleton: buildSkeleton ?? (async () => null),
   } as unknown as MeetingSkeletonService;
-  return new BlockExtractionService(cfg, llm, skeletonService);
+  return new BlockExtractionService(
+    cfg,
+    llm,
+    skeletonService,
+    metrics as unknown as BusinessMetricsService | undefined,
+  );
 }
 
 function userMsgAt(
@@ -472,5 +493,95 @@ describe('BlockExtractionService.extractFull — скелет → шапка-к�
       expect(userMsgAt(call, n)).toContain('Карта встречи');
       expect(userMsgAt(call, n)).toContain('Обсуждение переноса склада');
     }
+  });
+});
+
+describe('BlockExtractionService.extractFull — метрики наблюдения (Ф12a)', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('дубль на стыке окон → incBlockOverlapDedup с count>0', async () => {
+    const cfg = makeCfg({
+      windowSize: 2,
+      overlap: 1,
+      gleaningRounds: 0,
+      gleaningMinSegments: 99,
+    });
+    const segments = [
+      seg(0, 's0'),
+      seg(1000, 's1'),
+      seg(2000, 's2'),
+      seg(3000, 's3'),
+    ];
+    const call = vi.fn(async () =>
+      jsonOf({ blocks: [block('игла на стыке', 1000)] }),
+    );
+    const metrics = makeMetrics();
+    const svc = makeService(cfg, call, undefined, metrics);
+
+    await svc.extractFull(baseArgs(segments));
+
+    expect(metrics.incBlockOverlapDedup).toHaveBeenCalledTimes(1);
+    const arg = metrics.incBlockOverlapDedup.mock.calls[0]?.[0];
+    expect(arg.count).toBeGreaterThan(0);
+    expect(typeof arg.tenantTop).toBe('string');
+  });
+
+  it('gleaning: 1 раунд, +1 блок → метрики rounds/blocks', async () => {
+    const cfg = makeCfg({
+      windowSize: 3,
+      overlap: 0,
+      gleaningRounds: 1,
+      gleaningMinSegments: 2,
+    });
+    const segments = [seg(0, 's0'), seg(1000, 's1'), seg(2000, 's2')];
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce(jsonOf({ blocks: [block('A', 0)] }))
+      .mockResolvedValueOnce(
+        jsonOf({ blocks: [block('A', 0), block('B', 1000)] }),
+      );
+    const metrics = makeMetrics();
+    const svc = makeService(cfg, call, undefined, metrics);
+
+    await svc.extractFull(baseArgs(segments));
+
+    expect(metrics.incBlockGleaningRounds).toHaveBeenCalledWith(
+      expect.objectContaining({ rounds: 1 }),
+    );
+    expect(metrics.incBlockGleaningBlocks).toHaveBeenCalledWith(
+      expect.objectContaining({ count: 1 }),
+    );
+  });
+
+  it('gleaningRounds=0 → метрики gleaning не зовутся', async () => {
+    const cfg = makeCfg({
+      windowSize: 3,
+      overlap: 0,
+      gleaningRounds: 0,
+      gleaningMinSegments: 2,
+    });
+    const segments = [seg(0, 's0'), seg(1000, 's1'), seg(2000, 's2')];
+    const call = vi.fn(async () => jsonOf({ blocks: [block('A', 0)] }));
+    const metrics = makeMetrics();
+    const svc = makeService(cfg, call, undefined, metrics);
+
+    await svc.extractFull(baseArgs(segments));
+
+    expect(metrics.incBlockGleaningRounds).not.toHaveBeenCalled();
+    expect(metrics.incBlockGleaningBlocks).not.toHaveBeenCalled();
+  });
+
+  it('метрики опциональны: без сервиса метрик не падает', async () => {
+    const cfg = makeCfg({
+      windowSize: 2,
+      overlap: 1,
+      gleaningRounds: 0,
+      gleaningMinSegments: 99,
+    });
+    const segments = [seg(0, 's0'), seg(1000, 's1')];
+    const call = vi.fn(async () => jsonOf({ blocks: [block('A', 0)] }));
+    const svc = makeService(cfg, call);
+
+    await expect(svc.extractFull(baseArgs(segments))).resolves.toBeDefined();
   });
 });

@@ -1,9 +1,11 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { DataClass } from '@prisma/client';
 import { z } from 'zod';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 
 import type { Segment } from './segment-builder.service';
 
@@ -111,10 +113,19 @@ interface BuildSkeletonArgs {
 export class MeetingSkeletonService {
   private readonly logger = new Logger(MeetingSkeletonService.name);
 
-  constructor(@Inject(LlmRouterService) private readonly llm: LlmRouterService) {}
+  constructor(
+    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
+  ) {}
 
   async buildSkeleton(args: BuildSkeletonArgs): Promise<MeetingSkeleton | null> {
-    if (args.segments.length === 0) return null;
+    const tenantTop = tenantTopOf(args.tenantId);
+    if (args.segments.length === 0) {
+      this.metrics?.incMeetingSkeleton({ tenantTop, outcome: 'empty' });
+      return null;
+    }
 
     const contextLines: string[] = [];
     if (args.meetingTitle) contextLines.push(`Заголовок: ${args.meetingTitle}`);
@@ -143,8 +154,14 @@ export class MeetingSkeletonService {
         sourceRef: { type: 'raw-event', id: args.rawEventId },
         dataClass: args.dataClass,
       });
-      return this.parse(out.text);
+      const parsed = this.parse(out.text);
+      this.metrics?.incMeetingSkeleton({
+        tenantTop,
+        outcome: parsed ? 'built' : 'failed',
+      });
+      return parsed;
     } catch (err) {
+      this.metrics?.incMeetingSkeleton({ tenantTop, outcome: 'failed' });
       this.logger.warn(
         {
           tenantId: args.tenantId,

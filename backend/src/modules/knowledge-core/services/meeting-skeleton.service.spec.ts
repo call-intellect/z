@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { MeetingSkeletonService } from './meeting-skeleton.service';
@@ -14,9 +15,21 @@ type LlmCallArg = {
 type LlmCall = (req: LlmCallArg) => Promise<{ text: string }>;
 type MockCall = ReturnType<typeof vi.fn<LlmCall>>;
 
-function makeService(call: MockCall): MeetingSkeletonService {
+function makeMetrics(): {
+  incMeetingSkeleton: ReturnType<typeof vi.fn>;
+} {
+  return { incMeetingSkeleton: vi.fn() };
+}
+
+function makeService(
+  call: MockCall,
+  metrics?: { incMeetingSkeleton: ReturnType<typeof vi.fn> },
+): MeetingSkeletonService {
   const llm = { call } as unknown as LlmRouterService;
-  return new MeetingSkeletonService(llm);
+  return new MeetingSkeletonService(
+    llm,
+    metrics as unknown as BusinessMetricsService | undefined,
+  );
 }
 
 function argAt(call: MockCall, idx: number): LlmCallArg {
@@ -117,5 +130,68 @@ describe('MeetingSkeletonService.buildSkeleton', () => {
     expect(userMessage).toContain('0: ' + 'x'.repeat(80));
     expect(userMessage).not.toContain('x'.repeat(81));
     expect(userMessage).toContain('1: коротко');
+  });
+});
+
+describe('MeetingSkeletonService.buildSkeleton — метрика outcome (Ф12a)', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('валидный ответ → outcome=built', async () => {
+    const call = vi.fn<LlmCall>(async () => ({ text: validResponse }));
+    const metrics = makeMetrics();
+    const svc = makeService(call, metrics);
+
+    await svc.buildSkeleton(baseArgs([seg(0, 'привет')]));
+
+    expect(metrics.incMeetingSkeleton).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'built' }),
+    );
+  });
+
+  it('пустой вход → outcome=empty', async () => {
+    const call = vi.fn<LlmCall>(async () => ({ text: validResponse }));
+    const metrics = makeMetrics();
+    const svc = makeService(call, metrics);
+
+    await svc.buildSkeleton(baseArgs([]));
+
+    expect(metrics.incMeetingSkeleton).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'empty' }),
+    );
+  });
+
+  it('невалидный JSON → outcome=failed', async () => {
+    const call = vi.fn<LlmCall>(async () => ({ text: 'не json' }));
+    const metrics = makeMetrics();
+    const svc = makeService(call, metrics);
+
+    await svc.buildSkeleton(baseArgs([seg(0, 'привет')]));
+
+    expect(metrics.incMeetingSkeleton).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'failed' }),
+    );
+  });
+
+  it('throw в llm.call → outcome=failed', async () => {
+    const call = vi.fn<LlmCall>(async () => {
+      throw new Error('boom');
+    });
+    const metrics = makeMetrics();
+    const svc = makeService(call, metrics);
+
+    await svc.buildSkeleton(baseArgs([seg(0, 'привет')]));
+
+    expect(metrics.incMeetingSkeleton).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'failed' }),
+    );
+  });
+
+  it('метрика опциональна: без неё не падает', async () => {
+    const call = vi.fn<LlmCall>(async () => ({ text: validResponse }));
+    const svc = makeService(call);
+
+    await expect(
+      svc.buildSkeleton(baseArgs([seg(0, 'привет')])),
+    ).resolves.not.toBeNull();
   });
 });

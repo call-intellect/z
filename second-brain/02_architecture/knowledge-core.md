@@ -165,6 +165,11 @@ knowledge-clone-rebuild.worker (consumer core.knowledge-clone-rebuild, concurren
    ├─ SBA β-2 — Specialist32Service.rebuildForPerson:
    │    1. Загрузить блоки Person'а через IdeaBlockEntity → Person.entityId (role∈['subject','mentioned'])
    │       за окно `cfg.knowledgeClone.lookbackMonths` (default 12); status='canonical'.
+   │       ⤷ Если `Person.entityId=null` (нет авто-линковки) — `loadBlocksForPerson` больше НЕ молчит:
+   │         `warn` + counter `knowledge_clone_person_no_entity_total{tenant}` + lazy-резолв через
+   │         `resolveSubjectEntityId({authorPersonId})` и запись ОБОИХ полей композитного FK
+   │         (`entityId`+`entityTenantId`); не разрешилось → `[]`. Backfill
+   │         `backfill-knowledge-clone-person-entity.ts` (`--apply`, идемпотентен). (C1-#4)
    │    2. Если блоков < `minBlocksForProfile` (default 10) → skip.
    │    3. LLM `knowledge-clone-extract` (JSON Schema strict) → draft {categories[], experienceHighlights[]}.
    │    4. Если есть старый профиль → LLM `knowledge-clone-merge` (decay для категорий >6 мес без observation).

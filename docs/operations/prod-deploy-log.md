@@ -71,6 +71,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-01 — Lazy Person↔Entity линковка клона + авторство блоков без таймкодов (clone-entity-link-and-authorship, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-30-clone-entity-link-and-authorship.md` (Ф1+Ф2, коммиты `3d535343`+`4b098e55`). Две независимые корректностные правки сборки клонов: (Ф1/C1-#4) `loadBlocksForPerson` при `Person.entityId=null` больше НЕ молчит — `warn` + counter + lazy-резолв через `EntityResolutionService.resolveSubjectEntityId` + запись ОБОИХ полей композитного FK (`entityId`+`entityTenantId`); (Ф2/C1-#3) у источников без таймкодов (`startMs=0`, `seg=null`) узкий single-author fallback в `attributeSubject` (`via='author_fallback'`).
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV/ФЛАГОВ/AdminSetting НЕТ. 🟢 1 BACKFILL (идемпотентный, в STEPS).** Docker rebuild backend.
+
+- **Шаги 1/4/5/6/9/10 (ENV/Prisma/postgres-init/patch/migrate/setup) — НЕ затронуты.** Поля композитного FK `Person.entityId`/`entityTenantId` уже существуют (схемной миграции нет); новый counter `knowledge_clone_person_no_entity_total` — runtime-метрика, не схема.
+- **Шаг 7 — Seed — НЕ затронут.** Новых сидов/крутилок нет.
+- **Шаг 8 — Backfill (идемпотентный, зарегистрирован в STEPS `phase:'backfill'`, флаг `--apply`):** `docker compose exec backend bun run scripts/backfill-knowledge-clone-person-entity.ts --apply` — по всем тенантам `Person` где `entityId IS NULL` → `resolveSubjectEntityId({authorPersonId})` → запись `entityId`+`entityTenantId` (оба поля FK вместе). Идемпотентен (после линковки `entityId` set → выборка пустеет; повтор = 0 кандидатов). Доезжает агрегатором `apply-prod-deploy.ts --mode update`. Прогон без `--apply` = dry-run (counts + sample). Проверено на dev-БД: 9 кандидатов → linked=9/errors=0, повтор = 0.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `loadBlocksForPerson` lazy-резолв + counter; `attributeSubject` single-author fallback (`via='author_fallback'`). Frontend не затронут.
+- **Шаг 12 — Smoke** (после выката):
+  - `/metrics` содержит `knowledge_clone_person_no_entity_total{tenant}` (растёт, если на вход rebuild пришёл `Person` без линковки) и `kc_subject_attribution_total{via}` с новым значением `via="author_fallback"`.
+  - после backfill: `psql` — нет `Person` где `entityId IS NOT NULL AND entityTenantId IS NULL` (битый композитный FK не образуется — оба поля пишутся вместе).
+- **Откат:** корректностные фиксы (Ship-On), рискованного переключателя нет; откат — `git revert 4b098e55 3d535343`. Backfill необратим по смыслу (линковка Entity), но безвреден.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-01 — Снос соц-слоя обещаний: убран весь надзор, оставлена память факта (commitment-social-layer-cleanup, ветка work/2026-06-29)
 
 > ТЗ `plans/tz/2026-06-29-commitment-social-layer-cleanup.md` (Ф1–Ф6, коммиты Ф1-Ф6 + добивки). Удалён ВЕСЬ надзорный соц-слой обещаний (follow-up / каскад срыва / сеть-перегруз / надёжность / «Мои обещания» / секции писем), СОХРАНЕНА память факта обещания (срок + атрибуция автора/адресата). Кора больше не напоминает/не эскалирует по обещаниям и не считает «надёжность»; обещание = пассивный факт памяти. Снесено: cron'ы `promise-cascade.cron` + `PromiseNetworkAnalyzerCron`, event-handler `CommitmentResponseHandler`, сервисы `PromiseNetworkService`/`CommitmentReliabilityService`/`commitments.service` (resolveSelfPerson вынесен в `SelfPersonResolverService`), маршрут роутера `commitment_status`, метрика `promise_cascade_alert_total` + 5 метрик β-8.2, эндпоинты `open-commitments`/`/me/promises*`/`personal-relations/commitments`, страница `/me/promises` + виджеты `PromiseOverloadWidget`/`PromisesCard`, величина `commitmentsKept` в ValueStrip, секции обещаний в дайджестах/брифе. Виджет `WeeklyPerPersonWidget` переименован «Кто держит слово» → «План-факт недели по людям» (агрегат план-факта по автору остался).

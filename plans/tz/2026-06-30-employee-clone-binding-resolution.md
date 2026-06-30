@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-to-implement
+status: superseded
 feature: employee-clone-binding-resolution
 date: 2026-06-30
 owner: Сергей (владелец продукта Кора)
@@ -11,7 +11,12 @@ relates_to:
   - docs/operations/prod-deploy-log.md
 ---
 
-> Архитектура (одобрена владельцем 2026-06-30): `plans/architecture/2026-06-30-employee-clone-build-hardening.md` (кластер C1) · Анализ: `plans/analysis/2026-06-30-employee-clone-build-audit-and-risk-solutions.md` (§C1, решения в исправленном после состязательной проверки виде) · Статус согласования: одобрено 2026-06-30.
+> ⚠️ **SUPERSEDED (2026-06-30).** REALITY-CHECK против переписывания извлекающего слоя показал: боевой путь записи регламентов — `specialists-combined` (combo ON), а не `specialist-3-1`, в который целилось это ТЗ (combo вырезает 3-1 из dispatch, `router.service.ts:90,191`; combo вообще не пишет scope/owner). Решение владельца: разнести.
+> - **scope роли + владелец регламента (C1-#1,#2)** → ТЗ переписывания `plans/tz/2026-06-30-extraction-layer-rewrite.md` **Ф7б** (правится combo: схема+промпт+persist+нормализация).
+> - **Person↔Entity lazy-резолв + авторство (C1-#3,#4)** → `plans/tz/2026-06-30-clone-entity-link-and-authorship.md` (независимы от combo, делаются сейчас).
+> Этот файл оставлен как контракт-источник (`resolveScope`/`resolveOwnerPersonHint` сниппеты переиспользуются Ф7б) и история решения. Реализовывать ПО НЕМУ напрямую не нужно.
+>
+> Архитектура (одобрена владельцем 2026-06-30): `plans/architecture/2026-06-30-employee-clone-build-hardening.md` (кластер C1) · Анализ: `plans/analysis/2026-06-30-employee-clone-build-audit-and-risk-solutions.md` (§C1, решения в исправленном после состязательной проверки виде).
 
 # ТЗ — Привязка регламент↔роль/сотрудник: резолв сущностей на write (кластер C1, корень)
 

@@ -1026,3 +1026,90 @@ describe('SpecialistsCombinedService — Фаза 7б: scope/owner для regula
     expect(upsertArg.update.scope).toBe('role:role-cuid-mgr');
   });
 });
+
+describe('SpecialistsCombinedService — persistTasks → материализатор (wiring)', () => {
+  function makeTaskMaterializerMock() {
+    return {
+      materialize: vi
+        .fn()
+        .mockResolvedValue([{ id: 'i1', title: 't', confidence: null }]),
+    };
+  }
+
+  it('маппит tasks[] в drafts, фильтрует по blockIdSet и зовёт materialize один раз', async () => {
+    const prisma = makePrismaMock();
+    const taskMaterializer = makeTaskMaterializerMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      tasks: [
+        {
+          sourceBlockId: 'blk_1',
+          title: 'Сделать X',
+          assignee: 'Иван',
+          dueDate: '2026-07-03',
+          subtasks: [{ title: 'шаг1' }],
+        },
+        {
+          sourceBlockId: 'NOPE',
+          title: 'мимо',
+        },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      taskMaterializer as any,
+    );
+
+    const result = await svc.extractAll({
+      tenantId: 't1',
+      meetingId: 'm-1',
+      meetingTitle: 'Встреча',
+      blocks: [
+        {
+          id: 'blk_1',
+          name: 'Задача',
+          criticalQuestion: 'Что?',
+          trustedAnswer: 'Сделать X.',
+          signalType: 'task',
+          personNames: ['Иван'],
+          evidence: { quote: 'я сделаю X', speaker: 'Иван' },
+        },
+      ],
+      channelKind: 'meeting',
+      sourceType: 'meeting',
+    });
+
+    expect(taskMaterializer.materialize).toHaveBeenCalledTimes(1);
+    expect(taskMaterializer.materialize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 't1',
+        channel: 'meeting',
+        sourceId: 'm-1',
+        sourceTitle: 'Встреча',
+        drafts: [
+          expect.objectContaining({
+            title: 'Сделать X',
+            assignee: 'Иван',
+            dueDate: '2026-07-03',
+            subtasks: [{ title: 'шаг1' }],
+            sourceBlockId: 'blk_1',
+          }),
+        ],
+      }),
+    );
+    const callArg = taskMaterializer.materialize.mock.calls[0]?.[0] as {
+      drafts: unknown[];
+    };
+    expect(callArg.drafts).toHaveLength(1);
+    expect(result.created.tasks).toBe(1);
+  });
+});

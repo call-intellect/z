@@ -39,7 +39,6 @@ import { OperationsDashboardService } from './services/operations-dashboard.serv
 import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
 import { PersonalRelationService } from './services/personal-relation.service';
 import { PortfolioHealthService } from './services/portfolio-health.service';
-import { PromiseCascadeService } from './services/promise-cascade.service';
 import { PromiseNetworkService } from './services/promise-network.service';
 import { TaskCompletionHandler } from './services/task-completion.handler';
 import { TaskReconcileService } from './services/task-reconcile.service';
@@ -65,7 +64,6 @@ import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.c
 import { PersonalDailyBriefCron } from './workers/personal-daily-brief.cron';
 import { CheckInConflictDetectorCron } from './workers/personal-relation-builder.worker';
 import { PortfolioHealthSnapshotCron } from './workers/portfolio-health-snapshot.cron';
-import { PromiseCascadeCron } from './workers/promise-cascade.cron';
 import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer.cron';
 import { TaskReconcileCron } from './workers/task-reconcile.cron';
 import { ValueRecapCron } from './workers/value-recap.cron';
@@ -137,8 +135,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     ExecMorningPushCron,
     BlockerSynthesisService,
     BlockerSynthesisCron,
-    PromiseCascadeService,
-    PromiseCascadeCron,
     KnowledgeAtRiskService,
     KnowledgeAtRiskCron,
     TeamCapacityService,
@@ -167,7 +163,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     PersonalDailyBriefService,
     KnowsWhoService,
     BlockerSynthesisService,
-    PromiseCascadeService,
     KnowledgeAtRiskService,
     TeamCapacityService,
     OnboardingRampService,

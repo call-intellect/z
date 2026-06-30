@@ -131,16 +131,6 @@ const SEEDS: SettingSeed[] = [
     description:
       'Аварийный рубильник (kill-switch) дневного синтеза блокеров (cron 22:00). Выкл → синтез не строится, мост в инсайты не работает. По умолчанию ВКЛ.',
   },
-
-  {
-    key: 'operations.promise_cascade.enabled',
-    value: true,
-    category: 'operations',
-    section: 'promise_cascade',
-    severity: 'medium',
-    description:
-      'Аварийный рубильник (kill-switch) дневного каскада обещаний (cron 08:00). Выкл → каскадные алерты автору/руководителю не шлются. По умолчанию ВКЛ.',
-  },
 ];
 
 interface Counters {

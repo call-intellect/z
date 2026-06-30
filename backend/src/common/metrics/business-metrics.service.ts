@@ -288,7 +288,6 @@ export class BusinessMetricsService implements OnModuleInit {
 
   private blockerSynthesisRecurringTotal!: Counter<'status'>;
   private taskClosureReopenRate!: Gauge<'tenant_top'>;
-  private promiseCascadeAlertTotal!: Counter<string>;
   private themeSilenceSurfacedTotal!: Counter<'severity'>;
 
   // ── TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания ──
@@ -1925,11 +1924,6 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'theme_silence_surfaced_total',
       help: 'Редизайн Ф8.2 — surface риска «тема молчит N недель» (severity ∈ medium|high|critical), на создание Insight.',
       labelNames: ['severity'] as const,
-    });
-    this.promiseCascadeAlertTotal = this.getOrCreateCounter({
-      name: 'promise_cascade_alert_total',
-      help: 'TZ-1 Ф3.C — дневной алерт каскада обещаний (просроченное обещание держит чужую работу).',
-      labelNames: [] as const,
     });
 
     // ── TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания ──────
@@ -5228,11 +5222,6 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `theme_silence_surfaced_total{severity}` (редизайн Ф8.2). */
   incThemeSilenceSurfaced(args: { severity: string }): void {
     this.themeSilenceSurfacedTotal.inc({ severity: args.severity });
-  }
-
-  /** Counter `promise_cascade_alert_total`. */
-  incPromiseCascadeAlert(): void {
-    this.promiseCascadeAlertTotal.inc();
   }
 
   // ──────────────── TZ-1 Фаза 4 — улучшения и знания ───────────────────

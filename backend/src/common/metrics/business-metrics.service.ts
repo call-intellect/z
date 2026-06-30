@@ -277,21 +277,10 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── B6/Ф7 (mobile-cora-exec-manager §Ф7) — утренний exec web-push ──
   private execMorningPushDeliveredTotal!: Counter<'channel'>;
 
-  // ── TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения ──
-  // Cardinality-safe: status ∈ new|recurring|resolved; decision_throughput —
-  // gauge без tenant в labels (top-100 агрегацию делает Grafana поверх БД).
   private blockerSynthesisRecurringTotal!: Counter<'status'>;
-  private decisionStalledTotal!: Counter<string>;
-  private decisionThroughputPercent!: Gauge<'tenant_top'>;
-  // ── task-dedup Ф3 — доля ложных закрытий (reopen после accepted-кандидата) ──
   private taskClosureReopenRate!: Gauge<'tenant_top'>;
   private promiseCascadeAlertTotal!: Counter<string>;
-  // ── Редизайн кабинета Ф8.1/Ф8.2 — риск-алерты + петля решений ──
-  // theme_silence — surface риска «тема молчит N недель» (severity ∈
-  // medium|high|critical); decision_auto_implemented — детерминированный
-  // авто-переход approved→implemented (есть outcomes ИЛИ все задачи закрыты).
   private themeSilenceSurfacedTotal!: Counter<'severity'>;
-  private decisionAutoImplementedTotal!: Counter<string>;
 
   // ── TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания ──
   private ideasTopServedTotal!: Counter<string>;
@@ -1902,35 +1891,15 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'TZ-1 Ф3.A — синтезированный кластер блокеров по статусу (status ∈ new|recurring|resolved).',
       labelNames: ['status'] as const,
     });
-    this.decisionStalledTotal = this.getOrCreateCounter({
-      name: 'decision_stalled_total',
-      help: 'TZ-1 Ф3.B — решение помечено stalled контролёром внедрения (0 задач + нет actualOutcomes старше N дней).',
-      labelNames: [] as const,
-    });
-    this.decisionThroughputPercent = this.getOrCreateGauge({
-      name: 'decision_throughput_percent',
-      help: 'TZ-1 Ф3.B — доля решений, доведённых до actualOutcomes, % (несущая метрика витрины Ф5).',
-      labelNames: ['tenant_top'] as const,
-    });
-    // task-dedup (2026-06-16, Ф3) — доля ложных закрытий: задачи, закрытые через
-    // accepted-кандидат TaskClosureCandidate и затем переоткрытые (completedAt
-    // обнулён). Пересчитывается reconcile-cron'ом per-Org. Алёрт при превышении
-    // taskClosure.reopenRateAlert (бьёт по доверию авто-закрытию).
     this.taskClosureReopenRate = this.getOrCreateGauge({
       name: 'task_closure_reopen_rate',
       help: 'task-dedup Ф3 — доля accepted-кандидатов на закрытие, чья задача была переоткрыта (0..1) по tenant_top.',
       labelNames: ['tenant_top'] as const,
     });
-    // ── Редизайн кабинета Ф8.1/Ф8.2 — риск-алерты + петля решений ──
     this.themeSilenceSurfacedTotal = this.getOrCreateCounter({
       name: 'theme_silence_surfaced_total',
       help: 'Редизайн Ф8.2 — surface риска «тема молчит N недель» (severity ∈ medium|high|critical), на создание Insight.',
       labelNames: ['severity'] as const,
-    });
-    this.decisionAutoImplementedTotal = this.getOrCreateCounter({
-      name: 'decision_auto_implemented_total',
-      help: 'Редизайн Ф8.1 — детерминированный авто-переход решения approved→implemented (есть outcomes ИЛИ все связанные задачи закрыты).',
-      labelNames: [] as const,
     });
     this.promiseCascadeAlertTotal = this.getOrCreateCounter({
       name: 'promise_cascade_alert_total',
@@ -5206,23 +5175,6 @@ export class BusinessMetricsService implements OnModuleInit {
     this.blockerSynthesisRecurringTotal.inc({ status: args.status });
   }
 
-  /** Counter `decision_stalled_total`. */
-  incDecisionStalled(): void {
-    this.decisionStalledTotal.inc();
-  }
-
-  /** Gauge `decision_throughput_percent{tenant_top}` (0..100). */
-  setDecisionThroughputPercent(args: {
-    tenantTop: string;
-    value: number;
-  }): void {
-    if (!Number.isFinite(args.value)) return;
-    this.decisionThroughputPercent.set(
-      { tenant_top: args.tenantTop },
-      Math.min(100, Math.max(0, args.value)),
-    );
-  }
-
   /** Gauge `task_closure_reopen_rate{tenant_top}` (0..1) — task-dedup Ф3. */
   setTaskClosureReopenRate(args: { tenantTop: string; value: number }): void {
     if (!Number.isFinite(args.value)) return;
@@ -5235,11 +5187,6 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `theme_silence_surfaced_total{severity}` (редизайн Ф8.2). */
   incThemeSilenceSurfaced(args: { severity: string }): void {
     this.themeSilenceSurfacedTotal.inc({ severity: args.severity });
-  }
-
-  /** Counter `decision_auto_implemented_total` (редизайн Ф8.1). */
-  incDecisionAutoImplemented(): void {
-    this.decisionAutoImplementedTotal.inc();
   }
 
   /** Counter `promise_cascade_alert_total`. */

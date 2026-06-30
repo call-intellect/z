@@ -16,10 +16,8 @@ import {
 } from '../prompts/value-recap-narrative.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-import { DecisionImplementationService } from './decision-implementation.service';
 import {
   assembleValueRecapPayload,
-  type ValueRecapDecision,
   type ValueRecapPayload,
   type ValueRecapRoutine,
   type ValueRecapTeam,
@@ -39,8 +37,6 @@ export class ValueRecapService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(ChatV2FeedbackService)
     private readonly chatFeedback: ChatV2FeedbackService,
-    @Inject(DecisionImplementationService)
-    private readonly decisions: DecisionImplementationService,
   ) {}
 
   async build(args: {
@@ -54,13 +50,6 @@ export class ValueRecapService {
     const routine = await this.computeRoutine(args.tenantId, from, to);
 
     const team = await this.computeTeam({ tenantId: args.tenantId, from, to });
-
-    const decisions = await this.computeDecisions({
-      tenantId: args.tenantId,
-      from,
-      to,
-      now,
-    });
 
     const prevPeriod = shiftPeriod(args.periodYm, -1);
     const previousRoutine = await this.loadPreviousRoutine(args.tenantId, prevPeriod);
@@ -79,7 +68,6 @@ export class ValueRecapService {
       routine,
       team,
       previousRoutine,
-      decisions,
       narrative,
     });
 
@@ -283,12 +271,6 @@ export class ValueRecapService {
       scope: 'org',
     });
 
-    const throughput = await this.decisions.getDecisionThroughput({
-      tenantId: args.tenantId,
-      from: args.from,
-      to: args.to,
-    });
-
     const ideasShipped = await this.prisma.idea.count({
       where: {
         tenantId: args.tenantId,
@@ -307,32 +289,9 @@ export class ValueRecapService {
       chatHelpedRatePercent: chat.helpedRatePercent,
       chatRated: chat.rated,
       chatAnsweredWithCitation: chat.answeredWithCitation,
-      decisionsTotal: throughput.total,
-      decisionsThroughputPercent: throughput.throughputPercent,
       ideasShipped: nz(ideasShipped),
       estimate: true,
     };
-  }
-
-  private async computeDecisions(args: {
-    tenantId: string;
-    from: Date;
-    to: Date;
-    now: Date;
-  }): Promise<ValueRecapDecision[]> {
-    const rows = await this.decisions.listDecisionsForMonth({
-      tenantId: args.tenantId,
-      from: args.from,
-      to: args.to,
-      limit: 10,
-      now: args.now,
-    });
-    return rows.map((r) => ({
-      id: r.id,
-      statement: r.statement,
-      status: r.status,
-      throughputPercent: r.throughputPercent,
-    }));
   }
 
   private async computeReliability(args: {
@@ -426,8 +385,6 @@ export class ValueRecapService {
         reliabilityDenominator: args.team.reliabilityDenominator,
         chatHelpedRatePercent: args.team.chatHelpedRatePercent,
         chatRated: args.team.chatRated,
-        decisionsThroughputPercent: args.team.decisionsThroughputPercent,
-        decisionsTotal: args.team.decisionsTotal,
       },
       delta: prev
         ? {

@@ -30,7 +30,6 @@ import { CustomerRiskRadarService } from './services/customer-risk-radar.service
 import { DailyCheckInService } from './services/daily-checkin.service';
 import { DailyDigestService } from './services/daily-digest.service';
 import { DayReportCollectorService } from './services/day-report-collector.service';
-import { DecisionImplementationService } from './services/decision-implementation.service';
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
 import { KnowsWhoService } from './services/knows-who.service';
@@ -56,7 +55,6 @@ import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cro
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { DayReportCollectorCron } from './workers/day-report-collector.cron';
-import { DecisionImplementationCron } from './workers/decision-implementation.cron';
 import { ExecMorningPushCron } from './workers/exec-morning-push.cron';
 import { MeetingCheckinListener } from './workers/meeting-checkin.listener';
 import { KnowledgeAtRiskCron } from './workers/knowledge-at-risk.cron';
@@ -123,11 +121,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     // семантический матч открытой Issue + LLM-верификатор → обратимый
     // TaskClosureCandidate (авто-закрытие запрещено, R13).
     TaskCompletionHandler,
-    // TZ task-dedup (2026-06-16, Ф3) — суточный reconcile петли закрытия:
-    // протухание pending-кандидатов + пересчёт reopen-rate (метрика
-    // task_closure_reopen_rate + WARN-алёрт) + подбор пропущенных событием
-    // матчей (переэмит). Образец — DecisionImplementationCron (per-Org @Cron +
-    // condition-UPDATE, БЕЗ LLM). Kill-switch taskReconcile.enabled (ON).
     TaskReconcileService,
     TaskReconcileCron,
     // SBA β-8.3 — ежедневный отчёт COO.
@@ -144,8 +137,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     ExecMorningPushCron,
     BlockerSynthesisService,
     BlockerSynthesisCron,
-    DecisionImplementationService,
-    DecisionImplementationCron,
     PromiseCascadeService,
     PromiseCascadeCron,
     KnowledgeAtRiskService,
@@ -176,7 +167,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     PersonalDailyBriefService,
     KnowsWhoService,
     BlockerSynthesisService,
-    DecisionImplementationService,
     PromiseCascadeService,
     KnowledgeAtRiskService,
     TeamCapacityService,

@@ -15,17 +15,8 @@ export interface ValueRecapTeam {
   chatHelpedRatePercent: number | null;
   chatRated: number;
   chatAnsweredWithCitation: number;
-  decisionsTotal: number;
-  decisionsThroughputPercent: number;
   ideasShipped: number;
   estimate: true;
-}
-
-export interface ValueRecapDecision {
-  id: string;
-  statement: string;
-  status: string;
-  throughputPercent: number;
 }
 
 export interface ValueRecapDelta {
@@ -45,7 +36,6 @@ export interface ValueRecapPayload {
   routine: ValueRecapRoutine;
   team: ValueRecapTeam;
   delta: ValueRecapDelta | null;
-  decisions: ValueRecapDecision[];
   narrative: string;
 }
 
@@ -81,8 +71,6 @@ export function findForbiddenMetricKeys(payload: unknown): string[] {
     'reliabilitypercent',
     'reliabilitydelta',
     'reliabilitydenominator',
-    'throughputpercent',
-    'decisionsthroughputpercent',
     'estimate',
   ]);
   const found = new Set<string>();
@@ -157,7 +145,6 @@ export function assembleValueRecapPayload(args: {
   routine: ValueRecapRoutine;
   team: ValueRecapTeam;
   previousRoutine: ValueRecapRoutine | null;
-  decisions: ValueRecapDecision[];
   narrative: string;
 }): ValueRecapPayload {
   const isBaseline = args.previousRoutine === null;
@@ -168,7 +155,6 @@ export function assembleValueRecapPayload(args: {
     routine: args.routine,
     team: args.team,
     delta: buildDelta(args.routine, args.previousRoutine),
-    decisions: args.decisions ?? [],
     narrative: args.narrative,
   };
   assertNoForbiddenMetricKeys(payload);

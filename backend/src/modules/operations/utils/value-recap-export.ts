@@ -35,21 +35,9 @@ export function buildValueRecapSlides(payload: ValueRecapPayload | null): ValueR
           ? 'мало данных'
           : `оценка ${t.chatHelpedRatePercent}% (оценили ${t.chatRated})`
       }`,
-      `Решений всего ${t.decisionsTotal}, доведено до результата ${t.decisionsThroughputPercent}%`,
       `Идей доведено до релиза: ${t.ideasShipped}`,
     ],
   });
-
-  const decisions = payload.decisions ?? [];
-  if (decisions.length > 0) {
-    slides.push({
-      title: 'Решения месяца',
-      subtitle: `Всего ${t.decisionsTotal}, доведено до результата ${t.decisionsThroughputPercent}%`,
-      bullets: decisions.map(
-        (d) => `${d.statement} — ${decisionStatusLabel(d.status)} (${d.throughputPercent}%)`,
-      ),
-    });
-  }
 
   if (payload.narrative && payload.narrative.trim().length > 0) {
     slides.push({
@@ -59,21 +47,6 @@ export function buildValueRecapSlides(payload: ValueRecapPayload | null): ValueR
   }
 
   return slides;
-}
-
-function decisionStatusLabel(status: string): string {
-  switch (status) {
-    case 'done':
-      return 'внедрено';
-    case 'in_progress':
-      return 'в работе';
-    case 'stalled':
-      return 'застряло';
-    case 'not_started':
-      return 'не начато';
-    default:
-      return status;
-  }
 }
 
 function fmtDelta(v: number | null | undefined): string {

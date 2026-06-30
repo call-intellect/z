@@ -204,7 +204,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-execution-agents.ts',
-    hint: 'goals.author_coverage_min + reliability.min_denominator + probe.* (Ф3.D) + blocker_synthesis.* + decision.stale_days + operations.{blocker_synthesis,decision_controller,promise_cascade}.enabled (TZ-1 Ф3.A/B/C агенты исполнения)',
+    hint: 'goals.author_coverage_min + reliability.min_denominator + probe.* (Ф3.D) + blocker_synthesis.* + operations.{blocker_synthesis,promise_cascade}.enabled (TZ-1 Ф3.A/B/C агенты исполнения)',
   },
   {
     phase: 'seed-base',

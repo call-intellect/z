@@ -12,8 +12,6 @@ import { resolveOperationsTenantTop } from '../utils/tenant-top';
  * Суточный `@Cron('0 3 * * *')` (03:00): обходит активные Org →
  * `TaskReconcileService.reconcileForTenant` (протухание pending-кандидатов
  * на закрытие + пересчёт reopen-rate + подбор пропущенных событием матчей).
- * Образец — `DecisionImplementationCron` (per-Org @Cron + try/catch + глобальный
- * kill-switch + выделенный runOnce(now) для unit-тестов).
  *
  * Глобальный kill-switch `taskReconcile.enabled` (Ship-On, ON по умолчанию):
  * при OFF крон вообще НЕ трогает БД (ранний return до findMany). БЕЗ LLM.

@@ -28,8 +28,6 @@ describe('value-recap.scoring', () => {
     chatHelpedRatePercent: 75,
     chatRated: 12,
     chatAnsweredWithCitation: 22,
-    decisionsTotal: 8,
-    decisionsThroughputPercent: 50,
     ideasShipped: 3,
     estimate: true,
   };
@@ -64,39 +62,31 @@ describe('value-recap.scoring', () => {
         routine,
         team,
         previousRoutine: null,
-        decisions: [
-          { id: 'd1', statement: 'Решение A', status: 'done', throughputPercent: 100 },
-          { id: 'd2', statement: 'Решение B', status: 'stalled', throughputPercent: 0 },
-        ],
         narrative: 'За май система собрала встречи, задачи и решения.',
       });
       expect(payload.isBaseline).toBe(true);
       expect(payload.delta).toBeNull();
-      expect(payload.decisions).toHaveLength(2);
+      expect(payload.routine.decisionsExtracted).toBe(8);
       expect(findForbiddenMetricKeys(payload)).toEqual([]);
     });
 
-    it('count решений идёт в паре с throughputPercent', () => {
+    it('previous=routine → дельта считается, baseline=false', () => {
       const payload = assembleValueRecapPayload({
         periodYm: '2026-05',
         builtAt: new Date('2026-06-01T07:00:00.000Z'),
         routine,
         team,
         previousRoutine: routine,
-        decisions: [],
         narrative: 'ок',
       });
-      expect(payload.team.decisionsTotal).toBe(8);
-      expect(payload.team.decisionsThroughputPercent).toBe(50);
       expect(payload.isBaseline).toBe(false);
       expect(payload.delta).not.toBeNull();
     });
   });
 
   describe('findForbiddenMetricKeys', () => {
-    it('allow-list: throughputPercent/helpedRate/reliabilityPercent НЕ запрещены', () => {
+    it('allow-list: helpedRate/reliabilityPercent НЕ запрещены', () => {
       const ok = {
-        throughputPercent: 50,
         helpedRatePercent: 75,
         reliabilityPercent: 80,
         feedbackCoveragePercent: 40,

@@ -133,25 +133,6 @@ const SEEDS: SettingSeed[] = [
   },
 
   {
-    key: 'decision.stale_days',
-    value: 21,
-    category: 'operations',
-    section: 'decision_controller',
-    severity: 'low',
-    description:
-      'Через сколько дней решение (approved/implemented) без связанных задач и без actualOutcomes помечается «не двигается» (stalled). По умолчанию 21.',
-  },
-  {
-    key: 'operations.decision_controller.enabled',
-    value: true,
-    category: 'operations',
-    section: 'decision_controller',
-    severity: 'medium',
-    description:
-      'Аварийный рубильник (kill-switch) контролёра внедрения решений (cron 06:00). Выкл → статусы внедрения не пересчитываются, пушей нет. По умолчанию ВКЛ.',
-  },
-
-  {
     key: 'operations.promise_cascade.enabled',
     value: true,
     category: 'operations',

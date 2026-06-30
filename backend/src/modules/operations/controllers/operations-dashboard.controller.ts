@@ -42,12 +42,8 @@ import {
 } from '../dto/customer-risk.dto';
 import {
   ChronicBlockersQuerySchema,
-  DecisionThroughputQuerySchema,
   type ChronicBlockersListDto,
   type ChronicBlockersQuery,
-  type DecisionThroughputDto,
-  type DecisionThroughputQuery,
-  type StalledDecisionsListDto,
 } from '../dto/execution-agents.dto';
 import type {
   KnowledgeAtRiskListDto,
@@ -81,7 +77,6 @@ import { TeamTemperatureQuerySchema, type TeamTemperatureQuery } from '../dto/we
 import { BlockerSynthesisService } from '../services/blocker-synthesis.service';
 import { CommitmentsService } from '../services/commitments.service';
 import { CustomerRiskRadarService } from '../services/customer-risk-radar.service';
-import { DecisionImplementationService } from '../services/decision-implementation.service';
 import { KnowledgeAtRiskService } from '../services/knowledge-at-risk.service';
 import { OnboardingRampService } from '../services/onboarding-ramp.service';
 import { OperationsDashboardService } from '../services/operations-dashboard.service';
@@ -107,8 +102,6 @@ export class OperationsDashboardController {
     private readonly customerRisk: CustomerRiskRadarService,
     @Inject(BlockerSynthesisService)
     private readonly blockerSynthesis: BlockerSynthesisService,
-    @Inject(DecisionImplementationService)
-    private readonly decisionImpl: DecisionImplementationService,
     @Inject(KnowledgeAtRiskService)
     private readonly knowledgeAtRisk: KnowledgeAtRiskService,
     @Inject(TeamCapacityService)
@@ -364,52 +357,6 @@ export class OperationsDashboardController {
       tenantId: tenantId!,
       status: q.status,
       limit: q.limit,
-    });
-    return { items };
-  }
-
-  @Get('decisions/throughput')
-  @ApiOperation({
-    summary: 'COO operations dashboard — % решений, доведённых до результата (за окно)',
-  })
-  async decisionsThroughput(
-    @CurrentOrg() tenantId: string | undefined,
-    @Req() req: Request,
-    @Query(new ZodValidationPipe(DecisionThroughputQuerySchema))
-    q: DecisionThroughputQuery,
-  ): Promise<DecisionThroughputDto> {
-    const uid = this.requireUser(req);
-    this.requireTenant(tenantId);
-    await this.requireAccess(uid, tenantId!);
-    const to = q.to ? new Date(`${q.to}T23:59:59.999Z`) : new Date();
-    const from = q.from
-      ? new Date(`${q.from}T00:00:00.000Z`)
-      : new Date(to.getTime() - 90 * 24 * 3_600_000);
-    const tp = await this.decisionImpl.getDecisionThroughput({
-      tenantId: tenantId!,
-      from,
-      to,
-    });
-    return {
-      ...tp,
-      from: from.toISOString().slice(0, 10),
-      to: to.toISOString().slice(0, 10),
-    };
-  }
-
-  @Get('decisions/stalled')
-  @ApiOperation({
-    summary: 'COO operations dashboard — решения без движения (stalled, контролёр внедрения)',
-  })
-  async decisionsStalled(
-    @CurrentOrg() tenantId: string | undefined,
-    @Req() req: Request,
-  ): Promise<StalledDecisionsListDto> {
-    const uid = this.requireUser(req);
-    this.requireTenant(tenantId);
-    await this.requireAccess(uid, tenantId!);
-    const items = await this.decisionImpl.listStalledForTenant({
-      tenantId: tenantId!,
     });
     return { items };
   }

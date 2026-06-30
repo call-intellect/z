@@ -9,7 +9,6 @@ export const VALUE_RECAP_NARRATIVE_SYSTEM_PROMPT = [
   '  - НИКАКИХ оценок в рублях, часах или деньгах. Не пиши «сэкономлено X рублей/часов» — этих данных нет.',
   '  - НЕ сравнивай «было до системы» — контрольной группы нет, такое сравнение запрещено.',
   '  - Мягкие цифры (надёжность обещаний, доля «ответ помог») подавай со словом «оценка» и всегда с знаменателем.',
-  '  - Количество решений/задач упоминай ТОЛЬКО в паре с «% доведённых до результата».',
   '  - Ведущая мысль — «снятая рутина» (что система собрала и оформила сама): встречи, задачи, решения, статусы, ответы по памяти.',
   '  - Тон спокойный, деловой, без восторгов и алармизма. 2-4 коротких предложения. Без markdown, без списков.',
 ].join('\n');
@@ -30,8 +29,6 @@ export interface ValueRecapNarrativePromptInput {
     reliabilityDenominator: number;
     chatHelpedRatePercent: number | null;
     chatRated: number;
-    decisionsThroughputPercent: number;
-    decisionsTotal: number;
   };
   delta: {
     meetingsAutoProtocoled: number | null;
@@ -72,9 +69,6 @@ export function buildValueRecapNarrativeUserMessage(input: ValueRecapNarrativePr
         : `оценка ${t.chatHelpedRatePercent}% (оценили ${t.chatRated})`
     }`,
   );
-  lines.push(
-    `  решений всего ${t.decisionsTotal}, из них доведено до результата ${t.decisionsThroughputPercent}%`,
-  );
   if (input.delta) {
     lines.push('');
     lines.push('Дельта к прошлому месяцу (по ведущим счётчикам):');
@@ -97,9 +91,6 @@ export function buildValueRecapFallbackNarrative(input: ValueRecapNarrativePromp
   parts.push(
     `Вопросов отвечено памятью с привязкой к источнику: ${r.questionsAnsweredWithCitation}; ` +
       `идей доведено до релиза: ${r.ideasShipped}.`,
-  );
-  parts.push(
-    `Решений всего ${t.decisionsTotal}, доведено до результата ${t.decisionsThroughputPercent}%.`,
   );
   if (t.reliabilityPercent !== null) {
     parts.push(

@@ -254,9 +254,6 @@ const registry = new Map<string, ZodTypeAny>([
   ['blocker_synthesis.impact.per_day_open', z.number().nonnegative()],
   ['operations.blocker_synthesis.enabled', z.boolean()],
 
-  ['decision.stale_days', POSITIVE_INT],
-  ['operations.decision_controller.enabled', z.boolean()],
-
   ['operations.promise_cascade.enabled', z.boolean()],
 
   ['ideas.feed.rerank.weight', z.number().nonnegative()],

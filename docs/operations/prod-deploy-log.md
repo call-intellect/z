@@ -71,6 +71,28 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-01 — Движок целей: консолидация (Москва-кроны, ручные цели, пересборка иерархии, каскад, вектор без обещаний, один вердикт, крутилки) — goals-engine-consolidation, ветка work/2026-06-29
+
+> ТЗ `plans/tz/2026-06-29-goals-engine-consolidation.md` (Ф1–Ф9, коммиты `a3105ad2`..`35703d4f`). Навели порядок в движке целей: все goal/ops-кроны на Москву (продюсер движения цели сдвинут ДО сборки компаса — чинит «компас показывает вчера»); ручные цели ведутся как AI (темы по KNN-эмбеддингу); запущена спящая суточная пересборка иерархии + каскад статуса; вектор людей отвязан от снятых обещаний (idea/issue_closed/goal_work); один вердикт движения в UI; промпт извлечения строже; 21 крутилка целей/трекера → AdminSetting.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (схема не менялась — embedding/themes/cascadeMissed/HNSW уже есть). **🟢 НОВЫХ ENV НЕТ.** **🟢 1 НОВЫЙ kill-switch** (`goals.hierarchyRebuild.enabled`, тип A ВКЛ). **🟢 1 НОВЫЙ СИД** (`seed-admin-setting-goals-knobs.ts`, в STEPS `phase:'seed-base'`). **Сменены расписания 9 кронов + 1 новый cron.** Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** 21 крутилка целей/трекера — чистый AdminSetting (`getDynamic`/`resolveSync`, code-fallback = текущее значение, работают до сида — Ship-On). Снята мёртвая `goals.author_coverage_min` (Ф2, удаляется вместе с кодом — мёртвая строка в БД безвредна). 1 новый kill-switch `goals.hierarchyRebuild.enabled` (тип A ВКЛ, действий владельца не требует). Реестр — `docs/operations/feature-flags.md`.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема целей не менялась.
+- **Шаг 7 — Seed (идемпотентные, доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):**
+  - `scripts/seed-admin-setting-goals-knobs.ts` (НОВЫЙ, `phase:'seed-base'`, зарегистрирован в STEPS) — 21 крутилка целей/трекера (kr-окна, alignment-пороги, KNN top-k, лимиты линкеров, окна misalignment, vector-капы, goal-alignment-low пороги, 2 KNN-крутилки тем). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+  - `scripts/seed-admin-setting-execution-agents.ts` (УЖЕ в STEPS) — из набора **убрана** `goals.author_coverage_min` (вектор отвязан от обещаний). Повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новый `GoalHierarchyRebuildCron`; `GoalCascadeHandler` оживляет каскад; goal-vector без commitment-сигналов; goal-theme-linker с embedding-fallback; 21 крутилка). Frontend (сняты 2 alignment-виджета, «Прогресс по задачам» на карточке цели, один вердикт в списке/дереве).
+- **Шаг 12 — Smoke** (после выката):
+  - **Набор/расписание cron изменены:** продюсер движения `knowledge-core/workers/strategic-alignment.cron` теперь `0 2` Europe/Moscow (02:00 МСК, ДО компаса 06:00); новый `GoalHierarchyRebuildCron` `0 3` Europe/Moscow (03:00 МСК) виден в логах/зарегистрирован в `ai/workers.module.ts`; все goal-кроны пиннят `timeZone:'Europe/Moscow'`.
+  - goal-vector сигналы в `signalsJson` без `commitment_kept`/`commitment_broken` (enum `{idea,issue_closed,goal_work}`); `/metrics` без `commitment_author_coverage_ratio`.
+  - крутилки целей/трекера видны в админке (`/admin` настройки), `goals.hierarchyRebuild.enabled` среди них.
+  - Карточка цели `/goals/:id` показывает блок «Прогресс по задачам»; список/дерево целей — один вердикт движения (нет дублирующего статус-бейджа); на дашборде нет осиротевших alignment-виджетов.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-01 — Lazy Person↔Entity линковка клона + авторство блоков без таймкодов (clone-entity-link-and-authorship, ветка work/2026-06-29)
 
 > ТЗ `plans/tz/2026-06-30-clone-entity-link-and-authorship.md` (Ф1+Ф2, коммиты `3d535343`+`4b098e55`). Две независимые корректностные правки сборки клонов: (Ф1/C1-#4) `loadBlocksForPerson` при `Person.entityId=null` больше НЕ молчит — `warn` + counter + lazy-резолв через `EntityResolutionService.resolveSubjectEntityId` + запись ОБОИХ полей композитного FK (`entityId`+`entityTenantId`); (Ф2/C1-#3) у источников без таймкодов (`startMs=0`, `seg=null`) узкий single-author fallback в `attributeSubject` (`via='author_fallback'`).

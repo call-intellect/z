@@ -6484,16 +6484,7 @@ model Decision {
   /// `reversibility`.
   reversibilityAt DateTime?
 
-  /// TZ-1 Фаза 3.B (daily-value-engine) — денормализованный счётчик связанных
-  /// задач (строк DecisionTaskLink). Обновляется backfill'ом и воркером.
-  /// 0 + actualOutcomes IS NULL + старше N дней → контролёр помечает 'stalled'.
   linkedTaskCount         Int       @default(0)
-  /// TZ-1 Фаза 3.B — статус внедрения: 'not_started'|'in_progress'|'done'|
-  /// 'stalled'. NULL до первого прогона контролёра.
-  implementationStatus    String?   @db.VarChar(24)
-  /// TZ-1 Фаза 3.B — когда контролёр (`DecisionImplementationCron`) последний
-  /// раз проверял внедрение решения.
-  implementationCheckedAt DateTime?
 
   impliesAction     Boolean   @default(false)
   actionExtractedAt DateTime?

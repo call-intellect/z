@@ -188,7 +188,7 @@ relates_to:
 
 ---
 
-## Фаза 4 — Миграция БД: DROP полей контролёра `[ ]`
+## Фаза 4 — Миграция БД: DROP полей контролёра `[x]`
 
 (Зависит от Ф1 — единственный writer `decision-implementation.service.ts` удалён; и Ф2 — reader `cora-feed.collectDecisions` удалён.)
 

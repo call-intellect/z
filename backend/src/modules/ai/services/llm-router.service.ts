@@ -58,6 +58,8 @@ export type LlmTaskType =
   | 'card-chat'
   | 'block-ingest'
   | 'chunk-context'
+  // Ф6 extraction-rewrite — скелет встречи (оглавление) одним дешёвым проходом ДО окон block-ingest.
+  | 'meeting-skeleton'
   | 'block-distill'
   | 'block-linker'
   | 'entity-resolver'
@@ -708,6 +710,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'card-chat',
   'block-ingest',
   'chunk-context',
+  'meeting-skeleton',
   'block-distill',
   'block-linker',
   'entity-resolver',

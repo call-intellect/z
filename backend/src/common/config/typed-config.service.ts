@@ -649,8 +649,8 @@ export class TypedConfigService {
       entityMergeThreshold: this.get('ENTITY_MERGE_THRESHOLD'),
       entityResolverCron: this.get('ENTITY_RESOLVER_CRON'),
       regulationConsolidatorCron: this.get('REGULATION_CONSOLIDATOR_CRON'),
-      blockIngestWindowSegments: this.get('BLOCK_INGEST_WINDOW_SEGMENTS'),
-      blockIngestMaxTokensPerSegment: this.get('BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT'),
+      blockIngestWindowSegments: this.resolveSync<number>('knowledge.blockIngestWindowSegments', 'BLOCK_INGEST_WINDOW_SEGMENTS', 5),
+      blockIngestMaxTokensPerSegment: this.resolveSync<number>('knowledge.blockIngestMaxTokensPerSegment', 'BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT', 2000),
       segmentMaxTokens: this.resolveSync<number>('knowledge.segment_max_tokens', undefined, 600),
       segmentOverlapRatio: this.resolveSync<number>(
         'knowledge.segment_overlap_ratio',
@@ -1011,8 +1011,8 @@ export class TypedConfigService {
 
   get specialistsCombined() {
     return {
-      enabled: this.get('SPECIALISTS_COMBINED_ENABLED'),
-      delayMs: this.get('SPECIALISTS_COMBINED_DELAY_MS'),
+      enabled: this.resolveSync<boolean>('knowledge.specialists_combined_enabled', 'SPECIALISTS_COMBINED_ENABLED', true),
+      delayMs: this.resolveSync<number>('knowledge.specialistsCombinedDelayMs', 'SPECIALISTS_COMBINED_DELAY_MS', 90_000),
     } as const;
   }
 

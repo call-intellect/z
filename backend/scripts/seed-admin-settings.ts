@@ -429,7 +429,7 @@ function buildSettings(): SettingSeed[] {
     ],
     [
       'knowledge.blockIngestMaxTokensPerSegment',
-      envInt('BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT', 1500),
+      envInt('BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT', 2000),
       'medium',
       'Максимум токенов на сегмент при block-ingest',
     ],
@@ -746,6 +746,48 @@ function buildSettings(): SettingSeed[] {
       envFloat('PROVENANCE_CONFIDENCE_REVIEW_THRESHOLD', 0.6),
       'low',
       'Порог уверенности (0-1) ниже которого источник-документ помечается как требующий проверки (needsReview) в панели «Откуда это». Для источников-встреч не применяется.',
+    ],
+    [
+      'knowledge.specialists_combined_enabled',
+      true,
+      'high',
+      'Combo-проход block-ingest (idea+decision одним вызовом, kill-switch, ON)',
+    ],
+    [
+      'knowledge.specialistsCombinedDelayMs',
+      envInt('SPECIALISTS_COMBINED_DELAY_MS', 90000),
+      'low',
+      'Задержка перед combo-проходом специалистов block-ingest, мс',
+    ],
+    [
+      'knowledge.blockIngestWindowOverlapSegments',
+      1,
+      'medium',
+      'Перекрытие соседних окон block-ingest в сегментах',
+    ],
+    [
+      'knowledge.blockIngestGleaningRounds',
+      1,
+      'medium',
+      'Доп. раунды дочёрпывания (gleaning) блоков в окне block-ingest',
+    ],
+    [
+      'knowledge.skeleton_pass_enabled',
+      true,
+      'high',
+      'Скелет встречи (оглавление) одним дешёвым проходом до окон block-ingest (kill-switch, ON)',
+    ],
+    [
+      'knowledge.header_map_enabled',
+      true,
+      'high',
+      'Карта заголовков для контекстуализации окон block-ingest (kill-switch, ON)',
+    ],
+    [
+      'knowledge.skeletonMinSegments',
+      6,
+      'medium',
+      'Минимум сегментов встречи для запуска скелет-прохода',
     ],
   ];
   for (const [key, value, severity, description] of knowledge) {

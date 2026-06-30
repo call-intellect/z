@@ -487,6 +487,7 @@ export function goalTreeNodeToRenderNode(
     id: node.id,
     name: node.name,
     progressStatus: node.progressStatus,
+    cachedAlignment: node.cachedAlignment,
     keyResults: node.keyResults.map((kr) => ({
       id: kr.id,
       name: kr.name,

@@ -5,11 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
-  ArrowDownRight,
-  ArrowUpRight,
   List,
   Loader2,
-  Minus,
   Network,
   Plus,
   Share2,
@@ -26,31 +23,20 @@ import { mapIdeaListItem } from "@/domain/idea";
 import { usePersons } from "@/hooks/usePersons";
 import { useAuth } from "@/contexts/auth-context";
 import {
-  CONFIDENCE_LEVEL_LABELS,
   GOAL_STATUS_LABELS,
   GOAL_STATUS_VALUES,
-  alignmentBarColor,
-  alignmentTextColor,
   buildTree,
-  confidenceChipClasses,
-  confidenceLevel,
   daysUntil,
-  deltaTone,
-  formatAlignment,
-  formatDelta,
   goalFromApi,
   movementVerdict,
   movementVerdictChipClasses,
-  statusBadgeVariant,
   targetDateLabel,
-  type ConfidenceLevel,
   type GoalDomain,
   type GoalStatus,
 } from "@/domain/goal";
 import { GoalsTreeView } from "./GoalsTreeView";
 import { GoalsMapView } from "@/ui/components/goals/GoalsMapView";
 import { GlassCard, MODERN_PAGE_BG } from "@/ui/components/dashboard/modern";
-import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
@@ -365,17 +351,6 @@ function GoalCard({
   const dDays = daysUntil(goal.targetDate);
   const targetLabel = targetDateLabel(goal.targetDate);
   const overdueTarget = dDays !== null && dDays < 0;
-  const alignmentClamped =
-    goal.cachedAlignment === null
-      ? null
-      : Math.max(0, Math.min(100, goal.cachedAlignment));
-  const tone = deltaTone(goal.cachedAlignmentDelta);
-  const deltaText = formatDelta(goal.cachedAlignmentDelta);
-  const confLevel: ConfidenceLevel = confidenceLevel(
-    goal.themesCount,
-    goal.blocksCount,
-  );
-  const confChip = confidenceChipClasses(confLevel);
   const verdict = movementVerdict(goal.cachedAlignment, goal.progressStatus);
   const verdictChip = movementVerdictChipClasses(verdict.tone);
 
@@ -391,9 +366,6 @@ function GoalCard({
               {goal.name}
             </h3>
           </Link>
-          <Badge variant={statusBadgeVariant(goal.status)} className="shrink-0">
-            {GOAL_STATUS_LABELS[goal.status]}
-          </Badge>
         </div>
 
         {(goal.source === "ai" || goal.promotionState === "suggested") && (
@@ -418,67 +390,6 @@ function GoalCard({
           >
             {verdict.label}
           </span>
-        </div>
-
-        {}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-fg-tertiary">Согласованность</span>
-            <div className="flex items-center gap-1.5">
-              <span
-                className={cn(
-                  "tabular-nums font-semibold",
-                  alignmentTextColor(alignmentClamped),
-                )}
-              >
-                {formatAlignment(alignmentClamped)}
-              </span>
-              {tone && deltaText && (
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-0.5 text-[11px] tabular-nums",
-                    tone === "up" && "text-success",
-                    tone === "down" && "text-danger",
-                    tone === "flat" && "text-fg-tertiary",
-                  )}
-                >
-                  {tone === "up" && <ArrowUpRight size={10} />}
-                  {tone === "down" && <ArrowDownRight size={10} />}
-                  {tone === "flat" && <Minus size={10} />}
-                  {deltaText}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-bg-overlay">
-            {alignmentClamped !== null ? (
-              <div
-                className={cn(
-                  "h-full rounded-full",
-                  alignmentBarColor(alignmentClamped),
-                )}
-                style={{ width: `${alignmentClamped}%` }}
-              />
-            ) : null}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-fg-tertiary">Достоверность:</span>
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
-                confChip.bg,
-                confChip.fg,
-              )}
-            >
-              {CONFIDENCE_LEVEL_LABELS[confLevel]}
-            </span>
-          </div>
-          {alignmentClamped === null && (
-            <p className="text-[11px] text-fg-tertiary">
-              Пока не рассчитано. Кора обновляет оценку каждую ночь, либо
-              нажмите «Пересчитать» внутри цели.
-            </p>
-          )}
         </div>
 
         {goal.ownerPersonName && (

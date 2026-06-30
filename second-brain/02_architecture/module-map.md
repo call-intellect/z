@@ -272,7 +272,7 @@ LiveKit чистит атрибуты автоматически при disconne
 - `RbacService.ResourceType` расширена `'goal'`. policy.csv: owner write/delete, admin/manager — read.
 
 ### `backend/src/modules/knowledge-core/workers/` (Phase 9, 11)
-- `strategic-alignment.worker.ts` (concurrency 2) + `strategic-alignment.cron.ts` (`@Cron('0 4 * * *')`).
+- `strategic-alignment.worker.ts` (concurrency 2) + `strategic-alignment.cron.ts` (`@Cron('0 2 * * *', { timeZone: 'Europe/Moscow' })` — 02:00 МСК, продюсер движения цели ДО сборки компаса 06:00 МСК; goals-engine-consolidation Ф1).
 - `core-metrics-snapshot.cron.ts` (`@Cron('*/5 * * * *')`) — gauges `core_*`.
 - `prompts/goal-alignment.prompt.ts`.
 
@@ -1405,7 +1405,7 @@ goals/
     strategic-alignment-issues.service.spec.ts           # 10 unit-тестов
 ```
 
-Параллельный, а не replacing — в knowledge-core уже есть LLM-based StrategicAlignmentCron (04:00 UTC, по темам/IdeaBlock-ам). Issue-based cron — второй независимый сигнал alignment. Snapshot хранится в Redis + AuditLog (поле `Goal.progressSnapshot` отсутствует в schema, не добавляли).
+Параллельный, а не replacing — в knowledge-core уже есть LLM-based StrategicAlignmentCron (02:00 МСК `Europe/Moscow`, по темам/IdeaBlock-ам). Issue-based cron — второй независимый сигнал alignment. Snapshot хранится в Redis + AuditLog (поле `Goal.progressSnapshot` отсутствует в schema, не добавляли).
 
 Probe-trigger: при ≥80% задач без `goalId` за 30д (минимум 5 задач) → `ProbeService.suggest({type:'strategic_misalignment_high', recipientCandidates:[userId], reason, contextIds:['user:{userId}']})`.
 

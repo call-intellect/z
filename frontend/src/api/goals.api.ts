@@ -81,6 +81,19 @@ export type SuggestParentApi = {
   confidence: number | null;
 };
 
+export type GoalIssueProgressSnapshotApi = {
+  goalId: string;
+  tenantId: string;
+  totalLinkedIssues: number;
+  completedIssues: number;
+  blockedIssues: number;
+  recentlyUpdatedIssues: number;
+  timeProgressPct: number | null;
+  alignmentScore: number;
+  computedAt: string;
+  fromCache: boolean;
+};
+
 export const goalsApi = {
   list: (orgId: string, req: ListGoalsRequest = {}) =>
     apiClient.get<GoalListApi>(`/api/v1/goals${buildQuery({ ...req })}`, {
@@ -185,6 +198,12 @@ export const goalsApi = {
     apiClient.post<SuggestParentApi>(
       `/api/v1/goals/${encodeURIComponent(goalId)}/suggest-parent`,
       {},
+      { headers: orgHeaders(orgId) },
+    ),
+
+  issueAlignmentSnapshot: (orgId: string, goalId: string) =>
+    apiClient.get<GoalIssueProgressSnapshotApi>(
+      `/api/v1/goals/${encodeURIComponent(goalId)}/alignment-snapshot`,
       { headers: orgHeaders(orgId) },
     ),
 };

@@ -222,7 +222,7 @@ Acceptance: e2e на чат-RawEvent — извлекаются сущности
 Acceptance: после combo у Person `profileBuildVersion++` и `lastProfileBuildAt` обновился; `DecisionHygiene.reversibility` заполняется для решений со встреч; ProcessTemplate `steps[]` пополняется при ON; rebuild дедуплицируется по personId; `typecheck/lint/build` зелёные.
 Закрывает: R1, R6.
 
-### [ ] Ф4 — Few-shot реестр 57 типов (вкл. friction) (WP-C)
+### [x] Ф4 — Few-shot реестр 57 типов (вкл. friction) (WP-C)
 **Ценность:** как система, размечаю каждый тип осознанно (включая трение/возражения), а не наугад.
 Картография: карта изменений §WP-C; контракт-first.
 Что входит: `signal-type-registry.ts` + `renderSignalTypeRegistry()`; врезка вместо `renderRuleForBlockIngest()`; перенос 7 правил + 9 примеров; few-shot friction; тест-страж enum↔реестр; baseline распределения signalType ДО.

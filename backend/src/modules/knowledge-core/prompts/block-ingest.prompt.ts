@@ -5,7 +5,7 @@ import {
 } from '../../ai/services/prompts/common';
 import type { Segment } from '../services/segment-builder.service';
 
-import { renderRuleForBlockIngest } from './task-decision-examples';
+import { renderSignalTypeRegistry } from './signal-type-registry';
 
 export const SIGNAL_TYPE_VALUES = [
   'fact',
@@ -430,8 +430,8 @@ const SYSTEM_PROMPT = withAsrNote(
 - Запрос/просьба клиента сделать функцию → idea/feature_request (это спрос, не наш выбор), даже если звучит уверенно.
 - Личное обязательство («я к пятнице сделаю») → commitment, не decision и не idea.
 
-# Граница «задача ↔ решение» (соблюдай строго)
-${renderRuleForBlockIngest()}
+# Справочник типов сигналов (когда какой ставить)
+${renderSignalTypeRegistry()}
 
 # Перед тем как вернуть ответ — самопроверка
 Пройди по списку; если хоть один пункт нарушен — исправь, не выдавай как есть:

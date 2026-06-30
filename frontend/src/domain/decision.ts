@@ -15,6 +15,7 @@ import {
 
 export type DecisionStatus = DecisionStatusApi;
 export type TrustTier = TrustTierApi;
+export type DecisionReversibility = "type-1" | "type-2" | null;
 
 export const DECISION_STATUS_LABEL: Record<DecisionStatus, string> = {
   proposed: "Предложенное",
@@ -57,6 +58,7 @@ export interface DecisionListItem {
   affectsEntityIds: string[];
   confidence: number | null;
   trustTier: TrustTier;
+  reversibility: DecisionReversibility;
   provenancePreview?: ProvenanceRef | null;
   updatedAt: Date;
   createdAt: Date;
@@ -93,6 +95,10 @@ function parseDateOrNull(value: string | null): Date | null {
   return value ? new Date(value) : null;
 }
 
+function parseReversibility(value: string | null): DecisionReversibility {
+  return value === "type-1" || value === "type-2" ? value : null;
+}
+
 export function mapDecisionListItem(
   dto: DecisionListItemApi,
 ): DecisionListItem {
@@ -107,6 +113,7 @@ export function mapDecisionListItem(
     affectsEntityIds: dto.affectsEntityIds,
     confidence: dto.confidence,
     trustTier: dto.trustTier ?? "human",
+    reversibility: parseReversibility(dto.reversibility ?? null),
     provenancePreview: mapPreviewToProvenanceRef(
       dto.previewQuote,
       dto.previewSourceRef,

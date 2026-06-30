@@ -546,6 +546,7 @@ export class DecisionsService {
       affectsEntityIds: d.affectsEntityIds,
       confidence: d.confidence !== null ? Number(d.confidence) : null,
       trustTier,
+      reversibility: d.reversibility ?? null,
       previewQuote: d.previewQuote ?? null,
       previewSourceRef: (d.previewSourceRef as ProvenancePreviewRef | null) ?? null,
       updatedAt: d.updatedAt.toISOString(),
@@ -565,6 +566,7 @@ export class DecisionsService {
       validFrom: d.validFrom ? d.validFrom.toISOString() : null,
       validUntil: d.validUntil ? d.validUntil.toISOString() : null,
       actualOutcomes: d.actualOutcomes,
+      reversibilityAt: d.reversibilityAt ? d.reversibilityAt.toISOString() : null,
       dataClass: d.dataClass,
     };
   }

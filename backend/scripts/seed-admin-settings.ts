@@ -772,6 +772,12 @@ function buildSettings(): SettingSeed[] {
       'Доп. раунды дочёрпывания (gleaning) блоков в окне block-ingest',
     ],
     [
+      'knowledge.blockIngestGleaningMinSegments',
+      2,
+      'medium',
+      'Минимум сегментов окна для дозабора (gleaning) block-ingest',
+    ],
+    [
       'knowledge.skeleton_pass_enabled',
       true,
       'high',

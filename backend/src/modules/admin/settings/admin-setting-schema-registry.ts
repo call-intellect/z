@@ -46,6 +46,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.specialistsCombinedDelayMs', NON_NEGATIVE_INT],
   ['knowledge.blockIngestWindowOverlapSegments', NON_NEGATIVE_INT],
   ['knowledge.blockIngestGleaningRounds', z.number().int().min(0).max(3)],
+  ['knowledge.blockIngestGleaningMinSegments', POSITIVE_INT],
   ['knowledge.skeletonMinSegments', POSITIVE_INT],
   ['knowledge.document_summary_input_chars', z.number().int().min(500).max(60000)],
   ['knowledge.segment_max_tokens', z.number().int().min(200).max(2000)],

@@ -457,6 +457,9 @@ interface BuildArgs {
   meetingType?: string | undefined;
   participants?: string[] | undefined;
   segments: Segment[];
+  windowIndex?: number | undefined;
+  totalWindows?: number | undefined;
+  gleaningExclude?: { name: string; signalType: string }[] | undefined;
 }
 
 function formatDateRu(iso: string): string | null {
@@ -488,9 +491,25 @@ export function buildBlockIngestPrompt(args: BuildArgs): {
   if (args.participants && args.participants.length > 0) {
     contextLines.push(`- Участники: ${args.participants.join(', ')}`);
   }
+  if (
+    args.totalWindows != null &&
+    args.totalWindows > 1 &&
+    args.windowIndex != null
+  ) {
+    contextLines.push(
+      `- Это фрагмент ${args.windowIndex + 1} из ${args.totalWindows} подряд идущих кусков одного разговора.`,
+    );
+  }
   const header =
     contextLines.length > 0 ? `Контекст эпизода:\n${contextLines.join('\n')}\n\n` : '';
 
-  const user = `${header}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
+  const excludeSection =
+    args.gleaningExclude && args.gleaningExclude.length > 0
+      ? `Уже найдено в этом окне (НЕ повторяй, верни ТОЛЬКО дополнительно пропущенное):\n${args.gleaningExclude
+          .map((b) => `- ${b.name} — ${b.signalType}`)
+          .join('\n')}\n\n`
+      : '';
+
+  const user = `${header}${excludeSection}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
   return { system: SYSTEM_PROMPT, user };
 }

@@ -651,6 +651,9 @@ export class TypedConfigService {
       regulationConsolidatorCron: this.get('REGULATION_CONSOLIDATOR_CRON'),
       blockIngestWindowSegments: this.resolveSync<number>('knowledge.blockIngestWindowSegments', 'BLOCK_INGEST_WINDOW_SEGMENTS', 5),
       blockIngestMaxTokensPerSegment: this.resolveSync<number>('knowledge.blockIngestMaxTokensPerSegment', 'BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT', 2000),
+      blockIngestWindowOverlapSegments: this.resolveSync<number>('knowledge.blockIngestWindowOverlapSegments', undefined, 1),
+      blockIngestGleaningRounds: this.resolveSync<number>('knowledge.blockIngestGleaningRounds', undefined, 1),
+      blockIngestGleaningMinSegments: this.resolveSync<number>('knowledge.blockIngestGleaningMinSegments', undefined, 2),
       segmentMaxTokens: this.resolveSync<number>('knowledge.segment_max_tokens', undefined, 600),
       segmentOverlapRatio: this.resolveSync<number>(
         'knowledge.segment_overlap_ratio',

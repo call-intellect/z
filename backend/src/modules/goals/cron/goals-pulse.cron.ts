@@ -23,7 +23,7 @@ export class GoalsPulseCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  @Cron('0 6 * * 1')
+  @Cron('0 6 * * 1', { timeZone: 'Europe/Moscow' })
   async runWeekly(): Promise<void> {
     const enabled = await this.cfg.getDynamic<boolean>(
       'goals.pulse.enabled',

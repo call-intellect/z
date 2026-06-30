@@ -32,7 +32,7 @@ export class GoalVectorTrackerCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  @Cron('0 5 * * 1')
+  @Cron('0 5 * * 1', { timeZone: 'Europe/Moscow' })
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();

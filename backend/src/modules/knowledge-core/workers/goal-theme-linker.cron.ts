@@ -18,7 +18,7 @@ export class GoalThemeLinkerCron {
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
   ) {}
 
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @Cron(CronExpression.EVERY_30_MINUTES, { timeZone: 'Europe/Moscow' })
   async sweep(): Promise<void> {
     try {
       const summary = await this.scanAllOrgs();

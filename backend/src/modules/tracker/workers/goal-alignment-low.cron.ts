@@ -39,7 +39,7 @@ export class GoalAlignmentLowCron {
     private readonly probe?: ProbeService,
   ) {}
 
-  @Cron('0 6 * * 1')
+  @Cron('0 6 * * 1', { timeZone: 'Europe/Moscow' })
   async runScheduled(): Promise<void> {
     const enabled = await this.cfg.getDynamic<boolean>(
       'tracker.goalAlignmentLowEnabled',

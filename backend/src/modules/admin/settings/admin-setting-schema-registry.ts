@@ -23,6 +23,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.reportBlockConfidenceCap', UNIT_INTERVAL],
   ['knowledge.edge_confidence_high', UNIT_INTERVAL],
   ['knowledge.edge_confidence_low', UNIT_INTERVAL],
+  ['knowledge.conflict_min_confidence', UNIT_INTERVAL],
+  ['knowledge.conflict_graph_confidence', UNIT_INTERVAL],
   ['knowledge.curationProvisionalThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationAuditSampleRate', UNIT_INTERVAL],
   ['knowledge.curationGrayZoneJudgeMinConfidence', UNIT_INTERVAL],

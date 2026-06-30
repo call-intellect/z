@@ -6,17 +6,66 @@ import {
 } from './personal-relation-builder.worker';
 
 describe('PersonalRelationBuilderWorker', () => {
-  function buildWorker(overrides: { block?: unknown }) {
+  function buildWorker(overrides: {
+    block?: unknown;
+    persons?: Array<{ id: string; tenantId: string; entityId: string | null }>;
+    minConfidence?: number;
+    graphConfidence?: number;
+  }) {
+    const persons = overrides.persons ?? [
+      { id: 'author-1', tenantId: 't1', entityId: 'e1' },
+    ];
     const prisma = {
       ideaBlock: { findUnique: vi.fn().mockResolvedValue(overrides.block ?? null) },
       entityLink: { upsert: vi.fn().mockResolvedValue({}) },
+      person: {
+        findFirst: vi.fn(async (args: { where: { id?: string; tenantId?: string } }) => {
+          return (
+            persons.find(
+              (p) => p.id === args.where.id && p.tenantId === args.where.tenantId,
+            ) ?? null
+          );
+        }),
+      },
     };
     const metrics = {
       incPersonalRelationBuilderRun: vi.fn(),
       incCoreSpecialistSkipped: vi.fn(),
     };
-    const worker = new PersonalRelationBuilderWorker(prisma as never, metrics as never);
-    return { worker, prisma, metrics };
+    const cfg = {
+      getDynamic: vi.fn(async (key: string, _env: unknown, def: number) => {
+        if (key === 'knowledge.conflict_min_confidence') {
+          return overrides.minConfidence ?? def;
+        }
+        if (key === 'knowledge.conflict_graph_confidence') {
+          return overrides.graphConfidence ?? def;
+        }
+        return def;
+      }),
+    };
+    const worker = new PersonalRelationBuilderWorker(
+      prisma as never,
+      metrics as never,
+      cfg as never,
+    );
+    return { worker, prisma, metrics, cfg };
+  }
+
+  function runProcess(
+    worker: PersonalRelationBuilderWorker,
+    signalType: string,
+  ): Promise<void> {
+    return (
+      worker as unknown as { process(job: unknown): Promise<void> }
+    ).process({
+      name: '3-12-personal-relation',
+      data: {
+        blockId: 'b1',
+        tenantId: 't1',
+        signalType,
+        specialistName: '3-12-personal-relation',
+      },
+    });
   }
 
   it('skip если в блоке < 2 person entities', async () => {
@@ -25,60 +74,65 @@ describe('PersonalRelationBuilderWorker', () => {
         id: 'b1',
         tenantId: 't1',
         status: 'canonical',
-        entities: [{ entity: { id: 'e1', type: 'person', name: 'Анна' } }],
+        entities: [{ entity: { id: 'e1', type: 'person', canonicalName: 'Анна' } }],
+        evidence: [{ authorPersonId: 'author-1' }],
       },
     });
-    await (
-      worker as unknown as {
-        process(job: unknown): Promise<void>;
-      }
-    ).process({
-      name: '3-12-personal-relation',
-      data: {
-        blockId: 'b1',
-        tenantId: 't1',
-        signalType: 'team_friction',
-        specialistName: '3-12-personal-relation',
-      },
-    });
+    await runProcess(worker, 'team_friction');
     expect(prisma.entityLink.upsert).not.toHaveBeenCalled();
     expect(metrics.incPersonalRelationBuilderRun).toHaveBeenCalledWith(
-      expect.objectContaining({ result: 'skipped_no_pair' }),
+      expect.objectContaining({ result: 'skipped_no_pair', source: 'graph' }),
     );
   });
 
-  it('создаёт пары conflicted_with для team_friction', async () => {
+  it('строит рёбра автор↔каждая сторона (не декартов клик)', async () => {
     const { worker, prisma, metrics } = buildWorker({
       block: {
         id: 'b1',
         tenantId: 't1',
         status: 'canonical',
         entities: [
-          { entity: { id: 'e1', type: 'person', name: 'Анна' } },
-          { entity: { id: 'e2', type: 'person', name: 'Борис' } },
+          { entity: { id: 'e1', type: 'person', canonicalName: 'Анна' } },
+          { entity: { id: 'e2', type: 'person', canonicalName: 'Борис' } },
+          { entity: { id: 'e3', type: 'person', canonicalName: 'Виктор' } },
         ],
+        evidence: [{ authorPersonId: 'author-1' }],
       },
+      persons: [{ id: 'author-1', tenantId: 't1', entityId: 'e1' }],
     });
-    await (
-      worker as unknown as {
-        process(job: unknown): Promise<void>;
-      }
-    ).process({
-      name: '3-12-personal-relation',
-      data: {
-        blockId: 'b1',
-        tenantId: 't1',
-        signalType: 'team_friction',
-        specialistName: '3-12-personal-relation',
-      },
+    await runProcess(worker, 'team_friction');
+    expect(prisma.entityLink.upsert).toHaveBeenCalledTimes(2);
+    const pairs = prisma.entityLink.upsert.mock.calls.map((c) => {
+      const arg = c[0] as { create: { fromEntityId: string; toEntityId: string } };
+      return [arg.create.fromEntityId, arg.create.toEntityId].sort().join('-');
     });
-    expect(prisma.entityLink.upsert).toHaveBeenCalledOnce();
+    expect(pairs.sort()).toEqual(['e1-e2', 'e1-e3']);
     const arg = prisma.entityLink.upsert.mock.calls[0]?.[0] as
       | { create: { relationType: string } }
       | undefined;
     expect(arg?.create.relationType).toBe('conflicted_with');
     expect(metrics.incPersonalRelationBuilderRun).toHaveBeenCalledWith(
-      expect.objectContaining({ result: 'link_created' }),
+      expect.objectContaining({ result: 'link_created', source: 'graph' }),
+    );
+  });
+
+  it('skip если автор не резолвится в entity', async () => {
+    const { worker, prisma, metrics } = buildWorker({
+      block: {
+        id: 'b1',
+        tenantId: 't1',
+        status: 'canonical',
+        entities: [
+          { entity: { id: 'e1', type: 'person', canonicalName: 'Анна' } },
+          { entity: { id: 'e2', type: 'person', canonicalName: 'Борис' } },
+        ],
+        evidence: [],
+      },
+    });
+    await runProcess(worker, 'team_friction');
+    expect(prisma.entityLink.upsert).not.toHaveBeenCalled();
+    expect(metrics.incPersonalRelationBuilderRun).toHaveBeenCalledWith(
+      expect.objectContaining({ result: 'skipped_no_pair', source: 'graph' }),
     );
   });
 
@@ -89,27 +143,48 @@ describe('PersonalRelationBuilderWorker', () => {
         tenantId: 't1',
         status: 'canonical',
         entities: [
-          { entity: { id: 'e1', type: 'person', name: 'Анна' } },
-          { entity: { id: 'e2', type: 'person', name: 'Борис' } },
+          { entity: { id: 'e1', type: 'person', canonicalName: 'Анна' } },
+          { entity: { id: 'e2', type: 'person', canonicalName: 'Борис' } },
         ],
+        evidence: [{ authorPersonId: 'author-1' }],
       },
     });
-    await (
-      worker as unknown as {
-        process(job: unknown): Promise<void>;
-      }
-    ).process({
-      name: '3-12-personal-relation',
-      data: {
-        blockId: 'b1',
-        tenantId: 't1',
-        signalType: 'fact',
-        specialistName: '3-12-personal-relation',
-      },
-    });
+    await runProcess(worker, 'fact');
     expect(prisma.entityLink.upsert).not.toHaveBeenCalled();
     expect(metrics.incPersonalRelationBuilderRun).toHaveBeenCalledWith(
-      expect.objectContaining({ result: 'skipped_low_confidence' }),
+      expect.objectContaining({ result: 'skipped_low_confidence', source: 'graph' }),
+    );
+  });
+
+  it('читает пороги из cfg (skip при graph<min)', async () => {
+    const { worker, prisma, metrics, cfg } = buildWorker({
+      block: {
+        id: 'b1',
+        tenantId: 't1',
+        status: 'canonical',
+        entities: [
+          { entity: { id: 'e1', type: 'person', canonicalName: 'Анна' } },
+          { entity: { id: 'e2', type: 'person', canonicalName: 'Борис' } },
+        ],
+        evidence: [{ authorPersonId: 'author-1' }],
+      },
+      minConfidence: 0.9,
+      graphConfidence: 0.65,
+    });
+    await runProcess(worker, 'team_friction');
+    expect(cfg.getDynamic).toHaveBeenCalledWith(
+      'knowledge.conflict_min_confidence',
+      undefined,
+      0.6,
+    );
+    expect(cfg.getDynamic).toHaveBeenCalledWith(
+      'knowledge.conflict_graph_confidence',
+      undefined,
+      0.65,
+    );
+    expect(prisma.entityLink.upsert).not.toHaveBeenCalled();
+    expect(metrics.incPersonalRelationBuilderRun).toHaveBeenCalledWith(
+      expect.objectContaining({ result: 'skipped_low_confidence', source: 'graph' }),
     );
   });
 });
@@ -194,7 +269,7 @@ describe('CheckInConflictDetectorCron', () => {
     expect(arg?.create.relationType).toBe('conflicted_with');
     expect(arg?.create.properties.source).toBe('checkin-conflict-detector');
     expect(metrics.incPersonalRelationBuilderRun).toHaveBeenCalledWith(
-      expect.objectContaining({ result: 'checkin_conflict_detected' }),
+      expect.objectContaining({ result: 'checkin_conflict_detected', source: 'regex' }),
     );
   });
 

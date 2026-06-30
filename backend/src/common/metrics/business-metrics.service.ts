@@ -825,7 +825,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private operationsBlockersTotal!: Gauge<'tenant_top' | 'severity'>;
   private teamFrictionsTotal!: Gauge<'tenant_top'>;
   private goalCascadeMissesTotal!: Counter<'tenant_top'>;
-  private personalRelationBuilderRunsTotal!: Counter<'tenant_top' | 'result'>;
+  private personalRelationBuilderRunsTotal!: Counter<'tenant_top' | 'result' | 'source'>;
 
   // ── ТЗ-2 Ф1 — отдача главной директора (новая компоновка) ─────────
   // Cardinality-safe: tenant_top — top-100 bucket через tenantTopOf.
@@ -3409,8 +3409,8 @@ export class BusinessMetricsService implements OnModuleInit {
     });
     this.personalRelationBuilderRunsTotal = this.getOrCreateCounter({
       name: 'personal_relation_builder_runs_total',
-      help: 'SBA β-8 — результат запуска PersonalRelationBuilderWorker. result ∈ link_created|link_updated|skipped_low_confidence|skipped_no_pair|error.',
-      labelNames: ['tenant_top', 'result'] as const,
+      help: 'SBA β-8 — результат запуска детектора конфликтов. result ∈ link_created|link_updated|skipped_low_confidence|skipped_no_pair|error. source ∈ graph|regex.',
+      labelNames: ['tenant_top', 'result', 'source'] as const,
     });
 
     // ── ТЗ-2 Ф1 — отдача главной директора (новая компоновка) ──
@@ -7426,14 +7426,16 @@ export class BusinessMetricsService implements OnModuleInit {
     this.goalCascadeMissesTotal.inc({ tenant_top: args.tenantTop }, inc);
   }
 
-  /** Counter `personal_relation_builder_runs_total{tenant_top, result}`. */
+  /** Counter `personal_relation_builder_runs_total{tenant_top, result, source}`. */
   incPersonalRelationBuilderRun(args: {
     tenantTop: string;
     result: string;
+    source: 'graph' | 'regex';
   }): void {
     this.personalRelationBuilderRunsTotal.inc({
       tenant_top: args.tenantTop,
       result: args.result,
+      source: args.source,
     });
   }
 

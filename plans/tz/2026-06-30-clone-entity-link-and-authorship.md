@@ -90,7 +90,7 @@ const fallbackAuthor = (!args.authorPersonId && seg === null && segAuthors.lengt
 Acceptance: unit — резолв→`update` с **обоими** полями; резолв null→`return []`+counter; `grep -n "entityTenantId" specialist-3-2-knowledge-clone.service.ts` → присутствует; backfill идемпотентен (повтор `--apply`=0); в STEPS; `typecheck/lint/build` зелёные.
 Закрывает: C1-#4 (R8, R9 исходного C1 ТЗ).
 
-### [ ] Ф2 — attributeSubject single-author fallback
+### [x] Ф2 — attributeSubject single-author fallback
 **Ценность:** как автор реплики в источнике без таймкодов (отчёт/чат), получаю привязку авторства, если у блока единственный автор.
 Картография: `block-ingest.worker.ts:1482-1547`; `incSubjectAttribution`.
 Что входит: контракт выше; `via='author_fallback'`.
@@ -108,4 +108,9 @@ Diff: **Шаг 8** — 1 backfill (`backfill-knowledge-clone-person-entity.ts`) 
 typecheck(вкл. `.spec`)/lint/build + unit зелёные; `02_architecture/knowledge-core.md` отметка (lazy entity-link в rebuild); prod-deploy-log Шаг 8; рефлексия.
 
 ## Итог
-_(заполнит tz-orchestrator.)_
+Реализовано целиком (Ф1 + Ф2), обе фазы независимы и сделаны параллельно.
+
+- **Ф1** (`feat(knowledge-core): Ф1 …`): `loadBlocksForPerson` при `entityId=null` → `logger.warn` + counter `knowledge_clone_person_no_entity_total{tenant}` + lazy-резолв через `resolveSubjectEntityId` + `person.update` с **обоими** полями композитного FK (`entityId`+`entityTenantId`). Отступление от буквы контракта: вместо `args = {...args}` использована локальная `let entityId` (реассайн `args` давал TS2322 — тип параметра возвращал `string|null`, Prisma-`where` отвергал nullable); поведение идентично. Новый backfill `backfill-knowledge-clone-person-entity.ts` (`--apply`, default dry-run, идемпотентен) + STEPS (`phase:'backfill'`, `args:['--apply']`, `skipBootstrap`). Прогон на dev-БД: apply#1 → linked=9/errors=0, apply#2 → 0 кандидатов (идемпотентность доказана вживую).
+- **Ф2** (`feat(knowledge-core): Ф2 …`): в ELSE-ветке `attributeSubject` узкий single-author fallback — при `seg===null` + пустом `args.authorPersonId` + ровно одном distinct `authorPersonId` среди сегментов резолв идёт через него, `via='author_fallback'`. Тип метрики `incSubjectAttribution({via:string})` расширять не пришлось (свободная строка). 2 теста в `block-ingest.subject.spec.ts` (h: fallback срабатывает; i: два автора → `via='none'`).
+
+Верификация: typecheck 0 ошибок · lint 0 errors · build зелёный (heap 8GB) · тесты модуля 137 файлов / 1052 passed (вкл. новые 11). Схемной миграции/ENV/AdminSetting нет. Прод — Шаг 8 (один backfill).

@@ -350,4 +350,66 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
       expect.objectContaining({ via: 'personId' }),
     );
   });
+
+  it('(h) text без таймкодов, event-автор пуст, один автор сегментов → resolve через него, via=author_fallback', async () => {
+    const { worker, mocks } = buildWorker({ subjectEntityId: 'e7', killSwitch: true });
+
+    await (
+      worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }
+    ).persistBlock({
+      event: textEvent,
+      block: buildBlock({ evidenceStartMs: 0, evidenceEndMs: 0 }),
+      embedding: null,
+      roleRelevant: false,
+      roleId: null,
+      segments: [
+        { startMs: 0, endMs: 0, speakers: [], text: 'm1', authorPersonId: 'pers-7' },
+        { startMs: 0, endMs: 0, speakers: [], text: 'm2', authorPersonId: 'pers-7' },
+      ],
+      authorUserId: null,
+    });
+
+    expect(mocks.resolveSubjectEntityId).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({ authorPersonId: 'pers-7' }),
+    );
+    expect(mocks.incSubjectAttribution).toHaveBeenCalledWith(
+      expect.objectContaining({ via: 'author_fallback' }),
+    );
+    expect(mocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          blockId_entityId_tenantId: expect.objectContaining({ entityId: 'e7' }),
+        }),
+      }),
+    );
+  });
+
+  it('(i) два разных автора сегментов → fallback НЕ применяется, resolve с authorPersonId=null, via=none', async () => {
+    const { worker, mocks } = buildWorker({ subjectEntityId: null, killSwitch: true });
+
+    await (
+      worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }
+    ).persistBlock({
+      event: textEvent,
+      block: buildBlock({ evidenceStartMs: 0, evidenceEndMs: 0 }),
+      embedding: null,
+      roleRelevant: false,
+      roleId: null,
+      segments: [
+        { startMs: 0, endMs: 0, speakers: [], text: 'm1', authorPersonId: 'pers-7' },
+        { startMs: 0, endMs: 0, speakers: [], text: 'm2', authorPersonId: 'pers-9' },
+      ],
+      authorUserId: null,
+    });
+
+    expect(mocks.resolveSubjectEntityId).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({ authorPersonId: null }),
+    );
+    expect(mocks.incSubjectAttribution).toHaveBeenCalledWith(
+      expect.objectContaining({ via: 'none' }),
+    );
+    expect(mocks.upsert).not.toHaveBeenCalled();
+  });
 });

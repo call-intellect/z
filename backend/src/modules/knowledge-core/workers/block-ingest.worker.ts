@@ -1522,8 +1522,18 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     } else {
       const speakerParticipantId = seg?.speakerParticipantId ?? null;
       const speakerName = seg?.speakers?.[0] ?? null;
+      const segAuthors = [
+        ...new Set(
+          args.segments.map((s) => s.authorPersonId).filter((x): x is string => !!x),
+        ),
+      ];
+      const fallbackAuthor =
+        !args.authorPersonId && seg === null && segAuthors.length === 1
+          ? (segAuthors[0] ?? null)
+          : null;
+      const effectiveAuthorPersonId = args.authorPersonId ?? fallbackAuthor;
       subjectEntityId = await this.entities.resolveSubjectEntityId(args.event.tenantId, {
-        authorPersonId: args.authorPersonId ?? null,
+        authorPersonId: effectiveAuthorPersonId,
         authorEmail: args.authorEmail ?? null,
         speakerParticipantId,
         speakerName,
@@ -1532,15 +1542,17 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       via = subjectEntityId
         ? args.authorPersonId
           ? 'personId'
-          : args.authorUserId
-            ? 'userId'
-            : args.authorEmail
-              ? 'email'
-              : speakerParticipantId
-                ? 'participant'
-                : speakerName
-                  ? 'name'
-                  : 'none'
+          : fallbackAuthor
+            ? 'author_fallback'
+            : args.authorUserId
+              ? 'userId'
+              : args.authorEmail
+                ? 'email'
+                : speakerParticipantId
+                  ? 'participant'
+                  : speakerName
+                    ? 'name'
+                    : 'none'
         : 'none';
     }
     this.metrics.incSubjectAttribution({ via });

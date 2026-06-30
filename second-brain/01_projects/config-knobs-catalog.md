@@ -231,7 +231,6 @@
 | operations.dashboard_rework.enabled | Новая раскладка COO-дашборда | вкл |
 | operations.per_person_self_view.enabled | Self-просмотр своего план-факта | вкл |
 | operations.blocker_synthesis.enabled | Дневной синтез блокеров | вкл |
-| operations.decision_controller.enabled | Контролёр внедрения решений | вкл |
 | operations.promise_cascade.enabled | Дневной каскад обещаний | вкл |
 | operations.knowledge_at_risk.enabled | Синтез «знание под риском» | вкл |
 | operations.team_capacity.enabled | Агрегат загрузки команд | вкл |
@@ -243,7 +242,6 @@
 | operations.personal_daily_brief.morning_hour | Час отправки брифа | 9 |
 | operations.knows_who.enabled | Помощник «кто знает X» | вкл |
 | knows_who.min_confidence | Порог похожести для носителя знания | 0.5 |
-| decision.stale_days | Дней без движения → решение «не двигается» | 21 |
 | blocker_synthesis.lookback_days | Окно поиска повторов блокеров | 7 дн |
 | blocker_synthesis.recurring_days | С какого дня кластер блокеров хронический | 2 дн |
 | team_capacity.overload_percent / underload_percent | Пороги пере-/недозагрузки отдела | 120% / 50% |

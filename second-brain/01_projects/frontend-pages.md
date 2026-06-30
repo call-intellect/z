@@ -262,7 +262,7 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 
 **С 2026-06-02 (зонтик main-screen-umbrella, Поток Б):** структура «sticky Hero + 4 pill-таба».
 
-- **Sticky Hero** (top-0 z-20): 3 KPI (Настроение / Обещания / Висящие решения) с MiniSparkline + AI-сводка (центр) + TopRiskCard (Топ-1 риск из pulse.irreversibleDecisions). Header не sticky (избегаем конфликта с Hero).
+- **Sticky Hero** (top-0 z-20): 2 KPI (Настроение / Обещания) с MiniSparkline + AI-сводка (центр) + TopRiskCard (Топ-1 риск из прочих pulse-паттернов). Header не sticky (избегаем конфликта с Hero). _(KPI «Висящие решения» и `pulse.irreversibleDecisions` сняты 2026-06-30.)_
 - **Узкая sticky-полоса** под Hero: StructureSummaryWidget слева + Pill «💬 Спросите Кору» справа (dispatchEvent `assistant-sidebar:open-ask`).
 - **`<IntroWizardWidget />`** между Hero и Tabs — 4 состояния по `Org.setupCompletedAt` + 6-шаговый прогресс + кнопка «Отложить на неделю» (localStorage `dashboard.onboardingDeferredUntil`).
 - **`<DashboardTabs />`** — 4 pill-таба: Обзор / Команда / Знания / Цели и встречи. Persistence per-user (`useDashboardTab(user.id)`).
@@ -270,7 +270,7 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
   - Overview — Дайджест недели (3 DigestCard с темами/сигналами/решениями).
   - Team — TeamHealthGrid + BusFactor + ActivityFeed (probe_question) + `PeopleAtRiskWidget` (пока скрыт, ожидает backend `/dashboard/people-at-risk`).
   - Knowledge — RecurringTopics + Bottleneck + WhatLearned + SignalCounters + ActiveThemes + HotEntities + OpenQuestions + InsightsTop + KnowledgeVelocityKpi.
-  - Goals — GoalVector + LowRoi + IrreversibleDecisionsAlert (полный список) + StrategicAlignment + QualityScore.
+  - Goals — GoalVector + LowRoi + StrategicAlignment + QualityScore. _(IrreversibleDecisionsAlert снят — чистка оперативно-контрольного хвоста решений 2026-06-30; обратимость теперь тихий бейдж на карточке решения.)_
 - **Матрица 6 состояний** (см. [docs/reference/dashboards-registry.md](../../docs/reference/dashboards-registry.md) §4.5-4.6):
   - Если `isOwnOrg && status==='DEMO' && (owner|admin) && data?.isEmpty` — `MainEmptyState` замещает Hero+Tabs целиком (правило 3) с CTA «Оплатить» + опц. «Вернуться в демо» + встроенным онбордингом (setupProgress).
   - Если `currentOrgRole==='demo_observer'` — TopRiskCard CTA становятся `<button onClick={showPaywallModal}>` с tooltip, открывая PaywallModal.
@@ -450,7 +450,7 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - `/meetings/[id]/speakers` — экран подписи говорящих (сотрудник/внешний/исключить/слить); `STATUS_VIEW` для статуса `awaiting_speakers`.
 
 **Изменённые экраны:**
-- `/dashboard` (главная директора): первый экран сжат до ≤7 величин (ValueStrip + чат/настроение/обещания/висящие решения + вердикт компаса + AI-сводка + Top-1 риск), гейт `dashboard.main_rework.enabled`; новые виджеты `ValueStripWidget`/`WhatWeLearnedWidget`/`GoalVectorVerdictWidget`/`IdeasTopWidget`/`ChatUsageWidget`.
+- `/dashboard` (главная директора): первый экран сжат до ≤6 величин (ValueStrip + чат/настроение/обещания + вердикт компаса + AI-сводка + Top-1 риск; KPI «висящие решения» снят 2026-06-30), гейт `dashboard.main_rework.enabled`; новые виджеты `ValueStripWidget`/`WhatWeLearnedWidget`/`GoalVectorVerdictWidget`/`IdeasTopWidget`/`ChatUsageWidget`.
 - `/dashboard/operations` (COO): += `TeamCapacityWidget`/`ChronicBlockersWidget`, гейт `operations.dashboard_rework.enabled`.
 - `/me` (5→9 виджетов): `MemoryHelpedMeWidget`/`MyWeeklyPlanFactWidget`/`MyIdeasFateWidget`/`RecognitionInboxWidget`; кнопки 👍/👎 на ответах чата (chat-v2 feedback); гейт `me.daily_value_widgets.enabled`.
 - `/documents`: мультизагрузка + форма привязки + `ImportDocumentsDialog` (ZIP/Notion/Confluence) + `SuggestionBanner` (accept/edit AI-подсказки) + ссылка на документ-источник в citations чата.

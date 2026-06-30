@@ -197,9 +197,10 @@ Default chain (см. `scripts/seed-llm-task-routes-decisions.ts`):
 
 - **Извлечение:** `decision-extract` помечает `impliesAction=true` + `actionTitle` (повелит. наклонение), если решение влечёт конкретное дело (мигрировать/настроить/подготовить). «Решили НЕ делать X» (`status=rejected`) и стратегический/ценностный выбор без действия → `impliesAction=false`.
 - **Авто-задача:** `specialist-3-3-decisions.maybeEnqueueActionableTask` для actionable-решения зовёт `IntakeService.create(source='decision', extractedTitle=actionTitle)` → штатный auto-triage → авто-`Issue` + `DecisionTaskLink('derived')` (то же замыкание, что выше). `IntakeSourceSchema` расширен `'decision'`.
-- **Идемпотентность:** маркер `actionExtractedAt` + source-block guard — повторный прогон/merge не плодит второй intake (merge bump'ит `impliesAction=true` на существующем Decision для дашборда).
-- **Дашборд (Ф4):** `impliesAction` — знаменатель «доведения»: не-actionable решение никогда не «застрявшее» и вне throughput; индикатор-утечка «Решения без действия» = actionable без задачи. См. [[director-dashboard]] §«Дашборд-контроль на исполнении».
-- ТЗ [`2026-06-27-task-decision-execution-unified`](../../plans/tz/2026-06-27-task-decision-execution-unified-tz.md) (Ф2/Ф4). **Старые решения** `impliesAction=false` по дефолту → бэкфилл-ре-экстракция отложена (см. [[../04_не-сделано/README]]).
+- **Идемпотентность:** маркер `actionExtractedAt` + source-block guard — повторный прогон/merge не плодит второй intake (merge bump'ит `impliesAction=true` на существующем Decision).
+- **Решение остаётся пассивной памятью.** Дашборд-надзор за внедрением (метрика доведения, оба дашборд-эндпоинта решений, виджет очереди «доведи решение») снят 2026-06-30 (чистка оперативно-контрольного хвоста решений, ТЗ [`2026-06-29-decisions-operational-cleanup`](../../plans/tz/2026-06-29-decisions-operational-cleanup.md)); оперконтроль доведения теперь только на задачах через `DecisionTaskLink`. Ось исполнения (`impliesAction` → авто-задача) живёт.
+- **Обратимость — тихий бейдж на карточке (Ф7).** `decision-hygiene-scorer` помечает `Decision.reversibility`; решение с `reversibility==='type-1'` («необратимое», Bezos one-way door) показывает на карточке тихий бейдж «необратимое» — атрибут памяти, без дашборд-алерта.
+- ТЗ [`2026-06-27-task-decision-execution-unified`](../../plans/tz/2026-06-27-task-decision-execution-unified-tz.md) (Ф2). **Старые решения** `impliesAction=false` по дефолту → бэкфилл-ре-экстракция отложена (см. [[../04_не-сделано/README]]).
 
 ## Связи
 

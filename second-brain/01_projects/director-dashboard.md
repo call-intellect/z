@@ -59,7 +59,7 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 ## Связанные панели
 
 - **Панель операционного директора** (`/dashboard/operations`) — параллельная панель для роли `coo`/`owner`/`admin`. Источник — модуль `backend/src/modules/operations/`. Реализована в β-8 (PersonalRelation + DailyCheckIn + CooDashboard) + β-8.1 (виджет «Температура команды» + страница `/dashboard/operations/weekly`) + β-8.2 (виджет «Открытые обещания»). См. ТЗ: [β-8](../../plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md), [β-8.1](../../plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md), [β-8.2](../../plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md).
-- **Личный кабинет сотрудника:** `/me/check-ins` (β-8), `/me/promises` (β-8.2). С пакета дашбордов 2026-06-05 (ТЗ-E) — кабинет «Я» с вкладками (Pulse self-режим, перенос срока обещания, отписка от соцвклада).
+- **Личный кабинет сотрудника:** `/me/check-ins` (β-8). _(Вкладка `/me/promises` «Мои обещания» (β-8.2) — **снята** ТЗ commitment-social-layer-cleanup, 2026-07-01, Ф5: кабинет «Я» 5→4 вкладки.)_ С пакета дашбордов 2026-06-05 (ТЗ-E) — кабинет «Я» с вкладками (Pulse self-режим, отписка от соцвклада).
 
 ## Пакет улучшений дашбордов (2026-06-05, ТЗ B/D/C/G/E)
 
@@ -68,13 +68,13 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **Компас целей (B):** на главной директора список целей заменён SVG-виджетом `CompassWidget`. `GET /api/v1/dashboard/pulse-patterns` (`getGoalVector`) отдаёт `primaryGoalId` (`Goal.isPrimary` — главная цель компании), `proScore`/`contraScore`, `byDepartment`.
 - **Недельный план-факт по людям (D):** виджет в «Недельной сводке» — обещано/закрыто/просрочено per Person (`GET /api/v1/dashboard/operations/weekly-per-person`, `WeeklyPerPersonService`).
 - **Люди под риском (G):** виджет self-fetch + CTA «Открыть Пульс» (`GET /api/v1/dashboard/people-at-risk`, `PeopleAtRiskService`; пороги — `AdminSetting peopleAtRisk.*`).
-- **Операции (C):** «Панель операций» — `KpiHero` + 3 зоны + SWR, KPI «Открытые обещания», единый блок температуры с переключателем; ежедневный дайджест отдаёт `whoShined`.
+- **Операции (C):** «Панель операций» — `KpiHero` + 3 зоны + SWR, единый блок температуры с переключателем; ежедневный дайджест отдаёт `whoShined`. _(KPI «Открытые обещания» / `open-commitments` — снят ТЗ commitment-social-layer-cleanup, 2026-07-01.)_
 
 ## Батч 5 — состав ⊕ современный визуал + здоровье портфеля (2026-06-09, ТЗ-2/ТЗ-3/ТЗ-2 Ф6)
 
 Источник — `plans/tz/2026-06-08-dashboards-info-rework.md` (состав) ⊕ `...-dashboards-redesign-modern-visual-language.md` (визуал). Сервисы — [[../02_architecture/module-map]] §«Батч 5»; модели — [[../02_architecture/data-model]] §«Батч 5».
 
-- **Главная (S2.1):** первый экран сжат до ≤7 величин (`ValueStrip` + чат/настроение/обещания + вердикт компаса + AI-сводка + Top-1 риск). `director-dashboard.service.ts` += `fetchValueStrip` / `reasonSourceRef` / `mainReworkEnabled`. _(Величина «висящие решения» снята — чистка оперативно-контрольного хвоста решений 2026-06-30.)_ Гейт `dashboard.main_rework.enabled`. Виджеты `ValueStripWidget`/`WhatWeLearnedWidget`/`GoalVectorVerdictWidget`/`IdeasTopWidget`/`ChatUsageWidget`. Метрики `dashboard_value_strip_served_total`/`dashboard_main_first_screen_widget_count`.
+- **Главная (S2.1):** первый экран сжат до ≤7 величин (`ValueStrip` + чат/настроение + вердикт компаса + AI-сводка + Top-1 риск). `director-dashboard.service.ts` += `fetchValueStrip` / `reasonSourceRef` / `mainReworkEnabled`. _(Величина «висящие решения» снята — чистка оперативно-контрольного хвоста решений 2026-06-30. Величина «надёжность обещаний» `commitmentsKept` в `ValueStrip` — снята ТЗ commitment-social-layer-cleanup, 2026-07-01.)_ Гейт `dashboard.main_rework.enabled`. Виджеты `ValueStripWidget`/`WhatWeLearnedWidget`/`GoalVectorVerdictWidget`/`IdeasTopWidget`/`ChatUsageWidget`. Метрики `dashboard_value_strip_served_total`/`dashboard_main_first_screen_widget_count`.
 - **Здоровье портфеля целей (S2.6, `/dashboard/portfolio`):** `PortfolioHealthService` + `PortfolioHealthSnapshotCron @Cron('0 5 * * 1')` → `GET /dashboard/operations/portfolio-health`; MoSCoW-приоритет цели `PATCH /goals/:id/priority`. Модель `PortfolioHealthSnapshot`, enum `GoalPriority`. Флаг `operations.portfolio_health.enabled`, крутилки `portfolio.health.*`. Метрики `portfolio_health_score`/`portfolio_health_snapshot_total`/`portfolio_priority_set_total`.
 - **Витрина пользы (S2.6, `/dashboard/value-recap`):** экран поверх месячной `ValueRecap` (S1.5) + экспорт слайдов/печать (`GET /dashboard/operations/value-recap/:id/export`, read-only, без отдельного флага).
 - **COO (S2.2) и /me (S2.5)** — см. [[../02_architecture/module-map]] §«Батч 5» и [[frontend-pages]] §«Батч 5».
@@ -101,7 +101,7 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **Неделя / Месяц:** /week табы (weekly+operations+portfolio + CheckinDisciplineWidget); /month — решения месяца + PPTX-экспорт (зависимость `pptxgenjs`), drill-down план-факта `GET /dashboard/operations/weekly-per-person/:personId/items` (+self).
 - **Лента Коры (Ф8.6):** `GET /feed/cora`, `POST /feed/cora/seen` (миграция `feed_read_cursor`), `GET /probe/control` («ответил/молчит»), open_question-детектор.
 - **Silence-детектор тем (Ф8.2/8.1):** `@Cron('theme-silence-detector')` → Insight за kill-switch `dashboard.theme_silence.enabled` (ON) + крутилка `dashboard.theme_silence_weeks` (3); decision auto-implement детерминированный.
-- **Прочее:** taskType `meeting-title` (авто-название встреч, DEFAULT-цепочка), поиск по памяти `/memory`, мастер дедупа отделов (`POST /departments/:id/merge`), гейт полноты обещаний (`/me/promises` split items/openQuestions), EventForm rrule/reminders.
+- **Прочее:** taskType `meeting-title` (авто-название встреч, DEFAULT-цепочка), поиск по памяти `/memory`, мастер дедупа отделов (`POST /departments/:id/merge`), EventForm rrule/reminders. _(Гейт полноты обещаний `/me/promises` — снят ТЗ commitment-social-layer-cleanup, 2026-07-01.)_
 - **Светлая тема (Ф10):** тема-зависимые поверхности в `tokens.css`/`modern.css`/`tokens.ts` (корень контраста — был хардкод тёмного в `modern/tokens.ts`); визуальная доводка оттенков дата-виз на белом — за владельцем/qa (в `04_не-сделано`).
 
 ## Мастер-фиксы кабинета (2026-06-14, ТЗ cabinet-master-fixes, часть A)
@@ -128,10 +128,10 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
   - **pulse-виджеты** одним общим SWR к `GET /dashboard/pulse-patterns` (Ф1): `BusFactorWidget`, `RecurringTopicsWidget`, `LowRoiMeetingsWidget`, `BottleneckHeatmapWidget`, `KnowledgeVelocityKpi`. Props НЕ единообразны (`data` / `meetings`-массив / только-`data`). _(Алерт необратимых решений `IrreversibleDecisionsAlert` снят — чистка оперативно-контрольного хвоста решений 2026-06-30.)_
   - **«Клиенты под риском оттока»** `CustomerRiskRadarWidget` (Ф4, SWR `limit≤20`) + зеркало `customersAtRisk` в чтение дневного дайджеста (`CustomersAtRiskSection` в `DailyDigestClient`).
   - **«Знания под риском»** `KnowledgeAtRiskWidget` (Ф5) + минимальный backend-join имени эксперта (relation `soleExpert`, опц. поле `soleExpertPersonName` — без сырого cuid).
-  - **«Перегруз ответственностью»** `PromiseOverloadWidget` (Ф7) — accumulators сети обещаний.
+  - _(Виджет **«Перегруз ответственностью»** `PromiseOverloadWidget` (Ф7) — **снят** ТЗ commitment-social-layer-cleanup, 2026-07-01.)_
 - **Оживлённые мёртвые сигналы:**
   - **Факторы вовлечённости команд** (Ф6): за `Department.healthSummaryJson` уже платили LLM ежедневно, но `getHealth` его не селектил. Добавлен `select healthSummaryJson` + защитный парс в опц. поле `healthSummary`; рендер раскрытия «Почему такая оценка» (5 факторов чипами + summary + `generatedAt`, fallback «не посчитана») в `StructureWidgets`.
-  - **Сеть обещаний** (Ф7): `PromiseNetworkSnapshot` писался weekly, читателей было 0. НОВЫЙ `PromiseNetworkService` + НОВЫЙ эндпоинт `GET /api/v1/dashboard/operations/promise-network` (owner/admin/coo).
+  - _(**Сеть обещаний** (Ф7): `PromiseNetworkService` + эндпоинт `GET /api/v1/dashboard/operations/promise-network` + модель `PromiseNetworkSnapshot` + cron `PromiseNetworkAnalyzerCron` — **снесены целиком** ТЗ commitment-social-layer-cleanup, 2026-07-01.)_
 - **Починенные заглушки данных (Ф2, backend-доводки, фронт уже был готов):**
   - `team-detail.goals` — заглушка `[]` заменена на `findMany` по `Goal.ownerPersonId` (связь уже была в схеме).
   - _(Заглушка `team-health.decisions` (scoped count висящих решений через `HangingDecisionsService`) снята — чистка оперативно-контрольного хвоста решений 2026-06-30; team-health по решениям больше не считается.)_
@@ -175,7 +175,7 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **Дедуп выборок (бэк):** `CustomerRiskRadarService` (`dedupeLatestSnapshotPerCustomer` — последний снимок на `customerEntityId`, применён в listForTenant/listForResponsible/topForDigest, counts по дедуп-набору); `PulsePatternsService` recurringTopics (`dedupeLatestRecurringTopicByTheme`). Идеи «Без темы» схлопнуты в один агрегат.
 - **Лента:** текстовые бейджи типов (парные `--chip-*` токены) + клиентский фильтр Все/События/Вопросы/Риски.
 - **План и факт:** «сдали X / ожидалось Y / всего Z сотрудников» (Z=`missing.totalEmployees`); «По людям» из `checkin-discipline.byPerson` со ссылкой на `/persons/[id]/pulse`.
-- **Аналитика:** пустые-стейты вместо сетки нулей (сводка «Пока спокойно», «Накапливаем данные», «Пересечений между командами пока нет»); promise-network честно подписан «в сети N связанных».
+- **Аналитика:** пустые-стейты вместо сетки нулей (сводка «Пока спокойно», «Накапливаем данные», «Пересечений между командами пока нет»). _(Подпись promise-network «в сети N связанных» — снята вместе с виджетом, ТЗ commitment-social-layer-cleanup, 2026-07-01.)_
 - **Дедуп запросов:** единый SWR-ключ `["director", orgId, period]` во всех 4 потребителях (Verdict/Goal/Value/MobileOverview) — SWR дедупит до 1 запроса. `weekly-digest` 404 (digest_not_found) ловится → виджет скрывается без красной ошибки.
 - Без миграций/seed/ENV/очередей. ТЗ [`2026-06-25-dashboards-repair`](../../plans/tz/2026-06-25-dashboards-repair.md).
 

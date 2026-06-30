@@ -1175,20 +1175,17 @@ model MonthlyOperationsDigest {
 
 ```prisma
 commitmentDueDate           DateTime?     // срок (из текста или резерв createdAt + 5 рабочих дней)
-commitmentStatus            String?       // 'open' | 'asked' | 'fulfilled' | 'missed' | 'cancelled' | 'superseded'
 commitmentRecipientPersonId String?
-commitmentAskedAt           DateTime?     // когда отправили followup-probe
-commitmentEscalatedAt       DateTime?     // когда эскалировали (после COMMITMENT_ESCALATION_DAYS молчания)
 commitmentRecipient Person? @relation("CommitmentRecipient", fields: [commitmentRecipientPersonId], references: [id], onDelete: SetNull)
-@@index([tenantId, signalType, commitmentStatus, commitmentDueDate])
-@@index([tenantId, signalType, commitmentStatus])
 ```
 
-Backfill — `backend/scripts/backfill-commitment-due-dates.ts` (`--dry-run` поддерживается).
+> **Снято (ТЗ commitment-social-layer-cleanup, миграция `20260701000000_drop_commitment_social_layer`, 2026-07-01):** колонки `commitmentStatus` / `commitmentAskedAt` / `commitmentEscalatedAt` + два индекса по `commitmentStatus` — **удалены вместе с надзорным соц-слоем обещаний** (follow-up / cascade / network / reliability). Осталась **граница факта**: `commitmentDueDate` + `commitmentAuthorPersonId` (атрибуция автора) + `commitmentRecipientPersonId` (адресат) + их relations/индексы по автору. Обещание хранится как факт памяти, но Кора по нему больше не напоминает/не эскалирует и не считает «надёжность».
+
+Backfill — `backend/scripts/backfill-commitment-due-dates.ts` (`--dry-run` поддерживается; фильтр `commitmentDueDate: null`, без статуса).
 
 **`Person` (обратная связь):** `commitmentsToMe IdeaBlock[] @relation("CommitmentRecipient")` — обещания, адресованные этому человеку.
 
-**`IdeaBlockLinkType` (новое значение):** `resolves` — запись `signalType='commitment_status'` закрывает исходное `commitment` через `IdeaBlockLink`.
+**`IdeaBlockLinkType` (значение `resolves`):** осталось осиротевшим в enum (граница факта). Раньше: запись `signalType='commitment_status'` закрывала исходное `commitment` через `IdeaBlockLink` — этот механизм снят (ТЗ commitment-social-layer-cleanup, Ф1, 2026-07-01).
 
 ### Probe-система — enum `ProbeStatus` (2026-06-11, Фаза 1)
 

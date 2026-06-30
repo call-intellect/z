@@ -231,7 +231,6 @@
 | operations.dashboard_rework.enabled | Новая раскладка COO-дашборда | вкл |
 | operations.per_person_self_view.enabled | Self-просмотр своего план-факта | вкл |
 | operations.blocker_synthesis.enabled | Дневной синтез блокеров | вкл |
-| operations.promise_cascade.enabled | Дневной каскад обещаний | вкл |
 | operations.knowledge_at_risk.enabled | Синтез «знание под риском» | вкл |
 | operations.team_capacity.enabled | Агрегат загрузки команд | вкл |
 | operations.onboarding_ramp.enabled | Дневной онбординг новичка | вкл |
@@ -247,7 +246,6 @@
 | team_capacity.overload_percent / underload_percent | Пороги пере-/недозагрузки отдела | 120% / 50% |
 | onboarding.silent_days | Дней молчания новичка до «застрял» | 5 |
 | goals.author_coverage_min | Доля обещаний с автором, иначе атрибуция на адресата | 0.6 |
-| reliability.min_denominator | Сколько обещаний нужно, иначе «мало данных» | 3 |
 
 ## Здоровье портфеля целей · Риск клиентов
 | Ключ | Что делает | Дефолт |
@@ -377,7 +375,6 @@
 | betaOps.morningLocalHour / eveningLocalHour | Часы утреннего / вечернего чек-ина | 9 / 18 |
 | betaOps.weeklyDigestLocalHour / LocalDay | Час и день недельного COO-дайджеста | 8 / Пн |
 | betaOps.dailyDigestHourUtc | Час дневного COO-дайджеста (UTC) | 22 |
-| betaOps.commitmentFollowupLocalHour | Час напоминания о коммитментах | 9 |
 
 ## Прочие рубильники интерфейса
 | Ключ | Что делает | Дефолт |

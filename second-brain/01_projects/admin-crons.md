@@ -92,7 +92,6 @@ Severity `high` для `enabled=false` критичных кронов (`email-f
 - `operations-weekly-digest` — понедельник 09:00.
 - `retention-purger` — ночной purge старых записей.
 - `idea-clusterer` — раз в 4 часа.
-- `commitment-followup` — promise-keeper.
 - `cron-history-cleanup` — чистка собственной истории (>30 дней).
 
 ## Риски

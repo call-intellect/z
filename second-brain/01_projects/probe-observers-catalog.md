@@ -41,7 +41,7 @@ related:
 | **Профиль компании** | ежедневно 04:00 UTC | пустые миссия / видение / стратегия | нет |
 | **Стратегическая привязка** | ежедневно 06:00 UTC | у сотрудника много задач без цели | нет |
 | **Слабая привязка к целям** | по понедельникам 06:00 UTC | много закрытых задач без цели | нет |
-| **Напоминание про обещания** `[probe-инспектор УДАЛЁН 2026-06-29]` | — | поводы `commitment.followup`/`commitment.silence_escalation` сняты (followup/эскалация-вопросы снесены ТЗ kora-clarify-questions-overhaul). Соц-слой обещаний (надёжность/сеть/дашборд/мост обещание→задача) — остаётся | — |
+| **Напоминание про обещания** `[probe-инспектор УДАЛЁН 2026-06-29]` | — | поводы `commitment.followup`/`commitment.silence_escalation` сняты (followup/эскалация-вопросы снесены ТЗ kora-clarify-questions-overhaul). **Остальной соц-слой обещаний (надёжность/сеть/дашборд/`promise-cascade`) тоже снят** — ТЗ commitment-social-layer-cleanup, 2026-07-01. Осталась только память факта (срок + автор/адресат) | — |
 | **Задачи (помощник + извлечение)** | при действии с задачей · при извлечении · при закрытии задачи | неясен исполнитель / нет срока (→ **постановщику**) / «расскажи, как решал» при закрытии значимой | **да** (проверка закрытия) |
 | **Задачи — ежедневный свод** (`TaskClarifySweepCron`) | ежечасно (час МСК-крутилка) | добор pending-задач без исполнителя/срока старше N часов → вопрос постановщику | нет |
 | **Шаблон процесса** | после извлечения процесса | у шагов нет входа / выхода / ответственного | нет |
@@ -208,7 +208,7 @@ related:
 
 ### Напоминание про обещания (Promise Keeper / commitment-followup) `[probe-инспектор УДАЛЁН 2026-06-29]`
 - **Статус:** probe-инспектор обещаний **снесён** (ТЗ kora-clarify-questions-overhaul, Ф2 — только вопросы). Удалены `commitment-followup.cron.ts`, `specialist-3-9-promise-keeper.service.ts`, `commitment-response.handler.ts`; флаги `betaOps.commitmentFollowupEnabled` / `commitmentFollowupLocalHour` / `commitmentEscalationDays`; поводы `commitment.followup` / `commitment.silence_escalation`. Кора **больше не напоминает/не эскалирует по обещаниям**.
-- **Что ОСТАЛОСЬ:** соц-слой обещаний — надёжность (`commitment-reliability`), сеть обещаний (`promise-network`), дашборд, мост обещание→задача, `promise-cascade`. Снятие соц-слоя — отдельное ТЗ.
+- **Соц-слой обещаний снят целиком** (ТЗ commitment-social-layer-cleanup, 2026-07-01, Ф1-Ф6): надёжность (`CommitmentReliabilityService`), сеть обещаний (`PromiseNetworkService` + `PromiseNetworkAnalyzerCron`), дашборд-виджеты, `promise-cascade`, страница «Мои обещания», секции писем — всё удалено. **Что ОСТАЛОСЬ — только память факта обещания:** `commitmentDueDate` + атрибуция автора (`commitmentAuthorPersonId`) и адресата (`commitmentRecipientPersonId`), извлечение в `block-ingest`, агрегат план-факта по автору (`WeeklyPerPersonService`). Мост обещание↔задача — открытый пробел (см. [[../04_не-сделано/README]]).
 
 ---
 

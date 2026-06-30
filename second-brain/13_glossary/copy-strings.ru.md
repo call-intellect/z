@@ -214,19 +214,21 @@
 | `risk.impact` | Влияние |
 | `risk.mitigation` | Что делаем |
 
-## Обещания
+## Обещания `[СНЯТО 2026-07-01 — соц-слой обещаний удалён, ТЗ commitment-social-layer-cleanup]`
+
+> Страница «Мои обещания» (`/me/promises`) и весь надзорный соц-слой обещаний удалены. Строки ниже больше не используются (оставлены для истории копирайта; не переиспользовать). Обещание остаётся фактом памяти, но отдельного UI «обещаний» нет.
 
 | Ключ | Текст |
 |---|---|
-| `commitments.list.title` | Мои обещания |
-| `commitments.list.empty` | Обещаний пока не зафиксировал |
-| `commitment.deadline` | до {date} |
-| `commitment.no_deadline` | без срока |
-| `commitment.source` | Источник |
-| `commitment.status.mentioned` | сказал |
-| `commitment.status.acknowledged` | подтвердил |
-| `commitment.status.done` | сделал |
-| `commitment.status.forgotten` | срок прошёл |
+| ~~`commitments.list.title`~~ | ~~Мои обещания~~ |
+| ~~`commitments.list.empty`~~ | ~~Обещаний пока не зафиксировал~~ |
+| ~~`commitment.deadline`~~ | ~~до {date}~~ |
+| ~~`commitment.no_deadline`~~ | ~~без срока~~ |
+| ~~`commitment.source`~~ | ~~Источник~~ |
+| ~~`commitment.status.mentioned`~~ | ~~сказал~~ |
+| ~~`commitment.status.acknowledged`~~ | ~~подтвердил~~ |
+| ~~`commitment.status.done`~~ | ~~сделал~~ |
+| ~~`commitment.status.forgotten`~~ | ~~срок прошёл~~ |
 
 ## Настроение
 
@@ -268,7 +270,7 @@
 | `me.title` | Вы — {name} |
 | `me.role` | Роль: {role} |
 | `me.level` | Уровень: {level} |
-| `me.commitments` | Мои обещания |
+| ~~`me.commitments`~~ | ~~Мои обещания~~ `[СНЯТО 2026-07-01 — вкладка «Мои обещания» удалена]` |
 | `me.mood` | Моё настроение |
 | `me.context` | Мой контекст |
 | `me.settings` | Настройки |

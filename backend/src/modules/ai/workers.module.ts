@@ -50,7 +50,6 @@ import { SkillTraitConceptNormalizerCron } from '../knowledge-core/workers/skill
 import { SkillTraitVerifyCron } from '../knowledge-core/workers/skill-trait-verify.cron';
 import { Specialist31RegulationsWorker } from '../knowledge-core/workers/specialist-3-1-regulations.worker';
 import { Specialist314GoalsWorker } from '../knowledge-core/workers/specialist-3-14-goals.worker';
-import { Specialist315TasksWorker } from '../knowledge-core/workers/specialist-3-15-tasks.worker';
 import { Specialist32KnowledgeCloneWorker } from '../knowledge-core/workers/specialist-3-2-knowledge-clone.worker';
 import { Specialist33DecisionsWorker } from '../knowledge-core/workers/specialist-3-3-decisions.worker';
 import { Specialist34ProjectCustomerWorker } from '../knowledge-core/workers/specialist-3-4-project-customer.worker';
@@ -183,7 +182,6 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     Specialist36IdeasWorker,
     Specialist314GoalsWorker,
     Specialist315TasksService,
-    Specialist315TasksWorker,
     TaskClarifySweepCron,
     // Ф5 (TZ 2026-06-16 task-dedup) — consumer `core.goal-embed`. Считает
     // pgvector-embedding цели (name+description) для семантического дедупа

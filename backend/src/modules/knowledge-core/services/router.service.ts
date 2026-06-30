@@ -77,7 +77,6 @@ export class RouterService {
     // компании из блоков (commitment / plan_item): outcome-формулировка,
     // KNN-дедуп + иерархия родитель↔подцель, source='ai' promotionState='suggested'.
     GOALS: '3-14-goals',
-    TASKS: '3-15-tasks',
   } as const;
 
   /// Специалисты, которых одним проходом извлекает объединённый разборщик
@@ -128,7 +127,6 @@ export class RouterService {
     // между insights/personal-relation (3-3.5) и ideas (4): цели стратегически
     // важны, но менее срочны, чем явные риски и решения.
     [RouterService.SPECIALIST.GOALS]: 3.8,
-    [RouterService.SPECIALIST.TASKS]: 3.9,
   };
 
   constructor(
@@ -425,9 +423,6 @@ export class RouterService {
       case 'commitment':
       case 'plan_item':
         targets.add(RouterService.SPECIALIST.GOALS);
-        break;
-      case 'action_item':
-        targets.add(RouterService.SPECIALIST.TASKS);
         break;
       // SBA β-8.2 — commitment_status больше не no-op: эмиттим событие
       // `commitment.status_received`, на которое подписан CommitmentResponseHandler

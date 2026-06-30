@@ -24,7 +24,6 @@ import { ExperimentDetectorWorker } from './experiment-detector.worker';
 import { ProcessDetectorWorker } from './process-detector.worker';
 import { Specialist31RegulationsWorker } from './specialist-3-1-regulations.worker';
 import { Specialist314GoalsWorker } from './specialist-3-14-goals.worker';
-import { Specialist315TasksWorker } from './specialist-3-15-tasks.worker';
 import { Specialist32KnowledgeCloneWorker } from './specialist-3-2-knowledge-clone.worker';
 import { Specialist33DecisionsWorker } from './specialist-3-3-decisions.worker';
 import { Specialist34ProjectCustomerWorker } from './specialist-3-4-project-customer.worker';
@@ -73,8 +72,6 @@ export class SpecialistRoutingDispatcherWorker implements OnModuleInit, OnModule
     private readonly roleMap: RoleMapBuilderWorker,
     @Inject(Specialist314GoalsWorker)
     private readonly goals: Specialist314GoalsWorker,
-    @Inject(Specialist315TasksWorker)
-    private readonly tasks: Specialist315TasksWorker,
     @Inject(SprintHelperWorker)
     private readonly sprintHelper: SprintHelperWorker,
   ) {}
@@ -100,7 +97,6 @@ export class SpecialistRoutingDispatcherWorker implements OnModuleInit, OnModule
     register(ProcessDetectorWorker.SPECIALIST_NAME, this.processDetector);
     register(RoleMapBuilderWorker.SPECIALIST_NAME, this.roleMap);
     register(Specialist314GoalsWorker.SPECIALIST_NAME, this.goals);
-    register(Specialist315TasksWorker.SPECIALIST_NAME, this.tasks);
     register(SprintHelperWorker.JOB_NAME, this.sprintHelper);
 
     this.worker = new Worker(CORE_QUEUE_NAMES.SPECIALIST_ROUTING, (job) => this.dispatch(job), {

@@ -35,9 +35,11 @@ function makeService(prismaStub: PrismaStub): {
   prisma: PrismaStub;
   audit: { log: Fn };
   metrics: { incPortfolioPrioritySet: Fn };
+  events: { emit: Fn };
 } {
   const audit = { log: vi.fn(async () => undefined) };
   const metrics = { incPortfolioPrioritySet: vi.fn() };
+  const events = { emit: vi.fn() };
   const svc = new GoalsService(
     prismaStub as unknown as PrismaService,
     audit as unknown as AuditLogService,
@@ -48,8 +50,9 @@ function makeService(prismaStub: PrismaStub): {
     {} as unknown as TypedConfigService,
     metrics as unknown as BusinessMetricsService,
     {} as unknown as StrategicAlignmentIssuesService,
+    events as unknown as import('@nestjs/event-emitter').EventEmitter2,
   );
-  return { svc, prisma: prismaStub, audit, metrics };
+  return { svc, prisma: prismaStub, audit, metrics, events };
 }
 
 function baseGoalRow(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -444,5 +447,82 @@ describe('GoalsService.setPriority', () => {
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(updateFn).not.toHaveBeenCalled();
+  });
+});
+
+describe('GoalsService — goal.status_changed event', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('update со сменой статуса (active→achieved) эмитит goal.status_changed', async () => {
+    const existing = baseGoalRow({ id: 'g1', status: 'active' });
+    const updatedRow = baseGoalRow({ id: 'g1', status: 'achieved' });
+    const prisma: PrismaStub = {
+      goal: {
+        findUnique: vi.fn(async () => existing),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(async () => updatedRow),
+      },
+      goalAlignmentSnapshot: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(),
+    };
+    const { svc, events } = makeService(prisma);
+    await svc.update({
+      tenantId: 't1',
+      userId: 'u1',
+      goalId: 'g1',
+      body: { status: 'achieved' },
+    });
+    expect(events.emit).toHaveBeenCalledTimes(1);
+    expect(events.emit).toHaveBeenCalledWith(
+      'goal.status_changed',
+      expect.objectContaining({ newStatus: 'achieved', oldStatus: 'active' }),
+    );
+  });
+
+  it('update без смены статуса не эмитит goal.status_changed', async () => {
+    const existing = baseGoalRow({ id: 'g1', status: 'active' });
+    const updatedRow = baseGoalRow({ id: 'g1', status: 'active' });
+    const prisma: PrismaStub = {
+      goal: {
+        findUnique: vi.fn(async () => existing),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(async () => updatedRow),
+      },
+      goalAlignmentSnapshot: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(),
+    };
+    const { svc, events } = makeService(prisma);
+    await svc.update({
+      tenantId: 't1',
+      userId: 'u1',
+      goalId: 'g1',
+      body: { name: 'Новое имя' },
+    });
+    expect(events.emit).not.toHaveBeenCalledWith(
+      'goal.status_changed',
+      expect.anything(),
+    );
+  });
+
+  it('archive не-abandoned цели эмитит goal.status_changed (newStatus=abandoned)', async () => {
+    const existing = baseGoalRow({ id: 'g1', status: 'active' });
+    const prisma: PrismaStub = {
+      goal: {
+        findUnique: vi.fn(async () => existing),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(async () => ({ id: 'g1', archivedAt: new Date() })),
+      },
+      goalAlignmentSnapshot: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(),
+    };
+    const { svc, events } = makeService(prisma);
+    await svc.archive({ tenantId: 't1', userId: 'u1', goalId: 'g1' });
+    expect(events.emit).toHaveBeenCalledWith(
+      'goal.status_changed',
+      expect.objectContaining({ newStatus: 'abandoned' }),
+    );
   });
 });

@@ -28,6 +28,7 @@ import { CustomerRiskRadarService } from './services/customer-risk-radar.service
 import { DailyCheckInService } from './services/daily-checkin.service';
 import { DailyDigestService } from './services/daily-digest.service';
 import { DayReportCollectorService } from './services/day-report-collector.service';
+import { GoalCascadeHandler } from './services/goal-cascade.handler';
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
 import { KnowsWhoService } from './services/knows-who.service';
@@ -98,6 +99,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     OperationsDashboardService,
     PersonalRelationService,
     GoalCascadeService,
+    GoalCascadeHandler,
     CheckinParserService,
     CheckinResponseHandler,
     CheckinIngestService,

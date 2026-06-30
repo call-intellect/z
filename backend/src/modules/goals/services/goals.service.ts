@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -41,6 +42,7 @@ export class GoalsService {
     private readonly metrics: BusinessMetricsService,
     @Inject(StrategicAlignmentIssuesService)
     private readonly issuesAlignment: StrategicAlignmentIssuesService,
+    @Inject(EventEmitter2) private readonly events: EventEmitter2,
   ) {}
 
   async getIssueAlignmentSnapshot(args: {
@@ -277,6 +279,17 @@ export class GoalsService {
       metadata: { tenantId, changedFields: Object.keys(body) },
     });
 
+    if (updated.status !== existing.status) {
+      try {
+        this.events.emit('goal.status_changed', {
+          tenantId,
+          goalId,
+          oldStatus: existing.status,
+          newStatus: updated.status,
+        });
+      } catch {}
+    }
+
     // Ф5 (TZ 2026-06-16) — пересчёт embedding'а при правке name/description
     // (текст KNN-дедупа = name+description). Прочие поля воркер отфильтрует
     // hash-skip'ом. Fire-and-forget.
@@ -421,6 +434,16 @@ export class GoalsService {
       resourceId: args.goalId,
       metadata: { tenantId: args.tenantId, soft: true },
     });
+    if (existing.status !== 'abandoned') {
+      try {
+        this.events.emit('goal.status_changed', {
+          tenantId: args.tenantId,
+          goalId: args.goalId,
+          oldStatus: existing.status,
+          newStatus: 'abandoned',
+        });
+      } catch {}
+    }
     return {
       id: updated.id,
       archivedAt: (updated.archivedAt ?? now).toISOString(),

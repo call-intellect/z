@@ -164,7 +164,19 @@ LiveKit чистит атрибуты автоматически при disconne
   - `services/segment-builder.service.ts` — режет meeting-payload на
     скользящие окна сегментов.
   - `services/block-extraction.service.ts` — LLM-вызов `block-ingest`
-    с JSON Schema strict.
+    с JSON Schema strict. `extractFull` режет окна с нахлёстом
+    (`blockIngestWindowOverlapSegments`), пробрасывает позицию «фрагмент N из M»
+    в шапку промпта + N раундов gleaning + дедуп на стыке окон
+    (извлекающий слой, заход A Ф5, 2026-06-30).
+  - `services/meeting-skeleton.service.ts` — `MeetingSkeletonService`
+    (извлекающий слой, заход A Ф6, 2026-06-30): 1 дешёвый LLM-проход
+    (taskType `meeting-skeleton`) на сжатом входе разговора → «Карта встречи»
+    (`{agenda, milestones[], keyNames[]}`), которая подмешивается in-memory
+    в шапку каждого окна `block-ingest` для разрешения кореференций
+    («он/этот клиент/проект») и анти-дробления темы. fail-open (`skeleton=null`
+    → окна работают как раньше). Kill-switch `knowledge.skeleton_pass_enabled` /
+    порог коротких `knowledge.skeletonMinSegments`. Метрика
+    `kc_meeting_skeleton_total{outcome}`.
   - `services/embedding.service.ts` — обёртка над `EmbeddingFallbackService`:
     `embedBlocks` / `embedEntityNames` / `embedQuery`.
   - `services/entity-resolution.service.ts` — findOrCreate Entity по

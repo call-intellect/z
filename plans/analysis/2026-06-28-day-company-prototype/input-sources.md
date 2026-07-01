@@ -273,9 +273,11 @@ CheckInConflictDetector); `operations/services/personal-relation.service.ts`; `E
 - **Планы/чек-ины/отчётность** — закрытая фаза Ф1–Ф8 (см. выше).
 - Прототип обновлён под группировки + скрины (реальный дашборд / прототип до/после).
 
-**Ждём владельца:**
-- **Конфликты** — финальное решение, как показывать (детект и хранение готовы: `EntityLink conflicted_with`).
-- **Цели / компас** — владелец пишет новое ТЗ; потом сходить и посмотреть, откуда забирается «движение к цели».
+**Проверено по коду (2026-06-30) — механизмы готовы (см. финальный раздел внизу):**
+- **Цели / компас** — источник актуален (`GoalAlignmentSnapshot` + продюсер `strategic-alignment` 02:00 МСК);
+  дневной отчёт уже забирает правильно, править по компасу НЕ нужно.
+- **Конфликты** — актуальны после Фазы 9 (граф-детектор «автор↔стороны», `EntityLink conflicted_with`,
+  пороги в AdminSetting). Забор за день — добавить фильтр `createdAt`.
 
 **Открытые вопросы для ТЗ:**
 1. **Формат выхода — РЕШЕНО (2026-06-29): структурированный (гибрид), «как в прототипе».** Агент отдаёт
@@ -296,3 +298,64 @@ CheckInConflictDetector); `operations/services/personal-relation.service.ts`; `E
 8. **UI-доработки — РЕШЕНО: да.** Схлопнуть дубль идей (плоский виджет + «по темам» → один кластерами),
    удалить виджет «Решения», внедрить текстовое письмо, пересмотреть плотность правой колонки.
 9. **Probe — РЕШЕНО: вне scope первой версии** (атрибуция автора кривая, отложено).
+
+## Финальная проверка: цели/компас + конфликты (актуально по коду, 2026-06-30)
+
+### Цели / компас — источник актуален, править НЕ нужно
+Механизм целей переделан («движок целей» Ф1–Ф9), но модель **`GoalAlignmentSnapshot` осталась** — дневной
+отчёт забирает компас правильно и без изменений.
+- **Продюсер:** `strategic-alignment.cron.ts` `@Cron('0 2 * * *', Europe/Moscow)` (**02:00 МСК**) →
+  `strategic-alignment.worker.ts` (concurrency 2) → LLM (`goal-alignment.prompt`) на окне 30 дней
+  (`org.strategicAlignmentWindowDays`, клэмп 7–90) → создаёт `GoalAlignmentSnapshot`
+  (`score` 0..100, `delta`, `explanation`, `signals` = {pro[], contra[]}) + кэширует в
+  `Goal.cachedAlignment/cachedAlignmentDelta/cachedSnapshotId`.
+- **Забор в отчёт** (`daily-digest.service.ts buildDayPackage`): главная цель по `Goal.isPrimary`
+  (fallback — первая active) → последний `GoalAlignmentSnapshot` по `goalId` → `compass = {goalName,
+  score, delta, explanation, pro, contra}`. Направление `to_goal/drift/against` **досчитывает сам LLM**
+  в промпте отчёта (не хранится).
+- «Один вердикт движения» (Ф8) = `Goal.cachedAlignment` (число) на фронте списка/дерева целей; старые
+  многомерные alignment-виджеты снесены (Ф7), но дневной отчёт их не использовал.
+- ⚠️ **Нюанс тайминга:** продюсер целей в **02:00**, а свежие данные за вчера приезжают позже (Битрикс
+  03:00, чек-ины 05:00) → снапшот движения на утро отстаёт на день. Для 30-дневного окна некритично,
+  но отметить в ТЗ (возможно сдвинуть продюсер целей после сбора данных).
+- Источники: `knowledge-core/workers/strategic-alignment.cron.ts:18`, `.worker.ts`;
+  `GoalAlignmentSnapshot`, `Goal.isPrimary/cachedAlignment` (schema.prisma); `daily-digest.service.ts:618–648`.
+
+### Конфликты — актуально после Фазы 9 (WP-G)
+Хранение НЕ изменилось (`EntityLink relationType='conflicted_with'`), но логика детекта усилена (коммит `ef1e2f50`):
+- **Детектор: `PersonalRelationBuilderWorker`** (через хаб/роутер по `signalType=team_friction/process_friction`).
+  Теперь **«автор↔стороны»**, а не N² пар: находит самого частого автора из `IdeaBlockEvidence.authorPersonId`
+  (`resolveAuthorEntityId`) → строит рёбра автор→каждый упомянутый участник.
+- **Хранение:** `EntityLink` (`fromEntityId`=автор/инициатор, `toEntityId`=сторона, `confidence`,
+  `properties.sourceSignalType`, `status='active'`, `createdAt`/`validFrom`). Участники известны, резолв в Person по `entityId`.
+- **Пороги в AdminSetting** (крутилки): `knowledge.conflict_min_confidence` (0.6 — отсечка) и
+  `knowledge.conflict_graph_confidence` (0.65 — проставляемая уверенность).
+- **`CheckInConflictDetectorCron` — фактически МЁРТВ**: после перестройки `DayReportCollectorService`
+  `rawResponseText` больше не содержит трение-фраз; regex ничего не ловит; к удалению в Ф11б.
+- ⚠️ **Слабое место:** нарезчик `block-ingest` `team_friction` размечает плохо (есть в enum, но БЕЗ
+  примеров в промпте) → конфликтных блоков мало. Чтобы конфликты реально доходили до отчёта, возможно
+  нужно усилить промпт разметки `team_friction` (отдельный пункт для ТЗ).
+- **Забор в отчёт:** готовый паттерн `fetchTeamFrictions` (`operations-dashboard.service.ts:527–585`,
+  DTO `OperationsDashboardTeamFrictionDto`), но БЕЗ фильтра по дню → для «Дня компании» добавить
+  `createdAt: { gte: <начало дня> }` и подать в `DayCompanyPackage` под ось «Команда».
+- Источники: `operations/workers/personal-relation-builder.worker.ts` (Фаза 9 `ef1e2f50`);
+  `operations/services/operations-dashboard.service.ts:527–585`; `EntityLink` (schema.prisma:4283).
+
+## Конфликты и компас — подача в промпт + виджеты (решение 2026-06-30)
+
+**Конфликты — в ДВА места (промпт + виджет):**
+- **В промпт (вход):** блок «конфликты за день» — пары «кто с кем» (сотрудник ↔ сотрудник) + из чего
+  возникло + уверенность, из `EntityLink conflicted_with` (`createdAt` за день, резолв в Person). Питает
+  ось «Команда» и секцию «что помешало». Уже добавлено в `report-prompt-v2.md` (блок ВХОД → СЕГОДНЯ).
+- **Виджет:** новый блок «Команда: трения» (или секция «Команда») — список пар с уверенностью и
+  источником. Паттерн готов: `fetchTeamFrictions` (`operations-dashboard.service.ts:527–585`) + фильтр
+  по дню; DTO `OperationsDashboardTeamFrictionDto`.
+- **Условие, чтобы данные реально были:** усилить промпт разметки `block-ingest` для `team_friction`
+  (сейчас в enum без примеров → конфликтных блоков мало). Отдельный пункт ТЗ.
+
+**Компас — отдельный виджет:**
+- **Виджет:** «Цель и компас» (`GoalCompassCard` — уже есть на герое) читает `goalAlignmentDay`
+  (`direction`/`score`/`delta`/`pro`/`contra`) от `GoalAlignmentSnapshot`. Держать его отдельным виджетом;
+  проверить, что корректно показывает движение к главной цели (`isPrimary`).
+- **Данные готовы** (продюсер `strategic-alignment` 02:00 МСК) — источник править не нужно, только забор
+  (уже работает). Нюанс тайминга 02:00 vs свежие данные — см. выше.

@@ -101,6 +101,8 @@ describe('clampWeekVerdict', () => {
     const out = clampWeekVerdict(v, {
       hasNegativeClientSignal: true,
       executionStrained: false,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
     });
     expect(out.axes.find((a) => a.key === 'clients')!.state).not.toBe('ok');
     expect(out.axes.find((a) => a.key === 'clients')!.state).toBe('risk');
@@ -111,6 +113,8 @@ describe('clampWeekVerdict', () => {
     const out = clampWeekVerdict(v, {
       hasNegativeClientSignal: false,
       executionStrained: true,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
     });
     expect(out.axes.find((a) => a.key === 'execution')!.state).not.toBe('ok');
     expect(out.overall.state).not.toBe('ok');
@@ -119,7 +123,12 @@ describe('clampWeekVerdict', () => {
 
   it('нет сигналов → вердикт не меняется, повторный clamp идемпотентен', () => {
     const v = verdict({ team: 'ok', clients: 'ok', execution: 'ok', overall: 'ok' });
-    const noSignals = { hasNegativeClientSignal: false, executionStrained: false };
+    const noSignals = {
+      hasNegativeClientSignal: false,
+      executionStrained: false,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
+    };
     const once = clampWeekVerdict(v, noSignals);
     expect(once).toEqual(v);
     const twice = clampWeekVerdict(once, noSignals);
@@ -131,8 +140,45 @@ describe('clampWeekVerdict', () => {
     const out = clampWeekVerdict(v, {
       hasNegativeClientSignal: true,
       executionStrained: false,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
     });
     expect(out.overall.state).toBe('warn');
     expect(out.axes.find((a) => a.key === 'overall')!.state).toBe('warn');
+  });
+
+  it('team ok + teamFrictionRisk → team=risk и overall понижен', () => {
+    const v = verdict({ team: 'ok', clients: 'ok', execution: 'ok', overall: 'ok' });
+    const out = clampWeekVerdict(v, {
+      hasNegativeClientSignal: false,
+      executionStrained: false,
+      teamFrictionWarn: true,
+      teamFrictionRisk: true,
+    });
+    expect(out.axes.find((a) => a.key === 'team')!.state).toBe('risk');
+    expect(out.overall.state).not.toBe('ok');
+    expect(out.axes.find((a) => a.key === 'overall')!.state).not.toBe('ok');
+  });
+
+  it('team ok + teamFrictionWarn (risk=false) → team=warn', () => {
+    const v = verdict({ team: 'ok', clients: 'ok', execution: 'ok', overall: 'ok' });
+    const out = clampWeekVerdict(v, {
+      hasNegativeClientSignal: false,
+      executionStrained: false,
+      teamFrictionWarn: true,
+      teamFrictionRisk: false,
+    });
+    expect(out.axes.find((a) => a.key === 'team')!.state).toBe('warn');
+  });
+
+  it('оба friction-сигнала false → team не меняется', () => {
+    const v = verdict({ team: 'ok', clients: 'ok', execution: 'ok', overall: 'ok' });
+    const out = clampWeekVerdict(v, {
+      hasNegativeClientSignal: false,
+      executionStrained: false,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
+    });
+    expect(out.axes.find((a) => a.key === 'team')!.state).toBe('ok');
   });
 });

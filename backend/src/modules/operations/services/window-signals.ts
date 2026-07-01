@@ -52,6 +52,15 @@ interface ClusterRow {
   updatedAt: Date;
 }
 
+export function computeTeamFrictionClamp(
+  frictions: Array<{ confidence: number }>,
+  minConfidence: number,
+  repeatCount: number,
+): { warn: boolean; risk: boolean } {
+  const qualifying = frictions.filter((f) => (f.confidence ?? 0) >= minConfidence).length;
+  return { warn: qualifying >= 1, risk: qualifying >= repeatCount };
+}
+
 function mapInsightToListItem(ins: InsightRow): InsightListItemDto {
   return {
     id: ins.id,

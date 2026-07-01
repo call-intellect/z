@@ -164,14 +164,18 @@ describe('MonthlyDigestService', () => {
     const getBlockers = vi.fn().mockResolvedValue({ items: [], total: 0 });
     const getTeamFrictions = vi.fn().mockResolvedValue({ items: [], total: 0 });
     const opsDashboard = { getTeamFrictions, getBlockers };
+    const cfg = {
+      getDynamic: vi.fn().mockImplementation((_k: string, _e: unknown, def: unknown) => def),
+    };
     const svc = new MonthlyDigestService(
       prisma as never,
       llm as never,
       metrics as never,
       perPerson as never,
+      cfg as never,
       opsDashboard as never,
     );
-    return { svc, prisma, llm, metrics, perPerson, weeklyFindUnique, opsDashboard };
+    return { svc, prisma, llm, metrics, perPerson, weeklyFindUnique, opsDashboard, cfg };
   }
 
   it('generate: при успехе LLM сохраняет вердикт/письмо/компас/weekTrend', async () => {

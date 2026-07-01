@@ -24,6 +24,24 @@ const SEEDS: SettingSeed[] = [
     description:
       'Бюджет символов на дневные письма недели во входе промпта «Неделя компании». При превышении самые поздние дни опускаются, отчёт не падает.',
   },
+  {
+    key: 'operations.digest.team_friction_min_confidence',
+    value: 0.7,
+    category: 'operations',
+    section: 'digest',
+    severity: 'low',
+    description:
+      'Мин. уверенность трения команды, чтобы оно учитывалось в оси «Команда» вердикта недели/месяца.',
+  },
+  {
+    key: 'operations.digest.team_friction_repeat_count',
+    value: 2,
+    category: 'operations',
+    section: 'digest',
+    severity: 'low',
+    description:
+      'Сколько трений выше порога уверенности за период понижают ось «Команда» до «риск» (повторяемость).',
+  },
 ];
 
 interface Counters {

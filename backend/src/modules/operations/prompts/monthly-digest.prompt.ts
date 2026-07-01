@@ -590,6 +590,8 @@ export function buildFallbackMonthMarkdown(pkg: MonthCompanyPackage): string {
 export interface MonthVerdictSignals {
   hasNegativeClientSignal: boolean;
   executionStrained: boolean;
+  teamFrictionWarn: boolean;
+  teamFrictionRisk: boolean;
 }
 
 export function computeMonthVerdictSignals(pkg: MonthCompanyPackage): MonthVerdictSignals {
@@ -598,7 +600,12 @@ export function computeMonthVerdictSignals(pkg: MonthCompanyPackage): MonthVerdi
   );
   const executionStrained =
     pkg.team.tasksPlanned >= 1 && pkg.team.tasksDone / pkg.team.tasksPlanned < 0.5;
-  return { hasNegativeClientSignal, executionStrained };
+  return {
+    hasNegativeClientSignal,
+    executionStrained,
+    teamFrictionWarn: false,
+    teamFrictionRisk: false,
+  };
 }
 
 export function clampMonthVerdict(
@@ -616,6 +623,12 @@ export function clampMonthVerdict(
   const executionAxis = axes.find((a) => a.key === 'execution');
   if (signals.executionStrained && executionAxis && executionAxis.state === 'ok') {
     executionAxis.state = 'warn';
+  }
+
+  const teamAxis = axes.find((a) => a.key === 'team');
+  if (teamAxis) {
+    if (signals.teamFrictionRisk && teamAxis.state !== 'risk') teamAxis.state = 'risk';
+    else if (signals.teamFrictionWarn && teamAxis.state === 'ok') teamAxis.state = 'warn';
   }
 
   const anyDomainRisk = axes.some(

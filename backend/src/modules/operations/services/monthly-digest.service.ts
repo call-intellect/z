@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
@@ -37,7 +38,11 @@ import { resolveOperationsTenantTop } from '../utils/tenant-top';
 import { OperationsDashboardService } from './operations-dashboard.service';
 import { monthBounds, shiftPeriod } from './value-recap.service';
 import { WeeklyPerPersonService } from './weekly-per-person.service';
-import { collectWindowSignals, type WindowSignals } from './window-signals';
+import {
+  collectWindowSignals,
+  computeTeamFrictionClamp,
+  type WindowSignals,
+} from './window-signals';
 
 function formatDateUtc(d: Date): string {
   const y = d.getUTCFullYear();
@@ -195,6 +200,7 @@ export class MonthlyDigestService {
     private readonly metrics: BusinessMetricsService,
     @Inject(WeeklyPerPersonService)
     private readonly perPerson: WeeklyPerPersonService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(OperationsDashboardService)
     private readonly opsDashboard: OperationsDashboardService,
   ) {}
@@ -286,7 +292,26 @@ export class MonthlyDigestService {
 
     const weekStarts = mondaysInMonth(args.periodYm);
     const weekTrend = buildMonthWeekTrend(pkg.weeks, weekStarts);
-    const signals = computeMonthVerdictSignals(pkg);
+    const frictionMinConfidence = await this.cfg.getDynamic<number>(
+      'operations.digest.team_friction_min_confidence',
+      undefined,
+      0.7,
+    );
+    const frictionRepeatCount = await this.cfg.getDynamic<number>(
+      'operations.digest.team_friction_repeat_count',
+      undefined,
+      2,
+    );
+    const frictionClamp = computeTeamFrictionClamp(
+      windowSignals.teamFrictions,
+      frictionMinConfidence,
+      frictionRepeatCount,
+    );
+    const signals = {
+      ...computeMonthVerdictSignals(pkg),
+      teamFrictionWarn: frictionClamp.warn,
+      teamFrictionRisk: frictionClamp.risk,
+    };
 
     let bodyMarkdown: string;
     let llmTaskRouteId: string | null;

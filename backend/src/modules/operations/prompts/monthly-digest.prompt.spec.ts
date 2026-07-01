@@ -85,6 +85,8 @@ describe('clampMonthVerdict', () => {
     const signals: MonthVerdictSignals = {
       hasNegativeClientSignal: true,
       executionStrained: false,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
     };
     const out = clampMonthVerdict(baseVerdict(), signals);
     const clients = out.axes.find((a) => a.key === 'clients')!;
@@ -96,6 +98,8 @@ describe('clampMonthVerdict', () => {
     const signals: MonthVerdictSignals = {
       hasNegativeClientSignal: false,
       executionStrained: true,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
     };
     const out = clampMonthVerdict(baseVerdict(), signals);
     const execution = out.axes.find((a) => a.key === 'execution')!;
@@ -109,10 +113,39 @@ describe('clampMonthVerdict', () => {
     const signals: MonthVerdictSignals = {
       hasNegativeClientSignal: false,
       executionStrained: false,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
     };
     const out = clampMonthVerdict(baseVerdict(), signals);
     expect(out.overall.state).toBe('ok');
     for (const a of out.axes) expect(a.state).toBe('ok');
+  });
+
+  it('teamFrictionRisk поднимает team ok→risk и overall не зелёный', () => {
+    const signals: MonthVerdictSignals = {
+      hasNegativeClientSignal: false,
+      executionStrained: false,
+      teamFrictionWarn: true,
+      teamFrictionRisk: true,
+    };
+    const out = clampMonthVerdict(baseVerdict(), signals);
+    const team = out.axes.find((a) => a.key === 'team')!;
+    const overallAxis = out.axes.find((a) => a.key === 'overall')!;
+    expect(team.state).toBe('risk');
+    expect(out.overall.state).not.toBe('ok');
+    expect(overallAxis.state).not.toBe('ok');
+  });
+
+  it('teamFrictionWarn (risk=false) поднимает team ok→warn', () => {
+    const signals: MonthVerdictSignals = {
+      hasNegativeClientSignal: false,
+      executionStrained: false,
+      teamFrictionWarn: true,
+      teamFrictionRisk: false,
+    };
+    const out = clampMonthVerdict(baseVerdict(), signals);
+    const team = out.axes.find((a) => a.key === 'team')!;
+    expect(team.state).toBe('warn');
   });
 });
 

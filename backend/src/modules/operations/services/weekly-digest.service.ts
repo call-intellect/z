@@ -44,7 +44,11 @@ import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 import { OperationsDashboardService } from './operations-dashboard.service';
 import { WeeklyPerPersonService } from './weekly-per-person.service';
-import { collectWindowSignals, type WindowSignals } from './window-signals';
+import {
+  collectWindowSignals,
+  computeTeamFrictionClamp,
+  type WindowSignals,
+} from './window-signals';
 
 export function mapWeeklyDigestRowsToTrend(
   rowsDesc: Array<{ weekStart: string; metricsJson: unknown }>,
@@ -73,6 +77,8 @@ export function mapWeeklyDigestRowsToTrend(
 export interface WeekVerdictSignals {
   hasNegativeClientSignal: boolean;
   executionStrained: boolean;
+  teamFrictionWarn: boolean;
+  teamFrictionRisk: boolean;
 }
 
 export function computeWeekVerdictSignals(pkg: WeekCompanyPackage): WeekVerdictSignals {
@@ -81,7 +87,12 @@ export function computeWeekVerdictSignals(pkg: WeekCompanyPackage): WeekVerdictS
   );
   const executionStrained =
     pkg.team.tasksPlanned >= 1 && pkg.team.tasksDone / pkg.team.tasksPlanned < 0.5;
-  return { hasNegativeClientSignal, executionStrained };
+  return {
+    hasNegativeClientSignal,
+    executionStrained,
+    teamFrictionWarn: false,
+    teamFrictionRisk: false,
+  };
 }
 
 export function clampWeekVerdict(
@@ -99,6 +110,12 @@ export function clampWeekVerdict(
   const executionAxis = axes.find((a) => a.key === 'execution');
   if (signals.executionStrained && executionAxis && executionAxis.state === 'ok') {
     executionAxis.state = 'warn';
+  }
+
+  const teamAxis = axes.find((a) => a.key === 'team');
+  if (teamAxis) {
+    if (signals.teamFrictionRisk && teamAxis.state !== 'risk') teamAxis.state = 'risk';
+    else if (signals.teamFrictionWarn && teamAxis.state === 'ok') teamAxis.state = 'warn';
   }
 
   const anyDomainRisk = axes.some(
@@ -331,7 +348,26 @@ export class WeeklyDigestService {
 
     const weekDates = [0, 1, 2, 3, 4].map((i) => shiftDateStr(args.weekStart, i));
     const dayTrend = buildWeekDayTrend(pkg.days, weekDates);
-    const signals = computeWeekVerdictSignals(pkg);
+    const frictionMinConfidence = await this.cfg.getDynamic<number>(
+      'operations.digest.team_friction_min_confidence',
+      undefined,
+      0.7,
+    );
+    const frictionRepeatCount = await this.cfg.getDynamic<number>(
+      'operations.digest.team_friction_repeat_count',
+      undefined,
+      2,
+    );
+    const frictionClamp = computeTeamFrictionClamp(
+      windowSignals.teamFrictions,
+      frictionMinConfidence,
+      frictionRepeatCount,
+    );
+    const signals: WeekVerdictSignals = {
+      ...computeWeekVerdictSignals(pkg),
+      teamFrictionWarn: frictionClamp.warn,
+      teamFrictionRisk: frictionClamp.risk,
+    };
 
     let bodyMarkdown: string;
     let llmTaskRouteId: string | null;

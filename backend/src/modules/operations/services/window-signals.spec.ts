@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { OperationsDashboardService } from './operations-dashboard.service';
-import { collectWindowSignals } from './window-signals';
+import { collectWindowSignals, computeTeamFrictionClamp } from './window-signals';
 
 function buildInsightRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -172,5 +172,25 @@ describe('collectWindowSignals', () => {
     expect(result.ideaClusters).toHaveLength(0);
     expect(result.teamFrictions).toHaveLength(0);
     expect(result.blockers).toHaveLength(0);
+  });
+});
+
+describe('computeTeamFrictionClamp', () => {
+  it('одно трение выше порога → warn, но не risk при repeat=2', () => {
+    const out = computeTeamFrictionClamp([{ confidence: 0.9 }, { confidence: 0.5 }], 0.7, 2);
+    expect(out.warn).toBe(true);
+    expect(out.risk).toBe(false);
+  });
+
+  it('два трения выше порога → warn и risk при repeat=2', () => {
+    const out = computeTeamFrictionClamp([{ confidence: 0.9 }, { confidence: 0.8 }], 0.7, 2);
+    expect(out.warn).toBe(true);
+    expect(out.risk).toBe(true);
+  });
+
+  it('нет трений → ни warn, ни risk', () => {
+    const out = computeTeamFrictionClamp([], 0.7, 2);
+    expect(out.warn).toBe(false);
+    expect(out.risk).toBe(false);
   });
 });

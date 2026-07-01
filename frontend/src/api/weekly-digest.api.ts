@@ -2,6 +2,12 @@ import { apiClient } from "./api-client";
 
 import { ApiError } from "./api-error";
 import type { AvailablePeriodsApi } from "./available-periods.api";
+import type { InsightListItemApi } from "./insights.api";
+import type { IdeaClusterApi } from "./ideas.api";
+import type {
+  OperationsTeamFrictionApi,
+  OperationsBlockerApi,
+} from "./operations-dashboard.api";
 
 export interface WeeklyDigestMetricsApi {
   totalCheckIns: number;
@@ -31,6 +37,10 @@ export interface WeeklyDigestMetricsApi {
   };
   risksSummary?: string | null;
   ideasSummary?: string | null;
+  risksByCause?: InsightListItemApi[];
+  ideaClusters?: IdeaClusterApi[];
+  teamFrictions?: OperationsTeamFrictionApi[];
+  blockers?: OperationsBlockerApi[];
 }
 
 export interface WeeklyDigestVerdictAxisApi {

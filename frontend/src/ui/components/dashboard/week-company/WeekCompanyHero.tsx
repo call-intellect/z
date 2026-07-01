@@ -4,8 +4,6 @@ import { useCallback, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { dashboardApi } from "@/api/dashboard.api";
-import { ideasApi } from "@/api/ideas.api";
-import { insightsApi } from "@/api/insights.api";
 import { weeklyDigestApi } from "@/api/weekly-digest.api";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -28,13 +26,14 @@ import { toast } from "@/ui/shadcn/toast";
 import { CHART } from "@/ui/components/dashboard/modern";
 import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
 import { PeriodEmptyState } from "@/ui/components/dashboard/shared/PeriodEmptyState";
-import { RisksIdeas } from "@/ui/components/dashboard/day-company/RisksIdeas";
 import { PeriodValue } from "@/ui/components/dashboard/day-company/PeriodValue";
 import { StaleTasksLinked } from "@/ui/components/dashboard/day-company/StaleTasksLinked";
 import { WeeklyPerPersonWidget } from "@app/(authenticated)/dashboard/operations/weekly/WeeklyPerPersonWidget";
 
+import { WeekBlockers } from "./WeekBlockers";
 import { WeekGoalCompass } from "./WeekGoalCompass";
 import { WeekLetter } from "./WeekLetter";
+import { WeekSignalsGrid } from "./WeekSignalsGrid";
 import { WeekVerdictCover } from "./WeekVerdictCover";
 
 function currentWeekStart(): string {
@@ -84,18 +83,6 @@ export function WeekCompanyHero() {
   } = useWeekCompanyDigest(currentOrgId, effective);
 
   const { items: staleItems } = useStaleTasksCrossProject(currentOrgId);
-
-  const insightsSwr = useSwrWithToast(
-    currentOrgId ? ["week-company.insights", currentOrgId] : null,
-    async () => (await insightsApi.top(5)).items,
-    { revalidateOnFocus: false, errorTitle: "Не удалось загрузить риски" },
-  );
-
-  const ideasSwr = useSwrWithToast(
-    currentOrgId ? ["week-company.ideas", currentOrgId] : null,
-    async () => (await ideasApi.top(currentOrgId!, 5)).items,
-    { revalidateOnFocus: false, errorTitle: "Не удалось загрузить идеи" },
-  );
 
   const directorSwr = useSwrWithToast<DirectorDashboardValueStripDomain>(
     currentOrgId ? ["week-company.director", currentOrgId, "week"] : null,
@@ -252,9 +239,12 @@ export function WeekCompanyHero() {
 
       <StaleTasksLinked items={staleItems} />
 
-      <RisksIdeas
-        insights={insightsSwr.data ?? []}
-        ideas={ideasSwr.data ?? []}
+      <WeekBlockers items={digest.metrics.blockers ?? []} />
+
+      <WeekSignalsGrid
+        insights={digest.metrics.risksByCause ?? []}
+        frictions={digest.metrics.teamFrictions ?? []}
+        clusters={digest.metrics.ideaClusters ?? []}
         risksSummary={digest.metrics.risksSummary ?? null}
         ideasSummary={digest.metrics.ideasSummary ?? null}
       />

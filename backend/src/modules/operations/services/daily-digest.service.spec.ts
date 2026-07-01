@@ -113,6 +113,9 @@ describe('DailyDigestService', () => {
       incCooDailyDigestFailed: vi.fn(),
       incCooDailyDigestDelivered: vi.fn(),
       setCooDailyDigestAge: vi.fn(),
+      setCooDailyDigestPackageChars: vi.fn(),
+      incCooDailyDigestModelUsed: vi.fn(),
+      setCooDailyDigestConflictsFed: vi.fn(),
     };
     const pendingActions = {
       getCount: vi.fn().mockResolvedValue({

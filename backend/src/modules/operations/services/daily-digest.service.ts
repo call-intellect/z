@@ -294,12 +294,15 @@ export class DailyDigestService {
     let goalDayObj: DailyDigestGoalAlignmentDayDto | null;
     let risksSummary: string | null;
     let ideasSummary: string | null;
+    const userMessage = buildDayCompanyUserMessage(pkg, aggregates.metrics, args.dateLocal);
+    this.metrics.setCooDailyDigestPackageChars({ tenantTop, value: userMessage.length });
+    this.metrics.setCooDailyDigestConflictsFed({ tenantTop, value: pkg.conflicts.length });
     try {
       const result = await this.llm.call({
         taskType: DAILY_DIGEST_TASK_TYPE,
         tenantId: args.tenantId,
         systemPrompt: DAY_COMPANY_SYSTEM_PROMPT,
-        userMessage: buildDayCompanyUserMessage(pkg, aggregates.metrics, args.dateLocal),
+        userMessage,
         responseFormat: {
           type: 'json_schema',
           name: 'DayCompany',
@@ -325,6 +328,18 @@ export class DailyDigestService {
       bodyMarkdown = dayCompanyToBodyMarkdown(verdict, validatedData.letter);
       shortSummary = verdict.overall.oneLiner;
       llmTaskRouteId = `${DAY_COMPANY_PROMPT_VERSION}+${result.modelUsed}`;
+      this.metrics.incCooDailyDigestModelUsed({ tenantTop, model: result.modelUsed });
+      this.logger.log(
+        {
+          tenantId: args.tenantId,
+          dateLocal: args.dateLocal,
+          packageChars: userMessage.length,
+          conflicts: pkg.conflicts.length,
+          employeeVoice: pkg.employeeVoice.length,
+          model: result.modelUsed,
+        },
+        'daily-digest: пакет v2 собран и отправлен в LLM',
+      );
     } catch (err) {
       this.metrics.incCooDailyDigestFailed({
         tenantTop,

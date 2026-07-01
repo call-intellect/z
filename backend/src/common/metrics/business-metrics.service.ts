@@ -878,6 +878,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private cooDailyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooDailyDigestDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
   private cooDailyDigestAgeSeconds!: Gauge<'tenant_top'>;
+  private cooDailyDigestPackageChars!: Gauge<'tenant_top'>;
+  private cooDailyDigestModelUsedTotal!: Counter<'tenant_top' | 'model'>;
+  private cooDailyDigestConflictsFed!: Gauge<'tenant_top'>;
 
   // ── «Месяц компании» — месячный отчёт COO ─────────────────────────
   private cooMonthlyDigestGeneratedTotal!: Counter<'tenant_top'>;
@@ -3529,6 +3532,21 @@ export class BusinessMetricsService implements OnModuleInit {
     this.cooDailyDigestAgeSeconds = this.getOrCreateGauge({
       name: 'coo_daily_digest_age_seconds',
       help: 'SBA β-8.3 — возраст последнего ежедневного дайджеста (now − createdAt) в секундах. Тревога Grafana при > 25 часов.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.cooDailyDigestPackageChars = this.getOrCreateGauge({
+      name: 'coo_daily_digest_package_chars',
+      help: '«День компании v2» — размер собранного USER-сообщения для дневного дайджеста в символах.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.cooDailyDigestModelUsedTotal = this.getOrCreateCounter({
+      name: 'coo_daily_digest_model_used_total',
+      help: '«День компании v2» — какая модель/tier реально отработала для дневного дайджеста.',
+      labelNames: ['tenant_top', 'model'] as const,
+    });
+    this.cooDailyDigestConflictsFed = this.getOrCreateGauge({
+      name: 'coo_daily_digest_conflicts_fed',
+      help: '«День компании v2» — сколько конфликтов подано в пакет дневного дайджеста.',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -7631,6 +7649,29 @@ export class BusinessMetricsService implements OnModuleInit {
   setCooDailyDigestAge(args: { tenantTop: string; value: number }): void {
     if (!Number.isFinite(args.value)) return;
     this.cooDailyDigestAgeSeconds.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, args.value),
+    );
+  }
+
+  setCooDailyDigestPackageChars(args: { tenantTop: string; value: number }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.cooDailyDigestPackageChars.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, args.value),
+    );
+  }
+
+  incCooDailyDigestModelUsed(args: { tenantTop: string; model: string }): void {
+    this.cooDailyDigestModelUsedTotal.inc({
+      tenant_top: args.tenantTop,
+      model: args.model,
+    });
+  }
+
+  setCooDailyDigestConflictsFed(args: { tenantTop: string; value: number }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.cooDailyDigestConflictsFed.set(
       { tenant_top: args.tenantTop },
       Math.max(0, args.value),
     );

@@ -61,6 +61,7 @@ describe('computeWeekVerdictSignals', () => {
           title: null,
           shortSummary: null,
           axes: [{ key: 'clients', state: 'risk' }],
+          letter: null,
         },
       ],
     });
@@ -83,6 +84,7 @@ describe('computeWeekVerdictSignals', () => {
           title: null,
           shortSummary: null,
           axes: [{ key: 'clients', state: 'ok' }],
+          letter: null,
         },
       ],
       team: emptyTeam({ tasksPlanned: 10, tasksDone: 8 }),

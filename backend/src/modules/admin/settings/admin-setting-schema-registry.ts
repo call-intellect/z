@@ -508,6 +508,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['mail.dryRun', z.boolean()],
   ['operations.daily_digest.deliver_to_webpush', z.boolean()],
   ['operations.daily_digest.raw_char_budget', z.number().int().min(1000).max(500_000)],
+  ['operations.weekly_digest.raw_char_budget', z.number().int().min(1000).max(500_000)],
   ['operations.report_archive.recent_limit', z.number().int().min(1).max(50)],
 
   ['betaOps.morningLocalHour', z.number().int().min(0).max(23)],

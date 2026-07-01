@@ -93,6 +93,11 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-week-month-v2.ts',
+    hint: 'operations.weekly_digest.raw_char_budget (Неделя v2 Ф1)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-report-archive.ts',
     hint: 'operations.report_archive.recent_limit (навигатор/архив отчётов день/неделя/месяц)',
   },

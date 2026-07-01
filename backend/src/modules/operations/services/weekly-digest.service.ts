@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
@@ -190,6 +191,7 @@ export class WeeklyDigestService {
     private readonly metrics: BusinessMetricsService,
     @Inject(WeeklyPerPersonService)
     private readonly perPerson: WeeklyPerPersonService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async getStored(args: {
@@ -310,11 +312,16 @@ export class WeeklyDigestService {
     let risksSummary: string | null;
     let ideasSummary: string | null;
     try {
+      const rawCharBudget = await this.cfg.getDynamic<number>(
+        'operations.weekly_digest.raw_char_budget',
+        undefined,
+        60000,
+      );
       const result = await this.llm.call({
         taskType: WEEKLY_DIGEST_TASK_TYPE,
         tenantId: args.tenantId,
         systemPrompt: WEEK_COMPANY_SYSTEM_PROMPT,
-        userMessage: buildWeekCompanyUserMessage(pkg),
+        userMessage: buildWeekCompanyUserMessage(pkg, rawCharBudget),
         responseFormat: {
           type: 'json_schema',
           name: 'WeekCompany',
@@ -421,7 +428,7 @@ export class WeeklyDigestService {
         weekDates.map((dateLocal) =>
           this.prisma.dailyOperationsDigest.findUnique({
             where: { tenantId_dateLocal: { tenantId: args.tenantId, dateLocal } },
-            select: { dateLocal: true, shortSummary: true, verdictJson: true },
+            select: { dateLocal: true, shortSummary: true, verdictJson: true, letterJson: true },
           }),
         ),
       );
@@ -439,6 +446,7 @@ export class WeeklyDigestService {
           title: parsed.title,
           shortSummary: row.shortSummary ?? null,
           axes: parsed.axes,
+          letter: parseDayLetter(row.letterJson),
         });
       }
     } catch (err) {
@@ -1259,6 +1267,25 @@ function parseDayVerdict(raw: unknown): {
     }
   }
   return { overallState, title, axes };
+}
+
+function parseDayLetter(
+  raw: unknown,
+): Array<{ key: string; title: string; prose: string }> | null {
+  if (!Array.isArray(raw)) return null;
+  const out: Array<{ key: string; title: string; prose: string }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Record<string, unknown>;
+    if (
+      typeof obj.key === 'string' &&
+      typeof obj.title === 'string' &&
+      typeof obj.prose === 'string'
+    ) {
+      out.push({ key: obj.key, title: obj.title, prose: obj.prose.slice(0, 4000) });
+    }
+  }
+  return out.length > 0 ? out : null;
 }
 
 function computeSentimentIndex(checkIns: Array<{ sentiment: string | null }>): number | null {

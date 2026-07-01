@@ -137,13 +137,17 @@ describe('WeeklyDigestService', () => {
         },
       ),
     };
+    const cfg = {
+      getDynamic: vi.fn().mockResolvedValue(60000),
+    };
     const svc = new WeeklyDigestService(
       prisma as never,
       llm as never,
       metrics as never,
       perPerson as never,
+      cfg as never,
     );
-    return { svc, prisma, llm, metrics, perPerson };
+    return { svc, prisma, llm, metrics, perPerson, cfg };
   }
 
   it('aggregate: считает доли green/yellow/red и топ блокеров', async () => {
@@ -194,7 +198,7 @@ describe('WeeklyDigestService', () => {
     expect(result.verdict?.overall.title).toContain('Неделя');
     expect(Array.isArray(result.dayTrend)).toBe(true);
     expect(result.dayTrend).toHaveLength(4);
-    expect(result.llmTaskRouteId).toContain('week-company-v1');
+    expect(result.llmTaskRouteId).toContain('week-company-v2');
     expect(result.bodyMarkdown).toMatch(/Главное|Неделя сдвига/);
     expect(prisma.weeklyOperationsDigest.upsert).toHaveBeenCalledOnce();
     expect(metrics.incCooWeeklyDigestGenerated).toHaveBeenCalledOnce();

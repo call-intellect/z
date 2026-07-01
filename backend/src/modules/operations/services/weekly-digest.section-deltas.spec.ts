@@ -75,11 +75,15 @@ function buildSvc(overrides: {
       rows: [],
     }),
   };
+  const cfg = {
+    getDynamic: vi.fn().mockResolvedValue(60000),
+  };
   const svc = new WeeklyDigestService(
     prisma as never,
     llm as never,
     metrics as never,
     perPerson as never,
+    cfg as never,
   );
   return { svc, prisma, ideaBlockCount, insightCount, ideaCount };
 }

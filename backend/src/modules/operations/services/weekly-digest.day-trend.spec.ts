@@ -19,6 +19,7 @@ describe('buildWeekDayTrend', () => {
         { key: 'execution', state: 'ok' },
         { key: 'overall', state: 'ok' },
       ],
+      letter: null,
     },
     {
       dateLocal: '2026-05-20',
@@ -29,6 +30,7 @@ describe('buildWeekDayTrend', () => {
         { key: 'team', state: 'risk' },
         { key: 'execution', state: 'warn' },
       ],
+      letter: null,
     },
     {
       dateLocal: '2026-05-22',
@@ -36,6 +38,7 @@ describe('buildWeekDayTrend', () => {
       title: null,
       shortSummary: null,
       axes: [{ key: 'clients', state: 'risk' }],
+      letter: null,
     },
   ];
 

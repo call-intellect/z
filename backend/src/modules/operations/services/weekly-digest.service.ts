@@ -42,7 +42,9 @@ import {
 } from '../prompts/weekly-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
+import { OperationsDashboardService } from './operations-dashboard.service';
 import { WeeklyPerPersonService } from './weekly-per-person.service';
+import { collectWindowSignals, type WindowSignals } from './window-signals';
 
 export function mapWeeklyDigestRowsToTrend(
   rowsDesc: Array<{ weekStart: string; metricsJson: unknown }>,
@@ -192,6 +194,8 @@ export class WeeklyDigestService {
     @Inject(WeeklyPerPersonService)
     private readonly perPerson: WeeklyPerPersonService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(OperationsDashboardService)
+    private readonly opsDashboard: OperationsDashboardService,
   ) {}
 
   async getStored(args: {
@@ -300,6 +304,31 @@ export class WeeklyDigestService {
       aggregates.metrics,
     );
 
+    let windowSignals: WindowSignals = {
+      risksByCause: [],
+      ideaClusters: [],
+      teamFrictions: [],
+      blockers: [],
+    };
+    try {
+      windowSignals = await collectWindowSignals({
+        prisma: this.prisma,
+        opsDashboard: this.opsDashboard,
+        tenantId: args.tenantId,
+        from: args.weekStart,
+        to: args.weekEnd,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          weekStart: args.weekStart,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'weekly-digest: сбор сигналов окна упал — пустые плитки',
+      );
+    }
+
     const weekDates = [0, 1, 2, 3, 4].map((i) => shiftDateStr(args.weekStart, i));
     const dayTrend = buildWeekDayTrend(pkg.days, weekDates);
     const signals = computeWeekVerdictSignals(pkg);
@@ -368,7 +397,15 @@ export class WeeklyDigestService {
       llmTaskRouteId = null;
     }
 
-    const metricsToStore = { ...aggregates.metrics, risksSummary, ideasSummary };
+    const metricsToStore = {
+      ...aggregates.metrics,
+      risksSummary,
+      ideasSummary,
+      risksByCause: windowSignals.risksByCause,
+      ideaClusters: windowSignals.ideaClusters,
+      teamFrictions: windowSignals.teamFrictions,
+      blockers: windowSignals.blockers,
+    };
 
     const row = await this.prisma.weeklyOperationsDigest.upsert({
       where: {

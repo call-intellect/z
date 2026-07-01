@@ -208,9 +208,10 @@ export class OperationsDashboardService {
   async getBlockers(args: {
     tenantId: string;
     limit?: number;
+    window?: { from: string; to: string };
   }): Promise<OperationsDashboardBlockersListDto> {
     const limit = Math.min(args.limit ?? 50, 200);
-    const items = await this.fetchBlockers(args.tenantId, limit);
+    const items = await this.fetchBlockers(args.tenantId, limit, args.window);
     return { items, total: items.length };
   }
 
@@ -218,9 +219,10 @@ export class OperationsDashboardService {
     tenantId: string;
     limit?: number;
     since?: Date;
+    to?: Date;
   }): Promise<OperationsDashboardTeamFrictionsListDto> {
     const limit = Math.min(args.limit ?? 50, 200);
-    const items = await this.fetchTeamFrictions(args.tenantId, limit, args.since);
+    const items = await this.fetchTeamFrictions(args.tenantId, limit, args.since, args.to);
     return { items, total: items.length };
   }
 
@@ -453,13 +455,20 @@ export class OperationsDashboardService {
   private async fetchBlockers(
     tenantId: string,
     limit: number,
+    window?: { from: string; to: string },
   ): Promise<OperationsDashboardBlockerDto[]> {
-    const since = new Date();
-    since.setUTCDate(since.getUTCDate() - 7);
+    let dateFilter: Prisma.DailyCheckInWhereInput;
+    if (window) {
+      dateFilter = { dateLocal: { gte: window.from, lte: window.to } };
+    } else {
+      const since = new Date();
+      since.setUTCDate(since.getUTCDate() - 7);
+      dateFilter = { createdAt: { gte: since } };
+    }
     const checkIns = await this.prisma.dailyCheckIn.findMany({
       where: {
         tenantId,
-        createdAt: { gte: since },
+        ...dateFilter,
         blockersJson: { not: Prisma.JsonNull },
       },
       select: {
@@ -529,6 +538,7 @@ export class OperationsDashboardService {
     tenantId: string,
     limit: number,
     since?: Date,
+    to?: Date,
   ): Promise<OperationsDashboardTeamFrictionDto[]> {
     const links = await this.prisma.entityLink.findMany({
       where: {
@@ -536,7 +546,14 @@ export class OperationsDashboardService {
         relationType: { in: TEAM_FRICTION_RELATION_TYPES },
         status: 'active',
         deletedAt: null,
-        ...(since ? { createdAt: { gte: since } } : {}),
+        ...(since || to
+          ? {
+              createdAt: {
+                ...(since ? { gte: since } : {}),
+                ...(to ? { lte: to } : {}),
+              },
+            }
+          : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: limit,

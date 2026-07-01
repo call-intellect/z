@@ -59,6 +59,7 @@ describe('WeeklyDigestService', () => {
       },
       insight: {
         findMany: vi.fn().mockResolvedValue(overrides.insights ?? []),
+        count: vi.fn().mockResolvedValue(0),
       },
       goal: {
         findMany: vi.fn().mockImplementation(() => {
@@ -73,6 +74,13 @@ describe('WeeklyDigestService', () => {
       },
       idea: {
         findMany: vi.fn().mockResolvedValue(overrides.ideas ?? []),
+        count: vi.fn().mockResolvedValue(0),
+      },
+      ideaCluster: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      ideaBlock: {
+        count: vi.fn().mockResolvedValue(0),
       },
       dailyOperationsDigest: {
         findUnique: vi.fn().mockResolvedValue(overrides.dailyDigest ?? null),
@@ -140,14 +148,19 @@ describe('WeeklyDigestService', () => {
     const cfg = {
       getDynamic: vi.fn().mockResolvedValue(60000),
     };
+    const opsDashboard = {
+      getTeamFrictions: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+      getBlockers: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
     const svc = new WeeklyDigestService(
       prisma as never,
       llm as never,
       metrics as never,
       perPerson as never,
       cfg as never,
+      opsDashboard as never,
     );
-    return { svc, prisma, llm, metrics, perPerson, cfg };
+    return { svc, prisma, llm, metrics, perPerson, cfg, opsDashboard };
   }
 
   it('aggregate: считает доли green/yellow/red и топ блокеров', async () => {
@@ -202,6 +215,15 @@ describe('WeeklyDigestService', () => {
     expect(result.bodyMarkdown).toMatch(/Главное|Неделя сдвига/);
     expect(prisma.weeklyOperationsDigest.upsert).toHaveBeenCalledOnce();
     expect(metrics.incCooWeeklyDigestGenerated).toHaveBeenCalledOnce();
+
+    const upsertArg = prisma.weeklyOperationsDigest.upsert.mock.calls[0]![0] as {
+      create: { metricsJson: Record<string, unknown> };
+    };
+    const stored = upsertArg.create.metricsJson;
+    expect(Array.isArray(stored.risksByCause)).toBe(true);
+    expect(Array.isArray(stored.ideaClusters)).toBe(true);
+    expect(Array.isArray(stored.teamFrictions)).toBe(true);
+    expect(Array.isArray(stored.blockers)).toBe(true);
   });
 
   it('generate: при провале LLM — fallback, verdict/letter/goalAlignmentWeek=null, dayTrend массив', async () => {

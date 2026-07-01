@@ -216,7 +216,7 @@ Acceptance: юнит `buildDayPackage` — на синтетике день с �
 Acceptance: golden-фикстуры — реплики «спор, кто ведёт клиента» / «претензия отдела к отделу» размечаются `team_friction` (раньше — нет); нейтральная рабочая переписка НЕ помечается (нет ложных); `bunx vitest run` по block-ingest prompt-спекам зелёный.
 Закрывает: R13.
 
-### [ ] Ф4 — Промпт v2 письма + строгая JSON-схема (без «решений»)
+### [x] Ф4 — Промпт v2 письма + строгая JSON-схема (без «решений»)
 **Ценность:** как владелец, получаю письмо COO с именами, петлёй и «взглядом директора», потому что промпт переписан под эталон.
 Картография: `daily-digest.prompt.ts` `DAY_COMPANY_SYSTEM_PROMPT` (К4), выходная схема (К5), `buildDayCompanyUserMessage` (подать новые ветки пакета Ф2); `report-prompt-v2.md` — источник SYSTEM/few-shot; `clampVerdict` сохранить.
 Что входит: заменить SYSTEM на v2 (12 секций, ФОРМАТ ВЫХОДА=JSON К5); few-shot ЭТАЛОН в JSON-форме; удалить key `decisions`, добавить `intro`/`attention`; `done`/`not_done` — обобщённая проза без cites (Р15); «что помешало» — суммирование причин + конфликты (Р16); «взгляд COO» = `reflection` (Р17); USER подаёт `employeeVoice`/`rawConversations`/`signals`/`conflicts`/`reporting`/`yesterdayOpenSignals`; Zod+json_schema strict синхронно.

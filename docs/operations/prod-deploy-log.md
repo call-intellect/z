@@ -96,6 +96,29 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-01 — Неделя/Месяц компании v2: паритет с «Днём компании» (письмо COO 12 секций + сигналы за окно в metricsJson + развилки месяца) — week-month-company-v2, ветка work/2026-06-29
+
+> ТЗ `plans/tz/2026-07-01-week-month-company-v2.md` (Ф1–Ф8, коммиты `f363df0f`/`0191c211`/`675ee57c`/`f493b127`/`a7443e1b`/`b7de394e`/`ac680c2d`/`1386e514`). **Надстройка над реализованными «Неделя компании» / «Месяц компании»** (переиспользует `WeeklyOperationsDigest`/`MonthlyOperationsDigest`/`WeeklyDigestService`/`MonthlyDigestService`/кроны/героев, НЕ новый пайплайн/модель/агент). Письма недели/месяца переписаны в живой COO-голос v2 (12 секций проза+cites `intro..reflection`, имена людей/клиентов прямо, петля с прошлым периодом, «взгляд операционного директора» = `reflection`); недельный синтез читает ПОЛНЫЕ дневные письма (`letterJson` дневных снапшотов), а не только вердикты. Сигналы за окно периода (риски-по-причине / кластеры-идей / трения / блокеры) снапшочены в `metricsJson` через `collectWindowSignals` (не live-top). Поле `decisions` месяца переименовано в `ownerForks` сквозняком (блок «Что решить собственнику» → «Развилки месяца»). Ось «Команда» в вердикте краснеет от повторяющихся трений за окно.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (все новые данные в существующем JSON-поле `metricsJson` недельного/месячного дайджеста). **🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (kill-switch недели/месяца существуют). **🟢 3 НОВЫЕ КРУТИЛКИ AdminSetting + 1 НОВЫЙ СИД** (`seed-admin-setting-week-month-v2.ts`, в STEPS `phase:'seed-base'`). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** 3 крутилки — чистый AdminSetting (`getDynamic`/`resolveSync`, code-fallback, работают до сида — Ship-On): `operations.weekly_digest.raw_char_budget`=`60000` (бюджет символов дневных писем во входе недельного промпта), `operations.digest.team_friction_min_confidence`=`0.7`, `operations.digest.team_friction_repeat_count`=`2` (порог оси «Команда»). Новых флагов нет (kill-switch недели/месяца существуют). Реестр — `docs/operations/feature-flags.md` — не меняется.
+- **Шаг 4 — Схема БД: N/A.** Миграций нет — новые данные в существующем JSON-поле `metricsJson` недельного/месячного дайджеста (`risksByCause`/`ideaClusters`/`teamFrictions`/`blockers`; месяц: `decisions`→`ownerForks`). Backfill не нужен: старые дайджесты покажут пустые плитки до перегенерации (empty-state) — допустимо.
+- **Шаги 5/6/8/9/10 (postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Новых HNSW/GIN/partial/extension и patch-/backfill-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (идемпотентный, зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-setting-week-month-v2.ts` — 3 ключа (`operations.weekly_digest.raw_char_budget`=`60000`, `operations.digest.team_friction_min_confidence`=`0.7`, `operations.digest.team_friction_repeat_count`=`2`). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend: промпты `week-company-v2`/`month-company-v2` (12 COO-секций, имена, петля, взгляд COO; недельный вход = полные дневные `letterJson`; месяц `decisions`→`ownerForks`); `collectWindowSignals` снапшотит риски-по-причине/кластеры-идей/трения/блокеры за окно в `metricsJson` недели/месяца; `getTeamFrictions` += `to`, `getBlockers` += `window`; clamp оси «Команда» по трениям (`computeTeamFrictionClamp`, week+month). Frontend: `WeekBlockers`/`WeekSignalsGrid` + `MonthBlockers`/`MonthSignalsGrid` из дайджеста; «Развилки месяца» (`MonthForks`/`ownerForks`); canvas скрыт для owner на неделе/месяце; month-only виджеты (`month-recap`/`achievements`/`weekly-dynamics`/`maturity`/`bus-factor`) в `MonthCompanyHero`. ⚠️ Промпты недели/месяца изменены → prompt-cache недельного/месячного дайджеста инвалидируется один раз (норма).
+- **Шаг 12 — Smoke** (после выката):
+  - на `/dashboard` таб «Неделя» и на `/month` для owner — письмо COO-голосом с именами разворачивается (12 секций).
+  - под письмом плитки блокеры / риски-по-причине / идеи-кластеры / трения за период; навигация в прошлый период показывает его снимок (не «топ сейчас»); под геройем нет старой сетки-дубля.
+  - блок «Развилки месяца» вместо «Что решить»; при трениях в окне ось «Команда» в вердикте не зелёная.
+  - крутилки `operations.weekly_digest.raw_char_budget` / `operations.digest.team_friction_min_confidence` / `operations.digest.team_friction_repeat_count` видны в админке (`/admin` настройки).
+  - `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-week-month-v2.ts` (created=3 при первом прогоне, потом no-op).
+- **Откат:** данные аддитивны в JSON (рискованного переключателя нет, Ship-On); крутилки admin-editable; промпты/виджеты — `git revert`. Старые дайджесты до перегенерации показывают empty-state плиток — безвредно.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-01 — Движок целей: консолидация (Москва-кроны, ручные цели, пересборка иерархии, каскад, вектор без обещаний, один вердикт, крутилки) — goals-engine-consolidation, ветка work/2026-06-29
 
 > ТЗ `plans/tz/2026-06-29-goals-engine-consolidation.md` (Ф1–Ф9, коммиты `a3105ad2`..`35703d4f`). Навели порядок в движке целей: все goal/ops-кроны на Москву (продюсер движения цели сдвинут ДО сборки компаса — чинит «компас показывает вчера»); ручные цели ведутся как AI (темы по KNN-эмбеддингу); запущена спящая суточная пересборка иерархии + каскад статуса; вектор людей отвязан от снятых обещаний (idea/issue_closed/goal_work); один вердикт движения в UI; промпт извлечения строже; 21 крутилка целей/трекера → AdminSetting.

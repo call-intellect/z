@@ -1102,6 +1102,8 @@ model WeeklyOperationsDigest {
 
 Поля заполняются ОДНИМ capable LLM-вызовом (`taskType operations-weekly-digest`, json_schema strict) в `WeeklyDigestService.generate` (свод 5 дневных `DailyOperationsDigest` пн–пт); post-LLM `clampWeekVerdict` (клиентский risk в дневных ⇒ `clients≠ok`; план/факт<50% ⇒ `execution≠ok`); `dayTrendJson` всегда детерминирован; при провале LLM/JSON — «сухой» fallback (NULL новых полей). Зеркало расширения «День компании» (см. выше). Подробности — [[../01_projects/director-dashboard]] §«Неделя компании», [[../01_projects/ai-jobs]] §«operations-weekly-digest».
 
+**Неделя компании v2 (2026-07-01):** `metricsJson` теперь несёт **снапшот-сигналы за окно недели** (`[weekStart..weekEnd]`, helper `collectWindowSignals`): `risksByCause` (`InsightListItem[]`), `ideaClusters` (`IdeaCluster[]`), `teamFrictions` (`TeamFriction[]`), `blockers` (`Blocker[]`) — формы фронт-типов; фронт рендерит плитки из дайджеста за период, а не из live-top. Промпт `week-company-v2` (12 COO-секций, имена, петля; вход = полные дневные `letterJson`); ось «Команда» краснеет по трениям в окне (`clampWeekVerdict`). **Колонок БД НЕ добавлялось — всё в существующем JSON-поле `metricsJson`.** Подробности — [[../01_projects/director-dashboard]] §«Неделя/Месяц компании v2».
+
 **`Org` (расширение):** добавлено поле `timezone String? @default("Europe/Moscow")`. Backfill — `backend/scripts/patch-org-timezone-default.ts`.
 
 ### SBA β-8.3 — DailyOperationsDigest (2026-05-25)
@@ -1164,6 +1166,8 @@ model MonthlyOperationsDigest {
 ```
 
 Заполняется ОДНИМ capable LLM-вызовом (`taskType operations-monthly-digest`, json_schema strict + lenient Zod), который сводит **4 недельных `WeeklyOperationsDigest`** месяца (компресс-вход: select без `letterJson`; пропущенные недели — graceful) в `MonthlyDigestService.generate`. Post-LLM `clampMonthVerdict` (нельзя зелёный при красном клиенте); `weekTrendJson` всегда детерминирован; `pace` (факт/план/ETA) считает **КОД** — LLM отдаёт только текст `leadingSignal`; при провале — «сухой» fallback. Это **новая модель**, но зеркало Weekly/Daily-пайплайна (новый извлекающий agent НЕ вводился). Подробности — [[../01_projects/director-dashboard]] §«Месяц компании», [[../01_projects/ai-jobs]] §«operations-monthly-digest».
+
+**Месяц компании v2 (2026-07-01):** `metricsJson` теперь несёт **снапшот-сигналы за окно месяца** (`[1-е..последнее число]`, helper `collectWindowSignals`): `risksByCause` (`InsightListItem[]`), `ideaClusters` (`IdeaCluster[]`), `teamFrictions` (`TeamFriction[]`), `blockers` (`Blocker[]`) — формы фронт-типов; фронт рендерит плитки из дайджеста за период, а не из live-top. Ключ письма `decisions` переименован в **`ownerForks`** (UI-блок «Что решить собственнику» → «Развилки месяца»); промпт `month-company-v2` (12 COO-секций, имена, петля); ось «Команда» краснеет по трениям в окне (`clampMonthVerdict`). **Колонок БД НЕ добавлялось — всё в существующем JSON-поле `metricsJson` / `letterJson`.** Подробности — [[../01_projects/director-dashboard]] §«Неделя/Месяц компании v2».
 
 Сопутствующие расширения DTO-формы (новых DB-колонок нет): строка зависшей задачи `getStuckCrossProject` (execution-dashboard) += `assigneeUserId`/`assigneeName`/`dueDate`; value-strip директора (director-dashboard) += `tasksResolved` (`Issue.completedAt` в периоде) + `ideasCollected` (`Idea.createdAt` в периоде).
 

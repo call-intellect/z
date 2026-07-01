@@ -73,6 +73,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-llm-task-routes-month-company.ts',
     hint: 'маршрут operations-monthly-digest (Месяц компании Ф6)',
   },
+  {
+    phase: 'seed-llm-core',
+    script: 'scripts/patch-daily-digest-route-deepseek-pro-gpt-kie.ts',
+    hint: 'маршрут operations-daily-digest → deepseek-v4-pro → gpt-5.4-mini → kie/gemini-3.1-pro (День компании v2 Ф5); уважает админ-правки, идемпотентно',
+  },
 
   { phase: 'seed-base', script: 'scripts/seed-entitlements.ts' },
   { phase: 'seed-base', script: 'scripts/seed-retention-policies.ts' },

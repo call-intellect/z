@@ -307,7 +307,6 @@ export class DailyDigestService {
           strict: true,
         },
         reasoningEffort: 'high',
-        maxTokens: 8_000,
         sourceRef: { type: 'daily-digest', id: `${args.tenantId}:${args.dateLocal}` },
       });
       const validatedData = extractDayCompanyResponse(result);

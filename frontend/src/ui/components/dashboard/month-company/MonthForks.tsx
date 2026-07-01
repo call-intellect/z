@@ -1,26 +1,26 @@
 "use client";
 
-import { Gavel } from "lucide-react";
+import { GitFork } from "lucide-react";
 
 import { CHART, GRAD, glass } from "@/ui/components/dashboard/modern";
 import { CardTitle } from "@/ui/components/dashboard/modern";
 
-export function MonthDecisions({
-  decisions,
+export function MonthForks({
+  ownerForks,
 }: {
-  decisions: Array<{ title: string; why: string }> | null | undefined;
+  ownerForks: Array<{ title: string; why: string }> | null | undefined;
 }) {
-  if (!decisions || decisions.length === 0) return null;
+  if (!ownerForks || ownerForks.length === 0) return null;
 
   return (
     <div style={glass()} className="p-6">
-      <CardTitle icon={<Gavel size={17} />} grad={GRAD.amber}>
-        Что решить собственнику
+      <CardTitle icon={<GitFork size={17} />} grad={GRAD.amber}>
+        Развилки месяца
       </CardTitle>
       <ul className="mt-4 flex flex-col gap-3.5">
-        {decisions.map((item, i) => (
+        {ownerForks.map((item, i) => (
           <li
-            key={`decision-${i}`}
+            key={`fork-${i}`}
             className="flex gap-3 border-b pb-3.5 last:border-0 last:pb-0"
             style={{ borderColor: "var(--glass-border)" }}
           >

@@ -3,8 +3,6 @@
 import { useCallback, useState } from "react";
 import { Loader2 } from "lucide-react";
 
-import { ideasApi } from "@/api/ideas.api";
-import { insightsApi } from "@/api/insights.api";
 import { monthlyDigestApi } from "@/api/monthly-digest.api";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -12,7 +10,6 @@ import {
   useMonthCompanyDigest,
 } from "@/hooks/useMonthCompany";
 import { useStaleTasksCrossProject } from "@/hooks/useDayCompany";
-import { useSwrWithToast } from "@/hooks/useSwrWithToast";
 import {
   comparePeriods,
   currentPeriod,
@@ -23,14 +20,15 @@ import { toast } from "@/ui/shadcn/toast";
 import { CHART } from "@/ui/components/dashboard/modern";
 import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
 import { PeriodEmptyState } from "@/ui/components/dashboard/shared/PeriodEmptyState";
-import { RisksIdeas } from "@/ui/components/dashboard/day-company/RisksIdeas";
 import { StaleTasksLinked } from "@/ui/components/dashboard/day-company/StaleTasksLinked";
 import { WeeklyPerPersonWidget } from "@app/(authenticated)/dashboard/operations/weekly/WeeklyPerPersonWidget";
 
-import { MonthDecisions } from "./MonthDecisions";
+import { MonthBlockers } from "./MonthBlockers";
+import { MonthForks } from "./MonthForks";
 import { MonthGoalCompass } from "./MonthGoalCompass";
 import { MonthLetter } from "./MonthLetter";
 import { MonthNextFocus } from "./MonthNextFocus";
+import { MonthSignalsGrid } from "./MonthSignalsGrid";
 import { MonthVerdictCover } from "./MonthVerdictCover";
 
 const MONTH_NAMES = [
@@ -108,18 +106,6 @@ export function MonthCompanyHero() {
   } = useMonthCompanyDigest(currentOrgId, effective);
 
   const { items: staleItems } = useStaleTasksCrossProject(currentOrgId);
-
-  const insightsSwr = useSwrWithToast(
-    currentOrgId ? ["month-company.insights", currentOrgId] : null,
-    async () => (await insightsApi.top(5)).items,
-    { revalidateOnFocus: false, errorTitle: "Не удалось загрузить риски" },
-  );
-
-  const ideasSwr = useSwrWithToast(
-    currentOrgId ? ["month-company.ideas", currentOrgId] : null,
-    async () => (await ideasApi.top(currentOrgId!, 5)).items,
-    { revalidateOnFocus: false, errorTitle: "Не удалось загрузить идеи" },
-  );
 
   const regenerate = useCallback(async () => {
     if (regenerating) return;
@@ -274,13 +260,16 @@ export function MonthCompanyHero() {
 
       <StaleTasksLinked items={staleItems} />
 
-      <MonthDecisions decisions={digest.metrics.decisions} />
+      <MonthForks ownerForks={digest.metrics.ownerForks} />
 
       <MonthNextFocus items={digest.metrics.nextFocus} />
 
-      <RisksIdeas
-        insights={insightsSwr.data ?? []}
-        ideas={ideasSwr.data ?? []}
+      <MonthBlockers items={digest.metrics.blockers ?? []} />
+
+      <MonthSignalsGrid
+        insights={digest.metrics.risksByCause ?? []}
+        frictions={digest.metrics.teamFrictions ?? []}
+        clusters={digest.metrics.ideaClusters ?? []}
         risksSummary={digest.metrics.risksSummary ?? null}
         ideasSummary={digest.metrics.ideasSummary ?? null}
       />

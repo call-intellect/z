@@ -3588,6 +3588,7 @@ model IdeaBlockEvidence {
   @@index([blockId])
   @@index([rawEventId])
   @@index([tenantId])
+  @@index([tenantId, authorPersonId, sourceTimestamp])
 }
 
 /// Entity — сущность (клиент, человек, проект, продукт, тема, локация, custom).

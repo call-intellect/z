@@ -35,6 +35,7 @@ import { KnowsWhoService } from './services/knows-who.service';
 import { MonthlyDigestService } from './services/monthly-digest.service';
 import { OnboardingRampService } from './services/onboarding-ramp.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
+import { PersonRefResolverService } from './services/person-ref-resolver.service';
 import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
 import { PersonalRelationService } from './services/personal-relation.service';
 import { PortfolioHealthService } from './services/portfolio-health.service';
@@ -113,6 +114,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     CheckinSentimentAnalyzerWorker,
     CheckinSentimentBatchCron,
     SelfPersonResolverService,
+    PersonRefResolverService,
     // TZ task-dedup (2026-06-16, Ф2) — петля «разговор → кандидат на закрытие
     // задачи». @OnEvent('task.completion_signalled'),
     // семантический матч открытой Issue + LLM-верификатор → обратимый
@@ -153,6 +155,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     WeeklyDigestService,
     MonthlyDigestService,
     SelfPersonResolverService,
+    PersonRefResolverService,
     DailyDigestService,
     CustomerRiskRadarService,
     PersonalDailyBriefService,

@@ -2039,6 +2039,24 @@ mail-inbound/
 
 См. [[../01_projects/director-dashboard]] §«Месяц компании», [[../01_projects/ai-jobs]] §«operations-monthly-digest», [[../01_projects/workers-queues]], [[../01_projects/api-layer]].
 
+### «День компании v2» — письмо COO + полный вход с атрибуцией в `operations/` (2026-07-01)
+
+**Источник:** `plans/tz/2026-06-30-day-company-report-v2.md` (Ф1–Ф8, ветка `work/2026-06-29`). Надстройка над «Днём компании» — новую модель/агент НЕ вводили; переписали промпт, наполнили пакет, перегруппировали виджеты. Новое/изменённое в `backend/src/modules/operations/`:
+
+- **Сервис** `PersonRefResolverService` (`operations/services/`) — **единая точка резолва** `userId`/`externalId`→`Person`: `userId`→`Person.userId`; bitrix `externalId`→`BitrixUser.linkedPersonId`; chatbox `externalId`+`senderType`→`ChatboxMember.linkedPersonId` (CLIENT→`{personId:null,isClient:true}`); не найден→«без автора». Кэш `Map` на проход. Гарантирует подпись «кто сказал» по всем каналам.
+- **`DailyDigestService.buildDayPackage`** расширен — собирает 6 слоёв входа за локальные сутки с `tenantId`: `employeeVoice` (голос из графа по авторству — блоки/идеи/риски через новый индекс `IdeaBlockEvidence(tenantId,authorPersonId,sourceTimestamp)`), `rawConversations` (Битрикс/чатбокс целиком, обрезка по `operations.daily_digest.raw_char_budget`), `signals` (блокеры/риски-по-`causeCategory`/идеи-кластеры), `conflicts` (`getTeamFrictions(since=начало дня)` — параметр `since` добавлен), `reporting` (план↔факт из `DailyCheckIn`, числа системой), `yesterdayOpenSignals` (петля).
+- **Промпт** `operations/prompts/daily-digest.prompt.ts` (`DAY_COMPANY_SYSTEM_PROMPT`) — v2 `day-company-v2`: 12 секций письма COO, имена прямо, взгляд COO (`reflection`), сущность «решения» (`decisions`) удалена; строгая JSON-схема.
+- **Cron** `OperationsDailyDigestCron` — сдвинут `@Cron('0 3 * * *')` → `@Cron('0 7 * * *', Europe/Moscow)` = 07:00 МСК (после сбора чек-инов 05:00).
+- **Скрипты:** `patch-daily-digest-route-deepseek-pro-gpt-kie.ts` (маршрут `operations-daily-digest` = DeepSeek Pro→GPT→KIE, `maxTokens` снят), `seed-admin-setting-daily-digest.ts` (ключ `operations.daily_digest.raw_char_budget`=40000) — оба в `apply-prod-deploy.ts STEPS`.
+
+**Внешние пересечения:**
+- `prisma/schema.prisma` — индекс `IdeaBlockEvidence(tenantId,authorPersonId,sourceTimestamp)` (миграция `20260701053438_idx_evidence_author_day`, аддитивная).
+- `knowledge-core/prompts/block-ingest.prompt.ts` — усилена разметка `signalType=team_friction` (определение + примеры; enum/схема не трогались).
+- `ai/services/llm-router.service.ts` / `LlmTaskRoute` — маршрут `operations-daily-digest` = `deepseek-v4-pro`→`openai-via-proxy/gpt-5.4-mini`→`kie/gemini-3.1-pro`.
+- `admin/settings/*` — крутилка `operations.daily_digest.raw_char_budget` (40000, ENV-fallback `COO_DAILY_DIGEST_RAW_CHAR_BUDGET`).
+
+См. [[../01_projects/director-dashboard]] §«День компании v2», [[../01_projects/ai-jobs]] §«operations-daily-digest».
+
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
 **Источник:** [`plans/archive/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].

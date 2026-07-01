@@ -248,7 +248,7 @@ Acceptance: `grep` `@Cron('0 4 * * *')` = 1; `operations-daily-digest.cron.spec.
 Acceptance: на `/dashboard` (owner, Playwright по `index.html`) — блокеры отдельно, риски сгруппированы по причине, идеи одним виджетом кластерами, виден блок «Команда: трения» с парой имён, компас отдельным виджетом показывает движение к главной цели; виджета «Решения» и второго (плоского) виджета идей НЕТ; `grep text-white` в `day-company/*` = 0; английских строк = 0; `typecheck/lint/build` (frontend) зелёные.
 Закрывает: R8 (виджет), R11 (виджет), R14.
 
-### [ ] Ф8 — Observability, e2e, прод-шаги, second-brain
+### [x] Ф8 — Observability, e2e, прод-шаги, second-brain
 **Ценность:** как оператор, вижу метрики нового пакета/маршрута и уверен в выкате.
 Что входит: метрики prom-client (размер пакета/токены/cache-hit/fallback модели/конфликтов подано) + логи pino; e2e синтетики дня; second-brain: `01_projects/director-dashboard.md`, `insights.md`, `ideas.md`, `02_architecture/module-map.md` (если новый helper/эндпоинт), `01_projects/ai-jobs.md` (промпт v2); `docs/methodology/prompts/` (сверить промпт v2 с чек-листом, эталон в `examples/`); `docs/operations/prod-deploy-log.md` (Шаг 4 индекс, Шаг 6/7 patch/seed маршрута, Шаг 12 smoke крон 07:00); `docs/operations/feature-flags.md` (kill-switch дайджеста — строка; `raw_char_budget` — крутилка); `04_не-сделано` (Probe, сдвиг продюсера целей, снос `CheckInConflictDetectorCron`).
 Acceptance: метрики на `/metrics`; e2e зелёные; second-brain/prod-deploy-log/feature-flags/04-не-сделано обновлены.
@@ -309,4 +309,19 @@ Acceptance: метрики на `/metrics`; e2e зелёные; second-brain/pro
 
 ## Итог
 
-_(заполнит tz-orchestrator по завершении: что реализовано целиком, что осталось.)_
+**Реализовано целиком (Ф1–Ф8, 2026-07-01).** Коммиты: Ф1 `df237ab2`, Ф2 `59a40f1e`, Ф3 `38436828`, Ф4 `4dce283b`, Ф5 `68f6b58b`, Ф6 `7e6adcfb`, Ф7 `f78e42bc` (+ добивка паритета `0d23551d`), Ф8 код `91308001` + доки.
+
+- **Ф1** — индекс `IdeaBlockEvidence(tenantId,authorPersonId,sourceTimestamp)` (миграция `20260701053438_idx_evidence_author_day`, применена `migrate deploy`) + `PersonRefResolverService`.
+- **Ф2** — `buildDayPackage` наполнен 6 слоями с атрибуцией; крутилка `raw_char_budget`; `getTeamFrictions(since)`.
+- **Ф3** — усилена разметка `team_friction` (определение + 3 few-shot).
+- **Ф4** — промпт `day-company-v2` (12 секций, имена, петля, взгляд COO, без «решений»), строгая JSON-схема.
+- **Ф5** — маршрут DeepSeek Pro→GPT→KIE, снят `maxTokens`, нагрузочный скрипт (120k→40k обрезка).
+- **Ф6** — крон 07:00 МСК.
+- **Ф7** — виджеты `DayBlockers` + `DaySignalsGrid` (блокеры / риски-по-причине / идеи-кластерами / конфликты в «Коммуникация и люди»); дубль убран; недельный/месячный не тронуты.
+- **Ф8** — метрики prom-client + лог + e2e; prod-deploy-log / feature-flags / second-brain / 04-не-сделано / методология промптов обновлены.
+
+**Верификации:** typecheck/lint/build (backend+frontend) зелёные; `bunx vitest` затронутого — 55+ тестов зелёные; **реальный DeepSeek-вызов** (Демо-org) → v2-письмо с именами, 11/12 секций (delta пропущена — вчера нет), без «решений», числа считает система; **Playwright-сверка `/dashboard`** с `prototype-day-v2-full.png` — структура/группировки/копирайт совпали (обложка+оси → компас → задачи → блокеры → риски-по-причине + идеи-кластеры → польза).
+
+**Решение по ходу (визуальная сверка):** для owner+день скрыт `DashboardCanvas` (дублировал героя, перегружал экран) — дашборд стал герой-only, как в прототипе; изменение обратимо (условие в `DirectorDashboardClient`). Отмечено владельцу как продуктовое решение.
+
+**Отступление от буквы ТЗ (обосновано):** прототип `index.html` в letter содержал секцию «Решения», но Р3 (approved, «не пересматривать») её удаляет — следовал Р3 (в письме «решений» нет). Виджет «Команда: трения» реализован не отдельной карточкой, а строками в «Коммуникация и люди» (как в самом прототипе `index.html`, на который ссылается архитектура §4).

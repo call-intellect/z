@@ -285,6 +285,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `knowledge.skeletonMinSegments` | 6 | Мин. длина разговора (в сегментах), с которой строится «Карта встречи» (короче — скелет не нужен). AdminSetting (super_admin), `resolveSync`. Гейтится kill-switch `knowledge.skeleton_pass_enabled` (выше). Сид `seed-admin-settings.ts` | Скелет-проход (extraction-layer-rewrite Ф6) |
 | `knowledge.conflict_min_confidence` | 0.6 | Нижний порог уверенности детектора конфликтов (`PersonalRelationBuilder`), ниже которого ребро `conflicted_with` не создаётся. AdminSetting (super_admin), `getDynamic`. Сид `seed-admin-setting-knowledge-graph.ts` | Граф-детектор конфликтов (extraction-layer-rewrite Ф9) |
 | `knowledge.conflict_graph_confidence` | 0.65 | Уверенность ребра конфликта, создаваемого по графовому пути (автор↔стороны), — отдельно от regex-фолбэка (0.55). AdminSetting (super_admin), `getDynamic`. Сид `seed-admin-setting-knowledge-graph.ts` | Граф-детектор конфликтов (extraction-layer-rewrite Ф9) |
+| `operations.daily_digest.raw_char_budget` | 40000 | Символьный бюджет сырья переписки Битрикс/чатбокс, подаваемого в промпт «День компании v2» (`buildDayPackage`): при переполнении — страховочная обрезка turns без «умного» отбора (защита контекста, приоритизацию не вводим). AdminSetting (super_admin), ENV-fallback `COO_DAILY_DIGEST_RAW_CHAR_BUDGET`, code-fallback `40000`. Сид `seed-admin-setting-daily-digest.ts` | День компании v2 (day-company-report-v2 Ф2/Б5) |
 
 ---
 

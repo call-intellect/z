@@ -99,6 +99,8 @@ Specialist36Service.changeStatus:
 
 Sidebar — пункт «Идеи» в группе «Компания» (icon Lightbulb).
 
+С «Дня компании v2» (2026-07-01, ТЗ `day-company-report-v2`) идеи подаются в дневной дайджест **кластерами** (`IdeaCluster`/`Idea.clusterId` + `supporterCount`/`weight`/`status`) — и в промпт письма COO, и одним виджетом в `DaySignalsGrid` (идеи по темам). Плоский дубль-виджет идей убран. См. [[director-dashboard]] §«День компании v2».
+
 ## Telegram
 
 `/myideas` — top-5 идей пользователя (где он author OR supporter через personSubjectIds) со статусами на русском.

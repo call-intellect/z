@@ -264,7 +264,7 @@ export class MonthlyDigestService {
     let verdictObj: MonthlyDigestVerdictDto | null;
     let letterArr: MonthlyDigestLetterSectionDto[] | null;
     let goalMonthObj: MonthlyDigestGoalAlignmentMonthDto | null;
-    let decisions: Array<{ title: string; why: string }> | null;
+    let ownerForks: Array<{ title: string; why: string }> | null;
     let nextFocus: Array<{ title: string; why: string }> | null;
     let risksSummary: string | null;
     let ideasSummary: string | null;
@@ -306,7 +306,7 @@ export class MonthlyDigestService {
       };
       verdictObj = verdict;
       letterArr = validated.letter;
-      decisions = validated.decisions;
+      ownerForks = validated.ownerForks;
       nextFocus = validated.nextFocus;
       risksSummary = validated.risksSummary;
       ideasSummary = validated.ideasSummary;
@@ -327,7 +327,7 @@ export class MonthlyDigestService {
       verdictObj = null;
       letterArr = null;
       goalMonthObj = null;
-      decisions = null;
+      ownerForks = null;
       nextFocus = null;
       risksSummary = null;
       ideasSummary = null;
@@ -352,7 +352,7 @@ export class MonthlyDigestService {
       tasksDone: pkg.team.tasksDone,
       tasksPlanned: pkg.team.tasksPlanned,
       tasksNotDone: pkg.team.tasksNotDone,
-      ...(decisions ? { decisions } : {}),
+      ...(ownerForks ? { ownerForks } : {}),
       ...(nextFocus ? { nextFocus } : {}),
       risksSummary,
       ideasSummary,

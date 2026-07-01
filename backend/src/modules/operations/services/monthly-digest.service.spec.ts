@@ -29,7 +29,7 @@ const VALID_MONTH_COMPANY = {
     pro: [],
     contra: [],
   },
-  decisions: [{ title: 'Нанять PM', why: 'тащит один' }],
+  ownerForks: [{ title: 'Нанять PM', why: 'тащит один' }],
   nextFocus: [{ title: 'Закрыть онбординг', why: 'долг недель' }],
   risksSummary: 'r',
   ideasSummary: 'i',
@@ -172,7 +172,7 @@ describe('MonthlyDigestService', () => {
     expect(result.goalAlignmentMonth).not.toBeNull();
     expect(Array.isArray(result.weekTrend)).toBe(true);
     expect(result.weekTrend).toHaveLength(4);
-    expect(result.llmTaskRouteId).toContain('month-company-v1');
+    expect(result.llmTaskRouteId).toContain('month-company-v2');
     expect(prisma.monthlyOperationsDigest.upsert).toHaveBeenCalledOnce();
     expect(prisma.monthlyOperationsDigest.upsert).toHaveBeenCalledWith(
       expect.objectContaining({

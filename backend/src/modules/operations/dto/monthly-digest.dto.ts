@@ -12,7 +12,7 @@ export interface MonthlyDigestMetricsDto {
   tasksDone: number;
   tasksPlanned: number;
   tasksNotDone: number;
-  decisions?: Array<{ title: string; why: string }>;
+  ownerForks?: Array<{ title: string; why: string }>;
   nextFocus?: Array<{ title: string; why: string }>;
   risksSummary?: string | null;
   ideasSummary?: string | null;

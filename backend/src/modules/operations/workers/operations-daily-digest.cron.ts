@@ -23,7 +23,7 @@ export class OperationsDailyDigestCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  @Cron('0 6 * * *', { timeZone: 'Europe/Moscow' })
+  @Cron('0 7 * * *', { timeZone: 'Europe/Moscow' })
   async run(): Promise<void> {
     const enabled = await this.cfg.getDynamic<boolean>(
       'operations.daily_digest.enabled',

@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+import type { IdeaClusterDto } from '../../ideas/dto/ideas.dto';
+import type { InsightListItemDto } from '../../insights/dto/insights.dto';
+
+import type {
+  OperationsDashboardBlockerDto,
+  OperationsDashboardTeamFrictionDto,
+} from './operations-dashboard.dto';
+
 export interface MonthlyDigestMetricsDto {
   weeksCount: number;
   missingWeeks: string[];
@@ -16,6 +24,10 @@ export interface MonthlyDigestMetricsDto {
   nextFocus?: Array<{ title: string; why: string }>;
   risksSummary?: string | null;
   ideasSummary?: string | null;
+  risksByCause?: InsightListItemDto[];
+  ideaClusters?: IdeaClusterDto[];
+  teamFrictions?: OperationsDashboardTeamFrictionDto[];
+  blockers?: OperationsDashboardBlockerDto[];
 }
 
 export interface MonthlyDigestSourcesDto {

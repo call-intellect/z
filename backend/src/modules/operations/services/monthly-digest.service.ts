@@ -34,8 +34,10 @@ import {
 } from '../prompts/monthly-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
+import { OperationsDashboardService } from './operations-dashboard.service';
 import { monthBounds, shiftPeriod } from './value-recap.service';
 import { WeeklyPerPersonService } from './weekly-per-person.service';
+import { collectWindowSignals, type WindowSignals } from './window-signals';
 
 function formatDateUtc(d: Date): string {
   const y = d.getUTCFullYear();
@@ -193,6 +195,8 @@ export class MonthlyDigestService {
     private readonly metrics: BusinessMetricsService,
     @Inject(WeeklyPerPersonService)
     private readonly perPerson: WeeklyPerPersonService,
+    @Inject(OperationsDashboardService)
+    private readonly opsDashboard: OperationsDashboardService,
   ) {}
 
   async getStored(args: {
@@ -254,6 +258,31 @@ export class MonthlyDigestService {
       to: toStr,
     });
     const pkg = built.pkg;
+
+    let windowSignals: WindowSignals = {
+      risksByCause: [],
+      ideaClusters: [],
+      teamFrictions: [],
+      blockers: [],
+    };
+    try {
+      windowSignals = await collectWindowSignals({
+        prisma: this.prisma,
+        opsDashboard: this.opsDashboard,
+        tenantId: args.tenantId,
+        from: fromStr,
+        to: toStr,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          periodYm: args.periodYm,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'monthly-digest: сбор сигналов окна упал — пустые плитки',
+      );
+    }
 
     const weekStarts = mondaysInMonth(args.periodYm);
     const weekTrend = buildMonthWeekTrend(pkg.weeks, weekStarts);
@@ -356,6 +385,10 @@ export class MonthlyDigestService {
       ...(nextFocus ? { nextFocus } : {}),
       risksSummary,
       ideasSummary,
+      risksByCause: windowSignals.risksByCause,
+      ideaClusters: windowSignals.ideaClusters,
+      teamFrictions: windowSignals.teamFrictions,
+      blockers: windowSignals.blockers,
     };
 
     const sourcesToStore: MonthlyDigestSourcesDto = {

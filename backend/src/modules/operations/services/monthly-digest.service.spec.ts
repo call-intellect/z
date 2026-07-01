@@ -128,6 +128,12 @@ describe('MonthlyDigestService', () => {
       goalAlignmentSnapshot: {
         findFirst: vi.fn().mockResolvedValue(overrides.snapshot ?? null),
       },
+      insight: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      ideaCluster: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
     };
     const llm = {
       call: overrides.llmReject
@@ -155,13 +161,17 @@ describe('MonthlyDigestService', () => {
         },
       ),
     };
+    const getBlockers = vi.fn().mockResolvedValue({ items: [], total: 0 });
+    const getTeamFrictions = vi.fn().mockResolvedValue({ items: [], total: 0 });
+    const opsDashboard = { getTeamFrictions, getBlockers };
     const svc = new MonthlyDigestService(
       prisma as never,
       llm as never,
       metrics as never,
       perPerson as never,
+      opsDashboard as never,
     );
-    return { svc, prisma, llm, metrics, perPerson, weeklyFindUnique };
+    return { svc, prisma, llm, metrics, perPerson, weeklyFindUnique, opsDashboard };
   }
 
   it('generate: при успехе LLM сохраняет вердикт/письмо/компас/weekTrend', async () => {
@@ -284,6 +294,22 @@ describe('MonthlyDigestService', () => {
     expect(result?.periodYm).toBe('2026-06');
     expect(prisma.monthlyOperationsDigest.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ orderBy: { periodYm: 'desc' } }),
+    );
+  });
+
+  it('generate: metricsJson содержит плитки окна risksByCause/ideaClusters/teamFrictions/blockers массивами', async () => {
+    const { svc, prisma, opsDashboard } = buildSvc({});
+    await svc.generate({ tenantId: 't1', periodYm: '2026-05' });
+    const call = prisma.monthlyOperationsDigest.upsert.mock.calls[0]![0] as {
+      create: { metricsJson: Record<string, unknown> };
+    };
+    const m = call.create.metricsJson;
+    expect(Array.isArray(m.risksByCause)).toBe(true);
+    expect(Array.isArray(m.ideaClusters)).toBe(true);
+    expect(Array.isArray(m.teamFrictions)).toBe(true);
+    expect(Array.isArray(m.blockers)).toBe(true);
+    expect(opsDashboard.getBlockers).toHaveBeenCalledWith(
+      expect.objectContaining({ window: { from: '2026-05-01', to: '2026-05-31' } }),
     );
   });
 

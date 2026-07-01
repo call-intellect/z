@@ -1,7 +1,8 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { type ChatboxChatStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { IntegrationSyncLogService } from '../integrations-observability/integration-sync-log.service';
 
 import { ChatboxApiClient } from './chatbox-api.client';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
@@ -38,6 +39,9 @@ export class ChatboxChatsService {
     private readonly integration: ChatboxIntegrationService,
     @Inject(ChatboxAnalyzeQueueService)
     private readonly analyzeQueue: ChatboxAnalyzeQueueService,
+    @Optional()
+    @Inject(IntegrationSyncLogService)
+    private readonly syncLog?: IntegrationSyncLogService,
   ) {}
 
   async analyzeChat(tenantId: string, chatDbId: string): Promise<{ enqueued: number }> {
@@ -70,6 +74,83 @@ export class ChatboxChatsService {
       }
     }
     return { enqueued };
+  }
+
+  async retrySessionAnalyze(
+    tenantId: string,
+    chatDbId: string,
+    sessionId: string,
+  ): Promise<{ ok: true; analysisStatus: 'pending'; jobId: string }> {
+    const runOrNull = this.syncLog
+      ? await this.syncLog.begin({
+          tenantId,
+          provider: 'chatbox',
+          kind: 'retry',
+          scope: 'session',
+          refId: sessionId,
+        })
+      : null;
+
+    const session = await this.prisma.chatboxChatSession.findFirst({
+      where: { id: sessionId, tenantId, chatId: chatDbId },
+      select: { id: true, analysisStatus: true },
+    });
+    if (!session) {
+      await this.syncLog?.fail(runOrNull, 'session not found');
+      throw this.chatNotFound();
+    }
+    if (session.analysisStatus !== 'failed') {
+      await this.syncLog?.skip(runOrNull, `session status=${session.analysisStatus}, retry only allowed from 'failed'`);
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'session_not_failed',
+          message: 'Retry разрешён только для сессий в статусе failed',
+          currentStatus: session.analysisStatus,
+        },
+      });
+    }
+
+    const claimed = await this.prisma.chatboxChatSession.updateMany({
+      where: { id: sessionId, tenantId, analysisStatus: 'failed' },
+      data: { analysisStatus: 'pending' },
+    });
+    if (claimed.count === 0) {
+      const fresh = await this.prisma.chatboxChatSession.findFirst({
+        where: { id: sessionId, tenantId },
+        select: { analysisStatus: true },
+      });
+      await this.syncLog?.skip(
+        runOrNull,
+        `race: status changed to ${fresh?.analysisStatus ?? 'unknown'} between read and update`,
+      );
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'session_state_changed',
+          message: 'Статус сессии изменился во время retry — обновите данные',
+          currentStatus: fresh?.analysisStatus ?? null,
+        },
+      });
+    }
+
+    try {
+      const { jobId } = await this.analyzeQueue.enqueue(tenantId, sessionId);
+      await this.syncLog?.succeed(runOrNull, { sessionId, jobId });
+      this.logger.log(
+        { tenantId, chatId: chatDbId, sessionId, jobId },
+        'retrySessionAnalyze: сессия сброшена в pending и поставлена в очередь',
+      );
+      return { ok: true, analysisStatus: 'pending', jobId };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.syncLog?.fail(runOrNull, `enqueue failed: ${message}`);
+      await this.prisma.chatboxChatSession.updateMany({
+        where: { id: sessionId, tenantId, analysisStatus: 'pending' },
+        data: { analysisStatus: 'failed' },
+      });
+      throw err;
+    }
   }
 
   async listChats(

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { IntegrationObservabilityModule } from '../integrations-observability/integration-observability.module';
 import { PersonsModule } from '../persons/persons.module';
 
 import { ChatboxApiClient } from './chatbox-api.client';
@@ -20,7 +21,7 @@ import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.servic
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
 @Module({
-  imports: [PersonsModule],
+  imports: [PersonsModule, IntegrationObservabilityModule],
   controllers: [
     ChatboxIntegrationController,
     ChatboxChatsController,

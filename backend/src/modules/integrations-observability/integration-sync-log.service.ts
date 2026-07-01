@@ -4,7 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 export type IntegrationProvider = 'bitrix' | 'chatbox';
-export type IntegrationSyncKind = 'sync' | 'analyze';
+export type IntegrationSyncKind = 'sync' | 'analyze' | 'retry';
 
 export interface IntegrationSyncRunMeta {
   tenantId: string;

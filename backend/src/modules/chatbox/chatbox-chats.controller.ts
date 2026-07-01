@@ -121,6 +121,23 @@ export class ChatboxChatsController {
     return { ok: true, enqueued };
   }
 
+  @Post(':id/sessions/:sessionId/analyze-retry')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary:
+      'Ручной retry AI-анализа для failed-сессии чата (failed → pending + BullMQ enqueue; race-safe через updateMany-claim)',
+  })
+  async retrySessionAnalyze(
+    @Param('id') id: string,
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; analysisStatus: 'pending'; jobId: string }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.service.retrySessionAnalyze(t, id, sessionId);
+  }
+
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({

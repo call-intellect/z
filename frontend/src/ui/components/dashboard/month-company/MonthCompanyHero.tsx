@@ -21,6 +21,11 @@ import { CHART } from "@/ui/components/dashboard/modern";
 import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
 import { PeriodEmptyState } from "@/ui/components/dashboard/shared/PeriodEmptyState";
 import { StaleTasksLinked } from "@/ui/components/dashboard/day-company/StaleTasksLinked";
+import { MonthRecapWidget } from "@/ui/components/dashboard/registry/widgets/MonthRecapWidget";
+import { AchievementsWidget } from "@/ui/components/dashboard/registry/widgets/AchievementsWidget";
+import { WeeklyDynamicsWidget } from "@/ui/components/dashboard/registry/widgets/WeeklyDynamicsWidget";
+import { MaturityCardWidget } from "@/ui/components/dashboard/registry/widgets/MaturityCardWidget";
+import { BusFactorCardWidget } from "@/ui/components/dashboard/registry/widgets/BusFactorCardWidget";
 import { WeeklyPerPersonWidget } from "@app/(authenticated)/dashboard/operations/weekly/WeeklyPerPersonWidget";
 
 import { MonthBlockers } from "./MonthBlockers";
@@ -273,6 +278,19 @@ export function MonthCompanyHero() {
         risksSummary={digest.metrics.risksSummary ?? null}
         ideasSummary={digest.metrics.ideasSummary ?? null}
       />
+
+      <div className="mt-2 flex flex-col gap-4">
+        <h2 className="text-lg font-semibold" style={{ color: CHART.text }}>
+          Итоги месяца
+        </h2>
+        <MonthRecapWidget rhythm="month" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <AchievementsWidget rhythm="month" />
+          <WeeklyDynamicsWidget rhythm="month" />
+          <MaturityCardWidget rhythm="month" />
+          <BusFactorCardWidget rhythm="month" />
+        </div>
+      </div>
     </div>
   );
 }

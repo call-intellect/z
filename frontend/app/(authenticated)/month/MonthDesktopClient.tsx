@@ -16,7 +16,9 @@ export function MonthDesktopClient() {
       subtitle="Достижения, зрелость, незаменимость и динамика команды за месяц."
     >
       {currentOrgRole === "owner" ? <MonthCompanyHero /> : null}
-      <DashboardCanvas role={role} rhythm="month" />
+      {currentOrgRole !== "owner" ? (
+        <DashboardCanvas role={role} rhythm="month" />
+      ) : null}
     </ModernPageShell>
   );
 }

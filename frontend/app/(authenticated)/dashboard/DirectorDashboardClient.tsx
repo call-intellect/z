@@ -100,10 +100,12 @@ export function DirectorDashboardClient() {
           )
         ) : null}
 
-        <DashboardCanvas
-          role={role}
-          rhythm={rhythm === "week" ? "week" : "today"}
-        />
+        {currentOrgRole === "owner" && rhythm === "day" ? null : (
+          <DashboardCanvas
+            role={role}
+            rhythm={rhythm === "week" ? "week" : "today"}
+          />
+        )}
       </div>
     </div>
   );

@@ -21,8 +21,23 @@ function daysSince(createdAt: string): number {
   return Math.max(1, Math.floor((Date.now() - created) / 86400000));
 }
 
+function dedupeByText(items: OperationsBlockerApi[]): OperationsBlockerApi[] {
+  const byText = new Map<string, OperationsBlockerApi>();
+  for (const it of items) {
+    const key = it.text.trim().toLowerCase();
+    const prev = byText.get(key);
+    if (!prev || new Date(it.createdAt).getTime() < new Date(prev.createdAt).getTime()) {
+      byText.set(key, it);
+    }
+  }
+  return Array.from(byText.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
 export function DayBlockers({ items }: { items: OperationsBlockerApi[] }) {
-  if (items.length === 0) return null;
+  const unique = dedupeByText(items);
+  if (unique.length === 0) return null;
 
   return (
     <div style={glass()} className="p-6">
@@ -31,12 +46,12 @@ export function DayBlockers({ items }: { items: OperationsBlockerApi[] }) {
           Блокеры — что прямо мешает сейчас
         </CardTitle>
         <span className="ml-auto">
-          <Chip tone="risk">{items.length} активных</Chip>
+          <Chip tone="risk">{unique.length} активных</Chip>
         </span>
       </div>
 
       <div className="mt-4 flex flex-col">
-        {items.map((it) => {
+        {unique.map((it) => {
           const led = blockerLed(it.severity);
           const days = daysSince(it.createdAt);
           const owner = it.ownerPersonName ?? "—";

@@ -200,7 +200,7 @@ SYSTEM берём дословно из `report-prompt-v2.md` (РОЛЬ/ВХОД
 Acceptance: миграция аддитивна, `migrate deploy` идемпотентен; `grep` индекса в schema; юнит резолва зелёный (bitrix manager→personId, chatbox CLIENT→`{null,isClient:true}`, unknown→`{null,false}`); `typecheck/lint/build` зелёные.
 Закрывает: R1, R2.
 
-### [ ] Ф2 — Наполнение `buildDayPackage` (4 слоя + конфликты + вчера + план↔факт)
+### [x] Ф2 — Наполнение `buildDayPackage` (4 слоя + конфликты + вчера + план↔факт)
 **Ценность:** как отчёт, вижу весь день по каналам с подписью «кто сказал» + конфликты + петлю со вчера, потому что пакет собирает всё готовое из графа.
 Картография: `daily-digest.service.ts buildDayPackage`; К3 (структура пакета); Б2 (3 пути голоса); Б5 (сырьё + `raw_char_budget`); К6 (конфликты `since`); `DayReportCollectorService`/`DailyCheckIn` (план↔факт, К3.reporting); вчерашние сигналы из `getStored` (verdict.axes + risksSummary).
 Что входит: собрать `employeeVoice`/`rawConversations`/`signals`/`conflicts`/`reporting`/`yesterdayOpenSignals`; крутилка `operations.daily_digest.raw_char_budget` (AdminSetting + реестр + сид); все выборки по `tenantId`+день.

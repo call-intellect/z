@@ -217,9 +217,10 @@ export class OperationsDashboardService {
   async getTeamFrictions(args: {
     tenantId: string;
     limit?: number;
+    since?: Date;
   }): Promise<OperationsDashboardTeamFrictionsListDto> {
     const limit = Math.min(args.limit ?? 50, 200);
-    const items = await this.fetchTeamFrictions(args.tenantId, limit);
+    const items = await this.fetchTeamFrictions(args.tenantId, limit, args.since);
     return { items, total: items.length };
   }
 
@@ -527,6 +528,7 @@ export class OperationsDashboardService {
   private async fetchTeamFrictions(
     tenantId: string,
     limit: number,
+    since?: Date,
   ): Promise<OperationsDashboardTeamFrictionDto[]> {
     const links = await this.prisma.entityLink.findMany({
       where: {
@@ -534,6 +536,7 @@ export class OperationsDashboardService {
         relationType: { in: TEAM_FRICTION_RELATION_TYPES },
         status: 'active',
         deletedAt: null,
+        ...(since ? { createdAt: { gte: since } } : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: limit,

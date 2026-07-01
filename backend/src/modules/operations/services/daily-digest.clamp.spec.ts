@@ -72,6 +72,20 @@ function emptyPackage(overrides?: Partial<DayCompanyPackage>): DayCompanyPackage
     customersAtRisk: [],
     compass: null,
     yesterday: null,
+    employeeVoice: [],
+    rawConversations: { bitrix: [], chatbox: [] },
+    signals: { blockers: [], risks: [], ideas: [] },
+    conflicts: [],
+    reporting: {
+      planSubmitted: { done: 0, total: 0 },
+      reportSubmitted: { done: 0, total: 0 },
+      perPerson: [],
+      noReport: [],
+      tasksSet: 0,
+      tasksDone: 0,
+      dayPlan: { done: 0, total: 0 },
+    },
+    yesterdayOpenSignals: [],
     ...overrides,
   };
 }

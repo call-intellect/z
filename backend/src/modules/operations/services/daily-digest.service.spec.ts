@@ -50,6 +50,15 @@ describe('DailyDigestService', () => {
       person: {
         findMany: vi.fn().mockResolvedValue([]),
       },
+      ideaBlockEvidence: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      bitrixMessage: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      chatboxMessage: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       dailyOperationsDigest: {
         findUnique: vi.fn().mockResolvedValue(overrides.existing ?? null),
         findFirst: vi.fn().mockResolvedValue(overrides.latest ?? null),
@@ -119,7 +128,21 @@ describe('DailyDigestService', () => {
       listChronicForTenant: vi.fn().mockResolvedValue([]),
     };
     const cfg = {
-      getDynamic: vi.fn().mockResolvedValue(5),
+      getDynamic: vi
+        .fn()
+        .mockImplementation((_key: string, _env: string | undefined, def: unknown) => def),
+    };
+    const personRefResolver = {
+      create: vi.fn().mockResolvedValue({
+        resolve: vi.fn().mockImplementation((input: { personId?: string; isClient?: boolean }) => ({
+          personId: input.isClient ? null : (input.personId ?? null),
+          isClient: input.isClient === true,
+          personName: input.personId ? `Персона ${input.personId}` : null,
+        })),
+      }),
+    };
+    const opsDashboard = {
+      getTeamFrictions: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     };
     const svc = new DailyDigestService(
       prisma as never,
@@ -129,6 +152,8 @@ describe('DailyDigestService', () => {
       customerRisk as never,
       blockerSynthesis as never,
       cfg as never,
+      personRefResolver as never,
+      opsDashboard as never,
     );
     return {
       svc,
@@ -139,6 +164,8 @@ describe('DailyDigestService', () => {
       customerRisk,
       blockerSynthesis,
       cfg,
+      personRefResolver,
+      opsDashboard,
     };
   }
 
@@ -350,5 +377,211 @@ describe('DailyDigestService', () => {
     });
     expect(result.periods[2]).toEqual({ period: '2026-06-26', stateHint: null, title: null });
     expect(result.latest).toBe('2026-06-28');
+  });
+
+  describe('buildDayPackage', () => {
+    it('собирает голос сотрудников, сырые переписки, сигналы, конфликты, план↔факт', async () => {
+      const { svc, prisma, opsDashboard } = buildSvc({});
+
+      prisma.ideaBlockEvidence.findMany.mockResolvedValueOnce([
+        {
+          authorPersonId: 'p1',
+          sourceTimestamp: new Date('2026-05-24T09:00:00Z'),
+          block: { signalType: 'idea', name: 'Идея A', trustedAnswer: 'Сделать A' },
+        },
+        {
+          authorPersonId: 'p1',
+          sourceTimestamp: new Date('2026-05-24T10:00:00Z'),
+          block: { signalType: 'risk', name: 'Риск B', trustedAnswer: 'Опасность B' },
+        },
+      ]);
+
+      prisma.bitrixMessage.findMany.mockResolvedValueOnce([
+        {
+          sessionId: 's1',
+          dialogId: 'd1',
+          authorExternalId: 'ext-emp',
+          authorName: 'Менеджер',
+          externalCreatedAt: new Date('2026-05-24T08:00:00Z'),
+          text: 'Здравствуйте, чем помочь?',
+        },
+        {
+          sessionId: 's1',
+          dialogId: 'd1',
+          authorExternalId: 'ext-emp',
+          authorName: 'Менеджер',
+          externalCreatedAt: new Date('2026-05-24T08:05:00Z'),
+          text: 'Оформляю заявку.',
+        },
+      ]);
+
+      prisma.idea.findMany.mockResolvedValue([
+        { id: 'i1', statement: 'Идея-1', supporterCount: 3, weight: '0.9', status: 'captured', clusterId: null },
+        { id: 'i2', statement: 'Идея-2', supporterCount: 1, weight: '0.5', status: 'captured', clusterId: 'c1' },
+      ]);
+
+      prisma.insight.findMany.mockResolvedValue([
+        {
+          id: 'ins1',
+          kind: 'risk',
+          statement: 'Растёт молчание поддержки',
+          causeCategory: 'communication',
+          dynamicLabel: 'growing',
+          sourceBlockIds: ['b1', 'b2'],
+          frequencyScore: '0.7',
+          status: 'active',
+          severity: 'high',
+        },
+      ]);
+
+      prisma.ideaBlock.findMany.mockResolvedValue([]);
+
+      prisma.dailyCheckIn.findMany.mockResolvedValueOnce([
+        { personId: 'e1', kind: 'morning', plansJson: [{ text: 'a' }, { text: 'b' }], donesJson: null, notDoneJson: null, reportCompleteness: 'full', person: { name: 'Емп1', relationship: 'employee' } },
+        { personId: 'e1', kind: 'evening', plansJson: null, donesJson: [{ text: 'a' }], notDoneJson: [{ text: 'b не сделал' }], reportCompleteness: 'full', person: { name: 'Емп1', relationship: 'employee' } },
+        { personId: 'e2', kind: 'morning', plansJson: [{ text: 'x' }], donesJson: null, notDoneJson: null, reportCompleteness: 'full', person: { name: 'Емп2', relationship: 'employee' } },
+        { personId: 'e2', kind: 'evening', plansJson: null, donesJson: [{ text: 'x' }], notDoneJson: null, reportCompleteness: 'full', person: { name: 'Емп2', relationship: 'employee' } },
+        { personId: 'e3', kind: 'morning', plansJson: [{ text: 'y' }], donesJson: null, notDoneJson: null, reportCompleteness: 'full', person: { name: 'Емп3', relationship: 'employee' } },
+        { personId: 'e3', kind: 'evening', plansJson: null, donesJson: [{ text: 'y' }], notDoneJson: null, reportCompleteness: 'full', person: { name: 'Емп3', relationship: 'employee' } },
+        { personId: 'e4', kind: 'morning', plansJson: [{ text: 'z' }], donesJson: null, notDoneJson: null, reportCompleteness: 'full', person: { name: 'Емп4', relationship: 'employee' } },
+        { personId: 'e5', kind: 'morning', plansJson: [{ text: 'w' }], donesJson: null, notDoneJson: null, reportCompleteness: 'full', person: { name: 'Емп5', relationship: 'employee' } },
+      ]);
+
+      prisma.person.findMany.mockResolvedValueOnce([
+        { id: 'e1', name: 'Емп1' },
+        { id: 'e2', name: 'Емп2' },
+        { id: 'e3', name: 'Емп3' },
+        { id: 'e4', name: 'Емп4' },
+        { id: 'e5', name: 'Емп5' },
+        { id: 'e6', name: 'Емп6' },
+      ]);
+
+      opsDashboard.getTeamFrictions.mockResolvedValueOnce({
+        items: [
+          {
+            id: 'f1',
+            fromPersonId: 'e1',
+            fromPersonName: 'Емп1',
+            toPersonId: 'e2',
+            toPersonName: 'Емп2',
+            relationType: 'in_conflict_with',
+            confidence: 0.8,
+            explanation: 'спор о приоритетах',
+            observedAt: '2026-05-24T12:00:00Z',
+          },
+        ],
+        total: 1,
+      });
+
+      const pkg = await (svc as never as { buildDayPackage: (a: { tenantId: string; dateLocal: string }) => Promise<Record<string, unknown>> }).buildDayPackage({
+        tenantId: 't1',
+        dateLocal: '2026-05-24',
+      });
+
+      const employeeVoice = pkg.employeeVoice as Array<{ personId: string; ideas: unknown[]; risks: unknown[] }>;
+      expect(employeeVoice.length).toBeGreaterThan(0);
+      expect(employeeVoice[0]!.ideas.length).toBe(1);
+      expect(employeeVoice[0]!.risks.length).toBe(1);
+
+      const raw = pkg.rawConversations as { bitrix: Array<{ session: string; turns: unknown[] }> };
+      expect(raw.bitrix.length).toBe(1);
+      expect(raw.bitrix[0]!.turns.length).toBe(2);
+
+      const signals = pkg.signals as {
+        risks: Array<{ dynamicLabel: string }>;
+        ideas: unknown[];
+      };
+      expect(signals.risks.some((r) => r.dynamicLabel === 'growing')).toBe(true);
+      expect(signals.ideas.length).toBe(2);
+
+      const conflicts = pkg.conflicts as Array<{ fromPersonName: string; toPersonName: string }>;
+      expect(conflicts.length).toBe(1);
+      expect(conflicts[0]!.fromPersonName).toBe('Емп1');
+      expect(conflicts[0]!.toPersonName).toBe('Емп2');
+
+      const reporting = pkg.reporting as {
+        planSubmitted: { done: number; total: number };
+        reportSubmitted: { done: number; total: number };
+      };
+      expect(reporting.planSubmitted.done).toBe(5);
+      expect(reporting.planSubmitted.total).toBe(6);
+      expect(reporting.reportSubmitted.done).toBe(3);
+    });
+
+    it('клиент в чатбоксе → turn.isClient=true, personId=null; ассистент пропускается', async () => {
+      const { svc, prisma } = buildSvc({});
+      prisma.chatboxMessage.findMany.mockResolvedValueOnce([
+        {
+          sessionId: 'cs1',
+          chatId: 'ch1',
+          senderType: 'CLIENT',
+          senderExternalId: 'ext-client',
+          senderName: 'Клиент Пётр',
+          externalCreatedAt: new Date('2026-05-24T07:00:00Z'),
+          text: 'У меня вопрос по счёту.',
+        },
+        {
+          sessionId: 'cs1',
+          chatId: 'ch1',
+          senderType: 'ASSISTANT',
+          senderExternalId: null,
+          senderName: 'Кора',
+          externalCreatedAt: new Date('2026-05-24T07:01:00Z'),
+          text: 'Отвечаю ботом — должно быть пропущено.',
+        },
+      ]);
+
+      const pkg = await (svc as never as { buildDayPackage: (a: { tenantId: string; dateLocal: string }) => Promise<Record<string, unknown>> }).buildDayPackage({
+        tenantId: 't1',
+        dateLocal: '2026-05-24',
+      });
+
+      const raw = pkg.rawConversations as {
+        chatbox: Array<{ turns: Array<{ isClient: boolean; personId: string | null }> }>;
+      };
+      expect(raw.chatbox.length).toBe(1);
+      expect(raw.chatbox[0]!.turns.length).toBe(1);
+      expect(raw.chatbox[0]!.turns[0]!.isClient).toBe(true);
+      expect(raw.chatbox[0]!.turns[0]!.personId).toBeNull();
+    });
+
+    it('переполнение бюджета символов → пакет не падает, текст обрезан', async () => {
+      const { svc, prisma, cfg } = buildSvc({});
+      cfg.getDynamic.mockImplementation(
+        (key: string, _env: string | undefined, def: unknown) =>
+          key === 'operations.daily_digest.raw_char_budget' ? 10 : def,
+      );
+      const long = 'а'.repeat(200);
+      prisma.bitrixMessage.findMany.mockResolvedValueOnce([
+        {
+          sessionId: 's1',
+          dialogId: 'd1',
+          authorExternalId: 'ext-emp',
+          authorName: 'Менеджер',
+          externalCreatedAt: new Date('2026-05-24T08:00:00Z'),
+          text: long,
+        },
+        {
+          sessionId: 's1',
+          dialogId: 'd1',
+          authorExternalId: 'ext-emp',
+          authorName: 'Менеджер',
+          externalCreatedAt: new Date('2026-05-24T09:00:00Z'),
+          text: long,
+        },
+      ]);
+
+      const pkg = await (svc as never as { buildDayPackage: (a: { tenantId: string; dateLocal: string }) => Promise<Record<string, unknown>> }).buildDayPackage({
+        tenantId: 't1',
+        dateLocal: '2026-05-24',
+      });
+
+      const raw = pkg.rawConversations as { bitrix: Array<{ turns: Array<{ text: string }> }> };
+      const totalChars = raw.bitrix.reduce(
+        (acc, s) => acc + s.turns.reduce((a, t) => a + t.text.length, 0),
+        0,
+      );
+      expect(totalChars).toBeLessThanOrEqual(10);
+    });
   });
 });

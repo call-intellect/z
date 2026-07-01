@@ -36,13 +36,24 @@ import {
   buildDayCompanyUserMessage,
   buildFallbackDigestMarkdown,
   dayCompanyToBodyMarkdown,
+  type DayCompanyEmployeeVoice,
+  type DayCompanyEmployeeVoiceItem,
   type DayCompanyPackage,
+  type DayCompanyRawConversations,
+  type DayCompanyRawSession,
+  type DayCompanyRawTurn,
+  type DayCompanyReporting,
+  type DayCompanyReportingPerson,
   type DayCompanyResponse,
+  type DayCompanySignals,
+  type DayCompanyYesterdaySignal,
 } from '../prompts/daily-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 import { BlockerSynthesisService } from './blocker-synthesis.service';
 import { CustomerRiskRadarService } from './customer-risk-radar.service';
+import { OperationsDashboardService } from './operations-dashboard.service';
+import { PersonRefResolverService } from './person-ref-resolver.service';
 
 export interface DayVerdictSignals {
   hasNegativeClientSignal: boolean;
@@ -165,6 +176,10 @@ export class DailyDigestService {
     private readonly blockerSynthesis: BlockerSynthesisService,
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService,
+    @Inject(PersonRefResolverService)
+    private readonly personRefResolver: PersonRefResolverService,
+    @Inject(OperationsDashboardService)
+    private readonly opsDashboard: OperationsDashboardService,
   ) {}
 
   async getStored(args: {
@@ -574,6 +589,7 @@ export class DailyDigestService {
     dateLocal: string;
   }): Promise<DayCompanyPackage> {
     const [dayStart, dayEnd] = this.parseDayBoundsMsk(args.dateLocal);
+    const resolver = await this.personRefResolver.create(args.tenantId);
 
     const [meetingRows, ideaRows, insightRows] = await Promise.all([
       this.prisma.meeting.findMany({
@@ -700,6 +716,36 @@ export class DailyDigestService {
       );
     }
 
+    const employeeVoice = await this.collectEmployeeVoice({
+      tenantId: args.tenantId,
+      dayStart,
+      dayEnd,
+      resolver,
+    });
+    const rawConversations = await this.collectRawConversations({
+      tenantId: args.tenantId,
+      dayStart,
+      dayEnd,
+      resolver,
+    });
+    const signals = await this.collectSignals({
+      tenantId: args.tenantId,
+      dayStart,
+      dayEnd,
+    });
+    const conflicts = await this.collectConflicts({
+      tenantId: args.tenantId,
+      dayStart,
+    });
+    const reporting = await this.collectReporting({
+      tenantId: args.tenantId,
+      dateLocal: args.dateLocal,
+    });
+    const yesterdayOpenSignals = await this.collectYesterdayOpenSignals({
+      tenantId: args.tenantId,
+      dateLocal: args.dateLocal,
+    });
+
     return {
       dateLocal: args.dateLocal,
       goalId,
@@ -724,7 +770,491 @@ export class DailyDigestService {
       customersAtRisk,
       compass,
       yesterday,
+      employeeVoice,
+      rawConversations,
+      signals,
+      conflicts,
+      reporting,
+      yesterdayOpenSignals,
     };
+  }
+
+  private async collectEmployeeVoice(args: {
+    tenantId: string;
+    dayStart: Date;
+    dayEnd: Date;
+    resolver: Awaited<ReturnType<PersonRefResolverService['create']>>;
+  }): Promise<DayCompanyEmployeeVoice[]> {
+    try {
+      const rows = await this.prisma.ideaBlockEvidence.findMany({
+        where: {
+          tenantId: args.tenantId,
+          authorPersonId: { not: null },
+          sourceTimestamp: { gte: args.dayStart, lt: args.dayEnd },
+        },
+        select: {
+          authorPersonId: true,
+          sourceTimestamp: true,
+          block: {
+            select: { signalType: true, name: true, trustedAnswer: true },
+          },
+        },
+        take: 500,
+      });
+
+      const byPerson = new Map<
+        string,
+        {
+          ideas: DayCompanyEmployeeVoiceItem[];
+          risks: DayCompanyEmployeeVoiceItem[];
+          other: DayCompanyEmployeeVoiceItem[];
+          seen: Set<string>;
+        }
+      >();
+
+      for (const row of rows) {
+        const personId = row.authorPersonId;
+        if (!personId || !row.block) continue;
+        const signalType = row.block.signalType;
+        const bucket = employeeVoiceBucket(signalType);
+        if (bucket === null) continue;
+        const text = (row.block.trustedAnswer?.trim() || row.block.name).slice(0, 300);
+        if (!text) continue;
+        let entry = byPerson.get(personId);
+        if (!entry) {
+          entry = { ideas: [], risks: [], other: [], seen: new Set() };
+          byPerson.set(personId, entry);
+        }
+        if (entry.seen.has(text)) continue;
+        entry.seen.add(text);
+        entry[bucket].push({ text, signalType });
+      }
+
+      const result: DayCompanyEmployeeVoice[] = [];
+      for (const [personId, entry] of byPerson) {
+        const personName =
+          args.resolver.resolve({ personId, source: 'chat' }).personName ?? 'Сотрудник';
+        result.push({
+          personId,
+          personName,
+          ideas: entry.ideas,
+          risks: entry.risks,
+          other: entry.other,
+        });
+      }
+      result.sort(
+        (a, b) =>
+          b.ideas.length +
+          b.risks.length +
+          b.other.length -
+          (a.ideas.length + a.risks.length + a.other.length),
+      );
+      return result.slice(0, 12);
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: голос сотрудников для пакета упал — пропускаю',
+      );
+      return [];
+    }
+  }
+
+  private async collectRawConversations(args: {
+    tenantId: string;
+    dayStart: Date;
+    dayEnd: Date;
+    resolver: Awaited<ReturnType<PersonRefResolverService['create']>>;
+  }): Promise<DayCompanyRawConversations> {
+    let bitrix: DayCompanyRawSession[] = [];
+    let chatbox: DayCompanyRawSession[] = [];
+
+    try {
+      const rows = await this.prisma.bitrixMessage.findMany({
+        where: {
+          tenantId: args.tenantId,
+          externalCreatedAt: { gte: args.dayStart, lt: args.dayEnd },
+          text: { not: null },
+        },
+        select: {
+          sessionId: true,
+          dialogId: true,
+          authorExternalId: true,
+          authorName: true,
+          externalCreatedAt: true,
+          text: true,
+        },
+        orderBy: { externalCreatedAt: 'asc' },
+        take: 1000,
+      });
+      const bySession = new Map<string, DayCompanyRawTurn[]>();
+      for (const row of rows) {
+        if (!row.text) continue;
+        const ref = args.resolver.resolve({
+          source: 'bitrix',
+          externalId: row.authorExternalId,
+        });
+        const turn: DayCompanyRawTurn = {
+          author: row.authorName ?? 'сотрудник',
+          personId: ref.personId,
+          isClient: false,
+          ts: row.externalCreatedAt.toISOString(),
+          text: row.text.slice(0, 500),
+        };
+        const key = row.sessionId ?? row.dialogId;
+        const turns = bySession.get(key);
+        if (turns) turns.push(turn);
+        else bySession.set(key, [turn]);
+      }
+      bitrix = Array.from(bySession, ([session, turns]) => ({ session, turns }));
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: сырые переписки Битрикс упали — пропускаю',
+      );
+    }
+
+    try {
+      const rows = await this.prisma.chatboxMessage.findMany({
+        where: {
+          tenantId: args.tenantId,
+          externalCreatedAt: { gte: args.dayStart, lt: args.dayEnd },
+          text: { not: null },
+        },
+        select: {
+          sessionId: true,
+          chatId: true,
+          senderType: true,
+          senderExternalId: true,
+          senderName: true,
+          externalCreatedAt: true,
+          text: true,
+        },
+        orderBy: { externalCreatedAt: 'asc' },
+        take: 1000,
+      });
+      const bySession = new Map<string, DayCompanyRawTurn[]>();
+      for (const row of rows) {
+        if (!row.text) continue;
+        if (row.senderType === 'ASSISTANT' || row.senderType === 'QUALITY_CONTROL') continue;
+        const isClient = row.senderType === 'CLIENT';
+        const ref = args.resolver.resolve({
+          source: 'chatbox',
+          externalId: row.senderExternalId,
+          isClient,
+        });
+        const turn: DayCompanyRawTurn = {
+          author: row.senderName ?? (isClient ? 'клиент' : 'сотрудник'),
+          personId: ref.personId,
+          isClient: ref.isClient,
+          ts: row.externalCreatedAt.toISOString(),
+          text: row.text.slice(0, 500),
+        };
+        const key = row.sessionId ?? row.chatId;
+        const turns = bySession.get(key);
+        if (turns) turns.push(turn);
+        else bySession.set(key, [turn]);
+      }
+      chatbox = Array.from(bySession, ([session, turns]) => ({ session, turns }));
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: сырые переписки чатбокса упали — пропускаю',
+      );
+    }
+
+    const budget = await this.cfg.getDynamic<number>(
+      'operations.daily_digest.raw_char_budget',
+      'COO_DAILY_DIGEST_RAW_CHAR_BUDGET',
+      40000,
+    );
+    return trimRawConversations({ bitrix, chatbox }, budget);
+  }
+
+  private async collectSignals(args: {
+    tenantId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }): Promise<DayCompanySignals> {
+    const signals: DayCompanySignals = { blockers: [], risks: [], ideas: [] };
+    try {
+      const blockers = await this.prisma.ideaBlock.findMany({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'blocker',
+          createdAt: { gte: args.dayStart, lt: args.dayEnd },
+        },
+        select: { name: true, confidence: true },
+        orderBy: [{ confidence: 'desc' }],
+        take: 10,
+      });
+      signals.blockers = blockers.map((b) => ({
+        text: b.name.slice(0, 300),
+        confidence: Number(b.confidence),
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: блокеры-сигналы для пакета упали — пропускаю',
+      );
+    }
+
+    try {
+      const risks = await this.prisma.insight.findMany({
+        where: {
+          tenantId: args.tenantId,
+          status: { in: ['active', 'mitigating'] },
+          severity: { in: ['high', 'critical'] },
+        },
+        select: {
+          statement: true,
+          causeCategory: true,
+          dynamicLabel: true,
+          sourceBlockIds: true,
+          frequencyScore: true,
+          status: true,
+          severity: true,
+        },
+        orderBy: [{ severity: 'desc' }, { lastObservedAt: 'desc' }],
+        take: 12,
+      });
+      signals.risks = risks.map((i) => ({
+        text: (i.statement ?? '').slice(0, 300),
+        causeCategory: i.causeCategory,
+        dynamicLabel: i.dynamicLabel,
+        observations: i.sourceBlockIds.length,
+        frequencyScore: Number(i.frequencyScore),
+        status: i.status,
+        severity: i.severity,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: риски-сигналы для пакета упали — пропускаю',
+      );
+    }
+
+    try {
+      const ideas = await this.prisma.idea.findMany({
+        where: {
+          tenantId: args.tenantId,
+          status: { notIn: ['rejected', 'archived'] },
+        },
+        select: {
+          statement: true,
+          supporterCount: true,
+          weight: true,
+          status: true,
+          clusterId: true,
+        },
+        orderBy: [{ weight: 'desc' }],
+        take: 12,
+      });
+      signals.ideas = ideas.map((i) => ({
+        text: (i.statement ?? '').slice(0, 300),
+        supporterCount: i.supporterCount,
+        weight: Number(i.weight),
+        status: i.status,
+        clusterId: i.clusterId,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: идеи-сигналы для пакета упали — пропускаю',
+      );
+    }
+
+    return signals;
+  }
+
+  private async collectConflicts(args: {
+    tenantId: string;
+    dayStart: Date;
+  }): Promise<DayCompanyPackage['conflicts']> {
+    try {
+      const frictions = await this.opsDashboard.getTeamFrictions({
+        tenantId: args.tenantId,
+        since: args.dayStart,
+        limit: 20,
+      });
+      return frictions.items.map((f) => ({
+        fromPersonName: f.fromPersonName,
+        toPersonName: f.toPersonName,
+        confidence: f.confidence,
+        explanation: f.explanation,
+        since: f.observedAt,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: конфликты для пакета упали — пропускаю',
+      );
+      return [];
+    }
+  }
+
+  private async collectReporting(args: {
+    tenantId: string;
+    dateLocal: string;
+  }): Promise<DayCompanyReporting> {
+    const empty: DayCompanyReporting = {
+      planSubmitted: { done: 0, total: 0 },
+      reportSubmitted: { done: 0, total: 0 },
+      perPerson: [],
+      noReport: [],
+      tasksSet: 0,
+      tasksDone: 0,
+      dayPlan: { done: 0, total: 0 },
+    };
+    try {
+      const [checkIns, employees] = await Promise.all([
+        this.prisma.dailyCheckIn.findMany({
+          where: { tenantId: args.tenantId, dateLocal: args.dateLocal },
+          select: {
+            personId: true,
+            kind: true,
+            plansJson: true,
+            donesJson: true,
+            notDoneJson: true,
+            reportCompleteness: true,
+            person: { select: { name: true, relationship: true } },
+          },
+        }),
+        this.prisma.person.findMany({
+          where: { tenantId: args.tenantId, deletedAt: null, relationship: 'employee' },
+          select: { id: true, name: true },
+        }),
+      ]);
+
+      const employeeIds = new Set(employees.map((e) => e.id));
+      const nameById = new Map(employees.map((e) => [e.id, e.name]));
+
+      const perPersonAgg = new Map<
+        string,
+        {
+          personName: string;
+          planSubmitted: boolean;
+          reportSubmitted: boolean;
+          planned: number;
+          done: number;
+          mismatchReason?: string;
+        }
+      >();
+
+      for (const ci of checkIns) {
+        const name = ci.person?.name ?? nameById.get(ci.personId) ?? 'Без имени';
+        let agg = perPersonAgg.get(ci.personId);
+        if (!agg) {
+          agg = {
+            personName: name,
+            planSubmitted: false,
+            reportSubmitted: false,
+            planned: 0,
+            done: 0,
+          };
+          perPersonAgg.set(ci.personId, agg);
+        }
+        const plannedCount = jsonArrayLength(ci.plansJson);
+        const doneCount = jsonArrayLength(ci.donesJson);
+        const notDoneCount = jsonArrayLength(ci.notDoneJson);
+        if (ci.kind === 'morning' && plannedCount > 0) {
+          agg.planSubmitted = true;
+          agg.planned = plannedCount;
+        }
+        if (ci.kind === 'evening' && (doneCount > 0 || notDoneCount > 0)) {
+          agg.reportSubmitted = true;
+          agg.done = doneCount;
+          if (agg.planned > agg.done && notDoneCount > 0) {
+            const firstNotDone = jsonArrayFirstText(ci.notDoneJson);
+            if (firstNotDone) agg.mismatchReason = firstNotDone.slice(0, 200);
+          }
+        }
+      }
+
+      let planDone = 0;
+      let reportDone = 0;
+      let tasksSet = 0;
+      let tasksDone = 0;
+      const perPerson: DayCompanyReportingPerson[] = [];
+      const reportedPersonIds = new Set<string>();
+
+      for (const [personId, agg] of perPersonAgg) {
+        if (employeeIds.has(personId)) {
+          if (agg.planSubmitted) planDone++;
+          if (agg.reportSubmitted) reportDone++;
+          if (agg.reportSubmitted) reportedPersonIds.add(personId);
+        }
+        tasksSet += agg.planned;
+        tasksDone += agg.done;
+        perPerson.push({
+          personName: agg.personName,
+          planSubmitted: agg.planSubmitted,
+          reportSubmitted: agg.reportSubmitted,
+          planned: agg.planned,
+          done: agg.done,
+          ...(agg.mismatchReason ? { mismatchReason: agg.mismatchReason } : {}),
+        });
+      }
+
+      const noReport = employees
+        .filter((e) => !reportedPersonIds.has(e.id))
+        .map((e) => e.name);
+
+      return {
+        planSubmitted: { done: planDone, total: employees.length },
+        reportSubmitted: { done: reportDone, total: employees.length },
+        perPerson,
+        noReport,
+        tasksSet,
+        tasksDone,
+        dayPlan: { done: tasksDone, total: tasksSet },
+      };
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: план↔факт (reporting) для пакета упал — пропускаю',
+      );
+      return empty;
+    }
+  }
+
+  private async collectYesterdayOpenSignals(args: {
+    tenantId: string;
+    dateLocal: string;
+  }): Promise<DayCompanyYesterdaySignal[]> {
+    try {
+      const prev = await this.getStored({
+        tenantId: args.tenantId,
+        dateLocal: previousDateLocal(args.dateLocal),
+      });
+      if (!prev) return [];
+      const out: DayCompanyYesterdaySignal[] = [];
+      const axes = prev.verdict?.axes ?? [];
+      for (const axis of axes) {
+        if (axis.state !== 'ok') {
+          out.push({ text: axis.why, axis: axis.key, state: axis.state });
+        }
+      }
+      const risksSummary = prev.metrics?.risksSummary;
+      if (typeof risksSummary === 'string' && risksSummary.trim()) {
+        out.push({ text: risksSummary, axis: 'overall', state: 'warn' });
+      }
+      return out;
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: вчерашние открытые сигналы для пакета упали — пропускаю',
+      );
+      return [];
+    }
   }
 
   private async buildDailyTrend(
@@ -1181,4 +1711,84 @@ function recognitionTypeRu(type: string): string | null {
     default:
       return null;
   }
+}
+
+const EMPLOYEE_VOICE_IDEA_TYPES = new Set(['idea', 'suggestion', 'hypothesis']);
+const EMPLOYEE_VOICE_RISK_TYPES = new Set([
+  'risk',
+  'pain',
+  'churn_risk',
+  'blocker',
+  'team_friction',
+  'process_friction',
+]);
+const EMPLOYEE_VOICE_SKIP_TYPES = new Set(['fact', 'mood']);
+
+function employeeVoiceBucket(signalType: string): 'ideas' | 'risks' | 'other' | null {
+  if (EMPLOYEE_VOICE_IDEA_TYPES.has(signalType)) return 'ideas';
+  if (EMPLOYEE_VOICE_RISK_TYPES.has(signalType)) return 'risks';
+  if (EMPLOYEE_VOICE_SKIP_TYPES.has(signalType)) return null;
+  return 'other';
+}
+
+function jsonArrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function jsonArrayFirstText(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const first = value[0];
+  if (first && typeof first === 'object' && 'text' in first) {
+    const text = (first as { text?: unknown }).text;
+    if (typeof text === 'string' && text.trim()) return text;
+  }
+  return null;
+}
+
+function trimRawConversations(
+  conversations: DayCompanyRawConversations,
+  budget: number,
+): DayCompanyRawConversations {
+  const total =
+    sumTurnsChars(conversations.bitrix) + sumTurnsChars(conversations.chatbox);
+  if (total <= budget) return conversations;
+
+  const flat: Array<{ channel: 'bitrix' | 'chatbox'; session: string; turn: DayCompanyRawTurn }> =
+    [];
+  for (const s of conversations.bitrix) {
+    for (const t of s.turns) flat.push({ channel: 'bitrix', session: s.session, turn: t });
+  }
+  for (const s of conversations.chatbox) {
+    for (const t of s.turns) flat.push({ channel: 'chatbox', session: s.session, turn: t });
+  }
+  flat.sort((a, b) => a.turn.ts.localeCompare(b.turn.ts));
+
+  let used = flat.reduce((acc, x) => acc + x.turn.text.length, 0);
+  let cut = 0;
+  while (used > budget && cut < flat.length) {
+    used -= flat[cut]!.turn.text.length;
+    cut++;
+  }
+  const kept = flat.slice(cut);
+
+  const rebuild = (channel: 'bitrix' | 'chatbox'): DayCompanyRawSession[] => {
+    const bySession = new Map<string, DayCompanyRawTurn[]>();
+    for (const x of kept) {
+      if (x.channel !== channel) continue;
+      const turns = bySession.get(x.session);
+      if (turns) turns.push(x.turn);
+      else bySession.set(x.session, [x.turn]);
+    }
+    return Array.from(bySession, ([session, turns]) => ({ session, turns }));
+  };
+
+  return { bitrix: rebuild('bitrix'), chatbox: rebuild('chatbox') };
+}
+
+function sumTurnsChars(sessions: DayCompanyRawSession[]): number {
+  let sum = 0;
+  for (const s of sessions) {
+    for (const t of s.turns) sum += t.text.length;
+  }
+  return sum;
 }

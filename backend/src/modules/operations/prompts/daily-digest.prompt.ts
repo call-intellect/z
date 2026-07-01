@@ -320,6 +320,99 @@ export interface DayCompanyPackageYesterday {
   shortSummary: string | null;
 }
 
+export interface DayCompanyEmployeeVoiceItem {
+  text: string;
+  signalType: string;
+}
+
+export interface DayCompanyEmployeeVoice {
+  personId: string;
+  personName: string;
+  ideas: DayCompanyEmployeeVoiceItem[];
+  risks: DayCompanyEmployeeVoiceItem[];
+  other: DayCompanyEmployeeVoiceItem[];
+}
+
+export interface DayCompanyRawTurn {
+  author: string;
+  personId: string | null;
+  isClient: boolean;
+  ts: string;
+  text: string;
+}
+
+export interface DayCompanyRawSession {
+  session: string;
+  turns: DayCompanyRawTurn[];
+}
+
+export interface DayCompanyRawConversations {
+  bitrix: DayCompanyRawSession[];
+  chatbox: DayCompanyRawSession[];
+}
+
+export interface DayCompanySignalBlocker {
+  text: string;
+  confidence: number;
+}
+
+export interface DayCompanySignalRisk {
+  text: string;
+  causeCategory: string | null;
+  dynamicLabel: string;
+  observations: number;
+  frequencyScore: number;
+  status: string;
+  severity: string;
+}
+
+export interface DayCompanySignalIdea {
+  text: string;
+  supporterCount: number;
+  weight: number;
+  status: string;
+  clusterId: string | null;
+}
+
+export interface DayCompanySignals {
+  blockers: DayCompanySignalBlocker[];
+  risks: DayCompanySignalRisk[];
+  ideas: DayCompanySignalIdea[];
+}
+
+export interface DayCompanyConflict {
+  fromPersonName: string | null;
+  toPersonName: string | null;
+  confidence: number;
+  explanation: string;
+  since: string;
+}
+
+export interface DayCompanyReportingPerson {
+  personName: string;
+  planSubmitted: boolean;
+  reportSubmitted: boolean;
+  planned: number;
+  done: number;
+  mismatchReason?: string;
+}
+
+export interface DayCompanyReporting {
+  planSubmitted: { done: number; total: number };
+  reportSubmitted: { done: number; total: number };
+  perPerson: DayCompanyReportingPerson[];
+  noReport: string[];
+  tasksSet: number;
+  tasksDone: number;
+  dayPlan: { done: number; total: number };
+}
+
+export interface DayCompanyYesterdaySignal {
+  text: string;
+  axis: string;
+  state: string;
+}
+
 export interface DayCompanyPackage {
   dateLocal: string;
   goalId: string | null;
@@ -330,6 +423,12 @@ export interface DayCompanyPackage {
   customersAtRisk: DayCompanyPackageCustomer[];
   compass: DayCompanyPackageCompass | null;
   yesterday: DayCompanyPackageYesterday | null;
+  employeeVoice: DayCompanyEmployeeVoice[];
+  rawConversations: DayCompanyRawConversations;
+  signals: DayCompanySignals;
+  conflicts: DayCompanyConflict[];
+  reporting: DayCompanyReporting;
+  yesterdayOpenSignals: DayCompanyYesterdaySignal[];
 }
 
 export function buildDayCompanyUserMessage(

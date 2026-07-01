@@ -124,8 +124,19 @@ export class SpecialistsCombinedService {
   async extractAll(
     args: SpecialistsCombinedExtractArgs,
   ): Promise<SpecialistsCombinedExtractResult> {
+    this.logger.log(
+      {
+        tenantId: args.tenantId,
+        sourceType: args.sourceType ?? 'meeting',
+        externalId: args.meetingId,
+        channelKind: args.channelKind ?? 'meeting',
+        blocks: args.blocks.length,
+      },
+      '[PIPE] combo START',
+    );
+
     if (args.blocks.length === 0) {
-      this.logger.debug(
+      this.logger.log(
         { meetingId: args.meetingId, tenantId: args.tenantId },
         'specialists-combined: пустой список блоков — skip',
       );
@@ -254,6 +265,24 @@ export class SpecialistsCombinedService {
     if (parsed.skill_traits.length === 0) emptySections.push('skill_traits');
     if (parsed.helpfulness_traits.length === 0) emptySections.push('helpfulness_traits');
     if (parsed.tasks.length === 0) emptySections.push('tasks');
+
+    this.logger.log(
+      {
+        tenantId: args.tenantId,
+        externalId: args.meetingId,
+        tasks: created.tasks,
+        decisions: created.decisions,
+        ideas: created.ideas,
+        insights: created.insights,
+        experiments: created.experiments,
+        regulations: created.regulations,
+        instructions: created.instructions,
+        knowledgeCategories: created.knowledgeCategories,
+        skillTraits: created.skillTraits,
+        helpfulnessTraits: created.helpfulnessTraits,
+      },
+      '[PIPE] combo DONE',
+    );
 
     return {
       created,

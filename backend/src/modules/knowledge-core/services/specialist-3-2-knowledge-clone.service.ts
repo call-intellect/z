@@ -79,7 +79,7 @@ export class Specialist32Service {
         },
       });
       if (!person || person.deletedAt) {
-        this.logger.debug(
+        this.logger.log(
           { personId: args.personId },
           'specialist-3-2: Person не найден или удалён — skip',
         );
@@ -103,6 +103,11 @@ export class Specialist32Service {
         );
         return;
       }
+
+      this.logger.log(
+        { tenantId: args.tenantId, personId: person.id, entityId: person.entityId },
+        '[PIPE] clone-rebuild',
+      );
 
       const blocks = await this.loadBlocksForPerson({
         tenantId: args.tenantId,

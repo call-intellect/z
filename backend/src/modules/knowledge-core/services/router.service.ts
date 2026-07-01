@@ -213,6 +213,15 @@ export class RouterService {
       );
     }
 
+    this.logger.debug(
+      {
+        blockId: block.id,
+        signalType: block.signalType,
+        specialists: finalTargets,
+      },
+      '[PIPE] router dispatch',
+    );
+
     const dispatched: string[] = [];
     for (const specialistName of finalTargets) {
       try {

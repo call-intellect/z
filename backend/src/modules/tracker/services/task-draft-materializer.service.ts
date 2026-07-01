@@ -228,6 +228,15 @@ export class TaskDraftMaterializerService {
       });
     }
     this.logger.log(
+      {
+        channel,
+        sourceId: args.sourceId,
+        created: created.length,
+        skippedIdempotent: skipped,
+      },
+      '[PIPE] task-materializer',
+    );
+    this.logger.log(
       { channel, sourceId: args.sourceId, created: created.length, skipped },
       'task-draft-materializer: готово',
     );

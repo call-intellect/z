@@ -223,7 +223,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     if (event.processingStatus !== 'received') {
-      this.logger.debug(
+      this.logger.log(
         { rawEventId, status: event.processingStatus },
         'block-ingest: статус не received — skip (идемпотентность)',
       );
@@ -231,6 +231,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.gate.checkOrThrow(event.tenantId, 'block-ingest');
+
+    this.logger.log({ rawEventId, tenantId: event.tenantId }, '[PIPE] block-ingest START');
 
     try {
       const payload = await this.loadPayload(event);
@@ -261,7 +263,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         isReportEvent,
       );
       const { typed } = extraction;
-      this.logger.debug(
+      this.logger.log(
         {
           rawEventId,
           segments: segments.length,
@@ -772,6 +774,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       if (systemFailure) {
         throw new Error(buildIngestFailureMessage(failureKind ?? 'age_unavailable'));
       }
+
+      this.logger.log(
+        { rawEventId, blocks: blockIds.length, sourceType: event.sourceType },
+        '[PIPE] block-ingest DONE',
+      );
 
       await this.prisma.rawEvent.update({
         where: { id: rawEventId },

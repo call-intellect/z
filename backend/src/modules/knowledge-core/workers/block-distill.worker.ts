@@ -120,6 +120,8 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.gate.checkOrThrow(block.tenantId, 'block-distill');
 
+    this.logger.debug({ blockId, tenantId: block.tenantId }, '[PIPE] block-distill');
+
     const candidates = await this.merger.knnCandidates({
       tenantId: block.tenantId,
       blockId: block.id,
@@ -176,6 +178,10 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         'block-distill: enqueueBlockLinker упал — линковка отложена',
       );
     });
+    this.logger.debug(
+      { blockId: block.id, verdict: 'canonical' },
+      '[PIPE] block-distill verdict',
+    );
     this.logger.debug({ blockId: block.id }, 'block-distill: canonical');
 
     await this.router
@@ -383,6 +389,10 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       );
     });
 
+    this.logger.debug(
+      { blockId: block.id, verdict: 'merged_into', mergedIntoId: canonicalId },
+      '[PIPE] block-distill verdict',
+    );
     this.logger.debug(
       { blockId: block.id, canonicalId, explanation: args.explanation },
       'block-distill: merged_into',

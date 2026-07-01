@@ -248,7 +248,7 @@ export class Specialist314GoalsService {
             targetId: alreadyFromBlock.id,
           });
         }
-        this.logger.debug(
+        this.logger.log(
           { blockId: block.id, goalId: alreadyFromBlock.id },
           'specialist-3-14: цель из этого блока уже есть — skip (source-block guard)',
         );
@@ -447,6 +447,10 @@ export class Specialist314GoalsService {
         }
       }
 
+      this.logger.log(
+        { blockId: block.id, tenantId: block.tenantId, created: 1 },
+        '[PIPE] goals',
+      );
       this.logger.log(
         {
           blockId: block.id,

@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+import { fileURLToPath } from 'node:url';
 
 // Полный CSP с whitelist под все нужды Z:
 //   - default-src 'self' — всё локальное по умолчанию.
@@ -64,6 +65,9 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  turbopack: {
+    root: fileURLToPath(new URL('.', import.meta.url)),
+  },
   // Самодостаточная сборка (server.js + минимальные node_modules) для запуска
   // фронта контейнером: `bun server.js`. nginx на хосте проксирует. См. deploy/README.md.
   output: 'standalone',

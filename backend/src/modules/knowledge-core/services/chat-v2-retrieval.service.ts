@@ -62,6 +62,7 @@ export interface RetrievalInput {
   graphAlwaysExpand?: boolean;
   filterMode?: 'boost' | 'hard';
   filterBoostWeight?: number;
+  entityLinkHops?: number;
 }
 
 export interface RankedBlockId {
@@ -372,7 +373,27 @@ export class ChatV2RetrievalService {
         )
       : [];
 
-    return [...ranked, ...graphAdded];
+    const entityLinkHops = input.entityLinkHops ?? 0;
+    const entityLinkAdded =
+      entityLinkHops > 0 && input.entityIds && input.entityIds.length > 0
+        ? await this.expandViaEntityLinks(
+            {
+              tenantId: input.tenantId,
+              entityIds: input.entityIds,
+              knownIds: new Set([
+                ...ranked.map((r) => r.blockId),
+                ...graphAdded.map((r) => r.blockId),
+              ]),
+              extraLimit: input.limit,
+              validAt: input.validAt ?? null,
+              accessWhere: input.accessWhere,
+              contourGroupId: input.contourGroupId,
+            },
+            trace,
+          )
+        : [];
+
+    return [...ranked, ...graphAdded, ...entityLinkAdded];
   }
 
   /**
@@ -1383,6 +1404,7 @@ export class ChatV2RetrievalService {
           viaRelation: String(e.relationType),
           fromBlockId: seed,
           confidence: toFiniteNumber(e.confidence) ?? 0,
+          viaSource: 'block-link' as const,
         });
       }
       trace.addGraphExpansion(seedBlockIds, neighbors);
@@ -1398,9 +1420,116 @@ export class ChatV2RetrievalService {
           viaRelation: 'unknown',
           fromBlockId: seedBlockIds[0] ?? id,
           confidence: 0,
+          viaSource: 'block-link' as const,
         })),
       );
     }
+  }
+
+  private async expandViaEntityLinks(
+    args: {
+      tenantId: string;
+      entityIds: string[];
+      knownIds: Set<string>;
+      extraLimit: number;
+      validAt: Date | null;
+      accessWhere?: Record<string, unknown>;
+      contourGroupId?: string;
+    },
+    trace?: RetrievalTraceSink,
+  ): Promise<RankedBlockId[]> {
+    const { tenantId, entityIds, knownIds, extraLimit } = args;
+    if (entityIds.length === 0 || extraLimit <= 0) return [];
+
+    const links = await this.prisma.entityLink.findMany({
+      where: {
+        tenantId,
+        status: 'active',
+        deletedAt: null,
+        OR: [
+          { fromEntityId: { in: entityIds } },
+          { toEntityId: { in: entityIds } },
+        ],
+      },
+      select: {
+        fromEntityId: true,
+        toEntityId: true,
+        fromType: true,
+        toType: true,
+        confidence: true,
+      },
+      orderBy: { confidence: 'desc' },
+      take: extraLimit * 3,
+    });
+    if (links.length === 0) return [];
+
+    const seedSet = new Set(entityIds);
+    const relatedEntities = new Map<string, number>();
+    for (const l of links) {
+      let related: string | null = null;
+      let relatedType: string | null = null;
+      if (seedSet.has(l.fromEntityId) && !seedSet.has(l.toEntityId)) {
+        related = l.toEntityId;
+        relatedType = l.toType;
+      } else if (seedSet.has(l.toEntityId) && !seedSet.has(l.fromEntityId)) {
+        related = l.fromEntityId;
+        relatedType = l.fromType;
+      }
+      if (!related) continue;
+      if (relatedType !== null && relatedType !== 'entity') continue;
+      const conf = toFiniteNumber(l.confidence) ?? 0;
+      const prev = relatedEntities.get(related);
+      if (prev === undefined || conf > prev) relatedEntities.set(related, conf);
+    }
+    if (relatedEntities.size === 0) return [];
+
+    const relatedIds = [...relatedEntities.keys()];
+    const blockRows = await this.prisma.ideaBlockEntity.findMany({
+      where: {
+        entityId: { in: relatedIds },
+        block: {
+          status: 'canonical',
+          tenantId,
+          ...(args.validAt ? { createdAt: { lte: args.validAt } } : {}),
+          ...(args.accessWhere ?? {}),
+          ...(args.contourGroupId
+            ? { blockAccess: { some: { groupId: args.contourGroupId } } }
+            : {}),
+        },
+      },
+      select: { blockId: true, entityId: true },
+      orderBy: { block: { updatedAt: 'desc' } },
+      take: extraLimit * 3,
+    });
+
+    const result: RankedBlockId[] = [];
+    const neighbors: Array<{
+      blockId: string;
+      viaRelation: string;
+      fromBlockId: string;
+      confidence: number;
+      viaSource: 'entity-link';
+    }> = [];
+    const added = new Set<string>();
+    for (const row of blockRows) {
+      if (knownIds.has(row.blockId) || added.has(row.blockId)) continue;
+      added.add(row.blockId);
+      const conf = relatedEntities.get(row.entityId) ?? 0;
+      result.push({ blockId: row.blockId, score: -1 + conf * 0.001, fromGraph: true });
+      neighbors.push({
+        blockId: row.blockId,
+        viaRelation: 'entity-link',
+        fromBlockId: row.blockId,
+        confidence: conf,
+        viaSource: 'entity-link',
+      });
+      if (result.length >= extraLimit) break;
+    }
+
+    if (trace && neighbors.length > 0) {
+      trace.addGraphExpansion([], neighbors);
+    }
+    return result;
   }
 }
 

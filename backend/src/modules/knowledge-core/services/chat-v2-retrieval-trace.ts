@@ -16,6 +16,7 @@ export interface RetrievalTraceNeighbor {
   viaRelation: string;
   fromBlockId: string;
   confidence: number;
+  viaSource?: 'block-link' | 'entity-link';
 }
 
 export interface RetrievalTraceGraphExpansion {
@@ -59,6 +60,7 @@ interface RawNeighbor {
   viaRelation: string;
   fromBlockId: string;
   confidence: number;
+  viaSource?: 'block-link' | 'entity-link';
 }
 
 export class RetrievalTraceSink {
@@ -185,6 +187,7 @@ export class RetrievalTraceSink {
           viaRelation: n.viaRelation,
           fromBlockId: n.fromBlockId,
           confidence: n.confidence,
+          ...(n.viaSource ? { viaSource: n.viaSource } : {}),
         })),
       },
       afterRerank: this.afterRerank.map(hit),

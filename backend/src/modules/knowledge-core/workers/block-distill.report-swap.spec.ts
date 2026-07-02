@@ -135,7 +135,11 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     expect(deps.tx.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id_tenantId: { id: 'new-t', tenantId: 'tenant-1' } },
-        data: { status: 'merged_into', mergedIntoId: 'canon-t' },
+        data: {
+          status: 'merged_into',
+          mergedIntoId: 'canon-t',
+          mergedIntoTenantId: 'tenant-1',
+        },
       }),
     );
     expect(deps.tx.ideaBlock.update).not.toHaveBeenCalledWith(
@@ -168,7 +172,11 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     expect(deps.tx.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id_tenantId: { id: 'new-r', tenantId: 'tenant-1' } },
-        data: { status: 'merged_into', mergedIntoId: 'canon-r' },
+        data: {
+          status: 'merged_into',
+          mergedIntoId: 'canon-r',
+          mergedIntoTenantId: 'tenant-1',
+        },
       }),
     );
     expect(deps.tx.ideaBlock.update).not.toHaveBeenCalledWith(
@@ -207,7 +215,11 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     expect(deps.tx.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id_tenantId: { id: 'canon-r', tenantId: 'tenant-1' } },
-        data: { status: 'merged_into', mergedIntoId: 'new-t' },
+        data: {
+          status: 'merged_into',
+          mergedIntoId: 'new-t',
+          mergedIntoTenantId: 'tenant-1',
+        },
       }),
     );
     const swapUpdate = deps.tx.ideaBlock.update.mock.calls.find(
@@ -217,6 +229,7 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     const swapData = (swapUpdate![0] as { data: Record<string, unknown> }).data;
     expect(swapData.status).toBe('canonical');
     expect(swapData.mergedIntoId).toBeNull();
+    expect(swapData.mergedIntoTenantId).toBeNull();
     expect(String(swapData.confidence)).toBe('0.9');
     expect(swapData.evidenceCount).toBe(2);
     expect(deps.tx.ideaBlockEvidence.updateMany).toHaveBeenCalledWith(

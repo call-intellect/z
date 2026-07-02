@@ -10,9 +10,12 @@ function buildService(opts: {
   const personUpdate = vi.fn(async () => ({ id: 'p1' }));
   const ideaBlockEntityFindMany = vi.fn(async () => opts.findManyResult ?? []);
 
+  const entityFindUnique = vi.fn(async () => ({ mergedIntoId: null }));
+
   const entities = { resolveSubjectEntityId };
   const prisma = {
     person: { update: personUpdate },
+    entity: { findUnique: entityFindUnique },
     ideaBlockEntity: { findMany: ideaBlockEntityFindMany },
   };
   const metrics = { incKnowledgeClonePersonNoEntity: vi.fn() };

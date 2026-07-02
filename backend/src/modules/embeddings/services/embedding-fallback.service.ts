@@ -3,7 +3,9 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { TypedConfigService } from '../../../common/config/index';
 import { type EmbeddingProvider, EmbeddingsAllProvidersFailedError } from '../embeddings.types';
 
+import { EmbeddingProviderResolverService } from './embedding-provider-resolver.service';
 import { LocalEmbeddingService } from './local-embedding.service';
+import { openaiCompatibleEmbed } from './openai-compatible-embed.util';
 import { OpenAiProxyEmbeddingService } from './openai-proxy-embedding.service';
 
 @Injectable()
@@ -17,11 +19,13 @@ export class EmbeddingFallbackService implements EmbeddingProvider {
     private readonly proxy: OpenAiProxyEmbeddingService,
     @Inject(LocalEmbeddingService)
     private readonly local: LocalEmbeddingService,
+    @Inject(EmbeddingProviderResolverService)
+    private readonly resolver: EmbeddingProviderResolverService,
   ) {}
 
   async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
-    const chain = this.buildChain();
+    const chain = await this.buildChain();
     const errors: Array<{ provider: string; message: string }> = [];
 
     for (let i = 0; i < chain.length; i++) {
@@ -40,7 +44,21 @@ export class EmbeddingFallbackService implements EmbeddingProvider {
     throw new EmbeddingsAllProvidersFailedError(errors);
   }
 
-  private buildChain(): EmbeddingProvider[] {
+  private async buildChain(): Promise<EmbeddingProvider[]> {
+    const resolved = await this.resolver.resolveChain();
+    if (resolved.length > 0) {
+      return resolved.map((r) => ({
+        name: r.name,
+        embed: (texts: string[]) =>
+          openaiCompatibleEmbed({
+            baseUrl: r.baseUrl,
+            model: r.model,
+            apiKey: r.apiKey,
+            texts,
+          }),
+      }));
+    }
+
     const primary = this.cfg.ai.embeddings.provider;
     if (primary === 'local') {
       return [this.local, this.proxy];

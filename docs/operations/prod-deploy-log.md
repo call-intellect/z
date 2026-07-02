@@ -89,6 +89,40 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — Пакет E: покрытие клонов F-7 (материализация профиля на мягком пороге) (ветка work/2026-06-29)
+
+> Гейт сохранения профиля клона ослаблен: материализация теперь при `auto`-триггере ИЛИ (`non-deep` && `profileConfidence >= knowledgeClone.profileMinConfidence`=0.55) — раньше «слабые» профили молча не сохранялись и покрытие клонов проседало. `loadBlocksForPerson` `orderBy` предпочитает высокосигнальные блоки; `computeProfileConfidence` += obs-boost.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (1 новая крутилка `knowledgeClone.profileMinConfidence`, не флаг). **🟢 1 НОВЫЙ СИД** (`seed-admin-setting-clone-coverage.ts`, в STEPS `phase:'seed-base'`). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** 1 крутилка `knowledgeClone.profileMinConfidence`=`0.55` (мягкий порог материализации профиля для `non-deep`) — чистый AdminSetting (`getDynamic`, code-fallback 0.55, работает до сида — Ship-On). Новый флаг НЕ вводился (крутилка). Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась; новых HNSW/GIN/patch-/backfill-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (НОВЫЙ, идемпотентный, зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-setting-clone-coverage.ts` — новый ключ `knowledgeClone.profileMinConfidence`=`0.55` (section `knowledge`, severity `low`). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: гейт материализации профиля (`auto || (non-deep && profileConfidence >= knowledgeClone.profileMinConfidence)`); `loadBlocksForPerson` `orderBy` предпочитает высокосигнальные блоки; `computeProfileConfidence` obs-boost.
+- **Шаг 12 — Smoke** (после выката):
+  - крутилка `knowledgeClone.profileMinConfidence` (0.55) видна в админке (настройки, section `knowledge`); `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-clone-coverage.ts` (created=1 при первом прогоне, потом no-op).
+  - **пост-выкат — верификация покрытия (Ф3 rebuild):** триггернуть `knowledge-clone-rebuild.cron` на тенанте «Стрела» (или дождаться крон-прогона) и сверить рост числа `Person.knowledgeProfile` (материализованных профилей) — ослабленный гейт должен увеличить покрытие клонов.
+- **Откат:** крутилка admin-editable (порог можно поднять обратно в админке); логика гейта — `git revert`. Рискованного переключателя нет (Ship-On).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — Пакет B: H3 ассистент — structural fallback для fact/topic + честное сообщение (ветка work/2026-06-29)
+
+> H3: `structural`-агрегация теперь работает для `fact`/`topic` (не только `list`); `query-plan-extractor` резолвит `personIds` для `fact`/`topic`; chat-v2 включает `forceStructuralFallback` в `bothWays` (а не только на `isStructuralClass`); честный фолбэк «По {Михаил/компании X} ничего не нашлось» вместо тихого молчания. Новый counter `z_structural_fallback_used_total`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ. 🟢 SEED/PATCH/BACKFILL НЕТ.** Только новый счётчик (in-memory prom-client) + логика роутинга. Docker rebuild backend.
+
+- **Шаги 1/4/5/6/7/8/9/10 — НЕ затронуты.** Ни ENV, ни схемы, ни seed/patch/backfill/migrate/setup.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката): `/metrics` содержит `z_structural_fallback_used_total` (может быть 0/absent на старте): `docker compose exec backend sh -c 'curl -s localhost:3000/metrics | grep z_structural_fallback_used_total'`.
+- **Откат:** аддитивно (счётчик + логика фолбэка, Ship-On); `git revert`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-02 — Пакет D: надёжность и наблюдаемость (F-9 raw_event_stuck, F-8 combined repair-retry, Ф3 scale monitoring) (ветка work/2026-06-29)
 
 > F-9: gauge `raw_event_stuck_gauge{tenant,source_type}` (сколько RawEvent застряли в `processingStatus=received` дольше окна `staleMinutes` — snapshot тем же `CoreMetricsSnapshotCron` каждые 5 мин, `.reset()` в начале снапшота чтобы разгруженные бэклоги падали в absent, не в stale-nonzero). F-8: repair-retry в `specialists-combined` — если LLM-ответ не распарсился, ОДИН повторный LLM-вызов с repair-промптом (bounded, `timeoutMs` крутилка, очередь concurrency=1); если repair тоже не распарсился → счётчик `combined_parse_failed_total{tenant,source_type}` в воркере (раньше = тихая финализация job = потеря данных). Ф3 (наблюдение): гистограмма `entity_merge_confidence_gap` (gap `similarity - threshold` на verdict=merge в `entity-resolver`).

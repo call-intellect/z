@@ -60,6 +60,8 @@ export interface RetrievalInput {
   themeBranches?: string[];
   bitemporalActiveOnly?: boolean;
   graphAlwaysExpand?: boolean;
+  filterMode?: 'boost' | 'hard';
+  filterBoostWeight?: number;
 }
 
 export interface RankedBlockId {
@@ -292,12 +294,9 @@ export class ChatV2RetrievalService {
 
     // 2) Ранжируем.
     const structural = hasStructuralFilter(input);
+    const boostMode = structural && input.filterMode === 'boost';
     let ranked: RankedBlockId[];
-    if (structural) {
-      // Query Understanding Волна 1 (Ф3) — recall-safe фильтрованный ретрив:
-      // точный полный скан по WHERE-фильтрованному множеству, combined-score
-      // ORDER BY (НЕ HNSW `ORDER BY embedding <=> qvec LIMIT`). Жёсткий
-      // pre-filter на HNSW роняет recall — полный скан нет.
+    if (structural && !boostMode) {
       ranked = await this.rankByStructuralFilter({
         tenantId: input.tenantId,
         blockIds: poolBlockIds,
@@ -311,6 +310,22 @@ export class ChatV2RetrievalService {
           bitemporalActiveOnly: input.bitemporalActiveOnly,
         },
         limit: input.limit,
+      });
+    } else if (boostMode) {
+      ranked = await this.rankByStructuralBoost({
+        tenantId: input.tenantId,
+        blockIds: poolBlockIds,
+        qvec,
+        filters: {
+          dateFrom: input.dateFrom,
+          dateTo: input.dateTo,
+          signalTypes: input.signalTypes,
+          entityIds: input.entityIds,
+          themeBranches: input.themeBranches,
+          bitemporalActiveOnly: input.bitemporalActiveOnly,
+        },
+        limit: input.limit,
+        boostWeight: input.filterBoostWeight ?? 0.3,
       });
     } else {
       ranked = await this.rankByCosineOrRecency({
@@ -677,7 +692,7 @@ export class ChatV2RetrievalService {
       //    НЕЛЬЗЯ: rankByStructuralFilter делает recall-safe полный скан по
       //    pool'у, а pre-narrow до 5000 ближайших уронил бы recall (см. Ф3).
       // Дальше rankByCosineOrRecency обрежет до limit'а тем же вектором.
-      if (qvec && !hasStructuralFilter(input)) {
+      if (qvec && (!hasStructuralFilter(input) || input.filterMode === 'boost')) {
         try {
           const params: unknown[] = [];
           const pushParam = (v: unknown): string => {
@@ -1123,6 +1138,66 @@ export class ChatV2RetrievalService {
         AND b.status = 'canonical'
         AND b.id = ANY(${pIds}::text[])${whereExtra}
       ORDER BY b."updatedAt" DESC
+      LIMIT ${pLimit}
+    `;
+    const rows = await this.prisma.$queryRawUnsafe<RankedRow[]>(sql, ...params);
+    return rows.map((r) => ({
+      blockId: r.id,
+      score: toFiniteNumber(r.score) ?? 0,
+      fromGraph: false,
+    }));
+  }
+
+  private async rankByStructuralBoost(args: {
+    tenantId: string;
+    blockIds: string[];
+    qvec: number[] | null;
+    filters: Omit<StructuralFilterArgs, 'tenantParamRef'>;
+    limit: number;
+    boostWeight: number;
+  }): Promise<RankedBlockId[]> {
+    const { tenantId, blockIds, qvec, filters, limit, boostWeight } = args;
+    if (blockIds.length === 0) return [];
+
+    if (!qvec) {
+      const rows = await this.prisma.ideaBlock.findMany({
+        where: { tenantId, status: 'canonical', id: { in: blockIds } },
+        select: { id: true, updatedAt: true },
+        orderBy: { updatedAt: 'desc' },
+        take: limit,
+      });
+      return rows.map((r) => ({ blockId: r.id, score: 0, fromGraph: false }));
+    }
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const pTenant = pushParam(tenantId);
+    const pIds = pushParam(blockIds);
+    const pVec = pushParam(toVectorLiteral(qvec));
+    const pBoost = pushParam(boostWeight);
+    const predicates = buildStructuralPredicates(
+      { ...filters, tenantParamRef: pTenant },
+      pushParam,
+    );
+    const pLimit = pushParam(limit);
+    const boostExpr =
+      predicates.length > 0
+        ? ` + (${pBoost})::float8 * ((${predicates
+            .map((p) => `(CASE WHEN ${p} THEN 1 ELSE 0 END)`)
+            .join(' + ')})::float8 / ${predicates.length}::float8)`
+        : '';
+    const sql = `
+      SELECT b.id,
+             ((1 - (b.embedding <=> ${pVec}::vector(1536)))${boostExpr}) AS score
+      FROM "IdeaBlock" b
+      WHERE b."tenantId" = ${pTenant}
+        AND b.status = 'canonical'
+        AND b.id = ANY(${pIds}::text[])
+        AND b.embedding IS NOT NULL
+      ORDER BY score DESC
       LIMIT ${pLimit}
     `;
     const rows = await this.prisma.$queryRawUnsafe<RankedRow[]>(sql, ...params);

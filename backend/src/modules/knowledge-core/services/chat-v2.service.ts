@@ -744,6 +744,8 @@ interface RetrievalCtx {
   kContext: number;
   graphHops: number;
   graphAlwaysExpand: boolean;
+  filterMode: 'boost' | 'hard';
+  filterBoostWeight: number;
   accessWhere: Record<string, unknown> | undefined;
 }
 
@@ -812,6 +814,16 @@ export class ChatV2Service {
       undefined,
       true,
     );
+    const filterMode = await this.cfg.getDynamic<'boost' | 'hard'>(
+      'knowledge.chatV2FilterMode',
+      undefined,
+      'boost',
+    );
+    const filterBoostWeight = await this.cfg.getDynamic<number>(
+      'knowledge.chatV2FilterBoostWeight',
+      undefined,
+      0.3,
+    );
 
     // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
     const kaEnforcement = this.cfg.knowledgeAccess.enforcement;
@@ -866,6 +878,8 @@ export class ChatV2Service {
           kContext,
           graphHops,
           graphAlwaysExpand,
+          filterMode,
+          filterBoostWeight,
           accessWhere,
         },
         trace,
@@ -1317,7 +1331,7 @@ export class ChatV2Service {
     rrfK: number,
     trace?: RetrievalTraceSink,
   ): Promise<string[]> {
-    const { tenantId, scope, scopeId, kRetrieve, graphHops, graphAlwaysExpand, accessWhere } = ctx;
+    const { tenantId, scope, scopeId, kRetrieve, graphHops, graphAlwaysExpand, filterMode, filterBoostWeight, accessWhere } = ctx;
 
     const perQueryLimit =
       queries.length > 1
@@ -1337,6 +1351,8 @@ export class ChatV2Service {
             limit: perQueryLimit,
             graphHops,
             graphAlwaysExpand,
+            filterMode,
+            filterBoostWeight,
             validAt: input.validAt ?? null,
             accessWhere,
             dateFrom: input.structuralFilters?.dateFrom ?? null,

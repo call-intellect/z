@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+import type { IdeaClusterDto } from '../../ideas/dto/ideas.dto';
+import type { InsightListItemDto } from '../../insights/dto/insights.dto';
+
+import type {
+  OperationsDashboardBlockerDto,
+  OperationsDashboardTeamFrictionDto,
+} from './operations-dashboard.dto';
+
 export interface WeeklyDigestMetricsDto {
   totalCheckIns: number;
   greenShare: number;
@@ -14,7 +22,6 @@ export interface WeeklyDigestMetricsDto {
     completedDelta: number;
     failedDelta: number;
   };
-  hangingDecisions: Array<{ decisionId: string; statement: string; ageDays: number }>;
   topIdeas?: Array<{
     ideaId: string;
     statement: string;
@@ -24,13 +31,16 @@ export interface WeeklyDigestMetricsDto {
   }>;
   risksSummary?: string | null;
   ideasSummary?: string | null;
+  risksByCause?: InsightListItemDto[];
+  ideaClusters?: IdeaClusterDto[];
+  teamFrictions?: OperationsDashboardTeamFrictionDto[];
+  blockers?: OperationsDashboardBlockerDto[];
 }
 
 export interface WeeklyDigestSourcesDto {
   blockerCheckInIds: string[];
   insightIds: string[];
   goalIds: string[];
-  decisionIds: string[];
   ideaIds?: string[];
 }
 
@@ -45,12 +55,12 @@ export interface WeeklyKpiDeltaDto {
 export interface WeeklyTeamDynamicsRowDto {
   departmentId: string;
   departmentName: string;
-  signal: 'sentiment_improved' | 'sentiment_dropped' | 'promises_improved' | 'promises_dropped';
+  signal: 'sentiment_improved' | 'sentiment_dropped';
   detail: string;
 }
 
 export interface WeeklyForecastItemDto {
-  metric: 'sentiment' | 'promises' | 'hanging_decisions';
+  metric: 'sentiment';
   projection: string;
   confidence: 'low' | 'medium';
 }
@@ -75,7 +85,6 @@ export interface WeeklyDigestTrendPointDto {
   goalsCompleted: number;
   goalsFailed: number;
   blockers: number;
-  hangingDecisions: number;
 }
 
 export interface WeeklyDigestVerdictAxisDto {

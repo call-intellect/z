@@ -102,6 +102,7 @@ export interface DecisionListItemDto {
   affectsEntityIds: string[];
   confidence: number | null;
   trustTier: TrustTierDto;
+  reversibility: string | null;
   previewQuote: string | null;
   previewSourceRef: ProvenancePreviewRef | null;
   updatedAt: string;
@@ -122,6 +123,7 @@ export interface DecisionDetailDto extends DecisionListItemDto {
   validFrom: string | null;
   validUntil: string | null;
   actualOutcomes: string | null;
+  reversibilityAt: string | null;
   dataClass: string;
 }
 

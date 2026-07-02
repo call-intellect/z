@@ -8,9 +8,7 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { PendingActionsService } from '../../pending-actions/services/pending-actions.service';
 import type { DirectorDashboardValueStripDto } from '../dto/director-dashboard.dto';
 
-import type { CommitmentReliabilityService } from './commitment-reliability.service';
 import { DirectorDashboardService } from './director-dashboard.service';
-import type { HangingDecisionsService } from './hanging-decisions.service';
 import type { NarrativeCitationsParserService } from './narrative-citations-parser.service';
 import type { SentimentIndexService } from './sentiment-index.service';
 
@@ -20,7 +18,6 @@ interface PrismaMocks {
   meetingCount?: Fn;
   issueCount?: Fn;
   decisionCount?: Fn;
-  ideaBlockCount?: Fn;
   ideaCount?: Fn;
   queryRaw?: Fn;
 }
@@ -30,14 +27,12 @@ function makeService(mocks: PrismaMocks): {
   meetingCount: Fn;
   issueCount: Fn;
   decisionCount: Fn;
-  ideaBlockCount: Fn;
   ideaCount: Fn;
   queryRaw: Fn;
 } {
   const meetingCount = mocks.meetingCount ?? vi.fn(async () => 0);
   const issueCount = mocks.issueCount ?? vi.fn(async () => 0);
   const decisionCount = mocks.decisionCount ?? vi.fn(async () => 0);
-  const ideaBlockCount = mocks.ideaBlockCount ?? vi.fn(async () => 0);
   const ideaCount = mocks.ideaCount ?? vi.fn(async () => 0);
   const queryRaw = mocks.queryRaw ?? vi.fn(async () => [{ cnt: 0 }]);
 
@@ -45,7 +40,6 @@ function makeService(mocks: PrismaMocks): {
     meeting: { count: meetingCount },
     issue: { count: issueCount },
     decision: { count: decisionCount },
-    ideaBlock: { count: ideaBlockCount },
     idea: { count: ideaCount },
     $queryRaw: queryRaw,
   } as unknown as PrismaService;
@@ -56,14 +50,12 @@ function makeService(mocks: PrismaMocks): {
     {} as unknown as LlmRouterService,
     {} as unknown as NarrativeCitationsParserService,
     {} as unknown as SentimentIndexService,
-    {} as unknown as CommitmentReliabilityService,
-    {} as unknown as HangingDecisionsService,
     {} as unknown as PendingActionsService,
     {} as unknown as TypedConfigService,
     {} as unknown as BusinessMetricsService,
   );
 
-  return { svc, meetingCount, issueCount, decisionCount, ideaBlockCount, ideaCount, queryRaw };
+  return { svc, meetingCount, issueCount, decisionCount, ideaCount, queryRaw };
 }
 
 type Privates = {
@@ -79,7 +71,6 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       meetingCount: vi.fn(async () => 4),
       issueCount: vi.fn(async () => 11),
       decisionCount: vi.fn(async () => 3),
-      ideaBlockCount: vi.fn(async () => 2),
       ideaCount: vi.fn(async () => 5),
       queryRaw: vi.fn(async () => [{ cnt: 7 }]),
     });
@@ -91,7 +82,6 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       tasksExtracted: 11,
       decisionsExtracted: 3,
       questionsAnsweredByMemory: 7,
-      commitmentsKept: 2,
       tasksResolved: 11,
       ideasCollected: 5,
     });
@@ -113,15 +103,6 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
     expect(ctx.decisionCount).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ tenantId: 't1' }),
-      }),
-    );
-    expect(ctx.ideaBlockCount).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          tenantId: 't1',
-          signalType: 'commitment',
-          commitmentStatus: 'fulfilled',
-        }),
       }),
     );
     expect(ctx.queryRaw).toHaveBeenCalledTimes(1);
@@ -156,7 +137,6 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       meetingCount: vi.fn(async () => 0),
       issueCount: vi.fn(async () => 0),
       decisionCount: vi.fn(async () => 0),
-      ideaBlockCount: vi.fn(async () => 0),
       ideaCount: vi.fn(async () => 0),
       queryRaw: vi.fn(async () => []),
     });
@@ -168,7 +148,6 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       tasksExtracted: 0,
       decisionsExtracted: 0,
       questionsAnsweredByMemory: 0,
-      commitmentsKept: 0,
       tasksResolved: 0,
       ideasCollected: 0,
     });

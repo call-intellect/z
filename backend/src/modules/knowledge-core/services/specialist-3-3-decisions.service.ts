@@ -47,7 +47,6 @@ import {
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
-import { Specialist33ProbeService } from './specialist-3-3-probe.service';
 import { Specialist36Service } from './specialist-3-6-ideas.service';
 
 /**
@@ -62,7 +61,6 @@ import { Specialist36Service } from './specialist-3-6-ideas.service';
  *   1. consumer `core.specialist-routing` jobName='3-3-decisions' (worker).
  *   2. Prisma-модель Decision (in-place extension Фазы 0a, см. §4 sub-TZ).
  *   3. triage перед канонизацией — всегда deep review (critical-type).
- *   4. probe-events — Specialist33ProbeService (5 trigger'ов).
  *   5. conflict-events — ConflictService.report с suggested resolution
  *      'evolving' при verdict='supersedes'.
  *   6. chat-v2 support — Specialist33CardHandler (через CardSpecialistRegistry).
@@ -93,8 +91,6 @@ export class Specialist33Service {
     private readonly entities: EntityResolutionService,
     @Inject(CurationService) private readonly curation: CurationService,
     @Inject(ConflictService) private readonly conflicts: ConflictService,
-    @Inject(Specialist33ProbeService)
-    private readonly probes: Specialist33ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(LogService) private readonly logs: LogService,
@@ -183,7 +179,6 @@ export class Specialist33Service {
    *   5. apply: new / merge / supersedes.
    *   6. embedding (best-effort).
    *   7. triage (deep review всегда).
-   *   8. probe-events.
    */
   async processBlock(args: {
     tenantId: string;
@@ -509,11 +504,6 @@ export class Specialist33Service {
           });
         }
       }
-
-      // Probe-events (на новый и на merge — но только trigger'ы про текущее
-      // состояние карточки, а не общестояночные).
-      void createdNew;
-      await this.probes.checkAndEmitForDecision(decision);
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'decision',

@@ -50,7 +50,7 @@ describe('EntityResolutionService — attribution (unit, Фаза 1)', () => {
       await svc.linkPersonEntity({ tenantId: 't1', personId: 'p-boris' });
       expect(prismaMock.person.update).toHaveBeenCalledWith({
         where: { id: 'p-boris' },
-        data: { entityId: 'ent-boris' },
+        data: { entityId: 'ent-boris', entityTenantId: 't1' },
       });
 
       prismaMock.person.findUnique.mockResolvedValueOnce({
@@ -62,7 +62,7 @@ describe('EntityResolutionService — attribution (unit, Фаза 1)', () => {
       await svc.linkPersonEntity({ tenantId: 't1', personId: 'p-anna' });
       expect(prismaMock.person.update).toHaveBeenCalledWith({
         where: { id: 'p-anna' },
-        data: { entityId: 'ent-anna' },
+        data: { entityId: 'ent-anna', entityTenantId: 't1' },
       });
     });
   });
@@ -95,7 +95,7 @@ describe('EntityResolutionService — attribution (unit, Фаза 1)', () => {
       });
       expect(prismaMock.person.update).toHaveBeenCalledWith({
         where: { id: 'p1' },
-        data: { entityId: 'ent-new' },
+        data: { entityId: 'ent-new', entityTenantId: 't1' },
       });
       expect(result).toBe('ent-new');
     });

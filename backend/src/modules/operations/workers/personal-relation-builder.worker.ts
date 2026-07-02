@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { type EntityLinkType, Prisma } from '@prisma/client';
 import { type Job } from 'bullmq';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { type SpecialistRoutingJobData } from '../../core-queue/queues';
@@ -15,7 +16,8 @@ export class PersonalRelationBuilderWorker {
   private readonly logger = new Logger(PersonalRelationBuilderWorker.name);
 
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.PERSONAL_RELATION;
-  private static readonly MIN_CONFIDENCE = 0.6;
+  private static readonly MIN_CONFIDENCE_DEFAULT = 0.6;
+  private static readonly GRAPH_CONFIDENCE_DEFAULT = 0.65;
 
   @Inject(PipelineRunner)
   private readonly pipe!: PipelineRunner;
@@ -24,6 +26,7 @@ export class PersonalRelationBuilderWorker {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
@@ -48,12 +51,17 @@ export class PersonalRelationBuilderWorker {
               entity: { select: { id: true, type: true, canonicalName: true } },
             },
           },
+          evidence: {
+            where: { tenantId, authorPersonId: { not: null } },
+            select: { authorPersonId: true },
+          },
         },
       });
       if (!block) {
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'skipped_no_pair',
+          source: 'graph',
         });
         this.metrics.incCoreSpecialistSkipped({
           specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
@@ -65,6 +73,7 @@ export class PersonalRelationBuilderWorker {
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'error',
+          source: 'graph',
         });
         this.metrics.incCoreSpecialistSkipped({
           specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
@@ -85,6 +94,7 @@ export class PersonalRelationBuilderWorker {
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'skipped_no_pair',
+          source: 'graph',
         });
         this.metrics.incCoreSpecialistSkipped({
           specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
@@ -98,6 +108,7 @@ export class PersonalRelationBuilderWorker {
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'skipped_low_confidence',
+          source: 'graph',
         });
         this.metrics.incCoreSpecialistSkipped({
           specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
@@ -106,12 +117,42 @@ export class PersonalRelationBuilderWorker {
         return;
       }
 
+      const [minConfidence, confidence] = await Promise.all([
+        this.cfg.getDynamic<number>(
+          'knowledge.conflict_min_confidence',
+          undefined,
+          PersonalRelationBuilderWorker.MIN_CONFIDENCE_DEFAULT,
+        ),
+        this.cfg.getDynamic<number>(
+          'knowledge.conflict_graph_confidence',
+          undefined,
+          PersonalRelationBuilderWorker.GRAPH_CONFIDENCE_DEFAULT,
+        ),
+      ]);
+
       const relationType: EntityLinkType = 'conflicted_with';
-      const confidence = 0.65;
-      if (confidence < PersonalRelationBuilderWorker.MIN_CONFIDENCE) {
+      if (confidence < minConfidence) {
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'skipped_low_confidence',
+          source: 'graph',
+        });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
+        return;
+      }
+
+      const authorEntityId = await this.resolveAuthorEntityId(block.evidence, tenantId);
+      const otherEntityIds = personEntities
+        .map((be) => be.entity?.id)
+        .filter((id): id is string => !!id && id !== authorEntityId);
+      if (!authorEntityId || otherEntityIds.length === 0) {
+        this.metrics.incPersonalRelationBuilderRun({
+          tenantTop,
+          result: 'skipped_no_pair',
+          source: 'graph',
         });
         this.metrics.incCoreSpecialistSkipped({
           specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
@@ -121,28 +162,25 @@ export class PersonalRelationBuilderWorker {
       }
 
       let linksProcessed = 0;
-      for (let i = 0; i < personEntities.length; i++) {
-        for (let j = i + 1; j < personEntities.length; j++) {
-          const a = personEntities[i]?.entity;
-          const b = personEntities[j]?.entity;
-          if (!a || !b) continue;
-          const [from, to] = a.id < b.id ? [a, b] : [b, a];
-          await this.upsertLink({
-            tenantId,
-            fromEntityId: from.id,
-            toEntityId: to.id,
-            relationType,
-            confidence,
-            blockId: block.id,
-            blockSignalType: signalType,
-          });
-          linksProcessed++;
-        }
+      for (const otherId of otherEntityIds) {
+        const [from, to] =
+          authorEntityId < otherId ? [authorEntityId, otherId] : [otherId, authorEntityId];
+        await this.upsertLink({
+          tenantId,
+          fromEntityId: from,
+          toEntityId: to,
+          relationType,
+          confidence,
+          blockId: block.id,
+          blockSignalType: signalType,
+        });
+        linksProcessed++;
       }
 
       this.metrics.incPersonalRelationBuilderRun({
         tenantTop,
         result: linksProcessed > 0 ? 'link_created' : 'skipped_no_pair',
+        source: 'graph',
       });
       this.logger.debug(
         { blockId: block.id, linksProcessed, signalType },
@@ -152,9 +190,38 @@ export class PersonalRelationBuilderWorker {
       this.metrics.incPersonalRelationBuilderRun({
         tenantTop,
         result: 'error',
+        source: 'graph',
       });
       throw err;
     }
+  }
+
+  private async resolveAuthorEntityId(
+    evidence: ReadonlyArray<{ authorPersonId: string | null }>,
+    tenantId: string,
+  ): Promise<string | null> {
+    const counts = new Map<string, number>();
+    for (const ev of evidence) {
+      if (!ev.authorPersonId) continue;
+      counts.set(ev.authorPersonId, (counts.get(ev.authorPersonId) ?? 0) + 1);
+    }
+    if (counts.size === 0) return null;
+
+    let authorPersonId: string | null = null;
+    let best = -1;
+    for (const [personId, count] of counts) {
+      if (count > best) {
+        best = count;
+        authorPersonId = personId;
+      }
+    }
+    if (!authorPersonId) return null;
+
+    const person = await this.prisma.person.findFirst({
+      where: { id: authorPersonId, tenantId },
+      select: { entityId: true },
+    });
+    return person?.entityId ?? null;
   }
 
   private async upsertLink(args: {
@@ -276,6 +343,7 @@ export class CheckInConflictDetectorCron {
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'checkin_scanned',
+          source: 'regex',
         });
 
         const candidateNames = this.extractCandidateNames(blob);
@@ -313,6 +381,7 @@ export class CheckInConflictDetectorCron {
           this.metrics.incPersonalRelationBuilderRun({
             tenantTop,
             result: 'checkin_conflict_detected',
+            source: 'regex',
           });
         }
       } catch (err) {
@@ -320,6 +389,7 @@ export class CheckInConflictDetectorCron {
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'error',
+          source: 'regex',
         });
         this.logger.warn(
           `checkin-conflict-detector checkin ${ci.id}: ${err instanceof Error ? err.message : String(err)}`,

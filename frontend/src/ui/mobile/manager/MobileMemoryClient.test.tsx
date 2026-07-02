@@ -54,6 +54,7 @@ function apiItem(over: Partial<DecisionListItemApi> = {}): DecisionListItemApi {
     affectsEntityIds: [],
     confidence: null,
     trustTier: "human",
+    reversibility: null,
     updatedAt: "2026-06-11T10:00:00Z",
     createdAt: "2026-05-01T08:00:00Z",
     ...over,

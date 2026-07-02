@@ -392,26 +392,6 @@ export class MeTasksService {
       });
       if (!enough) {
         const clarificationQuestion = `Что конкретно вы сделали с задачей «${resolution.title}»?`;
-        try {
-          await this.probe.suggest({
-            tenantId,
-            emittedByService: 'me-tasks-complete',
-            reason: 'task.completion_detail_missing',
-            payload: {
-              contextCardId: resolution.issueId,
-              contextCardKind: 'issue',
-              contextCardTitle: resolution.title,
-              objectName: resolution.title,
-              objectKindRu: 'задача',
-              message: `Вы отметили задачу «${resolution.title}» выполненной, но без деталей.`,
-              suggestedQuestion: clarificationQuestion,
-            },
-            recipientCandidates: [userId],
-            priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
-          });
-        } catch {
-          // best-effort: probe не должен ронять ответ помощнику
-        }
         return {
           candidateId: null,
           issueId: resolution.issueId,

@@ -88,6 +88,8 @@ REST API `/api/v1/insights`:
 
 UI `/insights` — master-detail с chart-виджетом сверху, фильтрами-чипсами, списком слева, деталями справа (statement, badges, частота/динамика, affected entities, related decisions, mitigationPlan textarea, actions). Виджет Top-5 — в Director Dashboard.
 
+С «Дня компании v2» (2026-07-01, ТЗ `day-company-report-v2`) риски/боли (`Insight`) подаются в дневной дайджест **сгруппированными по причине** (`causeCategory` ∈ process_gap/tooling/communication/role_skill/priority/resource_constraint/external) вместе с `dynamicLabel` (растёт/новое/повторяется) и числом наблюдений — и в промпт письма COO (ось «Команда» / «что помешало»), и в виджет `DaySignalsGrid` (риски по причине). Блокеры (`kind=blocker`) вынесены отдельной секцией `DayBlockers`. Новый детектор НЕ вводился — используется существующий пересчёт метрик. См. [[director-dashboard]] §«День компании v2».
+
 CardSpecialistRegistry — обработчик `3-5-insights` (Specialist35CardHandler) возвращает insight-карточки для chat-v2 при пересечении `sourceBlockIds` с retrieval'ом + ILIKE по statement/mitigationPlan + бонусы за severity high/critical и dynamicLabel spike/growing.
 
 ## RBAC

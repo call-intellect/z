@@ -124,12 +124,12 @@ describe('aggregateWeeklyMetrics', () => {
 describe('buildGoalVectorReasons', () => {
   it('частоты по kind+direction → топ-3 читаемых строк по убыванию', () => {
     const reasons = buildGoalVectorReasons([
-      { kind: 'commitment_broken', direction: 'contra', refId: 'a' },
-      { kind: 'commitment_broken', direction: 'contra', refId: 'b' },
-      { kind: 'commitment_broken', direction: 'contra', refId: 'c' },
+      { kind: 'goal_work', direction: 'pro', refId: 'a' },
+      { kind: 'goal_work', direction: 'pro', refId: 'b' },
+      { kind: 'goal_work', direction: 'pro', refId: 'c' },
       { kind: 'issue_closed', direction: 'pro', refId: 'd' },
     ]);
-    expect(reasons[0]).toBe('сорванные обязательства ×3');
+    expect(reasons[0]).toBe('работа по цели ×3');
     expect(reasons).toContain('закрытые задачи ×1');
   });
 
@@ -145,7 +145,7 @@ describe('ExecutionDashboardService.getGoalVectorByPerson — reasons (D1)', () 
 
   const baseCfg = { getDynamic: vi.fn() };
 
-  it('signalsJson с commitment_broken ×3 (contra) и issue_closed ×1 (pro) → reasons первым «сорванные обязательства ×3»', async () => {
+  it('signalsJson с idea ×3 (contra) и issue_closed ×1 (pro) → reasons первым «идеи против ×3»', async () => {
     const prisma = {
       goal: { findFirst: vi.fn().mockResolvedValue({ id: 'g1', name: 'Цель' }) },
       personGoalContribution: {
@@ -157,9 +157,9 @@ describe('ExecutionDashboardService.getGoalVectorByPerson — reasons (D1)', () 
             netScore: { toString: () => '-0.7' },
             signalsJson: {
               signals: [
-                { kind: 'commitment_broken', direction: 'contra', refId: 'r1' },
-                { kind: 'commitment_broken', direction: 'contra', refId: 'r2' },
-                { kind: 'commitment_broken', direction: 'contra', refId: 'r3' },
+                { kind: 'idea', direction: 'contra', refId: 'r1' },
+                { kind: 'idea', direction: 'contra', refId: 'r2' },
+                { kind: 'idea', direction: 'contra', refId: 'r3' },
                 { kind: 'issue_closed', direction: 'pro', refId: 'r4' },
               ],
             },
@@ -184,7 +184,7 @@ describe('ExecutionDashboardService.getGoalVectorByPerson — reasons (D1)', () 
 
     const row = res.rows.find((r) => r.personId === 'person-1');
     expect(row).toBeDefined();
-    expect(row!.reasons[0]).toBe('сорванные обязательства ×3');
+    expect(row!.reasons[0]).toBe('идеи против ×3');
     expect(row!.reasons).toContain('закрытые задачи ×1');
   });
 

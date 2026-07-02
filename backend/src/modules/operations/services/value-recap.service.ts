@@ -1,12 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ChatV2FeedbackService } from '../../chat-v2/services/chat-v2-feedback.service';
-import { reliabilityOrLowData } from '../../dashboard/services/commitment-reliability.service';
 import {
   buildValueRecapFallbackNarrative,
   buildValueRecapNarrativeUserMessage,
@@ -16,10 +14,8 @@ import {
 } from '../prompts/value-recap-narrative.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-import { DecisionImplementationService } from './decision-implementation.service';
 import {
   assembleValueRecapPayload,
-  type ValueRecapDecision,
   type ValueRecapPayload,
   type ValueRecapRoutine,
   type ValueRecapTeam,
@@ -29,18 +25,13 @@ import {
 export class ValueRecapService {
   private readonly logger = new Logger(ValueRecapService.name);
 
-  private static readonly DEFAULT_MIN_DENOMINATOR = 3;
-
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(ChatV2FeedbackService)
     private readonly chatFeedback: ChatV2FeedbackService,
-    @Inject(DecisionImplementationService)
-    private readonly decisions: DecisionImplementationService,
   ) {}
 
   async build(args: {
@@ -54,13 +45,6 @@ export class ValueRecapService {
     const routine = await this.computeRoutine(args.tenantId, from, to);
 
     const team = await this.computeTeam({ tenantId: args.tenantId, from, to });
-
-    const decisions = await this.computeDecisions({
-      tenantId: args.tenantId,
-      from,
-      to,
-      now,
-    });
 
     const prevPeriod = shiftPeriod(args.periodYm, -1);
     const previousRoutine = await this.loadPreviousRoutine(args.tenantId, prevPeriod);
@@ -79,7 +63,6 @@ export class ValueRecapService {
       routine,
       team,
       previousRoutine,
-      decisions,
       narrative,
     });
 
@@ -267,26 +250,11 @@ export class ValueRecapService {
     from: Date;
     to: Date;
   }): Promise<ValueRecapTeam> {
-    const minDenom = await this.resolveMinDenominator();
-
-    const reliability = await this.computeReliability({
-      tenantId: args.tenantId,
-      from: args.from,
-      to: args.to,
-      minDenom,
-    });
-
     const chat = await this.chatFeedback.getChatUsageStats({
       tenantId: args.tenantId,
       from: args.from,
       to: args.to,
       scope: 'org',
-    });
-
-    const throughput = await this.decisions.getDecisionThroughput({
-      tenantId: args.tenantId,
-      from: args.from,
-      to: args.to,
     });
 
     const ideasShipped = await this.prisma.idea.count({
@@ -301,91 +269,12 @@ export class ValueRecapService {
     });
 
     return {
-      reliabilityPercent: reliability.percent,
-      reliabilityDenominator: reliability.denominator,
-      reliabilityDelta: reliability.delta,
       chatHelpedRatePercent: chat.helpedRatePercent,
       chatRated: chat.rated,
       chatAnsweredWithCitation: chat.answeredWithCitation,
-      decisionsTotal: throughput.total,
-      decisionsThroughputPercent: throughput.throughputPercent,
       ideasShipped: nz(ideasShipped),
       estimate: true,
     };
-  }
-
-  private async computeDecisions(args: {
-    tenantId: string;
-    from: Date;
-    to: Date;
-    now: Date;
-  }): Promise<ValueRecapDecision[]> {
-    const rows = await this.decisions.listDecisionsForMonth({
-      tenantId: args.tenantId,
-      from: args.from,
-      to: args.to,
-      limit: 10,
-      now: args.now,
-    });
-    return rows.map((r) => ({
-      id: r.id,
-      statement: r.statement,
-      status: r.status,
-      throughputPercent: r.throughputPercent,
-    }));
-  }
-
-  private async computeReliability(args: {
-    tenantId: string;
-    from: Date;
-    to: Date;
-    minDenom: number;
-  }): Promise<{ percent: number | null; denominator: number; delta: number | null }> {
-    const cur = await this.reliabilityWindow(args.tenantId, args.from, args.to);
-    const curDenom = cur.kept + cur.broken + cur.overdue;
-    const percent = reliabilityOrLowData(cur.kept, curDenom, args.minDenom);
-
-    const lenMs = args.to.getTime() - args.from.getTime();
-    const prevTo = new Date(args.from.getTime() - 1);
-    const prevFrom = new Date(prevTo.getTime() - lenMs);
-    const prev = await this.reliabilityWindow(args.tenantId, prevFrom, prevTo);
-    const prevDenom = prev.kept + prev.broken + prev.overdue;
-    const prevPercent = reliabilityOrLowData(prev.kept, prevDenom, args.minDenom);
-
-    const delta = percent !== null && prevPercent !== null ? percent - prevPercent : null;
-
-    return { percent, denominator: curDenom, delta };
-  }
-
-  private async reliabilityWindow(
-    tenantId: string,
-    from: Date,
-    to: Date,
-  ): Promise<{ kept: number; broken: number; overdue: number }> {
-    const rows = await this.prisma.ideaBlock.findMany({
-      where: {
-        tenantId,
-        signalType: 'commitment',
-        commitmentDueDate: { gte: from, lte: to },
-      },
-      select: { commitmentStatus: true, commitmentDueDate: true },
-      take: 50_000,
-    });
-    const now = new Date();
-    let kept = 0;
-    let broken = 0;
-    let overdue = 0;
-    for (const r of rows) {
-      const status = r.commitmentStatus;
-      if (status === 'fulfilled') kept++;
-      else if (status === 'missed') broken++;
-      else if (status === 'open' || status === 'asked') {
-        if (r.commitmentDueDate && r.commitmentDueDate.getTime() < now.getTime()) {
-          overdue++;
-        }
-      }
-    }
-    return { kept, broken, overdue };
   }
 
   private async loadPreviousRoutine(
@@ -422,12 +311,8 @@ export class ValueRecapService {
         ideasShipped: args.routine.ideasShipped,
       },
       team: {
-        reliabilityPercent: args.team.reliabilityPercent,
-        reliabilityDenominator: args.team.reliabilityDenominator,
         chatHelpedRatePercent: args.team.chatHelpedRatePercent,
         chatRated: args.team.chatRated,
-        decisionsThroughputPercent: args.team.decisionsThroughputPercent,
-        decisionsTotal: args.team.decisionsTotal,
       },
       delta: prev
         ? {
@@ -466,17 +351,6 @@ export class ValueRecapService {
       );
       return buildValueRecapFallbackNarrative(promptInput);
     }
-  }
-
-  private async resolveMinDenominator(): Promise<number> {
-    const v = await this.cfg.getDynamic<number>(
-      'reliability.min_denominator',
-      'RELIABILITY_MIN_DENOMINATOR',
-      ValueRecapService.DEFAULT_MIN_DENOMINATOR,
-    );
-    return typeof v === 'number' && Number.isFinite(v) && v > 0
-      ? Math.floor(v)
-      : ValueRecapService.DEFAULT_MIN_DENOMINATOR;
   }
 }
 

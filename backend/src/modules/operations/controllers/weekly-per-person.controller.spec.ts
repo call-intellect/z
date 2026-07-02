@@ -12,7 +12,7 @@ const QUERY: WeeklyPerPersonQuery = {
   weekStart: '2026-06-01',
   limit: 5,
   offset: 0,
-  sort: 'reliability',
+  sort: 'risk',
 };
 
 function buildController(
@@ -29,7 +29,6 @@ function buildController(
     weekEnd: '2026-06-07',
     generatedAt: new Date().toISOString(),
     total: 0,
-    topReliable: [],
     topRisk: [],
     rows: [],
   }));
@@ -82,7 +81,7 @@ describe('WeeklyPerPersonController', () => {
       weekStart: '2026-06-01',
       limit: 5,
       offset: 0,
-      sort: 'reliability',
+      sort: 'risk',
     });
   });
 });

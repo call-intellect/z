@@ -152,12 +152,12 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
     );
   });
 
-  it('NUDGE-reason (commitment.followup, priority 50) → routed_to_digest, без enqueue', async () => {
+  it('NUDGE-reason (card.missing_deadline, priority 50) → routed_to_digest, без enqueue', async () => {
     const res = await env.service.suggest({
       tenantId: 'org-1',
       emittedByService: '3-3-decisions',
-      reason: 'commitment.followup',
-      payload: { message: 'Напоминание по обещанию' },
+      reason: 'card.missing_deadline',
+      payload: { message: 'У карточки нет срока' },
       recipientCandidates: ['user-1'],
       priorityHint: 0.5,
     });

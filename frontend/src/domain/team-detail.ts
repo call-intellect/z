@@ -33,8 +33,6 @@ export type TeamDetailApi = {
   members: TeamDetailMemberApi[];
   sentimentIndex: number;
   sentimentTrend: "up" | "flat" | "down";
-  commitmentReliabilityPercent: number;
-  commitmentDelta14d: number | null;
   goals: TeamDetailGoalApi[];
   topThemes: TeamDetailThemeApi[];
 };

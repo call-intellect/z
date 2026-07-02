@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
@@ -20,9 +21,16 @@ export class StrategicAlignmentIssuesService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async compute(args: { tenantId: string; goalId: string }): Promise<GoalIssueProgressSnapshot> {
+    const recentActivityWindowDays = await this.cfg.getDynamic<number>(
+      'goals.recentActivityWindowDays',
+      undefined,
+      StrategicAlignmentIssuesService.RECENT_ACTIVITY_WINDOW_DAYS,
+    );
+
     const goal = await this.prisma.goal.findFirst({
       where: { id: args.goalId, tenantId: args.tenantId },
       select: {
@@ -59,10 +67,7 @@ export class StrategicAlignmentIssuesService {
         where: {
           ...linkedWhere,
           updatedAt: {
-            gte: new Date(
-              Date.now() -
-                StrategicAlignmentIssuesService.RECENT_ACTIVITY_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-            ),
+            gte: new Date(Date.now() - recentActivityWindowDays * 24 * 60 * 60 * 1000),
           },
         },
       }),
@@ -111,12 +116,17 @@ export class StrategicAlignmentIssuesService {
   }
 
   async setCached(snapshot: GoalIssueProgressSnapshot): Promise<void> {
+    const cacheTtlSec = await this.cfg.getDynamic<number>(
+      'goals.issueSnapshotCacheTtlSec',
+      undefined,
+      StrategicAlignmentIssuesService.CACHE_TTL_SEC,
+    );
     try {
       await this.redis.client.set(
         this.cacheKey(snapshot.goalId),
         JSON.stringify(snapshot),
         'EX',
-        StrategicAlignmentIssuesService.CACHE_TTL_SEC,
+        cacheTtlSec,
       );
     } catch (err) {
       this.logger.warn(
@@ -130,9 +140,22 @@ export class StrategicAlignmentIssuesService {
   }
 
   async findMisalignedUsers(args: { tenantId: string }): Promise<MisalignedUserCandidate[]> {
-    const since = new Date(
-      Date.now() - StrategicAlignmentIssuesService.MISALIGNMENT_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    const misalignmentWindowDays = await this.cfg.getDynamic<number>(
+      'goals.misalignmentWindowDays',
+      undefined,
+      StrategicAlignmentIssuesService.MISALIGNMENT_WINDOW_DAYS,
     );
+    const misalignmentMinIssues = await this.cfg.getDynamic<number>(
+      'goals.misalignmentMinIssues',
+      undefined,
+      StrategicAlignmentIssuesService.MISALIGNMENT_MIN_ISSUES,
+    );
+    const misalignmentRatioThreshold = await this.cfg.getDynamic<number>(
+      'goals.misalignmentRatioThreshold',
+      undefined,
+      StrategicAlignmentIssuesService.MISALIGNMENT_RATIO_THRESHOLD,
+    );
+    const since = new Date(Date.now() - misalignmentWindowDays * 24 * 60 * 60 * 1000);
     const rows = await this.prisma.issue.findMany({
       where: {
         tenantId: args.tenantId,
@@ -163,11 +186,11 @@ export class StrategicAlignmentIssuesService {
     }
     const out: MisalignedUserCandidate[] = [];
     for (const [userId, s] of stats.entries()) {
-      if (s.total < StrategicAlignmentIssuesService.MISALIGNMENT_MIN_ISSUES) {
+      if (s.total < misalignmentMinIssues) {
         continue;
       }
       const ratio = s.withoutGoal / s.total;
-      if (ratio >= StrategicAlignmentIssuesService.MISALIGNMENT_RATIO_THRESHOLD) {
+      if (ratio >= misalignmentRatioThreshold) {
         out.push({
           userId,
           totalIssues: s.total,

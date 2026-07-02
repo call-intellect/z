@@ -37,7 +37,7 @@ Enum'ы: `GoalStatus { active, paused, achieved, abandoned }`, `GoalThemeSource 
 
 ## Cron
 
-`@Cron('0 4 * * *')` — каждые сутки в 04:00. Per-Org (`deletedAt IS NULL`) → активные `Goal` → enqueue с jobId `strat_${goalId}_${YYYYMMDD}` (дневной dedup).
+`@Cron('0 2 * * *', { timeZone: 'Europe/Moscow' })` — 02:00 МСК, продюсер движения цели идёт ДО сборки компаса в 06:00 МСК (goals-engine-consolidation Ф1). Per-Org (`deletedAt IS NULL`) → активные `Goal` → enqueue с jobId `strat_${goalId}_${YYYYMMDD}` (дневной dedup).
 
 ## Промпт
 
@@ -69,6 +69,8 @@ Quota: `MAX_GOAL_RECOMPUTE_PER_DAY=5` (per-user, отклонение от ТЗ 
 - `alertGoals` = `cachedAlignmentDelta <= -15 AND cachedAlignment <= 60`.
 
 В UI — топ-индикатор `<StrategicAlignmentWidget>` ([frontend/app/(authenticated)/dashboard/widgets/StrategicAlignmentWidget.tsx](frontend/app/(authenticated)/dashboard/widgets/StrategicAlignmentWidget.tsx)) над сеткой 5 виджетов.
+
+> **Виджет удалён (goals-engine-consolidation Ф7, осиротел — 0 импортов).** Графовый компас живёт в daily-digest / director-dashboard; задачный показатель — деталь карточки цели (блок «Прогресс по задачам» в `GoalDetailClient` через `GET /goals/:id/alignment-snapshot`). Вместе с ним снят и `<GoalVectorVerdictWidget>`.
 
 ## Frontend
 
@@ -203,3 +205,16 @@ Quota: `MAX_GOAL_RECOMPUTE_PER_DAY=5` (per-user, отклонение от ТЗ 
 - [`frontend-pages.md`](frontend-pages.md) — дерево/пульс на `/goals` и дашборде.
 - [`03_processes/goals-auto-lifecycle.md`](../03_processes/goals-auto-lifecycle.md) — карточка процесса «авто-добыча и ведение целей».
 - [`ideas.md`](ideas.md), [`sprints.md`](sprints.md) — мост к гипотезам и спринтам.
+
+## Консолидация движка целей (2026-07-01)
+
+ТЗ [`plans/tz/2026-06-29-goals-engine-consolidation.md`](../../plans/tz/2026-06-29-goals-engine-consolidation.md) (Ф1–Ф9). Навели порядок в движке целей:
+
+- **Все кроны целей/operations — по Москве** (`timeZone: 'Europe/Moscow'`); продюсер движения цели сдвинут на 02:00 МСК — считается ДО сборки компаса в 06:00 МСК (чинит «компас показывает вчера»).
+- **Ручные цели ведутся как AI:** цель `source='manual'` получает темы по семантическому KNN (`Goal.embedding` → `Theme.embedding`), затем расчёт движения — цель на компасе живая.
+- **Суточная пересборка иерархии** (`GoalHierarchyRebuildCron`, 03:00 МСК): арбитр выправляет дерево по живым целям org; ручной родитель (`manualOverride.parentGoalId`) неприкосновенен; анти-цикл. Kill-switch `goals.hierarchyRebuild.enabled`.
+- **Каскад статуса** (`GoalCascadeHandler` через событие `goal.status_changed`): `achieved` → родитель закрывается, если все siblings achieved; `abandoned` → дети помечаются `cascadeMissed`.
+- **Вектор людей без обещаний:** сигналы `{idea, issue_closed, goal_work}` вместо статусов обещаний (соц-слой обещаний снят).
+- **Один вердикт движения в UI** (список + дерево): `movementVerdict` единственный визуальный статус; голый `GoalStatus`-badge и alignment-число убраны с карточки списка.
+- **Промпт извлечения целей строже** (outcome ≠ output, few-shot цель-ступенька / output-мусор).
+- **21 крутилка целей/трекера → AdminSetting** (`getDynamic` + реестр + сид `seed-admin-setting-goals-knobs.ts`); code-fallback = текущее значение.

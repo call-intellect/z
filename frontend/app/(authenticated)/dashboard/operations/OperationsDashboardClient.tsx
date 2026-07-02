@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  Handshake,
   Target,
   Thermometer,
   UserX,
@@ -13,10 +12,6 @@ import { useState, type ReactNode } from "react";
 import useSWR from "swr";
 
 import { ApiError } from "@/api/api-error";
-import {
-  commitmentsApi,
-  type OpenCommitmentsListApi,
-} from "@/api/commitments.api";
 import {
   operationsDashboardApi,
   type OperationsMissingCheckInsApi,
@@ -32,7 +27,6 @@ import { useAuth } from "@/contexts/auth-context";
 import { ActivityFeedWidget } from "@/ui/components/dashboard/ActivityFeedWidget";
 import {
   AreaTrend,
-  Avatar,
   CardTitle,
   CHART,
   DonutCard,
@@ -54,10 +48,8 @@ import { CauseCategoryMapWidget } from "./widgets/CauseCategoryMapWidget";
 import { ChronicBlockersWidget } from "./widgets/ChronicBlockersWidget";
 import { MaturityWidget } from "./widgets/MaturityWidget";
 import { TeamCapacityWidget } from "./widgets/TeamCapacityWidget";
-import { DecisionThroughputWidget } from "./widgets/DecisionThroughputWidget";
 import { CustomerRiskRadarWidget } from "./widgets/CustomerRiskRadarWidget";
 import { KnowledgeAtRiskWidget } from "./widgets/KnowledgeAtRiskWidget";
-import { PromiseOverloadWidget } from "./widgets/PromiseOverloadWidget";
 import { dashboardApi } from "@/api/dashboard.api";
 import { pulsePatternsFromApi } from "@/domain/pulse-patterns";
 import { BusFactorWidget } from "@/ui/components/dashboard/BusFactorWidget";
@@ -65,7 +57,6 @@ import { RecurringTopicsWidget } from "@/ui/components/dashboard/RecurringTopics
 import { LowRoiMeetingsWidget } from "@/ui/components/dashboard/LowRoiMeetingsWidget";
 import { BottleneckHeatmapWidget } from "@/ui/components/dashboard/BottleneckHeatmapWidget";
 import { KnowledgeVelocityKpi } from "@/ui/components/dashboard/KnowledgeVelocityKpi";
-import { IrreversibleDecisionsAlert } from "@/ui/components/dashboard/IrreversibleDecisionsAlert";
 
 export function OperationsDashboardClient({
   embedded = false,
@@ -79,17 +70,10 @@ export function OperationsDashboardClient({
     () => operationsDashboardApi.getOverview(),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
-  const commitmentsSwr = useSWR(
-    ["operations-open-commitments", 14, 100],
-    () => commitmentsApi.listOpen({ days: 14, limit: 100 }).catch(() => null),
-    { revalidateOnFocus: false, shouldRetryOnError: false },
-  );
 
   const data: OperationsOverviewDomain | null = overviewSwr.data
     ? fromOperationsOverviewApi(overviewSwr.data)
     : null;
-  const commitments: OpenCommitmentsListApi | null =
-    commitmentsSwr.data ?? null;
   const loading = overviewSwr.isLoading;
   const error = (() => {
     const err = overviewSwr.error;
@@ -178,13 +162,7 @@ export function OperationsDashboardClient({
       </div>
 
       {}
-      <IrreversibleDecisionsAlert
-        decisions={pulse?.irreversibleDecisions.decisions ?? []}
-        alertCount={pulse?.irreversibleDecisions.alertCount ?? 0}
-      />
-
-      {}
-      <div className="mt-6 grid grid-cols-1 gap-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid grid-cols-1 gap-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <StatCard
             icon={<Users size={20} />}
@@ -240,29 +218,6 @@ export function OperationsDashboardClient({
             inverted: true,
           })}
         />
-
-        {commitments === null ? (
-          <StatCard
-            icon={<Handshake size={20} />}
-            grad={GRAD.teal}
-            label="Открытые обещания"
-            value="0"
-            tone={kpiTone(0)}
-          />
-        ) : (
-          <StatCard
-            icon={<Handshake size={20} />}
-            grad={GRAD.teal}
-            label="Открытые обещания"
-            value={String(commitments.total)}
-            tone={kpiTone(commitments.total, {
-              green: 5,
-              yellow: 15,
-              inverted: true,
-            })}
-            href="/dashboard/operations/weekly"
-          />
-        )}
       </div>
 
       {}
@@ -275,8 +230,6 @@ export function OperationsDashboardClient({
             loading={pulseLoading}
             error={pulseError}
           />
-          {}
-          <DecisionThroughputWidget />
           {}
           <CustomerRiskRadarWidget />
           {}
@@ -300,12 +253,6 @@ export function OperationsDashboardClient({
             loading={pulseLoading}
             error={pulseError}
           />
-        </div>
-      </AnalyticsSection>
-
-      <AnalyticsSection title="Загрузка и распределение" tone={CHART.violet}>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <PromiseOverloadWidget />
         </div>
       </AnalyticsSection>
 
@@ -415,8 +362,6 @@ export function OperationsDashboardClient({
           {reworkEnabled ? <InsightsTopWidget /> : null}
         </div>
       </section>
-
-      {commitments ? <OpenCommitmentsWidget data={commitments} /> : null}
 
       {reworkEnabled ? (
         <div className="mt-8">
@@ -663,104 +608,6 @@ function TeamTemperatureOverallBody(props: {
           Открыть недельную сводку →
         </Link>
       </div>
-    </div>
-  );
-}
-
-function OpenCommitmentsWidget(props: { data: OpenCommitmentsListApi }) {
-  const { items, total } = props.data;
-  const groups = new Map<string, OpenCommitmentsListApi["items"]>();
-  for (const c of items) {
-    const key = c.authorPersonName ?? "без автора";
-    const list = groups.get(key) ?? [];
-    list.push(c);
-    groups.set(key, list);
-  }
-  const groupList = Array.from(groups.entries()).sort(
-    (a, b) => b[1].length - a[1].length,
-  );
-  return (
-    <div className="mt-8">
-      <GlassCard>
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle icon={<Handshake size={16} />} grad={GRAD.teal}>
-            Открытые обещания за 14 дней
-          </CardTitle>
-          <span className="text-sm" style={{ color: CHART.dim }}>
-            всего: {total}
-          </span>
-        </div>
-        <div className="mt-4">
-          {items.length === 0 ? (
-            <p className="text-sm" style={{ color: CHART.dim }}>
-              Висящих обещаний нет — все закрыты или сроки ещё не наступили.
-            </p>
-          ) : (
-            <ul className="space-y-3">
-              {groupList.map(([author, list]) => (
-                <li
-                  key={author}
-                  className="rounded-xl p-3"
-                  style={{ background: "var(--surface-inset)" }}
-                >
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Avatar name={author} />
-                    {author}
-                    <span className="text-xs" style={{ color: CHART.dim }}>
-                      ({list.length})
-                    </span>
-                  </div>
-                  <ul
-                    className="mt-2 ml-1 space-y-1 text-xs"
-                    style={{ color: CHART.dim }}
-                  >
-                    {list.slice(0, 5).map((c) => (
-                      <li
-                        key={c.id}
-                        className="flex flex-wrap items-center gap-1.5 py-0.5"
-                      >
-                        <span>{c.text}</span>
-                        {c.dueDate ? (
-                          <span style={{ color: CHART.faint }}>
-                            (срок{" "}
-                            {new Date(c.dueDate).toLocaleDateString("ru-RU")})
-                          </span>
-                        ) : null}
-                        {c.escalatedAt ? (
-                          <span
-                            className="rounded-full px-1.5 py-0.5 text-[10px]"
-                            style={{
-                              color: CHART.red,
-                              background: "oklch(0.66 0.22 25 / 0.16)",
-                            }}
-                          >
-                            давно молчит
-                          </span>
-                        ) : c.askedAt ? (
-                          <span
-                            className="rounded-full px-1.5 py-0.5 text-[10px]"
-                            style={{
-                              color: CHART.amber,
-                              background: "oklch(0.84 0.16 80 / 0.14)",
-                            }}
-                          >
-                            спросили
-                          </span>
-                        ) : null}
-                      </li>
-                    ))}
-                    {list.length > 5 ? (
-                      <li className="py-0.5" style={{ color: CHART.faint }}>
-                        …и ещё {list.length - 5}
-                      </li>
-                    ) : null}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </GlassCard>
     </div>
   );
 }

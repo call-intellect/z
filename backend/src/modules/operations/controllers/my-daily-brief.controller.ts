@@ -29,9 +29,9 @@ import {
   type KnowsWhoListDto,
   type KnowsWhoQuery,
 } from '../dto/personal-daily-brief.dto';
-import { CommitmentsService } from '../services/commitments.service';
 import { KnowsWhoService } from '../services/knows-who.service';
 import { PersonalDailyBriefService } from '../services/personal-daily-brief.service';
+import { SelfPersonResolverService } from '../services/self-person-resolver.service';
 import { getLocalDate } from '../utils/local-date';
 
 @ApiTags('me-daily-brief')
@@ -39,8 +39,8 @@ import { getLocalDate } from '../utils/local-date';
 @UseGuards(CookieAuthGuard, TenantGuard)
 export class MyDailyBriefController {
   constructor(
-    @Inject(CommitmentsService)
-    private readonly commitments: CommitmentsService,
+    @Inject(SelfPersonResolverService)
+    private readonly selfPerson: SelfPersonResolverService,
     @Inject(PersonalDailyBriefService)
     private readonly briefs: PersonalDailyBriefService,
     @Inject(KnowsWhoService)
@@ -145,7 +145,7 @@ export class MyDailyBriefController {
 
   private async resolveSelfPersonId(tenantId: string, userId: string): Promise<string | null> {
     try {
-      const person = await this.commitments.resolveSelfPerson({
+      const person = await this.selfPerson.resolveSelfPerson({
         tenantId,
         userId,
       });

@@ -70,6 +70,21 @@ const GROUPS: SettingsGroup[] = [
       },
     ],
   },
+  {
+    title: "Провайдер KIE",
+    description:
+      "Таймаут вызова провайдера KIE (резервный tertiary в цепочке роутера).",
+    specs: [
+      {
+        key: "ai.kie.timeoutMs",
+        label: "Таймаут вызова KIE, мс",
+        description:
+          "Таймаут (мс) вызова провайдера KIE. По умолчанию 180000 (180 c).",
+        schema: z.number().int().min(1),
+        defaultValue: 180_000,
+      },
+    ],
+  },
 ];
 
 export function OrchestratorSettingsClient() {

@@ -2,6 +2,12 @@ import { apiClient } from "./api-client";
 
 import { ApiError } from "./api-error";
 import type { AvailablePeriodsApi } from "./available-periods.api";
+import type { InsightListItemApi } from "./insights.api";
+import type { IdeaClusterApi } from "./ideas.api";
+import type {
+  OperationsTeamFrictionApi,
+  OperationsBlockerApi,
+} from "./operations-dashboard.api";
 
 export interface WeeklyDigestMetricsApi {
   totalCheckIns: number;
@@ -29,13 +35,12 @@ export interface WeeklyDigestMetricsApi {
     completedDelta: number;
     failedDelta: number;
   };
-  hangingDecisions: Array<{
-    decisionId: string;
-    statement: string;
-    ageDays: number;
-  }>;
   risksSummary?: string | null;
   ideasSummary?: string | null;
+  risksByCause?: InsightListItemApi[];
+  ideaClusters?: IdeaClusterApi[];
+  teamFrictions?: OperationsTeamFrictionApi[];
+  blockers?: OperationsBlockerApi[];
 }
 
 export interface WeeklyDigestVerdictAxisApi {
@@ -84,7 +89,6 @@ export interface WeeklyDigestSourcesApi {
   blockerCheckInIds: string[];
   insightIds: string[];
   goalIds: string[];
-  decisionIds: string[];
 }
 
 export interface WeeklyKpiDeltaApi {
@@ -100,14 +104,12 @@ export interface WeeklyTeamDynamicsRowApi {
   departmentName: string;
   signal:
     | "sentiment_improved"
-    | "sentiment_dropped"
-    | "promises_improved"
-    | "promises_dropped";
+    | "sentiment_dropped";
   detail: string;
 }
 
 export interface WeeklyForecastItemApi {
-  metric: "sentiment" | "promises" | "hanging_decisions";
+  metric: "sentiment";
   projection: string;
   confidence: "low" | "medium";
 }
@@ -126,7 +128,6 @@ export interface WeeklyDigestTrendPointApi {
   goalsCompleted: number;
   goalsFailed: number;
   blockers: number;
-  hangingDecisions: number;
 }
 
 export interface WeeklyOperationsDigestApi {

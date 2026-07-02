@@ -12,7 +12,7 @@ export class GoalKrProgressCron {
     private readonly svc: GoalKrProgressService,
   ) {}
 
-  @Cron('0 5 * * *')
+  @Cron('0 5 * * *', { timeZone: 'Europe/Moscow' })
   async runForAllOrgs(): Promise<void> {
     try {
       const summary = await this.svc.runForAllOrgs();

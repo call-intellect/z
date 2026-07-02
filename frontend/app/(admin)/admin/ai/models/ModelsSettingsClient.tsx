@@ -133,14 +133,6 @@ const GROUPS: SettingsGroup[] = [
         schema: z.number().int().min(0).max(23),
         defaultValue: 22,
       },
-      {
-        key: "betaOps.commitmentFollowupLocalHour",
-        label: "Час напоминания о коммитментах",
-        description:
-          "Локальный час напоминания о коммитментах (0..23). Читается per-run. По умолчанию 9.",
-        schema: z.number().int().min(0).max(23),
-        defaultValue: 9,
-      },
     ],
   },
 ];

@@ -57,17 +57,23 @@ function makeBlock(sourceType: string, overrides: Record<string, unknown> = {}) 
 
 interface Mocks {
   prisma: {
+    org: { findMany: ReturnType<typeof vi.fn> };
     ideaBlock: { findUnique: ReturnType<typeof vi.fn> };
     intakeIssue: {
       findFirst: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
       create: ReturnType<typeof vi.fn>;
     };
     issue: { findFirst: ReturnType<typeof vi.fn> };
     taskSource: { create: ReturnType<typeof vi.fn> };
     membership: { findFirst: ReturnType<typeof vi.fn> };
-    person: { findMany: ReturnType<typeof vi.fn> };
+    person: {
+      findMany: ReturnType<typeof vi.fn>;
+      findFirst: ReturnType<typeof vi.fn>;
+    };
     $queryRaw: ReturnType<typeof vi.fn>;
     $executeRaw: ReturnType<typeof vi.fn>;
+    $executeRawUnsafe: ReturnType<typeof vi.fn>;
     $transaction: ReturnType<typeof vi.fn>;
   };
   llm: { call: ReturnType<typeof vi.fn> };
@@ -83,23 +89,35 @@ interface Mocks {
   cfg: {
     getDynamic: ReturnType<typeof vi.fn>;
     pendingActions: { intakeTtlDays: number };
-    tracker: { assigneeClarifyEnabled: boolean; assigneeProbePriorityHint: number };
+    tracker: {
+      assigneeClarifyEnabled: boolean;
+      dueDateClarifyEnabled: boolean;
+      assigneeProbePriorityHint: number;
+    };
     aiFeatures: { promptInjectionGuardEnabled: boolean };
   };
   autoTriageQueue: { enqueue: ReturnType<typeof vi.fn> };
   probe: { suggest: ReturnType<typeof vi.fn> };
   taskDedup: { evaluate: ReturnType<typeof vi.fn> };
+  embeddings: { embed: ReturnType<typeof vi.fn> };
+  intakeSimilar: { findSimilarByVector: ReturnType<typeof vi.fn> };
 }
 
-function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
+function buildService(
+  linkSemantics: 'link' | 'delete' = 'link',
+  opts: { withEmbeddings?: boolean } = {},
+): {
   svc: Specialist315TasksService;
   m: Mocks;
 } {
+  const withEmbeddings = opts.withEmbeddings ?? true;
   const m: Mocks = {
     prisma: {
+      org: { findMany: vi.fn().mockResolvedValue([]) },
       ideaBlock: { findUnique: vi.fn() },
       intakeIssue: {
         findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
         create: vi.fn().mockResolvedValue({ id: 'intake-new' }),
       },
       issue: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -107,9 +125,13 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
       membership: {
         findFirst: vi.fn().mockResolvedValue({ userId: 'owner-1' }),
       },
-      person: { findMany: vi.fn().mockResolvedValue([]) },
+      person: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
       $queryRaw: vi.fn().mockResolvedValue([]),
       $executeRaw: vi.fn().mockResolvedValue(0),
+      $executeRawUnsafe: vi.fn().mockResolvedValue(0),
       $transaction: vi.fn(),
     },
     llm: { call: vi.fn() },
@@ -134,7 +156,11 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
             key === 'tracker.taskDedupLinkSemantics' ? linkSemantics : def,
         ),
       pendingActions: { intakeTtlDays: 14 },
-      tracker: { assigneeClarifyEnabled: true, assigneeProbePriorityHint: 0.5 },
+      tracker: {
+        assigneeClarifyEnabled: true,
+        dueDateClarifyEnabled: true,
+        assigneeProbePriorityHint: 0.5,
+      },
       aiFeatures: { promptInjectionGuardEnabled: true },
     },
     autoTriageQueue: { enqueue: vi.fn().mockResolvedValue(undefined) },
@@ -143,6 +169,12 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
       evaluate: vi
         .fn()
         .mockResolvedValue({ verdict: 'different', matchedIssueId: null }),
+    },
+    embeddings: {
+      embed: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
+    },
+    intakeSimilar: {
+      findSimilarByVector: vi.fn().mockResolvedValue([]),
     },
   };
 
@@ -169,6 +201,10 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
     m.probe as any,
 
     m.taskDedup as any,
+
+    (withEmbeddings ? m.embeddings : undefined) as any,
+
+    (withEmbeddings ? m.intakeSimilar : undefined) as any,
   );
   return { svc, m };
 }
@@ -310,6 +346,110 @@ describe('Specialist315TasksService.processBlock', () => {
     expect(m.probe.suggest).not.toHaveBeenCalled();
   });
 
+  it('(p) автор реплики определён → probe адресован автору, НЕ владельцу', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-setter',
+          },
+        ],
+      }),
+    );
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ sourceQuote: 'подготовь смету' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({ kind: 'not_found' });
+    m.prisma.person.findFirst.mockResolvedValue({ userId: 'user-setter' });
+    m.prisma.membership.findFirst.mockResolvedValue({ userId: 'owner-1' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.person.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: TENANT,
+          id: 'p-setter',
+          userId: { not: null },
+        }),
+      }),
+    );
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.assignee_unresolved',
+        recipientCandidates: ['user-setter'],
+      }),
+    );
+    expect(m.probe.suggest).not.toHaveBeenCalledWith(
+      expect.objectContaining({ recipientCandidates: ['owner-1'] }),
+    );
+  });
+
+  it('(q) автор без userId → фолбэк owner', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-setter',
+          },
+        ],
+      }),
+    );
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ sourceQuote: 'подготовь смету' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({ kind: 'not_found' });
+    m.prisma.person.findFirst.mockResolvedValue(null);
+    m.prisma.membership.findFirst.mockResolvedValue({ userId: 'owner-1' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.assignee_unresolved',
+        recipientCandidates: ['owner-1'],
+      }),
+    );
+  });
+
+  it('(r) tenant-изоляция: автор из другого Org не матчится → фолбэк owner', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-foreign',
+          },
+        ],
+      }),
+    );
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ sourceQuote: 'подготовь смету' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({ kind: 'not_found' });
+    m.prisma.person.findFirst.mockResolvedValue(null);
+    m.prisma.membership.findFirst.mockResolvedValue({ userId: 'owner-1' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.person.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: TENANT }),
+      }),
+    );
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.assignee_unresolved',
+        recipientCandidates: ['owner-1'],
+      }),
+    );
+  });
+
   it('(g) generic-API канал (external) → create с source:api (новый канал без нового кода)', async () => {
     m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('external'));
     m.llm.call.mockResolvedValueOnce(llmResult(taskJson({ assigneeHint: '' })));
@@ -404,6 +544,63 @@ describe('Specialist315TasksService.processBlock', () => {
     expect(m.metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'dedup_pending_intake' }),
     );
+  });
+
+  it('(k2) KNN семантический дубль pending → link к существующему, create НЕ вызван', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+    m.intakeSimilar.findSimilarByVector.mockResolvedValue([
+      { intakeIssueId: 'ii-1', extractedTitle: 'почти то же', distance: 0.05 },
+    ]);
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.embeddings.embed).toHaveBeenCalledTimes(1);
+    expect(m.intakeSimilar.findSimilarByVector).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: TENANT, embedding: '[0.1,0.2,0.3]' }),
+    );
+    expect(m.prisma.intakeIssue.create).not.toHaveBeenCalled();
+    expect(m.prisma.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(m.autoTriageQueue.enqueue).not.toHaveBeenCalled();
+    expect(m.metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'dedup_pending_intake_semantic' }),
+    );
+  });
+
+  it('(k3) KNN без совпадения → create + сохранение embedding через $executeRawUnsafe', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+    m.intakeSimilar.findSimilarByVector.mockResolvedValue([]);
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(m.prisma.$executeRawUnsafe).toHaveBeenCalledTimes(1);
+    const args = m.prisma.$executeRawUnsafe.mock.calls[0]!;
+    expect(args[0]).toContain('UPDATE "IntakeIssue" SET embedding');
+    expect(args[1]).toBe('[0.1,0.2,0.3]');
+    expect(typeof args[2]).toBe('string');
+    expect(args[3]).toBe('intake-new');
+    expect(args[4]).toBe(TENANT);
+    expect(m.autoTriageQueue.enqueue).toHaveBeenCalledWith({
+      tenantId: TENANT,
+      intakeIssueId: 'intake-new',
+    });
+  });
+
+  it('(k4) embeddings-сервис отсутствует → create без embedding, без throw', async () => {
+    ({ svc, m } = buildService('link', { withEmbeddings: false }));
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+
+    await expect(
+      svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID }),
+    ).resolves.not.toThrow();
+
+    expect(m.embeddings.embed).not.toHaveBeenCalled();
+    expect(m.intakeSimilar.findSimilarByVector).not.toHaveBeenCalled();
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(m.prisma.$executeRawUnsafe).not.toHaveBeenCalled();
   });
 
   it('(l) DELETE/legacy режим → dedup.evaluate НЕ вызван, intakeIssue.create вызван', async () => {
@@ -506,5 +703,147 @@ describe('Specialist315TasksService.processBlock', () => {
     const sqlArg = m.prisma.$executeRaw.mock.calls[0]![0] as TemplateStringsArray;
     expect(sqlArg.join('')).toContain('pg_advisory_xact_lock');
     expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('(s) срок не извлечён, исполнитель ЕСТЬ → due-probe постановщику', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-setter',
+          },
+        ],
+      }),
+    );
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ sourceQuote: 'подготовь смету', dueHint: '' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({
+      kind: 'resolved',
+      userId: 'user-7',
+    });
+    m.prisma.person.findFirst.mockResolvedValue({ userId: 'user-setter' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ suggestedAssigneeId: 'user-7' }),
+      }),
+    );
+    expect(m.probe.suggest).toHaveBeenCalledTimes(1);
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.due_date_missing',
+        emittedByService: 'specialist-3-15-tasks',
+        recipientCandidates: ['user-setter'],
+      }),
+    );
+  });
+
+  it('(t) нет ни исполнителя, ни срока → шлём ТОЛЬКО assignee-probe (одно за раз)', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson({ dueHint: '' })));
+    m.assigneeResolver.resolve.mockResolvedValue({ kind: 'not_found' });
+    m.prisma.membership.findFirst.mockResolvedValue({ userId: 'owner-1' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.probe.suggest).toHaveBeenCalledTimes(1);
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.assignee_unresolved' }),
+    );
+    expect(m.probe.suggest).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.due_date_missing' }),
+    );
+  });
+
+  it('(u) срок ЕСТЬ и исполнитель есть → probe НЕ шлём', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ dueHint: '2026-07-01' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({
+      kind: 'resolved',
+      userId: 'user-7',
+    });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(m.probe.suggest).not.toHaveBeenCalled();
+  });
+});
+
+describe('Specialist315TasksService.runClarifySweep', () => {
+  let svc: Specialist315TasksService;
+  let m: Mocks;
+
+  beforeEach(() => {
+    ({ svc, m } = buildService());
+  });
+
+  it('(v) stale pending intake без срока → due-probe постановщику', async () => {
+    m.prisma.org.findMany.mockResolvedValue([{ id: TENANT }]);
+    m.prisma.intakeIssue.findMany.mockResolvedValue([
+      {
+        id: 'intake-stale',
+        tenantId: TENANT,
+        extractedTitle: 'Подготовить смету',
+        extractedDescription: 'подготовь смету',
+        suggestedAssigneeId: 'user-7',
+        suggestedDueDate: null,
+        sourceBlockIds: [BLOCK_ID],
+      },
+    ]);
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-setter',
+          },
+        ],
+      }),
+    );
+    m.prisma.person.findFirst.mockResolvedValue({ userId: 'user-setter' });
+
+    const res = await svc.runClarifySweep(new Date('2026-06-29T10:00:00.000Z'));
+
+    expect(m.probe.suggest).toHaveBeenCalledTimes(1);
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.due_date_missing',
+        emittedByService: 'specialist-3-15-tasks-sweep',
+        recipientCandidates: ['user-setter'],
+      }),
+    );
+    expect(res.probed).toBe(1);
+  });
+
+  it('(w) intake с исполнителем И сроком не попадает в выборку → probe НЕ вызван', async () => {
+    m.prisma.org.findMany.mockResolvedValue([{ id: TENANT }]);
+    m.prisma.intakeIssue.findMany.mockResolvedValue([]);
+
+    const res = await svc.runClarifySweep(new Date('2026-06-29T10:00:00.000Z'));
+
+    expect(m.probe.suggest).not.toHaveBeenCalled();
+    expect(res.probed).toBe(0);
+  });
+
+  it('(x) enabled=false → ранний выход, probe не вызван', async () => {
+    m.cfg.getDynamic.mockImplementation(
+      (key: string, _env: string | undefined, def: unknown) =>
+        key === 'tracker.taskClarifySweep.enabled' ? false : def,
+    );
+
+    const res = await svc.runClarifySweep(new Date('2026-06-29T10:00:00.000Z'));
+
+    expect(m.prisma.org.findMany).not.toHaveBeenCalled();
+    expect(m.probe.suggest).not.toHaveBeenCalled();
+    expect(res).toEqual({ orgsScanned: 0, probed: 0 });
   });
 });

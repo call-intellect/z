@@ -77,7 +77,6 @@ export class RouterService {
     // компании из блоков (commitment / plan_item): outcome-формулировка,
     // KNN-дедуп + иерархия родитель↔подцель, source='ai' promotionState='suggested'.
     GOALS: '3-14-goals',
-    TASKS: '3-15-tasks',
   } as const;
 
   /// Специалисты, которых одним проходом извлекает объединённый разборщик
@@ -92,7 +91,6 @@ export class RouterService {
     RouterService.SPECIALIST.IDEAS,
     RouterService.SPECIALIST.SKILL,
     RouterService.SPECIALIST.KNOWLEDGE_CLONE,
-    RouterService.SPECIALIST.PROCESS_DETECTOR,
     RouterService.SPECIALIST.EXPERIMENT_TRACKER,
     RouterService.SPECIALIST.HELPFULNESS,
   ]);
@@ -129,7 +127,6 @@ export class RouterService {
     // между insights/personal-relation (3-3.5) и ideas (4): цели стратегически
     // важны, но менее срочны, чем явные риски и решения.
     [RouterService.SPECIALIST.GOALS]: 3.8,
-    [RouterService.SPECIALIST.TASKS]: 3.9,
   };
 
   constructor(
@@ -215,6 +212,15 @@ export class RouterService {
         'RouterService: анти-fan-out — часть специалистов отброшена',
       );
     }
+
+    this.logger.debug(
+      {
+        blockId: block.id,
+        signalType: block.signalType,
+        specialists: finalTargets,
+      },
+      '[PIPE] router dispatch',
+    );
 
     const dispatched: string[] = [];
     for (const specialistName of finalTargets) {
@@ -394,7 +400,7 @@ export class RouterService {
       // TZ task-dedup (2026-06-16, Ф2) — сигнал «сделал / закрыл / готово» из
       // разговора. Раньше done_item был no-op; task_completed/task_status_changed
       // в switch вовсе отсутствовали (сигнал никуда не шёл). Теперь эмиттим
-      // `task.completion_signalled` (по образцу commitment_status выше) — на него
+      // `task.completion_signalled` — на него
       // подписан TaskCompletionHandler (operations): семантически найдёт открытую
       // Issue и заведёт ОБРАТИМЫЙ кандидат на закрытие (авто-закрытие запрещено,
       // R13). sourceType обязателен — гард от зацикливания (трекер сам эмитит
@@ -426,30 +432,6 @@ export class RouterService {
       case 'commitment':
       case 'plan_item':
         targets.add(RouterService.SPECIALIST.GOALS);
-        break;
-      case 'action_item':
-        targets.add(RouterService.SPECIALIST.TASKS);
-        break;
-      // SBA β-8.2 — commitment_status больше не no-op: эмиттим событие
-      // `commitment.status_received`, на которое подписан CommitmentResponseHandler
-      // (operations модуль). Внутри handler найдёт исходный commitment-блок и
-      // обновит его статус + создаст ребро resolves.
-      case 'commitment_status':
-        try {
-          this.eventEmitter?.emit('commitment.status_received', {
-            tenantId: block.tenantId,
-            blockId: block.id,
-            signalType: block.signalType,
-          });
-        } catch (err) {
-          this.logger.warn(
-            {
-              blockId: block.id,
-              err: err instanceof Error ? err.message : String(err),
-            },
-            'RouterService: emit commitment.status_received failed — продолжаем без эмита',
-          );
-        }
         break;
       // SBA Wave 2 — Specialist 3.8 (Helpfulness Agent). Эти signalType
       // создаются tracker'ом / ingest'ом или другими специалистами; все 7

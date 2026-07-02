@@ -299,7 +299,7 @@ const EmailFetchSchema = z.object({
 });
 
 const KnowledgeCoreSchema = z.object({
-  DISTILL_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.92),
+  DISTILL_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
   DISTILL_DEBOUNCE_MS: z.coerce.number().int().positive().default(30_000),
   DISTILL_KNN_TOP_K: z.coerce.number().int().positive().default(5),
   ENTITY_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.88),
@@ -401,7 +401,7 @@ const ShareSchema = z.object({
 const RouterSchema = z.object({
   ROUTER_DISPATCH_CONCURRENCY: z.coerce.number().int().positive().default(4),
   ROUTER_MAX_SPECIALISTS_PER_BLOCK: z.coerce.number().int().positive().default(4),
-  SPECIALISTS_COMBINED_ENABLED: z.coerce.boolean().default(true),
+  SPECIALISTS_COMBINED_ENABLED: zBool(true),
   SPECIALISTS_COMBINED_DELAY_MS: z.coerce.number().int().nonnegative().default(90_000),
   ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
   ROUTER_LLM_FALLBACK_ENABLED: zBool(false),
@@ -640,11 +640,7 @@ const BetaOpsSchema = z.object({
   COO_MONTHLY_DIGEST_ENABLED: zBool(true),
   COO_MONTHLY_DIGEST_LOCAL_HOUR: z.coerce.number().int().min(0).max(23).default(6),
 
-  COMMITMENT_FOLLOWUP_ENABLED: zBool(true),
-  COMMITMENT_FOLLOWUP_LOCAL_HOUR: z.coerce.number().int().min(0).max(23).default(9),
   COMMITMENT_FALLBACK_DUE_WORKDAYS: z.coerce.number().int().positive().default(5),
-  COMMITMENT_ESCALATION_DAYS: z.coerce.number().int().positive().default(3),
-  COMMITMENT_MAX_RETRIES: z.coerce.number().int().positive().default(2),
 
   TTS_PROVIDER: z.string().min(1).default('openai'),
   TTS_VOICE: z.string().min(1).default('alloy'),
@@ -652,7 +648,6 @@ const BetaOpsSchema = z.object({
 
   PROACTIVE_WATCHER_ENABLED: zBool(true),
   PROACTIVE_WATCHER_ANTI_SPAM_TTL_HOURS: z.coerce.number().int().positive().default(24),
-  PROACTIVE_RULE_DECISION_NO_OWNER_ENABLED: zBool(true),
   PROACTIVE_RULE_INSIGHT_NO_MITIGATION_ENABLED: zBool(true),
   PROACTIVE_RULE_EXPERIMENT_RUNNING_TOO_LONG_ENABLED: zBool(true),
   PROACTIVE_RULE_PROCESS_STALE_REVIEW_ENABLED: zBool(true),

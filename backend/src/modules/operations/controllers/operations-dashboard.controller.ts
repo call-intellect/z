@@ -31,23 +31,14 @@ import {
   type CheckinDisciplineQuery,
 } from '../dto/checkin-discipline.dto';
 import {
-  OpenCommitmentsQuerySchema,
-  type OpenCommitmentsQuery,
-  type OpenCommitmentsListDto,
-} from '../dto/commitments.dto';
-import {
   CustomerRiskQuerySchema,
   type CustomerRiskQuery,
   type CustomerRiskListDto,
 } from '../dto/customer-risk.dto';
 import {
   ChronicBlockersQuerySchema,
-  DecisionThroughputQuerySchema,
   type ChronicBlockersListDto,
   type ChronicBlockersQuery,
-  type DecisionThroughputDto,
-  type DecisionThroughputQuery,
-  type StalledDecisionsListDto,
 } from '../dto/execution-agents.dto';
 import type {
   KnowledgeAtRiskListDto,
@@ -68,7 +59,6 @@ import {
   type PortfolioHealthDto,
   type PortfolioHealthQuery,
 } from '../dto/portfolio-health.dto';
-import type { PromiseNetworkDto } from '../dto/promise-network.dto';
 import {
   ValueRecapExportQuerySchema,
   ValueRecapQuerySchema,
@@ -79,14 +69,11 @@ import {
 } from '../dto/value-recap.dto';
 import { TeamTemperatureQuerySchema, type TeamTemperatureQuery } from '../dto/weekly-digest.dto';
 import { BlockerSynthesisService } from '../services/blocker-synthesis.service';
-import { CommitmentsService } from '../services/commitments.service';
 import { CustomerRiskRadarService } from '../services/customer-risk-radar.service';
-import { DecisionImplementationService } from '../services/decision-implementation.service';
 import { KnowledgeAtRiskService } from '../services/knowledge-at-risk.service';
 import { OnboardingRampService } from '../services/onboarding-ramp.service';
 import { OperationsDashboardService } from '../services/operations-dashboard.service';
 import { PortfolioHealthService } from '../services/portfolio-health.service';
-import { PromiseNetworkService } from '../services/promise-network.service';
 import { TeamCapacityService } from '../services/team-capacity.service';
 import { shiftPeriod, ValueRecapService } from '../services/value-recap.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
@@ -101,14 +88,10 @@ export class OperationsDashboardController {
     @Inject(OperationsDashboardService)
     private readonly svc: OperationsDashboardService,
     @Inject(RbacService) private readonly rbac: RbacService,
-    @Inject(CommitmentsService)
-    private readonly commitments: CommitmentsService,
     @Inject(CustomerRiskRadarService)
     private readonly customerRisk: CustomerRiskRadarService,
     @Inject(BlockerSynthesisService)
     private readonly blockerSynthesis: BlockerSynthesisService,
-    @Inject(DecisionImplementationService)
-    private readonly decisionImpl: DecisionImplementationService,
     @Inject(KnowledgeAtRiskService)
     private readonly knowledgeAtRisk: KnowledgeAtRiskService,
     @Inject(TeamCapacityService)
@@ -119,8 +102,6 @@ export class OperationsDashboardController {
     private readonly valueRecap: ValueRecapService,
     @Inject(PortfolioHealthService)
     private readonly portfolioHealth: PortfolioHealthService,
-    @Inject(PromiseNetworkService)
-    private readonly promiseNetwork: PromiseNetworkService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
@@ -257,26 +238,6 @@ export class OperationsDashboardController {
     });
   }
 
-  @Get('open-commitments')
-  @ApiOperation({
-    summary: 'COO operations dashboard — открытые обещания (с именами)',
-  })
-  async openCommitments(
-    @CurrentOrg() tenantId: string | undefined,
-    @Req() req: Request,
-    @Query(new ZodValidationPipe(OpenCommitmentsQuerySchema))
-    q: OpenCommitmentsQuery,
-  ): Promise<OpenCommitmentsListDto> {
-    const uid = this.requireUser(req);
-    this.requireTenant(tenantId);
-    await this.requireAccess(uid, tenantId!);
-    return this.commitments.listOpenForTenant({
-      tenantId: tenantId!,
-      days: q.days,
-      limit: q.limit,
-    });
-  }
-
   @Get('binding-coverage')
   @ApiOperation({
     summary: 'COO operations dashboard — покрытие сотрудников Telegram-привязкой (gate ≥ 70%)',
@@ -368,52 +329,6 @@ export class OperationsDashboardController {
     return { items };
   }
 
-  @Get('decisions/throughput')
-  @ApiOperation({
-    summary: 'COO operations dashboard — % решений, доведённых до результата (за окно)',
-  })
-  async decisionsThroughput(
-    @CurrentOrg() tenantId: string | undefined,
-    @Req() req: Request,
-    @Query(new ZodValidationPipe(DecisionThroughputQuerySchema))
-    q: DecisionThroughputQuery,
-  ): Promise<DecisionThroughputDto> {
-    const uid = this.requireUser(req);
-    this.requireTenant(tenantId);
-    await this.requireAccess(uid, tenantId!);
-    const to = q.to ? new Date(`${q.to}T23:59:59.999Z`) : new Date();
-    const from = q.from
-      ? new Date(`${q.from}T00:00:00.000Z`)
-      : new Date(to.getTime() - 90 * 24 * 3_600_000);
-    const tp = await this.decisionImpl.getDecisionThroughput({
-      tenantId: tenantId!,
-      from,
-      to,
-    });
-    return {
-      ...tp,
-      from: from.toISOString().slice(0, 10),
-      to: to.toISOString().slice(0, 10),
-    };
-  }
-
-  @Get('decisions/stalled')
-  @ApiOperation({
-    summary: 'COO operations dashboard — решения без движения (stalled, контролёр внедрения)',
-  })
-  async decisionsStalled(
-    @CurrentOrg() tenantId: string | undefined,
-    @Req() req: Request,
-  ): Promise<StalledDecisionsListDto> {
-    const uid = this.requireUser(req);
-    this.requireTenant(tenantId);
-    await this.requireAccess(uid, tenantId!);
-    const items = await this.decisionImpl.listStalledForTenant({
-      tenantId: tenantId!,
-    });
-    return { items };
-  }
-
   @Get('knowledge-at-risk')
   @ApiOperation({
     summary: 'COO operations dashboard — знание-под-риском × уход человека (bus-factor × burnout)',
@@ -426,21 +341,6 @@ export class OperationsDashboardController {
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
     return this.knowledgeAtRisk.listForTenant({ tenantId: tenantId! });
-  }
-
-  @Get('promise-network')
-  @ApiOperation({
-    summary:
-      'COO operations dashboard — перегруз ответственностью (accumulators сети обещаний)',
-  })
-  async promiseNetworkGet(
-    @CurrentOrg() tenantId: string | undefined,
-    @Req() req: Request,
-  ): Promise<PromiseNetworkDto> {
-    const uid = this.requireUser(req);
-    this.requireTenant(tenantId);
-    await this.requireAccess(uid, tenantId!);
-    return this.promiseNetwork.getLatest({ tenantId: tenantId! });
   }
 
   @Get('team-capacity')

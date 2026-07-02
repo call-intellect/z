@@ -120,11 +120,18 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.gate.checkOrThrow(block.tenantId, 'block-distill');
 
+    this.logger.debug({ blockId, tenantId: block.tenantId }, '[PIPE] block-distill');
+
+    const mergeThreshold = await this.cfg.getDynamic<number>(
+      'knowledge.distillMergeThreshold',
+      'DISTILL_MERGE_THRESHOLD',
+      0.85,
+    );
     const candidates = await this.merger.knnCandidates({
       tenantId: block.tenantId,
       blockId: block.id,
       topK: this.cfg.knowledgeCore.distillKnnTopK,
-      threshold: this.cfg.knowledgeCore.distillMergeThreshold,
+      threshold: mergeThreshold,
     });
 
     if (candidates.length === 0) {
@@ -176,6 +183,10 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         'block-distill: enqueueBlockLinker упал — линковка отложена',
       );
     });
+    this.logger.debug(
+      { blockId: block.id, verdict: 'canonical' },
+      '[PIPE] block-distill verdict',
+    );
     this.logger.debug({ blockId: block.id }, 'block-distill: canonical');
 
     await this.router
@@ -195,20 +206,26 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       });
 
     if (this.cfg.specialistsCombined.enabled) {
-      const meetingId = await this.resolveMeetingIdForBlock(
+      const source = await this.resolveSourceDescriptorForBlock(
         block.id,
         block.tenantId,
       );
-      if (meetingId) {
+      if (source) {
         await this.coreQueue
-          .enqueueSpecialistsCombined(meetingId, {
-            delayMs: this.cfg.specialistsCombined.delayMs,
-          })
+          .enqueueSpecialistsCombined(
+            {
+              tenantId: block.tenantId,
+              sourceType: source.sourceType,
+              externalId: source.externalId,
+            },
+            { delayMs: this.cfg.specialistsCombined.delayMs },
+          )
           .catch((err) => {
             this.logger.warn(
               {
                 blockId: block.id,
-                meetingId,
+                sourceType: source.sourceType,
+                externalId: source.externalId,
                 err: err instanceof Error ? err.message : String(err),
               },
               'block-distill: enqueueSpecialistsCombined упал — combined-разбор отложен',
@@ -239,20 +256,21 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async resolveMeetingIdForBlock(
+  private async resolveSourceDescriptorForBlock(
     blockId: string,
     tenantId: string,
-  ): Promise<string | null> {
+  ): Promise<{ sourceType: string; externalId: string } | null> {
     const ev = await this.prisma.ideaBlockEvidence.findFirst({
       where: { blockId },
       select: { rawEventId: true },
     });
     if (!ev?.rawEventId) return null;
     const raw = await this.prisma.rawEvent.findFirst({
-      where: { id: ev.rawEventId, tenantId, sourceType: 'meeting' },
-      select: { sourceExternalId: true },
+      where: { id: ev.rawEventId, tenantId },
+      select: { sourceType: true, sourceExternalId: true },
     });
-    return raw?.sourceExternalId ?? null;
+    if (!raw?.sourceExternalId) return null;
+    return { sourceType: raw.sourceType, externalId: raw.sourceExternalId };
   }
 
   private async mergeInto(args: {
@@ -291,6 +309,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         data: {
           status: 'merged_into',
           mergedIntoId: canonicalId,
+          mergedIntoTenantId: block.tenantId,
         },
       });
 
@@ -377,6 +396,10 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     });
 
     this.logger.debug(
+      { blockId: block.id, verdict: 'merged_into', mergedIntoId: canonicalId },
+      '[PIPE] block-distill verdict',
+    );
+    this.logger.debug(
       { blockId: block.id, canonicalId, explanation: args.explanation },
       'block-distill: merged_into',
     );
@@ -446,6 +469,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         data: {
           status: 'merged_into',
           mergedIntoId: transcriptBlock.id,
+          mergedIntoTenantId: transcriptBlock.tenantId,
         },
       });
 
@@ -514,6 +538,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         data: {
           status: 'canonical',
           mergedIntoId: null,
+          mergedIntoTenantId: null,
           evidenceCount: newEvidenceCount,
           confidence: new Prisma.Decimal(maxConf.toFixed(3)),
           tags: mergedTags,

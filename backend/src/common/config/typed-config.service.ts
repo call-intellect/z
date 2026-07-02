@@ -269,6 +269,7 @@ export class TypedConfigService {
       kie: {
         apiKey: this.get('KIE_API_KEY'),
         baseUrl: this.get('KIE_BASE_URL'),
+        timeoutMs: this.resolveSync<number>('ai.kie.timeoutMs', undefined, 180_000),
       },
       proxy: {
         baseUrl: this.get('PROXY_BASE_URL'),
@@ -648,8 +649,14 @@ export class TypedConfigService {
       entityMergeThreshold: this.get('ENTITY_MERGE_THRESHOLD'),
       entityResolverCron: this.get('ENTITY_RESOLVER_CRON'),
       regulationConsolidatorCron: this.get('REGULATION_CONSOLIDATOR_CRON'),
-      blockIngestWindowSegments: this.get('BLOCK_INGEST_WINDOW_SEGMENTS'),
-      blockIngestMaxTokensPerSegment: this.get('BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT'),
+      blockIngestWindowSegments: this.resolveSync<number>('knowledge.blockIngestWindowSegments', 'BLOCK_INGEST_WINDOW_SEGMENTS', 5),
+      blockIngestMaxTokensPerSegment: this.resolveSync<number>('knowledge.blockIngestMaxTokensPerSegment', 'BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT', 2000),
+      blockIngestWindowOverlapSegments: this.resolveSync<number>('knowledge.blockIngestWindowOverlapSegments', undefined, 1),
+      blockIngestGleaningRounds: this.resolveSync<number>('knowledge.blockIngestGleaningRounds', undefined, 1),
+      blockIngestGleaningMinSegments: this.resolveSync<number>('knowledge.blockIngestGleaningMinSegments', undefined, 2),
+      skeletonPassEnabled: this.resolveSync<boolean>('knowledge.skeleton_pass_enabled', undefined, true),
+      headerMapEnabled: this.resolveSync<boolean>('knowledge.header_map_enabled', undefined, true),
+      skeletonMinSegments: this.resolveSync<number>('knowledge.skeletonMinSegments', undefined, 6),
       segmentMaxTokens: this.resolveSync<number>('knowledge.segment_max_tokens', undefined, 600),
       segmentOverlapRatio: this.resolveSync<number>(
         'knowledge.segment_overlap_ratio',
@@ -702,7 +709,7 @@ export class TypedConfigService {
       chatV2SynthesisTimeoutMs: this.resolveSync<number>(
         'knowledge.chatV2SynthesisTimeoutMs',
         undefined,
-        90_000,
+        180_000,
       ),
       biTemporalEdgesEnabled: this.get('BI_TEMPORAL_EDGES_ENABLED'),
       ideaDirectPathEnabled: this.resolveSync<boolean>(
@@ -1010,8 +1017,8 @@ export class TypedConfigService {
 
   get specialistsCombined() {
     return {
-      enabled: this.get('SPECIALISTS_COMBINED_ENABLED'),
-      delayMs: this.get('SPECIALISTS_COMBINED_DELAY_MS'),
+      enabled: this.resolveSync<boolean>('knowledge.specialists_combined_enabled', 'SPECIALISTS_COMBINED_ENABLED', true),
+      delayMs: this.resolveSync<number>('knowledge.specialistsCombinedDelayMs', 'SPECIALISTS_COMBINED_DELAY_MS', 90_000),
     } as const;
   }
 
@@ -1156,6 +1163,16 @@ export class TypedConfigService {
         'goals.themeAutolinkLlmEnabled',
         undefined,
         false,
+      ),
+      themeAutolinkKnnMaxDistance: this.resolveSync<number>(
+        'goals.themeAutolinkKnnMaxDistance',
+        undefined,
+        0.45,
+      ),
+      themeAutolinkKnnTopK: this.resolveSync<number>(
+        'goals.themeAutolinkKnnTopK',
+        undefined,
+        5,
       ),
       goalTaskLinkEnabled: this.resolveSync<boolean>('goals.goalTaskLinkEnabled', undefined, false),
     } as const;
@@ -1584,15 +1601,7 @@ export class TypedConfigService {
         'COO_DAILY_DIGEST_HOUR_UTC',
         22,
       ),
-      commitmentFollowupEnabled: this.get('COMMITMENT_FOLLOWUP_ENABLED') !== false,
-      commitmentFollowupLocalHour: this.resolveSync<number>(
-        'betaOps.commitmentFollowupLocalHour',
-        'COMMITMENT_FOLLOWUP_LOCAL_HOUR',
-        9,
-      ),
       commitmentFallbackDueWorkdays: Number(this.get('COMMITMENT_FALLBACK_DUE_WORKDAYS') ?? 5),
-      commitmentEscalationDays: Number(this.get('COMMITMENT_ESCALATION_DAYS') ?? 3),
-      commitmentMaxRetries: Number(this.get('COMMITMENT_MAX_RETRIES') ?? 2),
     } as const;
   }
 
@@ -1622,7 +1631,6 @@ export class TypedConfigService {
         1,
       ),
       rules: {
-        decisionNoOwner: this.get('PROACTIVE_RULE_DECISION_NO_OWNER_ENABLED') !== false,
         insightNoMitigation: this.get('PROACTIVE_RULE_INSIGHT_NO_MITIGATION_ENABLED') !== false,
         experimentRunningTooLong:
           this.get('PROACTIVE_RULE_EXPERIMENT_RUNNING_TOO_LONG_ENABLED') !== false,

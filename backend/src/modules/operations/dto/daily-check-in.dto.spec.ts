@@ -17,6 +17,9 @@ describe('stripSentimentForRole', () => {
       plans: [],
       dones: [],
       blockers: [],
+      notDone: [],
+      ideas: [],
+      reportCompleteness: null,
       notificationId: null,
       parseConfidence: 1,
       curatorReview: false,
@@ -58,6 +61,9 @@ describe('stripSentimentForRole', () => {
     expect('sentimentRationale' in result).toBe(false);
     expect('sentimentVersion' in result).toBe(false);
     expect('sentimentDeterminedAt' in result).toBe(false);
+    expect('notDone' in result).toBe(true);
+    expect('ideas' in result).toBe(true);
+    expect('reportCompleteness' in result).toBe(true);
   });
 
   it('manager: поля настроения отсутствуют', () => {

@@ -10,12 +10,12 @@ describe('MyDailyBriefController', () => {
 
   function make(
     over: {
-      commitments?: Record<string, unknown>;
+      selfPerson?: Record<string, unknown>;
       briefs?: Record<string, unknown>;
       knowsWho?: Record<string, unknown>;
     } = {},
   ) {
-    const commitments = over.commitments ?? {
+    const selfPerson = over.selfPerson ?? {
       resolveSelfPerson: vi.fn().mockResolvedValue({ id: 'person-mine' }),
     };
     const briefs = over.briefs ?? {
@@ -26,18 +26,18 @@ describe('MyDailyBriefController', () => {
       findExpertsForBlocker: vi.fn().mockResolvedValue([]),
     };
     const ctrl = new MyDailyBriefController(
-      commitments as never,
+      selfPerson as never,
       briefs as never,
       knowsWho as never,
     );
-    return { ctrl, commitments, briefs, knowsWho };
+    return { ctrl, selfPerson, briefs, knowsWho };
   }
 
   describe('getBrief', () => {
     it('self-scope: getForPerson вызывается с resolved selfPersonId, не из query', async () => {
-      const { ctrl, briefs, commitments } = make();
+      const { ctrl, briefs, selfPerson } = make();
       await ctrl.getBrief('org1', req, { date: '2026-06-08' });
-      expect(commitments.resolveSelfPerson).toHaveBeenCalledWith({
+      expect(selfPerson.resolveSelfPerson).toHaveBeenCalledWith({
         tenantId: 'org1',
         userId: 'user-1',
       });
@@ -50,7 +50,7 @@ describe('MyDailyBriefController', () => {
 
     it('нет Person → пустой бриф 200 (graceful)', async () => {
       const { ctrl, briefs } = make({
-        commitments: {
+        selfPerson: {
           resolveSelfPerson: vi.fn().mockRejectedValue(
             new ForbiddenException({
               ok: false,
@@ -63,9 +63,7 @@ describe('MyDailyBriefController', () => {
       expect(res.id).toBeNull();
       expect(res.counts).toEqual({
         tasks: 0,
-        promises: 0,
         blockers: 0,
-        promisedToMe: 0,
       });
       expect(briefs.getForPerson).not.toHaveBeenCalled();
     });
@@ -101,7 +99,7 @@ describe('MyDailyBriefController', () => {
 
     it('нет Person → 404 (чужой бриф не открыть)', async () => {
       const { ctrl } = make({
-        commitments: {
+        selfPerson: {
           resolveSelfPerson: vi.fn().mockRejectedValue(
             new ForbiddenException({
               ok: false,

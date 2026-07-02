@@ -24,7 +24,6 @@ function buildService(overrides: Partial<Record<string, unknown>> = {}): {
     goalFindMany: vi.fn(async () => []),
     goalFindFirst: vi.fn(async () => null),
     knowledgeVelocitySnapshotFindFirst: vi.fn(async () => null),
-    decisionFindMany: vi.fn(async () => []),
     ...overrides,
   };
 
@@ -45,7 +44,6 @@ function buildService(overrides: Partial<Record<string, unknown>> = {}): {
     knowledgeVelocitySnapshot: {
       findFirst: mocks.knowledgeVelocitySnapshotFindFirst,
     },
-    decision: { findMany: mocks.decisionFindMany },
   } as unknown as PrismaService;
 
   return { service: new PulsePatternsService(prisma), mocks };
@@ -81,10 +79,6 @@ describe('PulsePatternsService', () => {
       resolvedGapsCount: 0,
       openGapsCount: 0,
       topResponders: [],
-    });
-    expect(res.irreversibleDecisions).toEqual({
-      decisions: [],
-      alertCount: 0,
     });
   });
 
@@ -203,24 +197,6 @@ describe('PulsePatternsService', () => {
           { personId: 'p-2', name: 'Анна', resolvedCount: 3 },
         ],
       })),
-      decisionFindMany: vi.fn(async () => [
-        {
-          id: 'd-1',
-          statement: 'Закрываем сегмент B',
-          text: null,
-          alternatives: null,
-          decidedAt: now,
-          createdAt: now,
-        },
-        {
-          id: 'd-2',
-          statement: 'Поднимаем цену',
-          text: null,
-          alternatives: [{ option: 'оставить', reasonRejected: 'инфляция' }],
-          decidedAt: null,
-          createdAt: now,
-        },
-      ]),
     });
 
     const res = await service.getPulsePatterns({
@@ -311,18 +287,6 @@ describe('PulsePatternsService', () => {
         { personName: 'Сергей', resolvedCount: 5 },
         { personName: 'Анна', resolvedCount: 3 },
       ],
-    });
-
-    expect(res.irreversibleDecisions.decisions).toHaveLength(2);
-    expect(res.irreversibleDecisions.alertCount).toBe(1);
-    expect(res.irreversibleDecisions.decisions[0]).toMatchObject({
-      decisionId: 'd-1',
-      statement: 'Закрываем сегмент B',
-      hasAlternatives: false,
-    });
-    expect(res.irreversibleDecisions.decisions[1]).toMatchObject({
-      decisionId: 'd-2',
-      hasAlternatives: true,
     });
 
     expect(mocks.knowledgeRiskSnapshotFindMany).toHaveBeenCalledTimes(1);

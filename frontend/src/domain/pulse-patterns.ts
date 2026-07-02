@@ -98,18 +98,6 @@ export interface PulsePatternKnowledgeVelocityApi {
   topResponders: PulsePatternKnowledgeVelocityResponderApi[];
 }
 
-export interface PulsePatternIrreversibleDecisionItemApi {
-  decisionId: string;
-  statement: string;
-  decidedAt: string;
-  hasAlternatives: boolean;
-}
-
-export interface PulsePatternIrreversibleDecisionsApi {
-  decisions: PulsePatternIrreversibleDecisionItemApi[];
-  alertCount: number;
-}
-
 export interface PulsePatternsApi {
   period: PulsePatternsPeriod;
   generatedAt: string;
@@ -119,7 +107,6 @@ export interface PulsePatternsApi {
   bottlenecks: PulsePatternBottleneckApi;
   goalVector: PulsePatternGoalVectorApi;
   knowledgeVelocity: PulsePatternKnowledgeVelocityApi;
-  irreversibleDecisions: PulsePatternIrreversibleDecisionsApi;
 }
 
 export interface PulsePatternLowRoiMeetingDomain {
@@ -129,13 +116,6 @@ export interface PulsePatternLowRoiMeetingDomain {
   participantCount: number;
   roiScore: number;
   startedAt: Date;
-}
-
-export interface PulsePatternIrreversibleDecisionDomain {
-  decisionId: string;
-  statement: string;
-  decidedAt: Date;
-  hasAlternatives: boolean;
 }
 
 export interface PulsePatternsDomain {
@@ -149,10 +129,6 @@ export interface PulsePatternsDomain {
   bottlenecks: PulsePatternBottleneckApi;
   goalVector: PulsePatternGoalVectorApi;
   knowledgeVelocity: PulsePatternKnowledgeVelocityApi;
-  irreversibleDecisions: {
-    decisions: PulsePatternIrreversibleDecisionDomain[];
-    alertCount: number;
-  };
 }
 
 export function pulsePatternsFromApi(
@@ -176,14 +152,5 @@ export function pulsePatternsFromApi(
     bottlenecks: api.bottlenecks,
     goalVector: api.goalVector,
     knowledgeVelocity: api.knowledgeVelocity,
-    irreversibleDecisions: {
-      alertCount: api.irreversibleDecisions.alertCount,
-      decisions: api.irreversibleDecisions.decisions.map((d) => ({
-        decisionId: d.decisionId,
-        statement: d.statement,
-        decidedAt: new Date(d.decidedAt),
-        hasAlternatives: d.hasAlternatives,
-      })),
-    },
   };
 }

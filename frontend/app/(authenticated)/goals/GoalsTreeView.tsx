@@ -3,9 +3,9 @@
 import Link from "next/link";
 
 import {
-  GOAL_PROGRESS_STATUS_LABELS,
   krProgressBarColor,
-  progressStatusChipClasses,
+  movementVerdict,
+  movementVerdictChipClasses,
   type GoalTreeRenderNode,
 } from "@/domain/goal";
 import { cn } from "@/ui/shadcn/lib/utils";
@@ -32,7 +32,8 @@ function GoalTreeNodeRow({
   node: GoalTreeRenderNode;
   depth: number;
 }) {
-  const chip = progressStatusChipClasses(node.progressStatus);
+  const verdict = movementVerdict(node.cachedAlignment, node.progressStatus);
+  const verdictChip = movementVerdictChipClasses(verdict.tone);
   const krs = node.keyResults ?? [];
 
   return (
@@ -51,11 +52,11 @@ function GoalTreeNodeRow({
           <span
             className={cn(
               "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-              chip.bg,
-              chip.fg,
+              verdictChip.bg,
+              verdictChip.fg,
             )}
           >
-            {GOAL_PROGRESS_STATUS_LABELS[node.progressStatus]}
+            {verdict.label}
           </span>
         </div>
 

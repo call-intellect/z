@@ -14,20 +14,29 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { CurationService } from '../../curation/services/curation.service';
+import { DashboardQueueService } from '../../dashboard/services/dashboard-queue.service';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
+import {
+  TaskDraftMaterializerService,
+  type TaskDraftInput,
+} from '../../tracker/services/task-draft-materializer.service';
 import {
   buildSpecialistsCombinedSystemPrompt,
   buildSpecialistsCombinedUserMessage,
+  type CombinedChannelKind,
   type CombinedInputBlock,
   type SpecialistsCombinedOutput,
   SPECIALISTS_COMBINED_MAX_TOKENS,
   SPECIALISTS_COMBINED_TASK_TYPE,
   SPECIALISTS_COMBINED_TOOL_NAME,
   SpecialistsCombinedOutputSchema,
-  SUBMIT_ALL_8_ENTITIES_TOOL,
+  SUBMIT_ALL_ENTITIES_TOOL,
 } from '../prompts/specialists-combined.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { EntityResolutionService } from './entity-resolution.service';
 
 export interface SpecialistsCombinedExtractArgs {
   tenantId: string;
@@ -36,6 +45,8 @@ export interface SpecialistsCombinedExtractArgs {
   blocks: CombinedInputBlock[];
   jobId?: string;
   dataClass?: DataClass;
+  channelKind?: CombinedChannelKind;
+  sourceType?: string;
 }
 
 export interface SpecialistsCombinedExtractResult {
@@ -49,6 +60,7 @@ export interface SpecialistsCombinedExtractResult {
     knowledgeCategories: number;
     skillTraits: number;
     helpfulnessTraits: number;
+    tasks: number;
   };
   emptySections: string[];
   llm: {
@@ -95,13 +107,36 @@ export class SpecialistsCombinedService {
     @Optional()
     @Inject(EventEmitter2)
     private readonly events?: EventEmitter2,
+    @Optional()
+    @Inject(CoreQueueService)
+    private readonly coreQueue?: CoreQueueService,
+    @Optional()
+    @Inject(DashboardQueueService)
+    private readonly dashboardQueue?: DashboardQueueService,
+    @Optional()
+    @Inject(EntityResolutionService)
+    private readonly entities?: EntityResolutionService,
+    @Optional()
+    @Inject(TaskDraftMaterializerService)
+    private readonly taskMaterializer?: TaskDraftMaterializerService,
   ) {}
 
   async extractAll(
     args: SpecialistsCombinedExtractArgs,
   ): Promise<SpecialistsCombinedExtractResult> {
+    this.logger.log(
+      {
+        tenantId: args.tenantId,
+        sourceType: args.sourceType ?? 'meeting',
+        externalId: args.meetingId,
+        channelKind: args.channelKind ?? 'meeting',
+        blocks: args.blocks.length,
+      },
+      '[PIPE] combo START',
+    );
+
     if (args.blocks.length === 0) {
-      this.logger.debug(
+      this.logger.log(
         { meetingId: args.meetingId, tenantId: args.tenantId },
         'specialists-combined: пустой список блоков — skip',
       );
@@ -114,10 +149,12 @@ export class SpecialistsCombinedService {
       });
     }
 
-    const systemPrompt = buildSpecialistsCombinedSystemPrompt();
+    const channelKind: CombinedChannelKind = args.channelKind ?? 'meeting';
+    const systemPrompt = buildSpecialistsCombinedSystemPrompt(channelKind);
     const userMessage = buildSpecialistsCombinedUserMessage({
       meetingTitle: args.meetingTitle ?? `meeting:${args.meetingId}`,
       blocks: args.blocks,
+      channelKind,
     });
 
     const startedAt = Date.now();
@@ -126,15 +163,32 @@ export class SpecialistsCombinedService {
       systemPrompt,
       userMessage,
       tenantId: args.tenantId,
-      meetingId: args.meetingId,
+      ...(channelKind === 'meeting' ? { meetingId: args.meetingId } : {}),
       ...(args.jobId ? { jobId: args.jobId } : {}),
       maxTokens: SPECIALISTS_COMBINED_MAX_TOKENS,
-      tools: [SUBMIT_ALL_8_ENTITIES_TOOL],
-      sourceRef: { type: 'meeting', id: args.meetingId },
+      tools: [SUBMIT_ALL_ENTITIES_TOOL],
+      sourceRef: { type: args.sourceType ?? 'meeting', id: args.meetingId },
       dataClass: args.dataClass ?? 'internal',
     });
 
-    const parsed = this.parseToolCallOutput(result.toolCalls, result.text);
+    let parsed: SpecialistsCombinedOutput;
+    try {
+      parsed = this.parseToolCallOutput(result.toolCalls, result.text);
+    } catch (parseErr) {
+      if (!(parseErr instanceof SpecialistsCombinedParseError)) throw parseErr;
+      parsed = await this.repairJsonAndRetry({
+        systemPrompt,
+        userMessage,
+        invalidRawText: parseErr.rawText ?? result.text,
+        parseError: parseErr.message,
+        tenantId: args.tenantId,
+        meetingId: args.meetingId,
+        channelKind,
+        dataClass: args.dataClass ?? 'internal',
+        sourceType: args.sourceType ?? 'meeting',
+        ...(args.jobId ? { jobId: args.jobId } : {}),
+      });
+    }
 
     const errors: string[] = [];
     const created = {
@@ -147,10 +201,15 @@ export class SpecialistsCombinedService {
       knowledgeCategories: 0,
       skillTraits: 0,
       helpfulnessTraits: 0,
+      tasks: 0,
     };
 
     const blockIdSet = new Set(args.blocks.map((b) => b.id));
     const dataClass: DataClass = args.dataClass ?? 'internal';
+
+    const decisionIds: string[] = [];
+    const knowledgePersonIds = new Set<string>();
+    const skillProfileIds = new Set<string>();
 
     created.decisions = await this.persistDecisions(
       args.tenantId,
@@ -158,6 +217,7 @@ export class SpecialistsCombinedService {
       blockIdSet,
       errors,
       dataClass,
+      decisionIds,
     );
     created.ideas = await this.persistIdeas(
       args.tenantId,
@@ -178,15 +238,37 @@ export class SpecialistsCombinedService {
     created.knowledgeCategories = await this.persistKnowledgeCategories(
       args.tenantId,
       parsed,
-      errors,
+      knowledgePersonIds,
     );
-    created.skillTraits = await this.persistSkillTraits(args.tenantId, parsed, errors);
+    created.skillTraits = await this.persistSkillTraits(
+      args.tenantId,
+      parsed,
+      errors,
+      knowledgePersonIds,
+      skillProfileIds,
+    );
     created.helpfulnessTraits = await this.persistHelpfulness(
       args.tenantId,
       parsed,
       blockIdSet,
       errors,
     );
+    created.tasks = await this.persistTasks(
+      args.tenantId,
+      parsed,
+      blockIdSet,
+      args.sourceType ?? 'meeting',
+      args.meetingId,
+      args.meetingTitle ?? null,
+    );
+
+    await this.enqueueSideEffects({
+      tenantId: args.tenantId,
+      sourceLabel: `${args.sourceType ?? 'meeting'}:${args.meetingId}`,
+      decisionIds,
+      knowledgePersonIds,
+      skillProfileIds,
+    });
 
     this.recordMetrics(created, result);
 
@@ -199,6 +281,25 @@ export class SpecialistsCombinedService {
     if (parsed.knowledge_categories.length === 0) emptySections.push('knowledge_categories');
     if (parsed.skill_traits.length === 0) emptySections.push('skill_traits');
     if (parsed.helpfulness_traits.length === 0) emptySections.push('helpfulness_traits');
+    if (parsed.tasks.length === 0) emptySections.push('tasks');
+
+    this.logger.log(
+      {
+        tenantId: args.tenantId,
+        externalId: args.meetingId,
+        tasks: created.tasks,
+        decisions: created.decisions,
+        ideas: created.ideas,
+        insights: created.insights,
+        experiments: created.experiments,
+        regulations: created.regulations,
+        instructions: created.instructions,
+        knowledgeCategories: created.knowledgeCategories,
+        skillTraits: created.skillTraits,
+        helpfulnessTraits: created.helpfulnessTraits,
+      },
+      '[PIPE] combo DONE',
+    );
 
     return {
       created,
@@ -261,12 +362,73 @@ export class SpecialistsCombinedService {
     return validated.data;
   }
 
+  private async repairJsonAndRetry(args: {
+    systemPrompt: string;
+    userMessage: string;
+    invalidRawText: string;
+    parseError: string;
+    tenantId: string;
+    meetingId: string;
+    channelKind: CombinedChannelKind;
+    dataClass: DataClass;
+    sourceType: string;
+    jobId?: string;
+  }): Promise<SpecialistsCombinedOutput> {
+    const timeoutMs = this.cfg
+      ? await this.cfg.getDynamic<number>(
+          'knowledge.specialistsCombinedRepairTimeoutMs',
+          undefined,
+          60_000,
+        )
+      : 60_000;
+
+    const repairUserMessage = [
+      'Твой предыдущий ответ невалиден (не распарсился по схеме инструмента).',
+      'Вот он:',
+      args.invalidRawText.slice(0, 12_000),
+      '',
+      `Ошибка: ${args.parseError}`,
+      '',
+      `Верни ВАЛИДНЫЙ JSON строго по схеме инструмента ${SPECIALISTS_COMBINED_TOOL_NAME}, без пояснений.`,
+      '',
+      'Исходные данные для извлечения:',
+      args.userMessage,
+    ].join('\n');
+
+    this.logger.warn(
+      {
+        tenantId: args.tenantId,
+        externalId: args.meetingId,
+        sourceType: args.sourceType,
+        parseError: args.parseError,
+      },
+      'specialists-combined: первый ответ не распарсился — repair-retry',
+    );
+
+    const repaired = await this.llm.call({
+      taskType: SPECIALISTS_COMBINED_TASK_TYPE,
+      systemPrompt: args.systemPrompt,
+      userMessage: repairUserMessage,
+      tenantId: args.tenantId,
+      ...(args.channelKind === 'meeting' ? { meetingId: args.meetingId } : {}),
+      ...(args.jobId ? { jobId: args.jobId } : {}),
+      maxTokens: SPECIALISTS_COMBINED_MAX_TOKENS,
+      tools: [SUBMIT_ALL_ENTITIES_TOOL],
+      sourceRef: { type: args.sourceType, id: args.meetingId },
+      dataClass: args.dataClass,
+      timeoutMs,
+    });
+
+    return this.parseToolCallOutput(repaired.toolCalls, repaired.text);
+  }
+
   private async persistDecisions(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
     blockIdSet: Set<string>,
     errors: string[],
     dataClass: DataClass,
+    decisionIds: string[],
   ): Promise<number> {
     let created = 0;
     for (const d of parsed.decisions) {
@@ -330,6 +492,7 @@ export class SpecialistsCombinedService {
           select: { id: true },
         });
         if (!existing) created += 1;
+        decisionIds.push(decision.id);
         await this.applyDecisionSideEffects({
           tenantId,
           decisionId: decision.id,
@@ -689,14 +852,22 @@ export class SpecialistsCombinedService {
         });
         continue;
       }
+      const scope = await this.resolveScope(tenantId, r.scope);
+      const hintOwner = await this.resolveOwnerPersonHint(tenantId, r.ownerHint);
+      const author = await this.resolveBlockAuthor(tenantId, r.sourceBlockId);
       try {
-        // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`:
-        // pre-fetch существующего массива → дедуп при повторной встрече того же
-        // имени. Контракт совпадает с single-путём (mergeIntoExisting).
         const existingReg = await this.prisma.regulation.findUnique({
           where: { tenantId_name: { tenantId, name: r.name } },
-          select: { sourceBlockIds: true },
+          select: { sourceBlockIds: true, personSubjectIds: true, ownerPersonId: true },
         });
+        const ownerOnUpdate =
+          hintOwner ??
+          (existingReg && existingReg.ownerPersonId == null
+            ? author?.personId ?? undefined
+            : undefined);
+        const subjectUnion = author?.entityId
+          ? this.union(existingReg?.personSubjectIds ?? [], [author.entityId])
+          : null;
         await this.prisma.regulation.upsert({
           where: {
             tenantId_name: { tenantId, name: r.name },
@@ -710,6 +881,9 @@ export class SpecialistsCombinedService {
             },
             confidence: r.confidence,
             category: r.kind === 'standard' ? 'standard' : 'regulation',
+            scope,
+            ...(ownerOnUpdate ? { ownerPersonId: ownerOnUpdate } : {}),
+            ...(subjectUnion ? { personSubjectIds: { set: subjectUnion } } : {}),
           },
           create: {
             tenantId,
@@ -719,6 +893,9 @@ export class SpecialistsCombinedService {
             category: r.kind === 'standard' ? 'standard' : 'regulation',
             confidence: r.confidence,
             sourceBlockIds: [r.sourceBlockId],
+            scope,
+            ownerPersonId: hintOwner ?? author?.personId ?? null,
+            ...(author?.entityId ? { personSubjectIds: [author.entityId] } : {}),
           },
         });
         created += 1;
@@ -749,13 +926,25 @@ export class SpecialistsCombinedService {
         r.extractionStatus === 'нужен' || r.extractionStatus === 'обсуждается'
           ? 'deprecated'
           : 'active';
+      const scope = await this.resolveScope(
+        tenantId,
+        r.scope ?? (forRole ? `role:${forRole}` : null),
+      );
+      const hintOwner = await this.resolveOwnerPersonHint(tenantId, r.ownerHint);
+      const author = await this.resolveBlockAuthor(tenantId, r.sourceBlockId);
       try {
-        // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`
-        // (см. persistRegulations).
         const existingInstr = await this.prisma.instruction.findUnique({
           where: { tenantId_name: { tenantId, name: r.name } },
-          select: { sourceBlockIds: true },
+          select: { sourceBlockIds: true, personSubjectIds: true, ownerPersonId: true },
         });
+        const ownerOnUpdate =
+          hintOwner ??
+          (existingInstr && existingInstr.ownerPersonId == null
+            ? author?.personId ?? undefined
+            : undefined);
+        const subjectUnion = author?.entityId
+          ? this.union(existingInstr?.personSubjectIds ?? [], [author.entityId])
+          : null;
         await this.prisma.instruction.upsert({
           where: { tenantId_name: { tenantId, name: r.name } },
           update: {
@@ -769,6 +958,9 @@ export class SpecialistsCombinedService {
             confidence: r.confidence,
             forRole: forRole ?? undefined,
             status,
+            scope,
+            ...(ownerOnUpdate ? { ownerPersonId: ownerOnUpdate } : {}),
+            ...(subjectUnion ? { personSubjectIds: { set: subjectUnion } } : {}),
           },
           create: {
             tenantId,
@@ -779,6 +971,9 @@ export class SpecialistsCombinedService {
             forRole,
             status,
             sourceBlockIds: [r.sourceBlockId],
+            scope,
+            ownerPersonId: hintOwner ?? author?.personId ?? null,
+            ...(author?.entityId ? { personSubjectIds: [author.entityId] } : {}),
           },
         });
         created += 1;
@@ -793,7 +988,7 @@ export class SpecialistsCombinedService {
   private async persistKnowledgeCategories(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
-    errors: string[],
+    knowledgePersonIds: Set<string>,
   ): Promise<number> {
     if (parsed.knowledge_categories.length === 0) return 0;
 
@@ -804,41 +999,23 @@ export class SpecialistsCombinedService {
 
     const persons = await this.prisma.person.findMany({
       where: { tenantId, name: { in: names }, deletedAt: null },
-      select: { id: true, name: true, profileBuildVersion: true },
+      select: { id: true, name: true },
     });
-    const personIdByName = new Map<string, { id: string; version: number }>();
-    for (const p of persons) {
-      personIdByName.set(p.name, {
-        id: p.id,
-        version: p.profileBuildVersion,
-      });
-    }
+    const personIdByName = new Map<string, string>();
+    for (const p of persons) personIdByName.set(p.name, p.id);
 
     let created = 0;
     for (const c of parsed.knowledge_categories) {
-      const resolved = personIdByName.get(c.personName.trim());
-      if (!resolved) {
+      const personId = personIdByName.get(c.personName.trim());
+      if (!personId) {
         this.logger.debug(
           { personName: c.personName },
           'specialists-combined.knowledge_categories: Person не найден — skip',
         );
         continue;
       }
-      try {
-        await this.prisma.personKnowledgeCategoryEmbedding.create({
-          data: {
-            tenantId,
-            personId: resolved.id,
-            categoryName: c.category.slice(0, 200),
-            confidence: c.confidence,
-            profileBuildVersion: resolved.version,
-          },
-        });
-        created += 1;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`knowledge_category[${c.personName}/${c.category}]: ${msg}`);
-      }
+      knowledgePersonIds.add(personId);
+      created += 1;
     }
     return created;
   }
@@ -847,6 +1024,8 @@ export class SpecialistsCombinedService {
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
     errors: string[],
+    knowledgePersonIds: Set<string>,
+    skillProfileIds: Set<string>,
   ): Promise<number> {
     if (parsed.skill_traits.length === 0) return 0;
 
@@ -868,6 +1047,8 @@ export class SpecialistsCombinedService {
       if (!personId) continue;
       try {
         const profile = await this.ensureSkillProfile(tenantId, personId);
+        knowledgePersonIds.add(personId);
+        skillProfileIds.add(profile.id);
         await this.prisma.skillTrait.create({
           data: {
             profileId: profile.id,
@@ -981,6 +1162,154 @@ export class SpecialistsCombinedService {
     return created;
   }
 
+  private async persistTasks(
+    tenantId: string,
+    parsed: SpecialistsCombinedOutput,
+    blockIdSet: Set<string>,
+    channel: string,
+    sourceId: string,
+    sourceTitle: string | null,
+  ): Promise<number> {
+    if (!this.taskMaterializer) return 0;
+    const drafts: TaskDraftInput[] = parsed.tasks
+      .filter((t) => blockIdSet.has(t.sourceBlockId))
+      .map((t) => ({
+        title: t.title,
+        assignee: t.assignee ?? null,
+        dueDate: t.dueDate ?? null,
+        suggestedAssigneeHint: t.suggestedAssigneeHint ?? null,
+        suggestedDueDate: t.suggestedDueDate ?? null,
+        suggestedPriority: t.suggestedPriority ?? null,
+        confidence: typeof t.confidence === 'number' ? t.confidence : null,
+        sourceQuote: t.sourceQuote ?? null,
+        subtasks: t.subtasks ?? null,
+        sourceBlockId: t.sourceBlockId,
+      }));
+    if (drafts.length === 0) return 0;
+    try {
+      const created = await this.taskMaterializer.materialize({
+        tenantId,
+        channel,
+        sourceId,
+        sourceTitle,
+        drafts,
+      });
+      return created.length;
+    } catch (err) {
+      this.logger.warn(
+        { channel, sourceId, err: err instanceof Error ? err.message : String(err) },
+        'specialists-combined.persistTasks: материализация задач упала (best-effort)',
+      );
+      return 0;
+    }
+  }
+
+  private async enqueueSideEffects(args: {
+    tenantId: string;
+    sourceLabel: string;
+    decisionIds: string[];
+    knowledgePersonIds: Set<string>;
+    skillProfileIds: Set<string>;
+  }): Promise<void> {
+    const reason = `combined:${args.sourceLabel}`;
+    for (const personId of args.knowledgePersonIds) {
+      try {
+        await this.coreQueue?.enqueueRebuildKnowledgeProfile({
+          tenantId: args.tenantId,
+          personId,
+          reason,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { personId, err: err instanceof Error ? err.message : String(err) },
+          'specialists-combined: enqueueRebuildKnowledgeProfile упал — пропускаю Person',
+        );
+      }
+    }
+    for (const profileId of args.skillProfileIds) {
+      try {
+        await this.coreQueue?.enqueueRebuildSkillProfile({
+          tenantId: args.tenantId,
+          profileId,
+          reason,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { profileId, err: err instanceof Error ? err.message : String(err) },
+          'specialists-combined: enqueueRebuildSkillProfile упал — пропускаю профиль',
+        );
+      }
+    }
+    for (const decisionId of args.decisionIds) {
+      try {
+        await this.dashboardQueue?.enqueueDecisionHygiene({
+          tenantId: args.tenantId,
+          decisionId,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { decisionId, err: err instanceof Error ? err.message : String(err) },
+          'specialists-combined: enqueueDecisionHygiene упал — пропускаю решение',
+        );
+      }
+    }
+  }
+
+  private async resolveScope(
+    tenantId: string,
+    rawScope: string | null | undefined,
+  ): Promise<string | null> {
+    const raw = rawScope?.trim() ?? null;
+    if (!raw || !raw.startsWith('role:')) return raw ? raw.slice(0, 120) : null;
+    const hint = raw.slice('role:'.length).trim();
+    if (!hint) return raw.slice(0, 120);
+    const existing = await this.prisma.role.findFirst({
+      where: { id: hint, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (existing) return `role:${existing.id}`;
+    const resolved = await this.entities?.resolveRoleByHint(tenantId, hint);
+    if (resolved) return `role:${resolved}`;
+    this.metrics?.incRegulationScopeUnresolved?.({ tenantTop: tenantTopOf(tenantId) });
+    return raw.slice(0, 120);
+  }
+
+  private async resolveOwnerPersonHint(
+    tenantId: string,
+    hint: string | null | undefined,
+  ): Promise<string | null> {
+    if (!hint) return null;
+    const trimmed = hint.trim();
+    if (trimmed.length < 2) return null;
+    const personId = await this.entities?.resolvePersonByHint(tenantId, trimmed);
+    if (!personId)
+      this.metrics?.incRegulationOwnerUnresolved?.({ tenantTop: tenantTopOf(tenantId) });
+    return personId ?? null;
+  }
+
+  private async resolveBlockAuthor(
+    tenantId: string,
+    sourceBlockId: string,
+  ): Promise<{ personId: string; entityId: string | null } | null> {
+    try {
+      const ev = await this.prisma.ideaBlockEvidence.findFirst({
+        where: { blockId: sourceBlockId, tenantId, authorPersonId: { not: null } },
+        orderBy: { sourceTimestamp: { sort: 'asc', nulls: 'last' } },
+        select: { authorPersonId: true },
+      });
+      const authorPersonId = ev?.authorPersonId ?? null;
+      if (!authorPersonId) return null;
+      const person = await this.prisma.person.findFirst({
+        where: { id: authorPersonId, tenantId, deletedAt: null },
+        select: { id: true, entityId: true },
+      });
+      if (!person) return null;
+      return { personId: person.id, entityId: person.entityId ?? null };
+    } catch {
+      return null;
+    }
+  }
+
   private clamp01(value: number): number {
     if (!Number.isFinite(value)) return 0;
     if (value < 0) return 0;
@@ -1020,6 +1349,7 @@ export class SpecialistsCombinedService {
         knowledgeCategories: 0,
         skillTraits: 0,
         helpfulnessTraits: 0,
+        tasks: 0,
       },
       emptySections: [
         'decisions',
@@ -1030,6 +1360,7 @@ export class SpecialistsCombinedService {
         'knowledge_categories',
         'skill_traits',
         'helpfulness_traits',
+        'tasks',
       ],
       llm,
       errors: [],
@@ -1053,7 +1384,8 @@ export class SpecialistsCombinedService {
       created.instructions +
       created.knowledgeCategories +
       created.skillTraits +
-      created.helpfulnessTraits;
+      created.helpfulnessTraits +
+      created.tasks;
     for (let i = 0; i < total; i++) {
       this.metrics.incCoreSpecialistCards({ type, status: 'canonical' });
     }

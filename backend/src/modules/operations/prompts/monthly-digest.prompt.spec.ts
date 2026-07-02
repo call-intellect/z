@@ -4,6 +4,8 @@ import type { MonthlyDigestVerdictDto } from '../dto/monthly-digest.dto';
 import { mondaysInMonth } from '../services/monthly-digest.service';
 
 import {
+  MONTH_COMPANY_JSON_SCHEMA,
+  MONTH_COMPANY_PROMPT_VERSION,
   buildMonthWeekTrend,
   clampMonthVerdict,
   extractMonthCompanyResponse,
@@ -43,17 +45,48 @@ const VALID_MONTH_COMPANY = {
     pro: [],
     contra: [],
   },
-  decisions: [{ title: 'Нанять PM', why: 'тащит один' }],
+  ownerForks: [{ title: 'Нанять PM', why: 'тащит один' }],
   nextFocus: [{ title: 'Закрыть онбординг', why: 'долг недель' }],
   risksSummary: 'r',
   ideasSummary: 'i',
 };
+
+function letterKeyEnum(): string[] {
+  const props = (MONTH_COMPANY_JSON_SCHEMA as Record<string, unknown>).properties as Record<
+    string,
+    { items: { properties: { key: { enum: string[] } } } }
+  >;
+  const letter = props.letter!;
+  return letter.items.properties.key.enum;
+}
+
+describe('MONTH_COMPANY prompt contract', () => {
+  it('версия промпта — month-company-v2', () => {
+    expect(MONTH_COMPANY_PROMPT_VERSION).toBe('month-company-v2');
+  });
+
+  it('MONTH_LETTER_KEYS — 12 ключей с intro/attention/reflection', () => {
+    const keys = letterKeyEnum();
+    expect(keys).toHaveLength(12);
+    expect(keys).toContain('intro');
+    expect(keys).toContain('attention');
+    expect(keys).toContain('reflection');
+  });
+
+  it('required содержит ownerForks и не содержит decisions', () => {
+    const required = (MONTH_COMPANY_JSON_SCHEMA as Record<string, unknown>).required as string[];
+    expect(required).toContain('ownerForks');
+    expect(required).not.toContain('decisions');
+  });
+});
 
 describe('clampMonthVerdict', () => {
   it('негативный клиентский сигнал поднимает clients ok→risk', () => {
     const signals: MonthVerdictSignals = {
       hasNegativeClientSignal: true,
       executionStrained: false,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
     };
     const out = clampMonthVerdict(baseVerdict(), signals);
     const clients = out.axes.find((a) => a.key === 'clients')!;
@@ -65,6 +98,8 @@ describe('clampMonthVerdict', () => {
     const signals: MonthVerdictSignals = {
       hasNegativeClientSignal: false,
       executionStrained: true,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
     };
     const out = clampMonthVerdict(baseVerdict(), signals);
     const execution = out.axes.find((a) => a.key === 'execution')!;
@@ -78,10 +113,39 @@ describe('clampMonthVerdict', () => {
     const signals: MonthVerdictSignals = {
       hasNegativeClientSignal: false,
       executionStrained: false,
+      teamFrictionWarn: false,
+      teamFrictionRisk: false,
     };
     const out = clampMonthVerdict(baseVerdict(), signals);
     expect(out.overall.state).toBe('ok');
     for (const a of out.axes) expect(a.state).toBe('ok');
+  });
+
+  it('teamFrictionRisk поднимает team ok→risk и overall не зелёный', () => {
+    const signals: MonthVerdictSignals = {
+      hasNegativeClientSignal: false,
+      executionStrained: false,
+      teamFrictionWarn: true,
+      teamFrictionRisk: true,
+    };
+    const out = clampMonthVerdict(baseVerdict(), signals);
+    const team = out.axes.find((a) => a.key === 'team')!;
+    const overallAxis = out.axes.find((a) => a.key === 'overall')!;
+    expect(team.state).toBe('risk');
+    expect(out.overall.state).not.toBe('ok');
+    expect(overallAxis.state).not.toBe('ok');
+  });
+
+  it('teamFrictionWarn (risk=false) поднимает team ok→warn', () => {
+    const signals: MonthVerdictSignals = {
+      hasNegativeClientSignal: false,
+      executionStrained: false,
+      teamFrictionWarn: true,
+      teamFrictionRisk: false,
+    };
+    const out = clampMonthVerdict(baseVerdict(), signals);
+    const team = out.axes.find((a) => a.key === 'team')!;
+    expect(team.state).toBe('warn');
   });
 });
 
@@ -92,7 +156,7 @@ describe('extractMonthCompanyResponse', () => {
     });
     expect(out).not.toBeNull();
     expect(out!.verdict.overall.title).toBe('Месяц сдвига');
-    expect(out!.decisions).toHaveLength(1);
+    expect(out!.ownerForks).toHaveLength(1);
     expect(out!.nextFocus).toHaveLength(1);
     expect(out!.goalAlignmentMonth.leadingSignal).toContain('найм');
   });
@@ -100,6 +164,14 @@ describe('extractMonthCompanyResponse', () => {
   it('REJECT: мусор → null', () => {
     expect(extractMonthCompanyResponse({ text: 'это не json' })).toBeNull();
     expect(extractMonthCompanyResponse({ text: '' })).toBeNull();
+  });
+
+  it('REJECT: letter-секция с key=decisions не проходит', () => {
+    const broken = {
+      ...VALID_MONTH_COMPANY,
+      letter: [{ key: 'decisions', title: 'Решения', prose: 'проза' }],
+    };
+    expect(extractMonthCompanyResponse({ text: JSON.stringify(broken) })).toBeNull();
   });
 
   it('невалидный enum direction → .catch дефолт drift', () => {

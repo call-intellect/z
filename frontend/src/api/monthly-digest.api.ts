@@ -2,6 +2,12 @@ import { apiClient } from "./api-client";
 
 import { ApiError } from "./api-error";
 import type { AvailablePeriodsApi } from "./available-periods.api";
+import type { InsightListItemApi } from "./insights.api";
+import type { IdeaClusterApi } from "./ideas.api";
+import type {
+  OperationsTeamFrictionApi,
+  OperationsBlockerApi,
+} from "./operations-dashboard.api";
 
 export interface MonthlyDigestMetricsApi {
   weeksCount: number;
@@ -12,14 +18,17 @@ export interface MonthlyDigestMetricsApi {
   goalsCompleted: number;
   goalsFailed: number;
   topBlockers: Array<{ text: string; count: number }>;
-  reliabilityPercent: number | null;
   tasksDone: number;
   tasksPlanned: number;
   tasksNotDone: number;
-  decisions?: Array<{ title: string; why: string }>;
+  ownerForks?: Array<{ title: string; why: string }>;
   nextFocus?: Array<{ title: string; why: string }>;
   risksSummary?: string | null;
   ideasSummary?: string | null;
+  risksByCause?: InsightListItemApi[];
+  ideaClusters?: IdeaClusterApi[];
+  teamFrictions?: OperationsTeamFrictionApi[];
+  blockers?: OperationsBlockerApi[];
 }
 
 export interface MonthlyDigestVerdictAxisApi {

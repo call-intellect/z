@@ -77,7 +77,7 @@ export class CoraFeedService {
       case 'insight':
         return this.collectInsights(ctx);
       case 'decision':
-        return this.collectDecisions(ctx);
+        return [];
       case 'conflict':
         return this.collectConflicts(ctx);
       case 'blocker':
@@ -181,66 +181,6 @@ export class CoraFeedService {
           severity: r.severity,
           dynamic: r.dynamicLabel,
           hasMitigation: Boolean(r.mitigationPlan && r.mitigationPlan.trim().length > 0),
-        },
-      });
-    });
-  }
-
-  private async collectDecisions(ctx: {
-    tenantId: string;
-    since: Date | null;
-    cursorAt: Date | null;
-    limit: number;
-  }): Promise<CoraFeedItemDto[]> {
-    const rows = await this.prisma.decision.findMany({
-      where: {
-        tenantId: ctx.tenantId,
-        deletedAt: null,
-        status: { notIn: ['rejected', 'cancelled', 'rolled_back', 'superseded'] },
-        ...(ctx.since ? { createdAt: { gte: ctx.since } } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      take: ctx.limit,
-      select: {
-        id: true,
-        statement: true,
-        text: true,
-        status: true,
-        implementationStatus: true,
-        linkedTaskCount: true,
-        deadline: true,
-        actualOutcomes: true,
-        createdAt: true,
-      },
-    });
-    const now = Date.now();
-    return rows.map((r) => {
-      const title = (r.statement ?? r.text ?? 'Решение').trim();
-      const impl = r.implementationStatus ?? 'not_started';
-      const parts: string[] = [`статус: ${this.implLabel(impl)}`];
-      parts.push(`связанных задач: ${r.linkedTaskCount}`);
-      let severity: CoraSeverityDto = 'info';
-      const overdue = r.deadline != null && r.deadline.getTime() < now && impl !== 'done';
-      if (impl === 'stalled' || overdue) {
-        severity = 'risk';
-        if (overdue) parts.push('срок истёк');
-      } else if (impl === 'in_progress' || impl === 'not_started') {
-        severity = 'warn';
-      }
-      return this.item({
-        id: `decision:${r.id}`,
-        type: 'decision',
-        title,
-        analysis: parts.join(' · '),
-        severity,
-        createdAt: r.createdAt,
-        cursorAt: ctx.cursorAt,
-        payload: {
-          decisionId: r.id,
-          status: r.status,
-          implementationStatus: impl,
-          linkedTaskCount: r.linkedTaskCount,
-          overdue,
         },
       });
     });
@@ -734,17 +674,6 @@ export class CoraFeedService {
         declining: 'снижается',
         spike: 'всплеск',
       }[d] ?? String(d)
-    );
-  }
-
-  private implLabel(impl: string): string {
-    return (
-      {
-        not_started: 'не начато',
-        in_progress: 'в работе',
-        done: 'внедрено',
-        stalled: 'застряло',
-      }[impl] ?? impl
     );
   }
 

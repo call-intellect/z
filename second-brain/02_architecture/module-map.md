@@ -164,7 +164,19 @@ LiveKit чистит атрибуты автоматически при disconne
   - `services/segment-builder.service.ts` — режет meeting-payload на
     скользящие окна сегментов.
   - `services/block-extraction.service.ts` — LLM-вызов `block-ingest`
-    с JSON Schema strict.
+    с JSON Schema strict. `extractFull` режет окна с нахлёстом
+    (`blockIngestWindowOverlapSegments`), пробрасывает позицию «фрагмент N из M»
+    в шапку промпта + N раундов gleaning + дедуп на стыке окон
+    (извлекающий слой, заход A Ф5, 2026-06-30).
+  - `services/meeting-skeleton.service.ts` — `MeetingSkeletonService`
+    (извлекающий слой, заход A Ф6, 2026-06-30): 1 дешёвый LLM-проход
+    (taskType `meeting-skeleton`) на сжатом входе разговора → «Карта встречи»
+    (`{agenda, milestones[], keyNames[]}`), которая подмешивается in-memory
+    в шапку каждого окна `block-ingest` для разрешения кореференций
+    («он/этот клиент/проект») и анти-дробления темы. fail-open (`skeleton=null`
+    → окна работают как раньше). Kill-switch `knowledge.skeleton_pass_enabled` /
+    порог коротких `knowledge.skeletonMinSegments`. Метрика
+    `kc_meeting_skeleton_total{outcome}`.
   - `services/embedding.service.ts` — обёртка над `EmbeddingFallbackService`:
     `embedBlocks` / `embedEntityNames` / `embedQuery`.
   - `services/entity-resolution.service.ts` — findOrCreate Entity по
@@ -200,6 +212,28 @@ LiveKit чистит атрибуты автоматически при disconne
     единственный держатель роли → автор → кандидаты → none). AUTO-заполнение
     только прямых полей Regulation/Process/Policy/Experiment; Card и шаги
     процессов — только probe-выбор. Метрика `z_owner_resolution_total`.
+
+- **knowledge-core ↔ tracker — задачи через combo (заход B извлекающего
+  слоя, 2026-06-30).** `knowledge-specialists-combined` (combo) эмитит `tasks[]`
+  9-м выходом (tool `submit_all_8_entities`→`submit_all_entities`) из
+  canonical-блоков **встречи И чата** и отдаёт task-черновики в
+  **`backend/src/modules/tracker/services/task-draft-materializer.service.ts`**
+  (`TaskDraftMaterializerService`, provider+export в `TrackerModule`, инжектится
+  в combo — оба модуля `@Global`, без цикла). Материализатор канало-агностичен:
+  idempotency `externalId=mat_<sha1(channel:sourceId:quote|title)>`, резолв
+  исполнителя org-wide (`AssigneeResolverService`→skill-routing), дедуп-suggest
+  (`TaskDedupService.evaluate`), подзадачи → `IntakeIssue.checklistJson` (→
+  `IssueChecklist` при accept через `intake-checklist-materialize.util.ts`),
+  enqueue `core.intake-auto-triage`. Метрика
+  `task_draft_materialized_total{channel,status}`. **Снесены:**
+  `MeetingExtractActionsService` (+ caller в `analyze.worker` + метрика
+  `ai_meeting_actions_extracted_total`) и извлекающий спайн-воркер `3-15-tasks`
+  (`Specialist315TasksWorker` + роут `action_item→TASKS` из
+  `RouterService.SPECIALIST`/`PRIORITY`). `Specialist315TasksService` жив —
+  держит `runClarifySweep`. Откат задач = рубильник combo
+  `knowledge.specialistsCombinedEnabled` (отдельного фолбэка нет). См.
+  [[../01_projects/tracker]] §«Combo — единый источник задач»,
+  [[../01_projects/ai-jobs]] §«заход B».
 
 - **`backend/src/modules/rbac/policies/policy.csv`** — добавлены ресурсы
   `block` и `entity` (read/write/delete для owner/admin, read для всех
@@ -238,7 +272,7 @@ LiveKit чистит атрибуты автоматически при disconne
 - `RbacService.ResourceType` расширена `'goal'`. policy.csv: owner write/delete, admin/manager — read.
 
 ### `backend/src/modules/knowledge-core/workers/` (Phase 9, 11)
-- `strategic-alignment.worker.ts` (concurrency 2) + `strategic-alignment.cron.ts` (`@Cron('0 4 * * *')`).
+- `strategic-alignment.worker.ts` (concurrency 2) + `strategic-alignment.cron.ts` (`@Cron('0 2 * * *', { timeZone: 'Europe/Moscow' })` — 02:00 МСК, продюсер движения цели ДО сборки компаса 06:00 МСК; goals-engine-consolidation Ф1).
 - `core-metrics-snapshot.cron.ts` (`@Cron('*/5 * * * *')`) — gauges `core_*`.
 - `prompts/goal-alignment.prompt.ts`.
 
@@ -270,7 +304,9 @@ LiveKit чистит атрибуты автоматически при disconne
 - `business-metrics.service.ts` — gauges/counters/histograms `core_*`. Обёртки `setCoreBlocks`, `observeCorePipelineDuration`, `addCoreLlmTokens`, `incCoreErasure`, `incCoreRetentionDeleted`, `incCoreDataClassViolation`.
 
 ### `backend/src/modules/ai/services/llm-router.service.ts` (Phase 11)
-- Расширение `call({taskType, dataClass?, ...})`. Фильтр провайдеров по `provider.maxDataClass >= dataClass`. На фейл — `NoEligibleProviderError` + инкремент метрики.
+- Расширение `call({taskType, dataClass?, ...})`. Фильтр провайдеров по `provider.maxDataClass >= dataClass` (источник — код-константа `PROVIDER_CAPABILITY`, единственный потребитель). На фейл — `NoEligibleProviderError` + инкремент метрики.
+- **`PROVIDER_CAPABILITY.maxDataClass` (2026-06-29):** `deepseek` и `openai-via-proxy` подняты `internal`→`private` (решение владельца, приватность в деприоритете — как ранее у `kie`). Следствие: оба eligible+primary для запросов любого класса (вкл. `private`/`sensitive`), цепочка резерва `DeepSeek → OpenAI → KIE` работает для chat-v2 на любом вопросе. Раньше для `private`/`sensitive` оставался единственный `kie` → зависание → «Помощник временно недоступен». ТЗ `plans/tz/2026-06-29-chat-v2-dataclass-routing-fallback.md`.
+- **Таймаут KIE — крутилка `ai.kie.timeoutMs`** (AdminSetting, `resolveSync`, code-fallback 180000 мс) вместо захардкоженных 60_000; `knowledge.chatV2SynthesisTimeoutMs` code-fallback поднят до 180_000 (не меньше таймаута KIE).
 - Экспорт `ALL_LLM_TASK_TYPES` (Phase 7).
 
 ### `backend/src/modules/entitlements/` (Phase 12)
@@ -1369,7 +1405,7 @@ goals/
     strategic-alignment-issues.service.spec.ts           # 10 unit-тестов
 ```
 
-Параллельный, а не replacing — в knowledge-core уже есть LLM-based StrategicAlignmentCron (04:00 UTC, по темам/IdeaBlock-ам). Issue-based cron — второй независимый сигнал alignment. Snapshot хранится в Redis + AuditLog (поле `Goal.progressSnapshot` отсутствует в schema, не добавляли).
+Параллельный, а не replacing — в knowledge-core уже есть LLM-based StrategicAlignmentCron (02:00 МСК `Europe/Moscow`, по темам/IdeaBlock-ам). Issue-based cron — второй независимый сигнал alignment. Snapshot хранится в Redis + AuditLog (поле `Goal.progressSnapshot` отсутствует в schema, не добавляли).
 
 Probe-trigger: при ≥80% задач без `goalId` за 30д (минимум 5 задач) → `ProbeService.suggest({type:'strategic_misalignment_high', recipientCandidates:[userId], reason, contextIds:['user:{userId}']})`.
 
@@ -1963,14 +1999,14 @@ mail-inbound/
 
 | Слой | β-8 (уже было) | β-8.1 (новое) | β-8.2 (новое) | β-8.3 (новое) |
 |---|---|---|---|---|
-| Контроллеры | `operations-dashboard`, `my-check-ins`, `personal-relations` | `weekly-digest` + extension `operations-dashboard.team-temperature` | `my-promises` + extensions `operations-dashboard.open-commitments`, `personal-relations.commitments` | `daily-digest.controller` (GET/POST + `/latest`) + extensions `operations-dashboard.overview` (поля `insightsByCauseCategory`, `maturity`) |
-| Сервисы | `daily-checkin`, `personal-relation`, `goal-cascade`, `operations-dashboard`, `checkin-parser`, `checkin-response.handler` | `weekly-digest.service` | `commitments.service`, `specialist-3-9-promise-keeper.service`, `commitment-response.handler` | `daily-digest.service` (двухстадийная сборка: агрегат → LLM) |
-| Воркеры/cron | `daily-checkin-prompt.cron`, `personal-relation-builder.worker` | `checkin-sentiment-analyzer.worker` (@OnEvent), `operations-weekly-digest.cron` | `commitment-followup.cron` | `operations-daily-digest.cron` (`0 22 * * *` UTC, **глобальный, не per-Org**) |
+| Контроллеры | `operations-dashboard`, `my-check-ins`, `personal-relations` | `weekly-digest` + extension `operations-dashboard.team-temperature` | ~~`my-promises` + extensions `operations-dashboard.open-commitments`, `personal-relations.commitments`~~ — **снято** (ТЗ commitment-social-layer-cleanup, 2026-07-01: контроллеры/эндпоинты надзора над обещаниями удалены) | `daily-digest.controller` (GET/POST + `/latest`) + extensions `operations-dashboard.overview` (поля `insightsByCauseCategory`, `maturity`) |
+| Сервисы | `daily-checkin`, `personal-relation`, `goal-cascade`, `operations-dashboard`, `checkin-parser`, `checkin-response.handler` | `weekly-digest.service` | `SelfPersonResolverService` (резолв своей `Person`, вынесен при сносе `commitments.service`); ~~`commitments.service`, `specialist-3-9-promise-keeper.service`, `commitment-response.handler`~~ — **снято** (ТЗ commitment-social-layer-cleanup, 2026-07-01) | `daily-digest.service` (двухстадийная сборка: агрегат → LLM) |
+| Воркеры/cron | `daily-checkin-prompt.cron`, `personal-relation-builder.worker` | `checkin-sentiment-analyzer.worker` (@OnEvent), `operations-weekly-digest.cron` | ~~`commitment-followup.cron`~~ — **снято** (ТЗ kora-clarify-questions-overhaul Ф2, 2026-06-29) | `operations-daily-digest.cron` (`0 22 * * *` UTC, **глобальный, не per-Org**) |
 | Промпты | — | `checkin-sentiment`, `weekly-digest` | — (использует общий `block-ingest.prompt` с двумя новыми guess-полями) | `operations-daily-digest` |
 | Скрипты | — | `patch-org-timezone-default.ts`, `seed-llm-task-routes-beta-8-1.ts` | `backfill-commitment-due-dates.ts`, `seed-llm-task-routes-beta-8-2.ts` | `seed-llm-task-routes-beta-8-3.ts`, `seed-admin-setting-daily-digest.ts` |
 
 **Внешние пересечения β-8.2:**
-- `knowledge-core/services/router.service.ts` — снята заглушка `commitment_status: no-op`, теперь эмитит `commitment.status_received` через `EventEmitter2`.
+- `knowledge-core/services/router.service.ts` — ~~эмитит `commitment.status_received`~~ — **снято** (ТЗ commitment-social-layer-cleanup, 2026-07-01, Ф1): case `commitment_status` удалён; enum `SignalType.commitment_status` остаётся осиротевшим (граница факта).
 - `knowledge-core/prompts/block-ingest.prompt.ts` + `services/block-extraction.service.ts` + `workers/block-ingest.worker.ts` — извлечение `commitmentDueDateGuess` и `commitmentRecipientNameGuess` из текста встреч/чек-инов; fuzzy-match Person по имени.
 - `tracker/tracker.module.ts` — `HolidayService` экспортируется наружу (нужен PromiseKeeper'у для «5 рабочих дней» и «следующий рабочий день»).
 - `rbac/policies/policy.csv` + `rbac/rbac.service.ts` — новые ресурсы `dashboard_operations_temperature`, `dashboard_operations_weekly`, `commitment`.
@@ -2002,6 +2038,24 @@ mail-inbound/
 - `operations/services/weekly-per-person.service.ts` — колонка «Вклад в цель» (`goalContributionNet`) переведена на range-sum по окну.
 
 См. [[../01_projects/director-dashboard]] §«Месяц компании», [[../01_projects/ai-jobs]] §«operations-monthly-digest», [[../01_projects/workers-queues]], [[../01_projects/api-layer]].
+
+### «День компании v2» — письмо COO + полный вход с атрибуцией в `operations/` (2026-07-01)
+
+**Источник:** `plans/tz/2026-06-30-day-company-report-v2.md` (Ф1–Ф8, ветка `work/2026-06-29`). Надстройка над «Днём компании» — новую модель/агент НЕ вводили; переписали промпт, наполнили пакет, перегруппировали виджеты. Новое/изменённое в `backend/src/modules/operations/`:
+
+- **Сервис** `PersonRefResolverService` (`operations/services/`) — **единая точка резолва** `userId`/`externalId`→`Person`: `userId`→`Person.userId`; bitrix `externalId`→`BitrixUser.linkedPersonId`; chatbox `externalId`+`senderType`→`ChatboxMember.linkedPersonId` (CLIENT→`{personId:null,isClient:true}`); не найден→«без автора». Кэш `Map` на проход. Гарантирует подпись «кто сказал» по всем каналам.
+- **`DailyDigestService.buildDayPackage`** расширен — собирает 6 слоёв входа за локальные сутки с `tenantId`: `employeeVoice` (голос из графа по авторству — блоки/идеи/риски через новый индекс `IdeaBlockEvidence(tenantId,authorPersonId,sourceTimestamp)`), `rawConversations` (Битрикс/чатбокс целиком, обрезка по `operations.daily_digest.raw_char_budget`), `signals` (блокеры/риски-по-`causeCategory`/идеи-кластеры), `conflicts` (`getTeamFrictions(since=начало дня)` — параметр `since` добавлен), `reporting` (план↔факт из `DailyCheckIn`, числа системой), `yesterdayOpenSignals` (петля).
+- **Промпт** `operations/prompts/daily-digest.prompt.ts` (`DAY_COMPANY_SYSTEM_PROMPT`) — v2 `day-company-v2`: 12 секций письма COO, имена прямо, взгляд COO (`reflection`), сущность «решения» (`decisions`) удалена; строгая JSON-схема.
+- **Cron** `OperationsDailyDigestCron` — сдвинут `@Cron('0 3 * * *')` → `@Cron('0 7 * * *', Europe/Moscow)` = 07:00 МСК (после сбора чек-инов 05:00).
+- **Скрипты:** `patch-daily-digest-route-deepseek-pro-gpt-kie.ts` (маршрут `operations-daily-digest` = DeepSeek Pro→GPT→KIE, `maxTokens` снят), `seed-admin-setting-daily-digest.ts` (ключ `operations.daily_digest.raw_char_budget`=40000) — оба в `apply-prod-deploy.ts STEPS`.
+
+**Внешние пересечения:**
+- `prisma/schema.prisma` — индекс `IdeaBlockEvidence(tenantId,authorPersonId,sourceTimestamp)` (миграция `20260701053438_idx_evidence_author_day`, аддитивная).
+- `knowledge-core/prompts/block-ingest.prompt.ts` — усилена разметка `signalType=team_friction` (определение + примеры; enum/схема не трогались).
+- `ai/services/llm-router.service.ts` / `LlmTaskRoute` — маршрут `operations-daily-digest` = `deepseek-v4-pro`→`openai-via-proxy/gpt-5.4-mini`→`kie/gemini-3.1-pro`.
+- `admin/settings/*` — крутилка `operations.daily_digest.raw_char_budget` (40000, ENV-fallback `COO_DAILY_DIGEST_RAW_CHAR_BUDGET`).
+
+См. [[../01_projects/director-dashboard]] §«День компании v2», [[../01_projects/ai-jobs]] §«operations-daily-digest».
 
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
@@ -2354,7 +2408,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Новые сервисы
 
-- **`backend/src/modules/operations/` — `WeeklyPerPersonService`** (ТЗ-D) — недельный план-факт по людям: обещано / закрыто / просрочено per `Person` за неделю (агрегат по `IdeaBlock.commitmentAuthorPersonId`). Питает `GET /api/v1/dashboard/operations/weekly-per-person` и виджет «Недельной сводки». `commitment-reliability` (read-провайдер обещаний) получил `personMode: 'author' | 'recipient'` — считать по автору обещания или по получателю.
+- **`backend/src/modules/operations/` — `WeeklyPerPersonService`** (ТЗ-D) — недельный план-факт по людям: обещано / закрыто / просрочено per `Person` за неделю (агрегат по `IdeaBlock.commitmentAuthorPersonId`). Питает `GET /api/v1/dashboard/operations/weekly-per-person` и виджет **«План-факт недели по людям»** (бывший «Кто держит слово», переименован при сносе соц-слоя). `commitment-reliability` (read-провайдер надёжности обещаний) — **снято** (ТЗ commitment-social-layer-cleanup, 2026-07-01, Ф4: `CommitmentReliabilityService` + 7 потребителей удалены). Агрегат план-факта по автору обещания (`commitmentAuthorPersonId`) — остаётся (граница факта).
 - **`backend/src/modules/dashboard/` — `PeopleAtRiskService`** (ТЗ-G) — «люди под риском»: считает `pulseScore` на лету + `topReason` (главная причина риска). Пороги — `AdminSetting peopleAtRisk.*` (`resolveSync`, code-fallback: `overduePenaltyPerItem`=8, `overduePenaltyCap`=30, `redMoodShareThreshold`=0.34, `redMoodPenalty`=15, `riskThreshold`=60). Питает `GET /api/v1/dashboard/people-at-risk`. Схему не трогает (`lastOneOnOneAt` помечен `@deprecated`).
 - **`backend/src/modules/specialist-3-8-helpfulness/` — `SocialContributionPreferenceService`** (ТЗ-E) — отписка от соцвклада через **Redis-preference** `helpfulness:optout:<tenant>:<user>` (по образцу `recognition-preference.service`, НЕ AdminSetting). Питает `GET|POST /api/v1/me/social-contribution/opt-out`.
 
@@ -2415,7 +2469,9 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Авто-привязка Goal↔Theme (Ф4.2)
 
-- **`backend/src/modules/goals/ — GoalThemeLinkerService`** + `GoalThemeLinkerCron` (`@Cron` 30 мин) + on-event из специалиста `3-14-goals` — детерминированная привязка Goal↔Theme по провенансу (общие `sourceBlockIds`) + co-mention; пишет существующую модель `GoalTheme(source='ai')`. Метрика `goal_theme_autolink_total{method}`. Тумблеры `AdminSetting.goals.themeAutolinkMinWeight` / `goals.themeAutolinkLlmEnabled`. **Схема БД не менялась** (`GoalTheme` уже существовал). LLM-арбитр Goal↔Task (Ф4.1) отложен — см. реестр «не-сделано».
+- **`backend/src/modules/goals/ — GoalThemeLinkerService`** + `GoalThemeLinkerCron` (`@Cron` 30 мин) + on-event из специалиста `3-14-goals` — детерминированная привязка Goal↔Theme по провенансу (общие `sourceBlockIds`) + co-mention; пишет существующую модель `GoalTheme(source='ai')`. Метрика `goal_theme_autolink_total{method}`. Тумблеры `AdminSetting.goals.themeAutolinkMinWeight` / `goals.themeAutolinkLlmEnabled`. **Схема БД не менялась** (`GoalTheme` уже существовал). LLM-арбитр Goal↔Task (Ф4.1) отложен — см. реестр «не-сделано». **С 2026-07-01 (goals-engine-consolidation Ф3):** при пустом провенансе (ручная цель без `sourceBlockIds`) добавлена embedding-ветка — KNN `Goal.embedding` → `Theme.embedding`, пишет `GoalTheme(source='ai')`; cron-фильтр `source:'ai'`+`sourceBlockIds` снят. Крутилки `goals.themeAutolinkKnnMaxDistance` / `goals.themeAutolinkKnnTopK`.
+- **`backend/src/modules/knowledge-core/workers/goal-hierarchy-rebuild.cron.ts — GoalHierarchyRebuildCron`** (goals-engine-consolidation Ф4, `@Cron('0 3 * * *', { timeZone: 'Europe/Moscow' })` = 03:00 МСК, per-Org, Redis NX-lock, `WorkerOrgGate`, в `ai/workers.module.ts`) — суточная пересборка иерархии целей через арбитр `Specialist314GoalsService.rebuildParentForGoal` (обёртка над `suggestParentForGoal`): reparent при `child_of`+confidence≥порога+parent≠текущему+не-`manualOverride`+анти-цикл (`goal-cycle-guard.util`), прямой `prisma.goal.update`. Kill-switch `goals.hierarchyRebuild.enabled` (тип A ВКЛ). Крутилки `goals.hierarchyRebuildMinConfidence` / `goals.hierarchyRebuildPerOrgLimit`.
+- **`backend/src/modules/operations/services/goal-cascade.handler.ts — GoalCascadeHandler`** (goals-engine-consolidation Ф5, `@OnEvent('goal.status_changed')`, в `OperationsModule`) — оживляет мёртвый `GoalCascadeService`: `achieved` → `onChildCompleted` (родитель закрывается, если все siblings achieved), `abandoned` → `onParentMissed` (дети помечаются `cascadeMissed`). Событие эмитит `GoalsService.update`/`archive` при реальной смене статуса.
 
 ### Прочие правки (Ф1/Ф2/Ф3/Ф5/Ф6 + ТЗ D)
 
@@ -2482,9 +2538,9 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 ### Доска «Аналитика» — подключение orphan-агентов COO (ТЗ 2026-06-15, ветка `feature/coo-orphan-agents-wire`, `ac56ce2b..b44229ae`)
 
 Подключение уже работавшего бэкенда операционного директора к UI (доска `/dashboard/operations`, метка меню «Аналитика»). Новые эндпоинты:
-- **`operations/services/promise-network.service.ts`** (НОВЫЙ) + **`GET /dashboard/operations/promise-network`** (owner/admin/coo) — «Перегруз ответственностью»: accumulators из последнего `PromiseNetworkSnapshot` (защитный парс `graphJson`, read-only, без cron — снапшот пишет существующий `PromiseNetworkAnalyzerCron`).
+- ~~**`operations/services/promise-network.service.ts`** + **`GET /dashboard/operations/promise-network`** + виджет «Перегруз ответственностью»~~ — **снято** (ТЗ commitment-social-layer-cleanup, 2026-07-01, Ф3): `PromiseNetworkService` + `PromiseNetworkAnalyzerCron` (@Cron Mon 05:00) + эндпоинт + frontend-виджет + модель `PromiseNetworkSnapshot` удалены целиком.
 - **`me.controller.ts` += `GET /me/notification-preferences`** — чтение `optOutEventTypes`/quiet-hours из `ChannelBinding.preferences` для персональной галочки уведомлений.
-- Доводки без новых эндпоинтов: `team-detail.goals` (findMany по `Goal.ownerPersonId`), `team-health.decisions` (scoped count через `HangingDecisionsService.listHangingWithAuthors`), `team-health` += опц. `healthSummary` (select `Department.healthSummaryJson`), `knowledge-at-risk` += `soleExpertPersonName` (relation join). Фронт: 6 pulse-виджетов + DecisionThroughput/CustomerRisk/KnowledgeAtRisk/PromiseOverload на доске.
+- Доводки без новых эндпоинтов: `team-detail.goals` (findMany по `Goal.ownerPersonId`), `team-health` += опц. `healthSummary` (select `Department.healthSummaryJson`), `knowledge-at-risk` += `soleExpertPersonName` (relation join). Фронт: pulse-виджеты + CustomerRisk/KnowledgeAtRisk на доске. _(`team-health.decisions` через `HangingDecisionsService` и виджет `DecisionThroughput` сняты — чистка оперативно-контрольного хвоста решений 2026-06-30. Виджет `PromiseOverload` — снят ТЗ commitment-social-layer-cleanup, 2026-07-01.)_
 - **Ф8 (Ship-On):** убран OFF-флаг `operations.daily_digest.deliver_to_telegram` (ENV `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`); policy `operations.daily_digest` в `EVENT_TYPE_CHANNEL_POLICY` (in_app+email+telegram+max) + payload-схема; cron шлёт безусловно (идемпотентно), kill-switch `operations.daily_digest.enabled` остаётся; контроль доставки — персональной галочкой. Миграций нет. См. [[../01_projects/director-dashboard]], [[../05_история/2026-06-16-coo-orphan-agents-wire]].
 
 ### AdminSettings (kill-switch / крутилки)
@@ -2595,7 +2651,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **Схема:** `model Task`, `enum TaskStatus`, FK back-refs (`User`/`Meeting`/`Org`), `TaskSource.taskId` (миграция `20260625000000_drop_legacy_task_model`).
 
 ### Канон после дропа
-- **Извлечение задач — только спайн** (`specialist-3-15-tasks`: `IdeaBlock(action_item)` → `task-extract` → `IntakeIssue` → `Issue`). Встречи — через `meeting-action-items` (Issue-путь по `linkedMeetingIds`).
+- **Извлечение задач — только спайн** (`specialist-3-15-tasks`: `IdeaBlock(action_item)` → `task-extract` → `IntakeIssue` → `Issue`). Встречи — через `meeting-action-items` (Issue-путь по `linkedMeetingIds`). _(Заход B извлекающего слоя, 2026-06-30: извлекающий спайн `Specialist315TasksWorker` и `MeetingExtractActionsService` снесены — задачи извлекает combo → `TaskDraftMaterializerService`; см. §«Knowledge-core модули» → «knowledge-core ↔ tracker — задачи через combo».)_
 - **Аналитика** (director-dashboard, value-recap, personal-daily-brief, weekly-per-person, meeting-roi-scorer) читает `Issue`, не `Task`.
 - **Связь встреча↔задача** — `Issue.linkedMeetingIds` (GIN-индекс `Issue_linkedMeetingIds_gin_idx`); новый фильтр `GET /api/v1/issues?linkedMeetingId`; вкладка задач встречи на фронте пишет/читает Issue (`useMeetingIssues`, `issuesApi`).
 - **`shares.service`** (публичная шара) переведён на `Issue`. `TaskSource` остаётся провенанс-моделью (только `issueId`).

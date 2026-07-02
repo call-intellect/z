@@ -12,7 +12,7 @@ EU AI Act: не анализируй голос/видео — только ст
   "risks": ["краткие риск-маркеры"],
   "opportunities": ["краткие возможности"],
   "expectedShifts": [
-    {"metric": "sentiment_index" | "commitment_kept_ratio" | "hanging_decisions" | "engagement_score",
+    {"metric": "sentiment_index" | "commitment_kept_ratio" | "engagement_score",
      "direction": "up" | "flat" | "down",
      "confidence": 0..1}
   ]
@@ -41,12 +41,7 @@ export const FORECASTER_JSON_SCHEMA: Record<string, unknown> = {
         properties: {
           metric: {
             type: 'string',
-            enum: [
-              'sentiment_index',
-              'commitment_kept_ratio',
-              'hanging_decisions',
-              'engagement_score',
-            ],
+            enum: ['sentiment_index', 'commitment_kept_ratio', 'engagement_score'],
           },
           direction: { type: 'string', enum: ['up', 'flat', 'down'] },
           confidence: { type: 'number' },
@@ -62,7 +57,6 @@ export interface ForecasterTrendPoint {
   weekStart: string;
   sentiment_index: number | null;
   commitment_kept_ratio: number | null;
-  hanging_decisions: number | null;
   engagement_score: number | null;
 }
 
@@ -76,7 +70,6 @@ export function buildForecasterUserMessage(args: {
     `Тренды за 4 недели (по 4 метрикам, JSON в конце):`,
     `- sentiment_index: индекс настроения = (доля зелёных − доля красных), [-1..+1].`,
     `- commitment_kept_ratio: kept / (kept+broken+overdue), [0..1].`,
-    `- hanging_decisions: количество висящих решений (raisedCount ≥ 2).`,
     `- engagement_score: средний engagement сотрудников, [0..1].`,
     ``,
     JSON.stringify({ trends: args.trends }, null, 2),
@@ -88,7 +81,7 @@ export interface ForecasterParsedResponse {
   risks: string[];
   opportunities: string[];
   expectedShifts: Array<{
-    metric: 'sentiment_index' | 'commitment_kept_ratio' | 'hanging_decisions' | 'engagement_score';
+    metric: 'sentiment_index' | 'commitment_kept_ratio' | 'engagement_score';
     direction: 'up' | 'flat' | 'down';
     confidence: number;
   }>;
@@ -122,7 +115,6 @@ export function parseForecasterResponse(text: string): ForecasterParsedResponse 
       if (
         (metric === 'sentiment_index' ||
           metric === 'commitment_kept_ratio' ||
-          metric === 'hanging_decisions' ||
           metric === 'engagement_score') &&
         (direction === 'up' || direction === 'flat' || direction === 'down') &&
         typeof confidence === 'number' &&

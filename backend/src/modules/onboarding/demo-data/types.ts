@@ -49,7 +49,6 @@ export interface IdMap {
     knowledgeRisks: string[];
     recurringTopics: string[];
     personGoalContributions: string[];
-    promiseNetwork: string | null;
     knowledgeVelocity: string | null;
     personEngagements: string[];
     forecasts: string[];
@@ -98,7 +97,6 @@ export function createEmptyIdMap(): IdMap {
       knowledgeRisks: [],
       recurringTopics: [],
       personGoalContributions: [],
-      promiseNetwork: null,
       knowledgeVelocity: null,
       personEngagements: [],
       forecasts: [],

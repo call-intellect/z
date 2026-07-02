@@ -1,4 +1,4 @@
-import { PrismaClient, type Prisma } from '@prisma/client';
+import { type Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -23,6 +23,15 @@ const SEEDS: SettingSeed[] = [
     severity: 'medium',
     description:
       'Включает ежедневный cron генерации отчёта операционного директора (01:00 МСК). False → cron работает в no-op (без рестарта).',
+  },
+  {
+    key: 'operations.daily_digest.raw_char_budget',
+    value: 40000,
+    category: 'operations',
+    section: 'daily_digest',
+    severity: 'low',
+    description:
+      'Бюджет символов на сырые переписки дня (Битрикс + чатбокс) во входе промпта «День компании». При превышении самые ранние реплики отбрасываются, отчёт не падает.',
   },
 ];
 

@@ -5,12 +5,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 export type ProbeWindow = 'immediate' | 'deferrable';
 
 export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
-  'decision.missing_decider': 'immediate',
-  'decision.no_deadline_critical': 'immediate',
-  'decision.overdue': 'immediate',
-  'regulation.missing_owner': 'immediate',
   'temporal.fact_stale_contradiction.escalated': 'immediate',
-  'commitment.silence_escalation': 'immediate',
   'consistency_violation.R1': 'immediate',
   'consistency_violation.R2': 'immediate',
   'consistency_violation.R3': 'immediate',
@@ -19,12 +14,12 @@ export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
   'consistency_violation.R6': 'immediate',
   'goal.kr_checkpoint_suggested': 'immediate',
   'kr_checkpoint_suggested': 'immediate',
-  'regulation.existence_confirm': 'deferrable',
   'task.assignee_unresolved': 'immediate',
   'task.due_date_missing': 'immediate',
   'task.poorly_specified': 'immediate',
   'task.false_positive': 'immediate',
   'task.completion_detail_missing': 'immediate',
+  'task.method_capture': 'immediate',
 };
 
 export function probeWindow(reason: string): ProbeWindow {
@@ -32,19 +27,12 @@ export function probeWindow(reason: string): ProbeWindow {
 }
 
 export const NUDGE_REASONS: ReadonlySet<string> = new Set([
-  'decision.overdue',
-  'decision.outcome_unknown',
   'goal.kr_checkpoint_suggested',
-  'commitment.followup',
-  'commitment.silence_escalation',
   'goal_alignment_low',
   'card.missing_deadline',
 ]);
 
 export const MACHINE_FILLABLE_REASONS: ReadonlySet<string> = new Set([
-  'regulation.missing_owner',
-  'regulation.process_no_steps',
-  'regulation.scope_unclear',
   'card.merge_suggestion',
   'experiment.no_owner',
   'process_template.missing_input_artifact',
@@ -64,59 +52,10 @@ export interface ProbeProvenanceCtx {
   contextCardKind: string | null;
 }
 
-async function regulationFamilyProvenance(
-  ctx: ProbeProvenanceCtx,
-): Promise<ProbeProvenance> {
-  const { prisma, tenantId, contextCardId, contextCardKind } = ctx;
-  if (!contextCardId) return 'unknown';
-  const kind = (contextCardKind ?? '').toLowerCase();
-  const select = {
-    sourceBlockIds: true,
-    currentVersion: { select: { trustTier: true } },
-  } as const;
-  let card: {
-    sourceBlockIds: string[];
-    currentVersion: { trustTier: string } | null;
-  } | null;
-  if (kind === 'process') {
-    card = await prisma.process.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select,
-    });
-  } else if (kind === 'policy') {
-    card = await prisma.policy.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select,
-    });
-  } else {
-    card = await prisma.regulation.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select,
-    });
-  }
-  if (!card) return 'unknown';
-  if (card.currentVersion?.trustTier === 'human') return 'confirmed_or_manual';
-  const openCuration = await prisma.curationItem.findFirst({
-    where: { tenantId, resourceId: contextCardId, status: 'pending' },
-    select: { id: true },
-  });
-  if (openCuration) return 'auto_unconfirmed';
-  if (card.sourceBlockIds.length > 0) return 'auto_unconfirmed';
-  return 'unknown';
-}
-
 export async function resolveProbeProvenance(
-  reason: string,
-  ctx: ProbeProvenanceCtx,
+  _reason: string,
+  _ctx: ProbeProvenanceCtx,
 ): Promise<ProbeProvenance> {
-  if (!ctx.contextCardId) return 'unknown';
-  if (
-    reason === 'regulation.missing_owner' ||
-    reason === 'regulation.process_no_steps' ||
-    reason === 'regulation.scope_unclear'
-  ) {
-    return regulationFamilyProvenance(ctx);
-  }
   return 'unknown';
 }
 
@@ -175,42 +114,6 @@ const ATTRIBUTION_LINK_TYPES: ReadonlyArray<EntityLinkType> = [
 ];
 
 export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
-  'decision.missing_decider': async ({ prisma, tenantId, contextCardId }) => {
-    if (!contextCardId) return true;
-    const d = await prisma.decision.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select: { decidedByPersonIds: true, decidedByPersonId: true },
-    });
-    if (!d) return false;
-    return d.decidedByPersonIds.length === 0 && !d.decidedByPersonId;
-  },
-  'decision.overdue': async ({ prisma, tenantId, contextCardId }) => {
-    if (!contextCardId) return true;
-    const d = await prisma.decision.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select: { status: true },
-    });
-    if (!d) return false;
-    return d.status !== 'implemented' && d.status !== 'cancelled';
-  },
-  'decision.no_deadline_critical': async ({ prisma, tenantId, contextCardId }) => {
-    if (!contextCardId) return true;
-    const d = await prisma.decision.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select: { deadline: true },
-    });
-    if (!d) return false;
-    return d.deadline == null;
-  },
-  'decision.outcome_unknown': async ({ prisma, tenantId, contextCardId }) => {
-    if (!contextCardId) return true;
-    const d = await prisma.decision.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select: { actualOutcomes: true },
-    });
-    if (!d) return false;
-    return d.actualOutcomes == null;
-  },
   'idea.status_unclear': async ({ prisma, tenantId, contextCardId }) => {
     if (!contextCardId) return true;
     const idea = await prisma.idea.findFirst({

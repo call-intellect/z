@@ -93,7 +93,18 @@ export class IngestService {
       where: { idempotencyKey },
     });
     if (existing) {
-      this.logger.debug(
+      this.logger.log(
+        {
+          rawEventId: existing.id,
+          tenantId: existing.tenantId,
+          sourceType: existing.sourceType,
+          sourceExternalId: input.sourceExternalId ?? null,
+          dataClass: existing.dataClass,
+          idempotent: true,
+        },
+        '[PIPE] ingest',
+      );
+      this.logger.log(
         {
           rawEventId: existing.id,
           sourceId: input.sourceId,
@@ -153,6 +164,17 @@ export class IngestService {
           'ingest: enqueueRawReceived упал — RawEvent создан, job не поставлен',
         );
       });
+      this.logger.log(
+        {
+          rawEventId: created.id,
+          tenantId: created.tenantId,
+          sourceType: created.sourceType,
+          sourceExternalId: created.sourceExternalId ?? null,
+          dataClass: created.dataClass,
+          idempotent: false,
+        },
+        '[PIPE] ingest',
+      );
       this.logger.log(
         {
           rawEventId: created.id,

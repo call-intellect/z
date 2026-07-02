@@ -25,16 +25,6 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
   },
-  {
-    taskType: 'commitment-extract-status',
-    playbookSection:
-      '§β-8.2 §9 — разбор ответа сотрудника на followup ("сделано"|"не сделано" + причина + блокер).',
-    chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
-      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
-    ],
-  },
 ];
 
 interface SeedStats {

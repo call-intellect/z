@@ -30,6 +30,8 @@ function makeDecision(over: Record<string, unknown> = {}) {
     sourceBlockIds: [] as string[],
     personSubjectIds: [] as string[],
     confidence: null,
+    reversibility: null,
+    reversibilityAt: null,
     currentVersionId: null,
     validFrom: null,
     validUntil: null,
@@ -80,6 +82,36 @@ describe('DecisionsService — trustTier в read-DTO', () => {
     const dto = await svc.getById({ tenantId: 't-1', id: 'd-1' });
 
     expect(dto.trustTier).toBe('human');
+  });
+
+  it('getById: reversibility=type-1 → DTO.reversibility=type-1 + reversibilityAt в ISO', async () => {
+    findFirstMock.mockResolvedValue(
+      makeDecision({
+        currentVersion: null,
+        reversibility: 'type-1',
+        reversibilityAt: FIXED_DATE,
+      }),
+    );
+
+    const dto = await svc.getById({ tenantId: 't-1', id: 'd-1' });
+
+    expect(dto.reversibility).toBe('type-1');
+    expect(dto.reversibilityAt).toBe(FIXED_DATE.toISOString());
+  });
+
+  it('list: reversibility пробрасывается в каждый list-item (type-1 / null)', async () => {
+    findManyMock.mockResolvedValue([
+      makeDecision({ id: 'd-irrev', reversibility: 'type-1' }),
+      makeDecision({ id: 'd-rev', reversibility: null }),
+    ]);
+    countMock.mockResolvedValue(2);
+
+    const query = ListDecisionsQuerySchema.parse({});
+    const res = await svc.list({ tenantId: 't-1', query });
+
+    const byId = new Map(res.items.map((i) => [i.id, i.reversibility]));
+    expect(byId.get('d-irrev')).toBe('type-1');
+    expect(byId.get('d-rev')).toBeNull();
   });
 
   it('list: 2 записи (provisional + без версии) → trustTier у каждой корректен', async () => {

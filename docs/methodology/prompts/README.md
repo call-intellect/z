@@ -77,6 +77,7 @@
 | task-dedup-arbiter | дедуп задачи перед записью в трекер (nil/same/different, NIL первым) | [examples/task-dedup-arbiter.md](examples/task-dedup-arbiter.md) |
 | task-closure-verify | верификатор «выполнена ли задача» по сигналу из разговора (done + сигналы за/против, кандидат, не авто-закрытие) | [examples/task-closure-verify.md](examples/task-closure-verify.md) |
 | chat-summary | сводка непрочитанной переписки «Что пропустил» (markdown, цитаты `[MSG:<id>]`, гейт по порогу в коде) | [examples/chat-summary.md](examples/chat-summary.md) |
+| day-company-v2 | письмо COO «День компании» (12 секций прозы в строгом JSON, имена прямо, петля со вчера, «взгляд COO», числа считает система, cites из входа) | [examples/day-company-v2.md](examples/day-company-v2.md) |
 
 > Добавляя новый эталон: один файл в `examples/`, по структуре probe-formulate (контекст → полный промпт → разбор по анатомии → антипример «было» → как мерили). Сюда — строку.
 

@@ -58,6 +58,8 @@ export type LlmTaskType =
   | 'card-chat'
   | 'block-ingest'
   | 'chunk-context'
+  // Ф6 extraction-rewrite — скелет встречи (оглавление) одним дешёвым проходом ДО окон block-ingest.
+  | 'meeting-skeleton'
   | 'block-distill'
   | 'block-linker'
   | 'entity-resolver'
@@ -340,7 +342,6 @@ export type LlmTaskType =
   | 'checkin-parse'
   | 'operations-summary'
   | 'checkin-sentiment'
-  | 'day-signal-detect'
   // ТЗ 2026-05-25 LLM-architecture §6 — batch-вариант checkin-sentiment.
   // 10 чек-инов в одном вызове через tool `submit_batch_sentiments`.
   // Эксперимент 4: точность 100% vs 96% single, в 2× дешевле, на 20% быстрее.
@@ -383,10 +384,7 @@ export type LlmTaskType =
   // 'commitment-extract-dates' — извлечь срок и адресата из текста обещания
   //   (вызов из block-ingest для уточнения если основной prompt не справился).
   //   Primary deepseek-chat, secondary gpt-4o-mini, tertiary ollama qwen3.5.
-  // 'commitment-extract-status' — разобрать ответ сотрудника на followup
-  //   ('fulfilled' | 'missed' + rationale + blockerText?). Та же цепочка.
   | 'commitment-extract-dates'
-  | 'commitment-extract-status'
   // SBA δ-1 — Orchestrator (multi-agent research).
   // 'orchestrator-plan'        — план шагов: primary gpt-4o (важно качество reasoning).
   // 'orchestrator-subagent'    — универсальный subagent-call: primary deepseek (массово+дёшево).
@@ -709,6 +707,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'card-chat',
   'block-ingest',
   'chunk-context',
+  'meeting-skeleton',
   'block-distill',
   'block-linker',
   'entity-resolver',
@@ -834,7 +833,6 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'operations-summary',
   // SBA β-8.1 — добивка панели операционного директора
   'checkin-sentiment',
-  'day-signal-detect',
   'operations-weekly-digest',
   // SBA β-8.3 — ежедневный отчёт COO
   'operations-daily-digest',
@@ -850,7 +848,6 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'value-recap-narrative',
   // SBA β-8.2 — Promise Keeper
   'commitment-extract-dates',
-  'commitment-extract-status',
   // SBA δ-1 — Orchestrator
   'orchestrator-plan',
   'orchestrator-subagent',
@@ -994,7 +991,6 @@ const ALL_PROVIDERS: LlmProviderName[] = [
  * `anthropic` — прямой Anthropic API; для нас это «sensitive» (договор).
  *   Если ANTHROPIC_USE_PROXY=true — фактически идёт через сторонний прокси,
  *   но capability в текущем MVP мы не понижаем (отслеживается ENV-флагом).
- * `minimax` / `openai-via-proxy` / `deepseek` — внешние, internal-only.
  * `ollama` — локальный, формально может обрабатывать private.
  *
  * Карта намеренно жёсткая — config-driven вариант (через БД) — vNext.
@@ -1005,13 +1001,9 @@ const PROVIDER_CAPABILITY: Record<
 > = {
   anthropic: { maxDataClass: 'sensitive', localOnly: false },
   minimax: { maxDataClass: 'internal', localOnly: false },
-  'openai-via-proxy': { maxDataClass: 'internal', localOnly: false },
-  deepseek: { maxDataClass: 'internal', localOnly: false },
+  'openai-via-proxy': { maxDataClass: 'private', localOnly: false },
+  deepseek: { maxDataClass: 'private', localOnly: false },
   ollama: { maxDataClass: 'private', localOnly: true },
-  // KIE / GRSAI — внешние мульти-провайдер прокси (Claude/GPT/Gemini).
-  // grsai пропускает только internal-данные; sensitive — никогда.
-  // kie поднят до private (2026-06-05), т.к. стал универсальным tertiary;
-  // приватность сейчас в деприоритете — решение владельца.
   kie: { maxDataClass: 'private', localOnly: false },
   grsai: { maxDataClass: 'internal', localOnly: false },
 };

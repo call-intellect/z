@@ -15,12 +15,6 @@ export interface DailyDigestMetricsDto {
     name: string;
     confidence: number;
   }>;
-  overdueCommitments: Array<{
-    blockId: string;
-    name: string;
-    dueDate: string | null;
-    recipientPersonId: string | null;
-  }>;
   goals: {
     completed: number;
     failed: number;
@@ -33,11 +27,6 @@ export interface DailyDigestMetricsDto {
     statement: string;
     kind: string;
     causeCategory: string | null;
-  }>;
-  decisions: Array<{
-    decisionId: string;
-    statement: string;
-    status: string;
   }>;
   risksSummary?: string | null;
   ideasSummary?: string | null;
@@ -84,11 +73,10 @@ export interface DailyDigestSourcesDto {
   commitmentIds: string[];
   goalIds: string[];
   insightIds: string[];
-  decisionIds: string[];
 }
 
 export interface DailyDigestEventDto {
-  kind: 'meeting' | 'decision' | 'signal';
+  kind: 'meeting' | 'signal';
   id: string;
   title: string;
   occurredAt: string;
@@ -97,7 +85,7 @@ export interface DailyDigestEventDto {
 }
 
 export interface DailyDigestUrgentItemDto {
-  kind: 'overdue_commitment' | 'raised_decision' | 'high_insight';
+  kind: 'high_insight';
   id: string;
   title: string;
   link: string;
@@ -108,7 +96,7 @@ export interface DailyDigestUrgentItemDto {
 export interface DailyDigestPersonShinedDto {
   personId: string;
   personName: string;
-  reason: 'recognition_received' | 'helpful_acts' | 'commitments_kept';
+  reason: 'recognition_received' | 'helpful_acts';
   detail: string;
   link: string;
 }
@@ -116,7 +104,7 @@ export interface DailyDigestPersonShinedDto {
 export interface DailyDigestPersonStruggledDto {
   personId: string;
   personName: string;
-  reason: 'red_checkin' | 'broken_commitment' | 'silent_3_days';
+  reason: 'red_checkin' | 'silent_3_days';
   detail: string;
   link: string;
 }
@@ -142,7 +130,6 @@ export interface DailyDigestTrendPointDto {
   greenShare: number;
   redShare: number;
   blockers: number;
-  overdueCommitments: number;
   goalsCompleted: number;
   goalsFailed: number;
 }
@@ -178,7 +165,6 @@ export interface DailyDigestAggregates {
   redShare: number;
   topRedCheckIns: Array<{ personName: string | null; excerpt: string }>;
   newBlockers: Array<{ name: string; confidence: number }>;
-  overdueCommitments: Array<{ name: string; dueDate: string | null }>;
   goals: {
     completed: number;
     failed: number;
@@ -189,7 +175,6 @@ export interface DailyDigestAggregates {
     kind: string;
     causeCategory: string | null;
   }>;
-  decisions: Array<{ statement: string; status: string }>;
 }
 
 export const GetDailyDigestQuerySchema = z

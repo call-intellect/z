@@ -3,8 +3,8 @@ import { withPeopleHypothesisGuard } from '../../ai/services/prompts/common';
 export const GOAL_VECTOR_TRACKER_SYSTEM_PROMPT =
   withPeopleHypothesisGuard(`Ты — аналитик вклада сотрудников в цели компании.
 По цели и списку артефактов за неделю ты определяешь:
-  - proScore   — суммарный вес действий «в цель» (идеи, обещания, выполненные обещания, закрытые задачи).
-  - contraScore — суммарный вес действий «против цели» (нарушенные обещания, отказы, явная негативная активность).
+  - proScore   — суммарный вес действий «в цель» (идеи за цель, закрытые задачи, работа по цели).
+  - contraScore — суммарный вес действий «против цели» (идеи против, явная негативная активность).
   - netScore   — proScore − contraScore.
   - signals    — провенанс: какие конкретные артефакты вошли (для transparent sourcing).
 
@@ -12,7 +12,8 @@ export const GOAL_VECTOR_TRACKER_SYSTEM_PROMPT =
   - Если артефакт явно работает на цель — pro.
   - Если артефакт явно противоречит цели — contra.
   - Если артефакт нейтрален или непонятен — не учитывай.
-  - Каждый сигнал помечай direction='pro' или 'contra' и kind ∈ {idea, commitment_kept, commitment_broken, issue_closed}.
+  - Каждый сигнал помечай direction='pro' или 'contra' и kind ∈ {idea, issue_closed, goal_work}.
+  - kind='goal_work' ставь, когда закрытая задача ЯВНО двигает ЭТУ цель; если задача просто закрыта без явной связи с целью — kind='issue_closed'.
 
 Верни СТРОГО JSON:
 {
@@ -23,7 +24,7 @@ export const GOAL_VECTOR_TRACKER_SYSTEM_PROMPT =
       "contraScore": number,
       "netScore": number,
       "signals": [
-        {"kind": "idea"|"commitment_kept"|"commitment_broken"|"issue_closed",
+        {"kind": "idea"|"issue_closed"|"goal_work",
          "refId": "string",
          "direction": "pro"|"contra"}
       ]
@@ -55,7 +56,7 @@ export const GOAL_VECTOR_TRACKER_JSON_SCHEMA: Record<string, unknown> = {
               properties: {
                 kind: {
                   type: 'string',
-                  enum: ['idea', 'commitment_kept', 'commitment_broken', 'issue_closed'],
+                  enum: ['idea', 'issue_closed', 'goal_work'],
                 },
                 refId: { type: 'string' },
                 direction: { type: 'string', enum: ['pro', 'contra'] },
@@ -74,7 +75,7 @@ export const GOAL_VECTOR_TRACKER_JSON_SCHEMA: Record<string, unknown> = {
 export interface GoalVectorArtefact {
   personId: string;
   personName: string;
-  kind: 'idea' | 'commitment_kept' | 'commitment_broken' | 'issue_closed';
+  kind: 'idea' | 'issue_closed';
   refId: string;
   text: string;
 }
@@ -94,7 +95,7 @@ export function buildGoalVectorTrackerUserMessage(args: {
     `Неделя: ${args.weekStart}.`,
     ``,
     `Артефакты сотрудников за неделю (JSON в конце):`,
-    `- kind: idea / commitment_kept / commitment_broken / issue_closed.`,
+    `- kind: idea / issue_closed / goal_work (goal_work — закрытая задача, явно двигающая цель).`,
     `- refId: стабильный ID для signals.refId.`,
     `- text: контекст для оценки направления (pro/contra).`,
     ``,
@@ -108,7 +109,7 @@ export interface GoalVectorPerson {
   contraScore: number;
   netScore: number;
   signals: Array<{
-    kind: 'idea' | 'commitment_kept' | 'commitment_broken' | 'issue_closed';
+    kind: 'idea' | 'issue_closed' | 'goal_work';
     refId: string;
     direction: 'pro' | 'contra';
   }>;
@@ -148,10 +149,7 @@ export function parseGoalVectorTrackerResponse(
           const refId = s.refId;
           const direction = s.direction;
           if (
-            (kind === 'idea' ||
-              kind === 'commitment_kept' ||
-              kind === 'commitment_broken' ||
-              kind === 'issue_closed') &&
+            (kind === 'idea' || kind === 'issue_closed' || kind === 'goal_work') &&
             typeof refId === 'string' &&
             (direction === 'pro' || direction === 'contra')
           ) {

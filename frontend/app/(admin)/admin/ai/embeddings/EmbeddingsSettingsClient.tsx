@@ -60,13 +60,13 @@ const MODEL_SETTINGS: SettingSpec<unknown>[] = [
 
 const CHUNK_SETTINGS: SettingSpec<unknown>[] = [
   {
-    key: "embeddings.chunk_target_tokens",
+    key: "embeddings.chunkTargetTokens",
     label: "Целевой размер чанка (токены)",
     schema: z.number().int().min(64).max(2000).default(512),
     defaultValue: 512,
   },
   {
-    key: "embeddings.chunk_overlap_tokens",
+    key: "embeddings.chunkOverlapTokens",
     label: "Перекрытие чанков (токены)",
     schema: z.number().int().min(0).max(500).default(64),
     defaultValue: 64,
@@ -75,7 +75,7 @@ const CHUNK_SETTINGS: SettingSpec<unknown>[] = [
 
 const BATCH_SETTINGS: SettingSpec<unknown>[] = [
   {
-    key: "embeddings.batch_size",
+    key: "embeddings.batchSize",
     label: "Batch size",
     description: "Сколько чанков отправлять в одном HTTP-запросе к провайдеру.",
     schema: z.number().int().min(1).max(256).default(32),

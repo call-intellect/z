@@ -34,7 +34,6 @@ interface Mocks {
   embedder: { embedQuery: ReturnType<typeof vi.fn> };
   curation: { triage: ReturnType<typeof vi.fn> };
   conflicts: { report: ReturnType<typeof vi.fn> };
-  probes: { checkAndEmitForDecision: ReturnType<typeof vi.fn> };
   metrics: Record<string, ReturnType<typeof vi.fn>>;
   logs: { write: ReturnType<typeof vi.fn> };
   intake: { create: ReturnType<typeof vi.fn> };
@@ -73,7 +72,6 @@ function buildService(
     embedder: { embedQuery: vi.fn().mockResolvedValue(null) },
     curation: { triage: vi.fn().mockResolvedValue(undefined) },
     conflicts: { report: vi.fn().mockResolvedValue(undefined) },
-    probes: { checkAndEmitForDecision: vi.fn().mockResolvedValue(undefined) },
     metrics: {
       incCoreSpecialistExtractionFailure: vi.fn(),
       observeCoreSpecialistPipelineDuration: vi.fn(),
@@ -96,7 +94,6 @@ function buildService(
     entities,
     m.curation as never,
     m.conflicts as never,
-    m.probes as never,
     m.metrics as never,
     m.logs as never,
     cfg,

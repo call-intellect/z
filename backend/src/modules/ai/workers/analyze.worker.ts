@@ -19,7 +19,6 @@ import { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MeetingsService } from '../../meetings/meetings.service';
 import { MEETING_AI_READY } from '../../tables/events/entity-sync.events';
-import { MeetingExtractActionsService } from '../../tracker/services/meeting-extract-actions.service';
 import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 import { AiUsageLogService } from '../services/ai-usage-log.service';
@@ -78,9 +77,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(PromptResolverService)
     private readonly promptResolver?: PromptResolverService,
-    @Optional()
-    @Inject(MeetingExtractActionsService)
-    private readonly meetingExtractActions?: MeetingExtractActionsService,
     @Optional()
     @Inject(DashboardQueueService)
     private readonly dashboardQueue?: DashboardQueueService,
@@ -394,23 +390,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
             `analyze: enqueueMeetingRoi упал: ${err instanceof Error ? err.message : String(err)}`,
           ),
         );
-    }
-
-    if (this.meetingExtractActions && meeting.tenantId) {
-      try {
-        await this.meetingExtractActions.extract({
-          tenantId: meeting.tenantId,
-          meetingId,
-        });
-      } catch (err) {
-        this.logger.warn(
-          {
-            meetingId,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'analyze: meeting-extract-actions упал (best-effort) — продолжаем',
-        );
-      }
     }
 
     this.logger.debug(

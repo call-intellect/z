@@ -8,7 +8,7 @@
  * system-промпт; строка 74-76 — формат сериализации блока).
  *
  * Один LLM-вызов на ВСЕ canonical-блоки одной встречи возвращает ОДНОВРЕМЕННО
- * восемь массивов сущностей через tool `submit_all_8_entities`:
+ * девять массивов сущностей через tool `submit_all_entities`:
  *   1. decisions          (signalType=decision|rationale|decision_basis)
  *   2. ideas              (signalType=idea|feature_request|suggestion|client_request)
  *   3. insights           (signalType=pain|risk|blocker|inefficiency|churn_risk|objection|team_friction|process_friction|resource_gap)
@@ -17,6 +17,7 @@
  *   6. knowledge_categories (для employee-Person — эмерджентные категории знаний)
  *   7. skill_traits       (для employee-Person — гипотезные черты подхода к решениям)
  *   8. helpfulness_traits (signalType=help_provided|proactive_hint|mentoring|emotional_support|constructive_feedback)
+ *   9. tasks              (поручения и твёрдые обещания-как-задачи)
  *
  * Эксперимент (см. `backend/test/eval/specialists-experiment/`):
  *   Б+ победил 8 раздельных специалистов (Variant Г) 18:13 по качеству судьи
@@ -44,8 +45,14 @@ import { signalTypeLabel } from './signal-type-label';
 export const SPECIALISTS_COMBINED_TASK_TYPE =
   'knowledge-specialists-combined' as const;
 
+export type CombinedChannelKind = 'meeting' | 'chat';
+
+export function channelLabel(kind: CombinedChannelKind): string {
+  return kind === 'chat' ? 'переписки' : 'встречи';
+}
+
 /** Имя tool'а для structured output (LLM tool-use). */
-export const SPECIALISTS_COMBINED_TOOL_NAME = 'submit_all_8_entities';
+export const SPECIALISTS_COMBINED_TOOL_NAME = 'submit_all_entities';
 
 /**
  * Дефолтный лимит выходных токенов. На 55 блоков (типичная встреча) Variant Б+
@@ -155,6 +162,8 @@ export const RegulationDraftSchema = z
       .optional(),
     roles: z.array(z.string()).optional(),
     evidenceQuote: z.string().nullable().optional(),
+    scope: z.string().nullable().optional(),
+    ownerHint: z.string().nullable().optional(),
     // A2.2 — повторяемая норма компании (true) vs чужая практика/гипотетика/
     // разовое (false). Опционально для обратной совместимости со старыми
     // моделями; используется как сигнал гейта, в БД не персистится.
@@ -208,9 +217,26 @@ export const HelpfulnessTraitDraftSchema = z
   .strict();
 export type HelpfulnessTraitDraft = z.infer<typeof HelpfulnessTraitDraftSchema>;
 
+export const TaskDraftCombinedSchema = z
+  .object({
+    sourceBlockId: z.string().min(1),
+    title: z.string().min(1),
+    assignee: z.string().nullable().optional(),
+    dueDate: z.string().nullable().optional(),
+    suggestedAssigneeHint: z.string().nullable().optional(),
+    suggestedDueDate: z.string().nullable().optional(),
+    suggestedPriority: z.enum(['urgent', 'high', 'medium', 'low']).nullable().optional(),
+    confidence: z.number().optional(),
+    sourceQuote: z.string().optional(),
+    subtasks: z.array(z.object({ title: z.string().min(1) }).strict()).nullable().optional(),
+  })
+  .strict();
+export type TaskDraftCombined = z.infer<typeof TaskDraftCombinedSchema>;
+
 /**
- * Полный output одного LLM-вызова. Все 8 массивов обязательны (могут быть
- * пустыми). См. `SUBMIT_ALL_8_ENTITIES_TOOL` ниже — те же 8 ключей в required.
+ * Полный output одного LLM-вызова. Девять массивов: восемь обязательны (могут
+ * быть пустыми), tasks — optional с default([]). См. `SUBMIT_ALL_ENTITIES_TOOL`
+ * ниже — те же девять ключей в required.
  */
 export const SpecialistsCombinedOutputSchema = z
   .object({
@@ -222,6 +248,7 @@ export const SpecialistsCombinedOutputSchema = z
     knowledge_categories: z.array(KnowledgeCategoryDraftSchema),
     skill_traits: z.array(SkillTraitDraftSchema),
     helpfulness_traits: z.array(HelpfulnessTraitDraftSchema),
+    tasks: z.array(TaskDraftCombinedSchema).optional().default([]),
   })
   .strict();
 export type SpecialistsCombinedOutput = z.infer<
@@ -231,17 +258,17 @@ export type SpecialistsCombinedOutput = z.infer<
 // ──────────────────────────── Tool schema (LlmTool) ────────────────────────────
 
 /**
- * Tool `submit_all_8_entities` — JSON Schema копия (1-в-1) из
+ * Tool `submit_all_entities` — JSON Schema копия (1-в-1) из
  * `backend/scripts/eval/run-specialists-b-plus.ts` строки 29-50. На том же
  * формате эксперимент дал победу 18:13 vs Variant Г и в 3.7× дешевле.
  *
  * Все строки на русском (description, перечисления enum остаются техническими
  * — это контракт парсинга, не текст для пользователя).
  */
-export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
+export const SUBMIT_ALL_ENTITIES_TOOL: LlmTool = {
   name: SPECIALISTS_COMBINED_TOOL_NAME,
   description:
-    'Извлечь все восемь типов сущностей знаний из набора блоков одной встречи за один проход.',
+    'Извлечь все девять типов сущностей знаний из набора блоков одной встречи за один проход.',
   input_schema: {
     type: 'object',
     required: [
@@ -253,6 +280,7 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
       'knowledge_categories',
       'skill_traits',
       'helpfulness_traits',
+      'tasks',
     ],
     additionalProperties: false,
     properties: {
@@ -419,6 +447,8 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
             },
             roles: { type: 'array', items: { type: 'string' } },
             evidenceQuote: { type: ['string', 'null'] },
+            scope: { type: ['string', 'null'] },
+            ownerHint: { type: ['string', 'null'] },
             isOrgNorm: { type: 'boolean' },
             confidence: { type: 'number' },
           },
@@ -485,6 +515,35 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
           },
         },
       },
+      tasks: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['sourceBlockId', 'title'],
+          properties: {
+            sourceBlockId: { type: 'string' },
+            title: { type: 'string' },
+            assignee: { type: ['string', 'null'] },
+            dueDate: { type: ['string', 'null'] },
+            suggestedAssigneeHint: { type: ['string', 'null'] },
+            suggestedDueDate: { type: ['string', 'null'] },
+            suggestedPriority: {
+              type: ['string', 'null'],
+              enum: ['urgent', 'high', 'medium', 'low', null],
+            },
+            confidence: { type: 'number' },
+            sourceQuote: { type: 'string' },
+            subtasks: {
+              type: ['array', 'null'],
+              items: {
+                type: 'object',
+                required: ['title'],
+                properties: { title: { type: 'string' } },
+              },
+            },
+          },
+        },
+      },
     },
   },
 };
@@ -497,15 +556,18 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
  * НЕ поддерживает `tool_choice='required'`, поэтому полагаемся на жёсткую
  * формулировку в system и user).
  */
-export function buildSpecialistsCombinedSystemPrompt(): string {
+export function buildSpecialistsCombinedSystemPrompt(
+  channelKind: CombinedChannelKind = 'meeting',
+): string {
   // A9 (2026-06-10): у каждой извлечённой сущности есть `confidence`, которая
   // течёт в вес/порог downstream (canonical draft → проекции). Единая шкала
   // уверенности (`withConfidenceCalibration`) дописывается в КОНЕЦ SYSTEM
   // (cache-friendly). Локальная калибровка confidence для regulations
   // (голое упоминание → 0.5, шаги/роли/сроки → 0.9) остаётся в теле и не
   // конфликтует с общей шкалой — это частный якорь для одного типа.
+  const sourceWord = channelKind === 'chat' ? 'переписки (чат)' : 'встречи';
   const body = [
-    'Ты — knowledge-инженер компании «Кора». Получаешь все блоки знания одной встречи и за один проход извлекаешь из них восемь типов сущностей через инструмент submit_all_8_entities.',
+    `Ты — knowledge-инженер компании «Кора». Получаешь все блоки знания одного источника (${sourceWord}) и за один проход извлекаешь из них девять типов сущностей через инструмент submit_all_entities.`,
     '',
     'Зачем это и куда уйдёт результат: decisions → карточки решений компании (что и почему решили); insights → риски и проблемы на дашборде руководителя; experiments → база гипотез и уроков; regulations → база регламентов и инструкций; knowledge_categories и skill_traits → профили компетенций и цифровые двойники ролей; helpfulness_traits → кто кому реально помогает в команде. Пропущенная сущность теряется для памяти; выдуманная — засоряет её и вводит людей в заблуждение.',
     '',
@@ -518,6 +580,7 @@ export function buildSpecialistsCombinedSystemPrompt(): string {
     '- по человеку: экспертиза / накопленный опыт / компетенция, навык / ход рассуждения → knowledge_categories[] (1–3 эмерджентные категории знаний на человека)',
     '- ход рассуждения / шаг методологии (если их ≥3 у одного человека) → skill_traits[] (гипотезные черты подхода к решениям)',
     '- оказана помощь / проактивная подсказка / наставничество / эмоциональная поддержка / конструктивная обратная связь → helpfulness_traits[]',
+    '- поручение, задача с исполнителем / твёрдое обещание-как-задача («я сделаю X», «беру на себя Y», «сделай Z к сроку») → tasks[]',
     '- факт и всё прочее → пропускай',
     '',
     'Граница idea↔decision — не доверяй ярлыку слепо, реши по АКТУ ПРИНЯТИЯ: ярлык «принятое решение», но выбор в блоках НЕ зафиксирован (только «давайте / предлагаю / может быть / стоит ли») → ideas[], не decisions[]; ярлык «идея / предложение», но в окне зафиксирован выбор («решили / договорились / берём / принято / утвердили», в т.ч. отказ «решили НЕ делать») → decisions[]. Предложение вместе с его принятием про одно и то же → РОВНО ОДНА запись в decisions[], без дубля в ideas[]. Спорное / мягкое / отложенное / гипотетику не теряй — клади в ideas[].',
@@ -538,12 +601,18 @@ export function buildSpecialistsCombinedSystemPrompt(): string {
     '- instruction — пошаговое «как сделать X» для ОДНОЙ роли: все шаги выполняет один исполнитель, передачи работы между ролями НЕТ («как менеджеру оформить возврат»). Если работа передаётся между ролями — это process, НЕ instruction. Для instruction заполни roles (затронутая роль).',
     `- extractionStatus (статус существования документа): ${EXTRACTION_STATUS_RU.join(' | ')}. «существует» — документ уже есть и действует; «нужен» — заявлена потребность, документа ещё нет; «обсуждается» — не финализирован. Извлечённый из разговора ≠ подтверждённый: не ставь «существует» только потому, что тему упомянули.`,
     '- roles — список ролей/должностей, которых касается норма; evidenceQuote — дословная опора (≤15–20 слов).',
+    '- scope — к кому относится норма, если в тексте явно сказано: `role:<название роли как звучит>` (норма для одной роли) или `org` (для всей компании). Не указано явно — null. ownerHint — имя человека-владельца/ответственного, если назван; иначе null. Названия ролей и имена давай человеческими словами — систему резолвит идентификаторы сама.',
     'regulations — чего НЕ извлекать как орг-документ:',
     '- чужие практики (как делают у конкурентов / в Google / «в больших компаниях») — это не регламент компании;',
     '- гипотетику («если бы сделать как…», «можно было бы») — это не действующая норма;',
     '- голое упоминание документа без его содержания — это existence-сигнал с НИЗКИМ confidence, тело не извлекай.',
     'Калибровка confidence для regulations: есть шаги / роли / сроки → 0.9; только голое упоминание документа → 0.5.',
     'isOrgNorm — повторяемая норма/инструкция/политика КОМПАНИИ («как делаем всегда») → true; чужая практика, гипотетика, разовое поручение или голое упоминание → false (такое в regulations можно не добавлять).',
+    '',
+    'tasks[] — поручения и обещания, ставшие задачами:',
+    '- Твёрдое обязательство с действием = задача. Само-назначение: «я сделаю / беру на себя / сделаю сам(а)» → исполнитель = автор реплики (по speaker блока). Мягкое пожелание («надо бы», «хорошо бы», «было бы здорово») и идея — НЕ задача.',
+    '- Поля: title (императив, до 100 симв); assignee (ФИО/роль как произнесено или null); dueDate (срок: ISO YYYY-MM-DD или фраза «к пятнице», null если нет); sourceQuote (дословная опора); sourceBlockId (id блока-источника, ОБЯЗАТЕЛЕН). Если исполнитель неоднозначен — assignee=null (не угадывай).',
+    '- ГРУППИРОВКА (важно): ты видишь ВСЕ блоки разговора сразу. Если несколько блоков-поручений ОДНОГО автора идут подряд/близко и являются шагами ОДНОГО дела — собери их в ОДНУ задачу с subtasks[] (список коротких формулировок-шагов), а НЕ в N отдельных задач. Если поручение атомарное — subtasks пустой/отсутствует. НЕ дроби шаги одного дела одного человека на отдельные задачи.',
     '',
     'ПРИМЕРЫ (плохо → хорошо):',
     'ПРИМЕР 1 (решение + обоснование → одна запись). Блоки: [принятое решение] «Берём подрядчика Б», рядом [обоснование решения] «у Б склад ближе, доставка на день быстрее».',
@@ -564,17 +633,18 @@ export function buildSpecialistsCombinedSystemPrompt(): string {
     '',
     'ПРИМЕР 5 (нечего извлекать → пустые массивы). Встреча — сплошной small talk, ни одного значимого блока.',
     'ПЛОХО: придумать «решение» из вежливой фразы.',
-    'ХОРОШО: все 8 массивов пустые.',
+    'ХОРОШО: все 9 массивов пустые.',
     '',
     'Перед возвратом — самопроверка:',
     '1. Каждая сущность опирается на реальный блок (sourceBlockId/sourceBlockIds заполнен), ничего не выдумано?',
     '2. decisions с rationale, insights с mitigationSuggestion, experiments с многослойными lessons?',
     '3. skill_traits/knowledge_categories сформулированы как гипотезы, без приговоров и ярлыков?',
     '4. В человеческих строках нет кодов, латиницы и служебных идентификаторов?',
-    '5. Все 8 массивов присутствуют (пустые, если по типу нечего извлекать)?',
+    '5. Все 9 массивов присутствуют (пустые, если по типу нечего извлекать)?',
     '6. Граница idea↔decision решена по акту принятия (зафиксированный выбор → decisions[], непринятое предложение → ideas[]), без дубля одного и того же в оба массива?',
+    '7. tasks[]: каждая — реальное поручение/обещание с sourceBlockId; шаги одного дела одного автора собраны в subtasks, а не разбиты на отдельные задачи?',
     '',
-    `ВАЖНО: верни результат строго через вызов инструмента ${SPECIALISTS_COMBINED_TOOL_NAME}. Не пиши ничего вне tool_use. Все 8 массивов обязательны — если в встрече нечего извлекать по типу, верни пустой массив.`,
+    `ВАЖНО: верни результат строго через вызов инструмента ${SPECIALISTS_COMBINED_TOOL_NAME}. Не пиши ничего вне tool_use. Все 9 массивов обязательны — если в источнике нечего извлекать по типу, верни пустой массив.`,
   ].join('\n');
   return withConfidenceCalibration(body);
 }
@@ -632,9 +702,10 @@ export function formatBlockForCombined(block: CombinedInputBlock): string {
 export function buildSpecialistsCombinedUserMessage(args: {
   meetingTitle: string;
   blocks: CombinedInputBlock[];
+  channelKind?: CombinedChannelKind;
 }): string {
-  const header = `Все блоки встречи «${args.meetingTitle}» (${args.blocks.length} шт):`;
+  const header = `Все блоки ${channelLabel(args.channelKind ?? 'meeting')} «${args.meetingTitle}» (${args.blocks.length} шт):`;
   const body = args.blocks.map(formatBlockForCombined).join('\n\n');
-  const footer = `Важно: верни через инструмент ${SPECIALISTS_COMBINED_TOOL_NAME}. Все 8 массивов обязательны (пустой массив, если по типу нечего извлекать).`;
+  const footer = `Важно: верни через инструмент ${SPECIALISTS_COMBINED_TOOL_NAME}. Все 9 массивов обязательны (пустой массив, если по типу нечего извлекать).`;
   return `${header}\n\n${body}\n\n${footer}`;
 }

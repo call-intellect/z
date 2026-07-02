@@ -73,6 +73,7 @@ function makeWorker(args: { llmText?: string; llmThrows?: boolean }) {
   const redis = {} as unknown as ConstructorParameters<typeof StrategicAlignmentWorker>[0];
   const cfg = {
     aiFeatures: { promptInjectionGuardEnabled: false },
+    getDynamic: vi.fn(async (_k: string, _e: unknown, fallback: unknown) => fallback),
   } as unknown as ConstructorParameters<typeof StrategicAlignmentWorker>[6];
 
   const worker = new StrategicAlignmentWorker(redis, prisma, llm, audit, gate, metrics, cfg);

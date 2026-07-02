@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { DataClass, IdeaBlock, Prisma, SignalType } from '@prisma/client';
+import type { DataClass, IdeaBlock, Prisma, SignalType, SourceType } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -20,6 +20,7 @@ export interface MeetingBlockEvidence {
   endMs: number | null;
   quote: string;
   sourceTimestamp: Date | null;
+  authorLabel: string | null;
 }
 
 @Injectable()
@@ -29,16 +30,27 @@ export class BlockFetchService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async getCanonicalBlocksForMeeting(meetingId: string, tenantId: string): Promise<MeetingBlock[]> {
+    return this.getCanonicalBlocksForSource(tenantId, 'meeting', meetingId);
+  }
+
+  async getCanonicalBlocksForSource(
+    tenantId: string,
+    sourceType: string,
+    externalId: string,
+  ): Promise<MeetingBlock[]> {
     const rawEvents = await this.prisma.rawEvent.findMany({
       where: {
         tenantId,
-        sourceType: 'meeting',
-        sourceExternalId: meetingId,
+        sourceType: sourceType as SourceType,
+        sourceExternalId: externalId,
       },
       select: { id: true },
     });
     if (rawEvents.length === 0) {
-      this.logger.debug({ meetingId, tenantId }, 'block-fetch: RawEvent встречи не найден');
+      this.logger.debug(
+        { sourceType, externalId, tenantId },
+        'block-fetch: RawEvent источника не найден',
+      );
       return [];
     }
     const rawEventIds = rawEvents.map((r) => r.id);
@@ -87,6 +99,7 @@ export class BlockFetchService {
         endMs: true,
         quote: true,
         sourceTimestamp: true,
+        authorLabel: true,
       },
       orderBy: [{ startMs: 'asc' }, { createdAt: 'asc' }],
     });
@@ -100,6 +113,7 @@ export class BlockFetchService {
         endMs: ev.endMs,
         quote: ev.quote,
         sourceTimestamp: ev.sourceTimestamp,
+        authorLabel: ev.authorLabel,
       });
       evidenceByBlock.set(ev.blockId, arr);
     }

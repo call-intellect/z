@@ -280,3 +280,33 @@ describe('Фаза 6 — пороги графа knowledge-core живые (reso
     expect(cfg.knowledgeCore.v2AgentsEnabled).toBe(false);
   });
 });
+
+describe('WP-I — крутилки нарезки block-ingest + рубильник combo (resolveSync)', () => {
+  it('blockIngestWindowSegments — admin override побеждает ENV', () => {
+    const cfg = buildService({ BLOCK_INGEST_WINDOW_SEGMENTS: 12 });
+    expect(cfg.knowledgeCore.blockIngestWindowSegments).toBe(12);
+    cfg.hydrateSync([['knowledge.blockIngestWindowSegments', 5]]);
+    expect(cfg.knowledgeCore.blockIngestWindowSegments).toBe(5);
+  });
+
+  it('blockIngestMaxTokensPerSegment — code-default 2000, когда нет ни cache, ни ENV', () => {
+    const cfg = buildService();
+    expect(cfg.knowledgeCore.blockIngestMaxTokensPerSegment).toBe(2000);
+    cfg.hydrateSync([['knowledge.blockIngestMaxTokensPerSegment', 1800]]);
+    expect(cfg.knowledgeCore.blockIngestMaxTokensPerSegment).toBe(1800);
+  });
+
+  it('specialistsCombined.enabled — admin override knowledge.specialists_combined_enabled побеждает ENV', () => {
+    const cfg = buildService({ SPECIALISTS_COMBINED_ENABLED: true });
+    expect(cfg.specialistsCombined.enabled).toBe(true);
+    cfg.hydrateSync([['knowledge.specialists_combined_enabled', false]]);
+    expect(cfg.specialistsCombined.enabled).toBe(false);
+  });
+
+  it('specialistsCombined.delayMs — code-default 90000, admin override побеждает', () => {
+    const cfg = buildService();
+    expect(cfg.specialistsCombined.delayMs).toBe(90_000);
+    cfg.applySync('knowledge.specialistsCombinedDelayMs', 30_000);
+    expect(cfg.specialistsCombined.delayMs).toBe(30_000);
+  });
+});

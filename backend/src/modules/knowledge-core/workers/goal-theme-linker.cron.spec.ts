@@ -9,7 +9,15 @@ function buildCron() {
   };
   const linker = { linkGoalThemes: vi.fn().mockResolvedValue({ linked: 0 }) };
   const gate = { checkOrThrow: vi.fn().mockResolvedValue(undefined) };
-  const cron = new GoalThemeLinkerCron(prisma as never, linker as never, gate as never);
+  const cfg = {
+    getDynamic: vi.fn(async (_k: string, _e: unknown, fallback: unknown) => fallback),
+  };
+  const cron = new GoalThemeLinkerCron(
+    prisma as never,
+    linker as never,
+    gate as never,
+    cfg as never,
+  );
   return { cron, prisma, linker, gate };
 }
 

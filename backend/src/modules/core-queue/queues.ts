@@ -278,15 +278,11 @@ export interface MeetingReportFastJobData {
   meetingId: string;
 }
 
-/**
- * Payload для job'а `core.specialists-combined` (ТЗ 2026-05-25 llm-architecture §3).
- * Минимальный — только `meetingId`; consumer (`SpecialistsCombinedWorker`)
- * сам подтянет canonical-блоки и tenantId через `BlockFetchService`.
- *
- * Идемпотентность через `jobId = specialists_combined_<meetingId>`.
- */
 export interface SpecialistsCombinedJobData {
-  meetingId: string;
+  tenantId: string;
+  sourceType: string;
+  externalId: string;
+  meetingId?: string;
 }
 
 /**

@@ -35,21 +35,12 @@ describe('ValueRecapService', () => {
       decision: { count: vi.fn(async () => 8) },
       ideaBlock: {
         count: vi.fn(async () => 15),
-        findMany: vi.fn(async () => [
-          { commitmentStatus: 'fulfilled', commitmentDueDate: new Date('2026-05-10') },
-          { commitmentStatus: 'fulfilled', commitmentDueDate: new Date('2026-05-11') },
-          { commitmentStatus: 'missed', commitmentDueDate: new Date('2026-05-12') },
-          { commitmentStatus: 'fulfilled', commitmentDueDate: new Date('2026-05-13') },
-        ]),
       },
       dailyCheckIn: { count: vi.fn(async () => 60) },
       idea: { count: vi.fn(async () => 3) },
       valueRecapSnapshot: { findUnique, upsert },
     };
 
-    const cfg = {
-      getDynamic: vi.fn(async (_k: string, _e: string, def: unknown) => def),
-    };
     const metrics = { incValueRecapBuilt: vi.fn() };
     const llm = {
       call: vi.fn(async () => {
@@ -71,38 +62,13 @@ describe('ValueRecapService', () => {
         minRated: 10,
       })),
     };
-    const decisions = {
-      getDecisionThroughput: vi.fn(async () => ({
-        total: 8,
-        doneWithOutcomes: 4,
-        throughputPercent: 50,
-      })),
-      listDecisionsForMonth: vi.fn(async () => [
-        {
-          id: 'd1',
-          statement: 'Перейти на ежедневные планёрки',
-          status: 'done',
-          throughputPercent: 100,
-        },
-        {
-          id: 'd2',
-          statement: 'Нанять второго маркетолога',
-          status: 'in_progress',
-          throughputPercent: 50,
-        },
-        { id: 'd3', statement: 'Сменить CRM', status: 'stalled', throughputPercent: 0 },
-      ]),
-    };
-
     const svc = new ValueRecapService(
       prisma as never,
-      cfg as never,
       metrics as never,
       llm as never,
       chatFeedback as never,
-      decisions as never,
     );
-    return { svc, prisma, metrics, llm, upsert, decisions, chatFeedback };
+    return { svc, prisma, metrics, llm, upsert, chatFeedback };
   }
 
   it('build собирает payload на твёрдых счётчиках; НЕТ запрещённых метрик (Р6)', async () => {
@@ -112,16 +78,7 @@ describe('ValueRecapService', () => {
     expect(res.payload.routine.meetingsAutoProtocoled).toBe(12);
     expect(res.payload.routine.tasksExtracted).toBe(40);
     expect(res.payload.routine.questionsAnsweredWithCitation).toBe(22);
-    expect(res.payload.team.reliabilityPercent).toBe(75);
-    expect(res.payload.team.reliabilityDenominator).toBe(4);
-    expect(res.payload.team.decisionsTotal).toBe(8);
-    expect(res.payload.team.decisionsThroughputPercent).toBe(50);
-    expect(res.payload.decisions).toHaveLength(3);
-    expect(res.payload.decisions[0]).toMatchObject({
-      id: 'd1',
-      status: 'done',
-      throughputPercent: 100,
-    });
+    expect(res.payload.routine.decisionsExtracted).toBe(8);
     expect(findForbiddenMetricKeys(res.payload)).toEqual([]);
     expect(metrics.incValueRecapBuilt).toHaveBeenCalledTimes(1);
     expect(upsert).toHaveBeenCalledTimes(1);
@@ -173,8 +130,6 @@ describe('ValueRecapService', () => {
       };
       const svc = new ValueRecapService(
         prisma as never,
-        {} as never,
-        {} as never,
         {} as never,
         {} as never,
         {} as never,

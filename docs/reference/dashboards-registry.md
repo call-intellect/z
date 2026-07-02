@@ -52,7 +52,6 @@
 | BottleneckHeatmapWidget | `BottleneckHeatmapWidget.tsx` | DirectorDashboardClient | warning → danger | ✅ эталон (живая heatmap) |
 | BusFactorWidget | `BusFactorWidget.tsx` | DirectorDashboardClient | danger / warning | ✅ полировано Фазой 3 (2026-06-01): `MiniBarRow` глубины + цветной чип по severity (API даёт только `expertsCount`, без уровней — stacked не применим) |
 | GoalVectorWidget | `GoalVectorWidget.tsx` | DirectorDashboardClient | success / accent | ✅ полировано Фазой 3 (2026-06-01): `MiniDonut` слева цели + `MiniStackedBar` top-3 contributors |
-| IrreversibleDecisionsAlert | `IrreversibleDecisionsAlert.tsx` | DirectorDashboardClient | danger | ✅ полировано Фазой 3 (2026-06-01): градиентный фон, иконка `AlertTriangle` в круге, `border-l-4` |
 | KnowledgeVelocityKpi | `KnowledgeVelocityKpi.tsx` | DirectorDashboardClient | success / warning / danger | ✅ полировано Фазой 3 (2026-06-01): главное число через `CountUp` (sparkline-данных в API нет) |
 | LowRoiMeetingsWidget | `LowRoiMeetingsWidget.tsx` | DirectorDashboardClient | danger / warning | ✅ полировано Фазой 3 (2026-06-01): ROI как `MiniBarRow` (danger), hover-tone `bg-chip-danger-bg/5` (массив участников в API виджета отсутствует — чипы пропущены) |
 | RecurringTopicsWidget | `RecurringTopicsWidget.tsx` | DirectorDashboardClient | accent / warning | ✅ полировано Фазой 3 (2026-06-01): общий `MiniSparkline` плотности + `MiniBarRow` справа от каждой темы, авто-тон |
@@ -77,9 +76,9 @@
 
 | Зона | Содержимое | Источник данных |
 |---|---|---|
-| 3 KPI с MiniSparkline | Настроение / Обещания / Висящие решения. CountUp + цвет тренда | `pulse.kpi.*` (DirectorDashboard API) |
+| 2 KPI с MiniSparkline | Настроение / Обещания. CountUp + цвет тренда _(KPI «Висящие решения» снят 2026-06-30)_ | `pulse.kpi.*` (DirectorDashboard API) |
 | AI-сводка | `<AiNarrativeWithSources>` (без изменений) | `data?.narrative` |
-| Топ-1 риск | Первый из `pulsePatterns.irreversibleDecisions` или fallback «✅ Нет критических рисков» | API `/dashboard/pulse-patterns` |
+| Топ-1 риск | Из прочих pulse-паттернов или fallback «✅ Нет критических рисков» _(`irreversibleDecisions` снят 2026-06-30)_ | API `/dashboard/pulse-patterns` |
 
 Под Hero (узкая sticky-полоса):
 - Слева: 4 мини-счётчика «Структура компании» (`StructureSummaryWidget`) — отделы / должности / сотрудники / документы.
@@ -103,7 +102,6 @@
 | **InsightsTopWidget** | widgets/InsightsTopWidget.tsx | Знания | 7 | SBA β-4 (Insights Radar) | ✅ existing |
 | **KnowledgeVelocityKpi** | KnowledgeVelocityKpi.tsx | Знания | 8 (перенесён из Hero) | `pulse.knowledgeVelocity` | ✅ existing |
 | **GoalVectorWidget** | GoalVectorWidget.tsx | Цели и встречи | 1 | `pulse.goalVector` | ✅ existing |
-| **IrreversibleDecisionsAlert** | IrreversibleDecisionsAlert.tsx | Цели и встречи | 2 | `pulsePatterns.irreversibleDecisions` | ✅ existing |
 | **LowRoiMeetingsWidget** | LowRoiMeetingsWidget.tsx | Цели и встречи | 3 | `pulse.lowRoiMeetings` | ✅ existing |
 | **StrategicAlignmentWidget** | widgets/StrategicAlignmentWidget.tsx | Цели и встречи | 4 | `data?.strategicAlignment` | ✅ existing |
 | **QualityScoreWidget** | widgets/QualityScoreWidget.tsx | Цели и встречи | 5 | Фаза C (owner/admin only) | ✅ existing |

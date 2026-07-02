@@ -67,6 +67,9 @@ export interface DailyCheckInDto {
     severity?: 'low' | 'medium' | 'high';
     ownerHint?: string;
   }>;
+  notDone: Array<{ text: string; sourcePlanText?: string; verdictConfidence?: number }>;
+  ideas: Array<{ text: string; sourceBlockId?: string }>;
+  reportCompleteness: 'draft' | 'full' | null;
   notificationId: string | null;
   parseConfidence: number | null;
   curatorReview: boolean;

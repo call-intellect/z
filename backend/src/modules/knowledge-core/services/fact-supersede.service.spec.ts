@@ -222,6 +222,126 @@ describe('FactSupersedeService', () => {
     });
   });
 
+  it('хроносверка: sourceTimestamp прокинут в шаблон для newBlock и кандидата', async () => {
+    const m = makeMocks();
+    m.spies.blockFindFirst.mockResolvedValueOnce(
+      makeBlock({
+        evidence: [
+          { quote: 'новый факт', sourceTimestamp: new Date('2026-05-25T12:00:00Z') },
+        ],
+      }),
+    );
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([
+      {
+        id: 'blk-old',
+        name: 'old fact',
+        criticalQuestion: 'q',
+        trustedAnswer: 'old a',
+        signalType: 'fact',
+        validFrom: new Date('2026-05-01T10:00:00Z'),
+        source_timestamp: new Date('2026-05-01T09:00:00Z'),
+        similarity: 0.93,
+      },
+    ]);
+    m.spies.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        verdict: 'unrelated',
+        targetBlockId: null,
+        reason: 'про разное',
+        confidence: 0.5,
+      }),
+    });
+    const svc = new FactSupersedeService(m.prisma, m.redis, m.llm, m.conflicts, m.metrics, m.cfg);
+
+    await svc.processNewBlock('blk-new');
+
+    expect(m.spies.llmCall).toHaveBeenCalledTimes(1);
+    const callArg = (m.spies.llmCall.mock.calls[0] ?? [])[0] as { userMessage: string };
+    expect(callArg.userMessage).toContain('2026-05-25T12:00:00.000Z');
+    expect(callArg.userMessage).toContain('2026-05-01T09:00:00.000Z');
+    expect(callArg.userMessage).toContain('когда сказано');
+    expect(m.spies.blockUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('хроносверка: sourceTimestamp=null → шаблон не падает, «время не указано»', async () => {
+    const m = makeMocks();
+    m.spies.blockFindFirst.mockResolvedValueOnce(makeBlock({ evidence: [], validFrom: null }));
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([
+      {
+        id: 'blk-old',
+        name: 'old fact',
+        criticalQuestion: 'q',
+        trustedAnswer: 'old a',
+        signalType: 'fact',
+        validFrom: null,
+        source_timestamp: null,
+        similarity: 0.93,
+      },
+    ]);
+    m.spies.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        verdict: 'unrelated',
+        targetBlockId: null,
+        reason: 'про разное',
+        confidence: 0.5,
+      }),
+    });
+    const svc = new FactSupersedeService(m.prisma, m.redis, m.llm, m.conflicts, m.metrics, m.cfg);
+
+    const r = await svc.processNewBlock('blk-new');
+
+    expect(r.verdict).toBe('unrelated');
+    expect(m.spies.llmCall).toHaveBeenCalledTimes(1);
+    const callArg = (m.spies.llmCall.mock.calls[0] ?? [])[0] as { userMessage: string };
+    expect(callArg.userMessage).toContain('время не указано');
+  });
+
+  it('разворот по времени: verdict=supersedes для более позднего → applySupersedes ровно один раз, report один раз', async () => {
+    const m = makeMocks();
+    m.spies.blockFindFirst.mockResolvedValueOnce(
+      makeBlock({
+        evidence: [
+          { quote: 'новый факт', sourceTimestamp: new Date('2026-06-01T10:00:00Z') },
+        ],
+      }),
+    );
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([
+      {
+        id: 'blk-old',
+        name: 'old fact',
+        criticalQuestion: 'q',
+        trustedAnswer: 'old a',
+        signalType: 'fact',
+        validFrom: new Date('2026-05-01T10:00:00Z'),
+        source_timestamp: new Date('2026-05-01T10:00:00Z'),
+        similarity: 0.93,
+      },
+    ]);
+    m.spies.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        verdict: 'supersedes',
+        targetBlockId: 'blk-old',
+        reason: 'новый позже и отменяет старый',
+        confidence: 0.92,
+      }),
+    });
+    m.spies.blockUpdateMany.mockResolvedValueOnce({ count: 1 });
+    const svc = new FactSupersedeService(m.prisma, m.redis, m.llm, m.conflicts, m.metrics, m.cfg);
+
+    const r = await svc.processNewBlock('blk-new');
+
+    expect(r.verdict).toBe('supersedes');
+    expect(r.applied).toBe(true);
+    expect(m.spies.blockUpdateMany).toHaveBeenCalledTimes(1);
+    expect(m.spies.conflictReport).toHaveBeenCalledTimes(1);
+    const updArgs = (m.spies.blockUpdateMany.mock.calls[0] ?? [])[0] as {
+      where: { validUntil: null };
+      data: { validUntil: Date };
+    };
+    expect(updArgs.where.validUntil).toBeNull();
+    expect(updArgs.data.validUntil).toBeInstanceOf(Date);
+  });
+
   it('race-condition — два параллельных вызова: один applied, второй skip_race_lost', async () => {
     const m = makeMocks();
     m.spies.blockFindFirst.mockResolvedValue(makeBlock());

@@ -162,7 +162,6 @@ function TeamHealthTable({ rows }: { rows: TeamHealthRowDomain[] }) {
           >
             <th className="py-2 pr-3 font-medium">Команда</th>
             <th className="py-2 pr-3 text-center font-medium">Настроение</th>
-            <th className="py-2 pr-3 text-center font-medium">Обещания</th>
             <th className="py-2 text-center font-medium">Конфликты</th>
           </tr>
         </thead>
@@ -207,12 +206,6 @@ function TeamHealthTable({ rows }: { rows: TeamHealthRowDomain[] }) {
                     label={formatSigned(row.sentiment.value)}
                   />
                 </td>
-                <td className="py-2.5 pr-3 text-center">
-                  <HealthChip
-                    tone={row.promises.tone}
-                    label={`${row.promises.value}%`}
-                  />
-                </td>
                 <td className="py-2.5 text-center">
                   <HealthChip
                     tone={row.conflicts.tone}
@@ -222,7 +215,7 @@ function TeamHealthTable({ rows }: { rows: TeamHealthRowDomain[] }) {
               </tr>
               {expandedId === row.departmentId && row.healthSummary ? (
                 <tr key={`${row.departmentId}-factors`}>
-                  <td colSpan={4} className="pb-3">
+                  <td colSpan={3} className="pb-3">
                     <div
                       className="rounded-xl p-3"
                       style={{ background: "var(--surface-inset)" }}

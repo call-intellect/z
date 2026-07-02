@@ -395,7 +395,7 @@ function buildSettings(): SettingSeed[] {
       'knowledge.distillMergeThreshold',
       envFloat('DISTILL_MERGE_THRESHOLD', 0.85),
       'medium',
-      'KNN cosine-порог merge IdeaBlock',
+      'Порог косинусной близости для склейки схожих IdeaBlock (distill). Ниже 0.85 — арбитр-LLM решает спорные. Диапазон 0–1.',
     ],
     [
       'knowledge.reportBlockConfidenceCap',
@@ -429,7 +429,7 @@ function buildSettings(): SettingSeed[] {
     ],
     [
       'knowledge.blockIngestMaxTokensPerSegment',
-      envInt('BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT', 1500),
+      envInt('BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT', 2000),
       'medium',
       'Максимум токенов на сегмент при block-ingest',
     ],
@@ -747,6 +747,54 @@ function buildSettings(): SettingSeed[] {
       'low',
       'Порог уверенности (0-1) ниже которого источник-документ помечается как требующий проверки (needsReview) в панели «Откуда это». Для источников-встреч не применяется.',
     ],
+    [
+      'knowledge.specialists_combined_enabled',
+      true,
+      'high',
+      'Combo-проход block-ingest (idea+decision одним вызовом, kill-switch, ON)',
+    ],
+    [
+      'knowledge.specialistsCombinedDelayMs',
+      envInt('SPECIALISTS_COMBINED_DELAY_MS', 90000),
+      'low',
+      'Задержка перед combo-проходом специалистов block-ingest, мс',
+    ],
+    [
+      'knowledge.blockIngestWindowOverlapSegments',
+      1,
+      'medium',
+      'Перекрытие соседних окон block-ingest в сегментах',
+    ],
+    [
+      'knowledge.blockIngestGleaningRounds',
+      1,
+      'medium',
+      'Доп. раунды дочёрпывания (gleaning) блоков в окне block-ingest',
+    ],
+    [
+      'knowledge.blockIngestGleaningMinSegments',
+      2,
+      'medium',
+      'Минимум сегментов окна для дозабора (gleaning) block-ingest',
+    ],
+    [
+      'knowledge.skeleton_pass_enabled',
+      true,
+      'high',
+      'Скелет встречи (оглавление) одним дешёвым проходом до окон block-ingest (kill-switch, ON)',
+    ],
+    [
+      'knowledge.header_map_enabled',
+      true,
+      'high',
+      'Карта заголовков для контекстуализации окон block-ingest (kill-switch, ON)',
+    ],
+    [
+      'knowledge.skeletonMinSegments',
+      6,
+      'medium',
+      'Минимум сегментов встречи для запуска скелет-прохода',
+    ],
   ];
   for (const [key, value, severity, description] of knowledge) {
     out.push({ key, value, category: 'ai', section: 'knowledge-core', severity, description });
@@ -879,6 +927,12 @@ function buildSettings(): SettingSeed[] {
       envFloat('AUTO_ACCEPT_CONFIDENCE_THRESHOLD', 0.75),
       'high',
       'Порог авто-создания Issue из триажа встречи (confidence LLM 0..1). Дефолт 0.75 под живую речь; жёсткие гейты source=meeting+assignee+project остаются страховкой.',
+    ],
+    [
+      'tracker.intakeDedupThreshold',
+      0.15,
+      'medium',
+      'Порог косинусной ДИСТАНЦИИ для семантического дедупа задач при материализации (IntakeIssue). Меньше = строже. ~0.15 ≈ сходство 0.85. Диапазон 0–1.',
     ],
   ];
   for (const [key, value, severity, description] of tracker) {
@@ -1792,28 +1846,22 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'task-routing', severity, description });
   }
 
-  const daySignals: Array<[string, unknown, Severity, string]> = [
+  const dayReport: Array<[string, unknown, Severity, string]> = [
     [
-      'daySignals.enabled',
+      'dayReport.enabled',
       true,
       'high',
-      'Рубильник универсального фиксатора чек-инов: детектирует план/отчёт сотрудника из всех каналов (встречи, Bitrix, чаты, почта, заметки) и пишет чек-ин (kill-switch, ON). Выкл → дневной cron-агрегатор и мост встреч не работают',
+      'Рубильник сборщика дневных отчётов из графа (block-ingest): cron 05:00 МСК + мост встреч собирают план/отчёт по 4 сущностям (сделано/не сделано/помешало/идеи). Kill-switch, ON. Выкл → сборка и мост встреч не пишут чек-ины',
     ],
     [
-      'daySignals.detectThreshold',
-      0.7,
+      'dayReport.completenessQualityThreshold',
+      0.5,
       'low',
-      'Минимальная уверенность (0-1) LLM-детектора плана/отчёта, с которой чек-ин фиксируется; ниже — сигнал отбрасывается',
-    ],
-    [
-      'daySignals.processLocalHour',
-      21,
-      'low',
-      'Локальный час сотрудника (0-23), в который дневной cron собирает его сообщения за день и фиксирует чек-ин',
+      'Порог качества рефлексии (0–1), с которого дневной отчёт помечается «полным» (full) при ≥3 из 4 частей; ниже — «черновой» (draft). На «сдал» не влияет',
     ],
   ];
-  for (const [key, value, severity, description] of daySignals) {
-    out.push({ key, value, category: 'platform', section: 'day-signals', severity, description });
+  for (const [key, value, severity, description] of dayReport) {
+    out.push({ key, value, category: 'platform', section: 'day-report', severity, description });
   }
 
   const dailyCheckin: Array<[string, unknown, Severity, string]> = [

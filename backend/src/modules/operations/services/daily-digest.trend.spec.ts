@@ -12,7 +12,6 @@ describe('mapDailyDigestRowsToTrend', () => {
           greenShare: 0.75,
           redShare: 0.1,
           newBlockers: [{ blockId: 'b1' }, { blockId: 'b2' }, { blockId: 'b3' }],
-          overdueCommitments: [{ blockId: 'c1' }],
           goals: { completed: 4, failed: 1 },
         },
       },
@@ -23,7 +22,6 @@ describe('mapDailyDigestRowsToTrend', () => {
           greenShare: 0.5,
           redShare: 0.25,
           newBlockers: [{ blockId: 'b4' }],
-          overdueCommitments: [{ blockId: 'c2' }, { blockId: 'c3' }],
           goals: { completed: 2, failed: 0 },
         },
       },
@@ -34,7 +32,6 @@ describe('mapDailyDigestRowsToTrend', () => {
           greenShare: 0.2,
           redShare: 0.6,
           newBlockers: [],
-          overdueCommitments: [],
           goals: { completed: 0, failed: 3 },
         },
       },
@@ -51,7 +48,6 @@ describe('mapDailyDigestRowsToTrend', () => {
       greenShare: 0.2,
       redShare: 0.6,
       blockers: 0,
-      overdueCommitments: 0,
       goalsCompleted: 0,
       goalsFailed: 3,
     });
@@ -62,13 +58,11 @@ describe('mapDailyDigestRowsToTrend', () => {
       greenShare: 0.75,
       redShare: 0.1,
       blockers: 3,
-      overdueCommitments: 1,
       goalsCompleted: 4,
       goalsFailed: 1,
     });
 
     expect(trend[1]!.blockers).toBe(1);
-    expect(trend[1]!.overdueCommitments).toBe(2);
     expect(trend[1]!.goalsCompleted).toBe(2);
   });
 
@@ -89,7 +83,6 @@ describe('mapDailyDigestRowsToTrend', () => {
       greenShare: 0,
       redShare: 0,
       blockers: 0,
-      overdueCommitments: 0,
       goalsCompleted: 0,
       goalsFailed: 0,
     });

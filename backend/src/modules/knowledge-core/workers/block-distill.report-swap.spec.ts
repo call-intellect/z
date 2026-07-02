@@ -51,7 +51,8 @@ function buildWorker(opts: {
     | { verdict: 'merge'; canonicalId: string; explanation: string }
     | { verdict: 'distinct'; explanation: string };
   canonicalInTx?: IdeaBlock;
-}): { worker: BlockDistillWorker; deps: Deps } {
+  mergeThreshold?: number;
+}): { worker: BlockDistillWorker; deps: Deps & { cfg: { getDynamic: ReturnType<typeof vi.fn> } } } {
   const router = {
     dispatch: vi.fn(async () => ({ dispatched: [], fanOutBeforeTrim: 0 })),
   };
@@ -88,6 +89,7 @@ function buildWorker(opts: {
     bitemporal: { enabled: false, supersedeEnabled: false },
     knowledgeCore: { distillKnnTopK: 10, distillMergeThreshold: 0.85 },
     specialistsCombined: { enabled: false, delayMs: 0 },
+    getDynamic: vi.fn(async () => opts.mergeThreshold ?? 0.85),
   } as unknown;
 
   const gate = { checkOrThrow: vi.fn(async () => undefined) };
@@ -104,7 +106,17 @@ function buildWorker(opts: {
     undefined,
   );
 
-  return { worker, deps: { router, coreQueue, merger, prisma, tx } };
+  return {
+    worker,
+    deps: {
+      router,
+      coreQueue,
+      merger,
+      prisma,
+      tx,
+      cfg: cfg as { getDynamic: ReturnType<typeof vi.fn> },
+    },
+  };
 }
 
 async function runProcess(worker: BlockDistillWorker, blockId = 'block-1') {
@@ -135,7 +147,11 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     expect(deps.tx.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id_tenantId: { id: 'new-t', tenantId: 'tenant-1' } },
-        data: { status: 'merged_into', mergedIntoId: 'canon-t' },
+        data: {
+          status: 'merged_into',
+          mergedIntoId: 'canon-t',
+          mergedIntoTenantId: 'tenant-1',
+        },
       }),
     );
     expect(deps.tx.ideaBlock.update).not.toHaveBeenCalledWith(
@@ -168,7 +184,11 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     expect(deps.tx.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id_tenantId: { id: 'new-r', tenantId: 'tenant-1' } },
-        data: { status: 'merged_into', mergedIntoId: 'canon-r' },
+        data: {
+          status: 'merged_into',
+          mergedIntoId: 'canon-r',
+          mergedIntoTenantId: 'tenant-1',
+        },
       }),
     );
     expect(deps.tx.ideaBlock.update).not.toHaveBeenCalledWith(
@@ -207,7 +227,11 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     expect(deps.tx.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id_tenantId: { id: 'canon-r', tenantId: 'tenant-1' } },
-        data: { status: 'merged_into', mergedIntoId: 'new-t' },
+        data: {
+          status: 'merged_into',
+          mergedIntoId: 'new-t',
+          mergedIntoTenantId: 'tenant-1',
+        },
       }),
     );
     const swapUpdate = deps.tx.ideaBlock.update.mock.calls.find(
@@ -217,6 +241,7 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     const swapData = (swapUpdate![0] as { data: Record<string, unknown> }).data;
     expect(swapData.status).toBe('canonical');
     expect(swapData.mergedIntoId).toBeNull();
+    expect(swapData.mergedIntoTenantId).toBeNull();
     expect(String(swapData.confidence)).toBe('0.9');
     expect(swapData.evidenceCount).toBe(2);
     expect(deps.tx.ideaBlockEvidence.updateMany).toHaveBeenCalledWith(
@@ -279,5 +304,42 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     );
     const swapData = (swapUpdate![0] as { data: Record<string, unknown> }).data;
     expect(String(swapData.confidence)).toBe('0.6');
+  });
+});
+
+describe('BlockDistillWorker — динамический порог склейки (knowledge.distillMergeThreshold)', () => {
+  it('читает порог через cfg.getDynamic и передаёт его в knnCandidates', async () => {
+    const block = buildBlock({ id: 'new-1', primarySource: 'transcript' });
+    const { worker, deps } = buildWorker({
+      draftBlock: block,
+      candidates: [],
+      mergeThreshold: 0.85,
+    });
+
+    await runProcess(worker, 'new-1');
+
+    expect(deps.cfg.getDynamic).toHaveBeenCalledWith(
+      'knowledge.distillMergeThreshold',
+      'DISTILL_MERGE_THRESHOLD',
+      0.85,
+    );
+    expect(deps.merger.knnCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ threshold: 0.85 }),
+    );
+  });
+
+  it('применяет admin-override порога из getDynamic', async () => {
+    const block = buildBlock({ id: 'new-2', primarySource: 'transcript' });
+    const { worker, deps } = buildWorker({
+      draftBlock: block,
+      candidates: [],
+      mergeThreshold: 0.7,
+    });
+
+    await runProcess(worker, 'new-2');
+
+    expect(deps.merger.knnCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ threshold: 0.7 }),
+    );
   });
 });

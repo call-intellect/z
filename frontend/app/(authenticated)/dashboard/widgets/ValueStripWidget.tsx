@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   CheckCircle2,
   FileCheck2,
-  HandshakeIcon,
   ListChecks,
   MessageSquareText,
 } from "lucide-react";
@@ -65,15 +64,6 @@ export function ValueStripWidget({
       value: data.questionsAnsweredByMemory,
       href: "/memory",
     },
-    {
-      key: "commitments",
-      icon: <HandshakeIcon size={18} />,
-      grad: GRAD.pink,
-      tone: CHART.pink,
-      label: "Договорённостей удержано",
-      value: data.commitmentsKept,
-      href: "/me/promises",
-    },
   ];
 
   return (
@@ -84,7 +74,7 @@ export function ValueStripWidget({
       <p className="mt-0.5 text-sm" style={{ color: CHART.dim }}>
         Рутина, которую Кора сняла с команды — твёрдые факты, не оценки.
       </p>
-      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
         {cells.map((cell) => (
           <Link
             key={cell.key}

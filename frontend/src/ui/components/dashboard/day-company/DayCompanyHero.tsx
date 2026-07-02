@@ -7,6 +7,7 @@ import { dashboardApi } from "@/api/dashboard.api";
 import { ideasApi } from "@/api/ideas.api";
 import { insightsApi } from "@/api/insights.api";
 import { operationsDailyDigestApi } from "@/api/operations-daily-digest.api";
+import { operationsDashboardApi } from "@/api/operations-dashboard.api";
 import { useAuth } from "@/contexts/auth-context";
 import {
   directorDashboardFromApi,
@@ -29,11 +30,12 @@ import { CHART } from "@/ui/components/dashboard/modern";
 import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
 import { PeriodEmptyState } from "@/ui/components/dashboard/shared/PeriodEmptyState";
 
+import { DayBlockers } from "./DayBlockers";
 import { DayLetter } from "./DayLetter";
+import { DaySignalsGrid } from "./DaySignalsGrid";
 import { DayVerdictCover } from "./DayVerdictCover";
 import { GoalCompassCard } from "./GoalCompassCard";
 import { PeriodValue } from "./PeriodValue";
-import { RisksIdeas } from "./RisksIdeas";
 import { StaleTasksLinked } from "./StaleTasksLinked";
 
 function localToday(): string {
@@ -86,10 +88,22 @@ export function DayCompanyHero() {
     { revalidateOnFocus: false, errorTitle: "Не удалось загрузить риски" },
   );
 
-  const ideasSwr = useSwrWithToast(
-    currentOrgId ? ["day-company.ideas", currentOrgId] : null,
-    async () => (await ideasApi.top(currentOrgId!, 5)).items,
+  const clustersSwr = useSwrWithToast(
+    currentOrgId ? ["day-company.clusters", currentOrgId] : null,
+    async () => (await ideasApi.listClusters(1, 50)).items,
     { revalidateOnFocus: false, errorTitle: "Не удалось загрузить идеи" },
+  );
+
+  const blockersSwr = useSwrWithToast(
+    currentOrgId ? ["day-company.blockers", currentOrgId] : null,
+    async () => (await operationsDashboardApi.getBlockers()).items,
+    { revalidateOnFocus: false, errorTitle: "Не удалось загрузить блокеры" },
+  );
+
+  const frictionsSwr = useSwrWithToast(
+    currentOrgId ? ["day-company.frictions", currentOrgId] : null,
+    async () => (await operationsDashboardApi.getTeamFrictions()).items,
+    { revalidateOnFocus: false, errorTitle: "Не удалось загрузить трения" },
   );
 
   const directorSwr = useSwrWithToast<DirectorDashboardValueStripDomain>(
@@ -241,9 +255,12 @@ export function DayCompanyHero() {
 
       <StaleTasksLinked items={staleItems} />
 
-      <RisksIdeas
+      <DayBlockers items={blockersSwr.data ?? []} />
+
+      <DaySignalsGrid
         insights={insightsSwr.data ?? []}
-        ideas={ideasSwr.data ?? []}
+        frictions={frictionsSwr.data ?? []}
+        clusters={clustersSwr.data ?? []}
         risksSummary={digest.metrics.risksSummary ?? null}
         ideasSummary={digest.metrics.ideasSummary ?? null}
       />

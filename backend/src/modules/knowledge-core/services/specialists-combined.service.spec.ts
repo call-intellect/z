@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { SPECIALISTS_COMBINED_TOOL_NAME } from '../prompts/specialists-combined.prompt';
 
 import {
@@ -39,6 +40,7 @@ function makePrismaMock(): any {
       upsert: vi.fn().mockResolvedValue({ id: 'instr1' }),
       findUnique: vi.fn().mockResolvedValue(null),
     },
+    role: { findFirst: vi.fn().mockResolvedValue(null) },
     person: { findMany: vi.fn().mockResolvedValue([]) },
     personKnowledgeCategoryEmbedding: {
       create: vi.fn().mockResolvedValue({ id: 'pk1' }),
@@ -90,6 +92,33 @@ function makeMetricsMock() {
     incCoreSpecialistLlmTokens: vi.fn(),
     incCoreSpecialistSkipped: vi.fn(),
     incCoreSpecialistExtractionFailure: vi.fn(),
+    incRegulationScopeUnresolved: vi.fn(),
+    incRegulationOwnerUnresolved: vi.fn(),
+  };
+}
+
+function makeEntitiesMock(
+  overrides?: Partial<{
+    resolveRoleByHint: ReturnType<typeof vi.fn>;
+    resolvePersonByHint: ReturnType<typeof vi.fn>;
+  }>,
+) {
+  return {
+    resolveRoleByHint: overrides?.resolveRoleByHint ?? vi.fn().mockResolvedValue(null),
+    resolvePersonByHint: overrides?.resolvePersonByHint ?? vi.fn().mockResolvedValue(null),
+  };
+}
+
+function makeCoreQueueMock() {
+  return {
+    enqueueRebuildKnowledgeProfile: vi.fn().mockResolvedValue({ jobId: 'kp1' }),
+    enqueueRebuildSkillProfile: vi.fn().mockResolvedValue({ jobId: 'sp1' }),
+  };
+}
+
+function makeDashboardQueueMock() {
+  return {
+    enqueueDecisionHygiene: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -102,6 +131,7 @@ const VALID_8_EMPTY = {
   knowledge_categories: [],
   skill_traits: [],
   helpfulness_traits: [],
+  tasks: [],
 };
 
 function argsTemplate() {
@@ -228,6 +258,7 @@ describe('SpecialistsCombinedService.extractAll', () => {
           confidence: 0.8,
         },
       ],
+      tasks: [],
     };
 
     const llm = makeLlmMock(toolOutput);
@@ -242,7 +273,7 @@ describe('SpecialistsCombinedService.extractAll', () => {
     expect(prisma.insight.create).toHaveBeenCalledTimes(1);
     expect(prisma.experiment.create).toHaveBeenCalledTimes(1);
     expect(prisma.regulation.upsert).toHaveBeenCalledTimes(1);
-    expect(prisma.personKnowledgeCategoryEmbedding.create).toHaveBeenCalledTimes(1);
+    expect(prisma.personKnowledgeCategoryEmbedding.create).not.toHaveBeenCalled();
     expect(prisma.skillProfile.findUnique).toHaveBeenCalledTimes(1);
     expect(prisma.skillProfile.create).toHaveBeenCalledTimes(1);
     expect(prisma.skillTrait.create).toHaveBeenCalledTimes(1);
@@ -258,6 +289,7 @@ describe('SpecialistsCombinedService.extractAll', () => {
       knowledgeCategories: 1,
       skillTraits: 1,
       helpfulnessTraits: 1,
+      tasks: 0,
     });
     expect(result.errors).toEqual([]);
   });
@@ -300,6 +332,62 @@ describe('SpecialistsCombinedService.extractAll', () => {
     await expect(svc.extractAll({ ...argsTemplate() })).rejects.toBeInstanceOf(
       SpecialistsCombinedParseError,
     );
+  });
+
+  function llmResult(over: { text?: string; toolCalls?: unknown }) {
+    return {
+      text: over.text ?? '',
+      modelUsed: 'deepseek:deepseek-v4-pro',
+      inputTokens: 1,
+      outputTokens: 1,
+      cachedTokens: 0,
+      durationMs: 1,
+      tier: 'primary',
+      toolCalls: over.toolCalls ?? [],
+    };
+  }
+
+  it('F-8: первый ответ невалиден → repair-retry возвращает валидный → extractAll успешен', async () => {
+    const prisma = makePrismaMock();
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce(llmResult({ text: 'сломанный {{{' }))
+      .mockResolvedValueOnce(
+        llmResult({ toolCalls: [{ name: SPECIALISTS_COMBINED_TOOL_NAME, input: VALID_8_EMPTY }] }),
+      );
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      { call } as any,
+      makeMetricsMock() as any,
+    );
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(result.created.decisions).toBe(0);
+    expect(result.errors).toEqual([]);
+    const repairArg = call.mock.calls[1]![0] as any;
+    expect(repairArg.tools).toHaveLength(1);
+    expect(repairArg.timeoutMs).toBe(60_000);
+    expect(repairArg.userMessage).toContain('невалиден');
+  });
+
+  it('F-8: repair тоже невалиден → extractAll бросает SpecialistsCombinedParseError (не глотает)', async () => {
+    const prisma = makePrismaMock();
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce(llmResult({ text: 'сломано 1 {{{' }))
+      .mockResolvedValueOnce(llmResult({ text: 'сломано 2 {{{' }));
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      { call } as any,
+      makeMetricsMock() as any,
+    );
+
+    await expect(svc.extractAll({ ...argsTemplate() })).rejects.toBeInstanceOf(
+      SpecialistsCombinedParseError,
+    );
+    expect(call).toHaveBeenCalledTimes(2);
   });
 
   it('пропускает сущности с sourceBlockId, которых нет в наборе блоков (защита от галлюцинаций)', async () => {
@@ -689,5 +777,395 @@ describe('SpecialistsCombinedService.extractAll', () => {
     expect(prisma.idea.create).toHaveBeenCalledTimes(1);
     expect(result.created.ideas).toBe(1);
     expect(result.errors).toEqual([]);
+  });
+
+  // ─────────────────── WP-B: enqueue побочек (rebuild профилей + гигиена) ───────────────────
+
+  it('WP-B: combined enqueue rebuild knowledge/skill + decision-hygiene по уникальным person/profile/decision', async () => {
+    const prisma = makePrismaMock();
+    prisma.person.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Иван', email: 'ivan@ex.com', userId: 'u1' },
+    ]);
+    const coreQueue = makeCoreQueueMock();
+    const dashboardQueue = makeDashboardQueueMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+      knowledge_categories: [
+        {
+          personName: 'Иван',
+          category: 'BI',
+          confidence: 'medium',
+          sampleStatements: ['s1'],
+          sourceBlockIds: ['blk_1'],
+        },
+      ],
+      skill_traits: [
+        {
+          personName: 'Иван',
+          category: 'оценка',
+          statement: 'склонен...',
+          confidence: 'low',
+          sourceBlockIds: ['blk_1'],
+        },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      coreQueue as any,
+      dashboardQueue as any,
+    );
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(coreQueue.enqueueRebuildKnowledgeProfile).toHaveBeenCalledTimes(1);
+    expect(coreQueue.enqueueRebuildKnowledgeProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'org-1', personId: 'p1' }),
+    );
+    expect(coreQueue.enqueueRebuildSkillProfile).toHaveBeenCalledTimes(1);
+    expect(coreQueue.enqueueRebuildSkillProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'org-1', profileId: 'sp1' }),
+    );
+    expect(dashboardQueue.enqueueDecisionHygiene).toHaveBeenCalledTimes(1);
+    expect(dashboardQueue.enqueueDecisionHygiene).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'org-1', decisionId: 'd1' }),
+    );
+  });
+
+  it('WP-B: enqueue best-effort — если coreQueue.enqueue бросает, extractAll не падает (карточки записаны)', async () => {
+    const prisma = makePrismaMock();
+    prisma.person.findMany.mockResolvedValue([{ id: 'p1', name: 'Иван' }]);
+    const coreQueue = makeCoreQueueMock();
+    coreQueue.enqueueRebuildKnowledgeProfile.mockRejectedValue(new Error('queue down'));
+    const dashboardQueue = makeDashboardQueueMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+      knowledge_categories: [
+        {
+          personName: 'Иван',
+          category: 'BI',
+          confidence: 'medium',
+          sampleStatements: ['s1'],
+          sourceBlockIds: ['blk_1'],
+        },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      coreQueue as any,
+      dashboardQueue as any,
+    );
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(result.created.decisions).toBe(1);
+    expect(result.errors).toEqual([]);
+    expect(dashboardQueue.enqueueDecisionHygiene).toHaveBeenCalledTimes(1);
+  });
+
+  it('WP-B: без очередей в DI (undefined) — extractAll не падает, карточки записаны', async () => {
+    const prisma = makePrismaMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+    });
+    const svc = new SpecialistsCombinedService(prisma as any, llm as any, makeMetricsMock() as any);
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(result.created.decisions).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+});
+
+describe('SpecialistsCombinedService — Фаза 7б: scope/owner для regulations/instructions', () => {
+  function buildSvc(args: {
+    prisma: any;
+    llm: any;
+    metrics: any;
+    entities: any;
+  }) {
+    return new SpecialistsCombinedService(
+      args.prisma as any,
+      args.llm as any,
+      args.metrics as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      args.entities as any,
+    );
+  }
+
+  function regToolOutput(reg: Record<string, unknown>) {
+    return {
+      ...VALID_8_EMPTY,
+      regulations: [
+        {
+          sourceBlockId: 'blk_1',
+          kind: 'regulation',
+          name: 'Reg-1',
+          statement: 'Должно быть...',
+          confidence: 0.85,
+          isOrgNorm: true,
+          ...reg,
+        },
+      ],
+    };
+  }
+
+  it('scope=role:<имя> при наличии роли → upsert получает scope=role:<cuid> (create и update)', async () => {
+    const prisma = makePrismaMock();
+    const metrics = makeMetricsMock();
+    const entities = makeEntitiesMock({
+      resolveRoleByHint: vi.fn().mockResolvedValue('role-cuid-123'),
+    });
+    const llm = makeLlmMock(regToolOutput({ scope: 'role:Менеджер' }));
+    const svc = buildSvc({ prisma, llm, metrics, entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(entities.resolveRoleByHint).toHaveBeenCalledWith('org-1', 'Менеджер');
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope).toBe('role:role-cuid-123');
+    expect(upsertArg.update.scope).toBe('role:role-cuid-123');
+    expect(metrics.incRegulationScopeUnresolved).not.toHaveBeenCalled();
+  });
+
+  it('scope=role:<существующий cuid> → без изменений (идемпотентность), резолвер не зовётся', async () => {
+    const prisma = makePrismaMock();
+    prisma.role.findFirst.mockResolvedValue({ id: 'role-cuid-xyz' });
+    const metrics = makeMetricsMock();
+    const entities = makeEntitiesMock();
+    const llm = makeLlmMock(regToolOutput({ scope: 'role:role-cuid-xyz' }));
+    const svc = buildSvc({ prisma, llm, metrics, entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(entities.resolveRoleByHint).not.toHaveBeenCalled();
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope).toBe('role:role-cuid-xyz');
+    expect(upsertArg.update.scope).toBe('role:role-cuid-xyz');
+  });
+
+  it('scope=role:<имя> неразрешимо → сырьё сохранено + counter incRegulationScopeUnresolved', async () => {
+    const prisma = makePrismaMock();
+    const metrics = makeMetricsMock();
+    const entities = makeEntitiesMock({
+      resolveRoleByHint: vi.fn().mockResolvedValue(null),
+    });
+    const llm = makeLlmMock(regToolOutput({ scope: 'role:НетТакойРоли' }));
+    const svc = buildSvc({ prisma, llm, metrics, entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope).toBe('role:НетТакойРоли');
+    expect(metrics.incRegulationScopeUnresolved).toHaveBeenCalledWith({
+      tenantTop: tenantTopOf('org-1'),
+    });
+  });
+
+  it('scope длиннее 120 → усечён до 120, регламент НЕ дропнут', async () => {
+    const prisma = makePrismaMock();
+    const longScope = 'role:' + 'Я'.repeat(200);
+    const entities = makeEntitiesMock({
+      resolveRoleByHint: vi.fn().mockResolvedValue(null),
+    });
+    const llm = makeLlmMock(regToolOutput({ scope: longScope }));
+    const svc = buildSvc({ prisma, llm, metrics: makeMetricsMock(), entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.regulation.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope.length).toBe(120);
+    expect(upsertArg.create.scope).toBe(longScope.slice(0, 120));
+  });
+
+  it('scope=org / null → без изменений, резолвер роли не зовётся', async () => {
+    const prismaOrg = makePrismaMock();
+    const entitiesOrg = makeEntitiesMock();
+    const svcOrg = buildSvc({
+      prisma: prismaOrg,
+      llm: makeLlmMock(regToolOutput({ scope: 'org' })),
+      metrics: makeMetricsMock(),
+      entities: entitiesOrg,
+    });
+    await svcOrg.extractAll({ ...argsTemplate() });
+    expect(entitiesOrg.resolveRoleByHint).not.toHaveBeenCalled();
+    expect(prismaOrg.regulation.upsert.mock.calls[0][0].create.scope).toBe('org');
+
+    const prismaNull = makePrismaMock();
+    const svcNull = buildSvc({
+      prisma: prismaNull,
+      llm: makeLlmMock(regToolOutput({})),
+      metrics: makeMetricsMock(),
+      entities: makeEntitiesMock(),
+    });
+    await svcNull.extractAll({ ...argsTemplate() });
+    expect(prismaNull.regulation.upsert.mock.calls[0][0].create.scope).toBeNull();
+  });
+
+  it('ownerHint разрешим → ownerPersonId проставлен; тёзки/нет → null + counter', async () => {
+    const prismaOk = makePrismaMock();
+    const svcOk = buildSvc({
+      prisma: prismaOk,
+      llm: makeLlmMock(regToolOutput({ ownerHint: 'Анна' })),
+      metrics: makeMetricsMock(),
+      entities: makeEntitiesMock({
+        resolvePersonByHint: vi.fn().mockResolvedValue('person-cuid-9'),
+      }),
+    });
+    await svcOk.extractAll({ ...argsTemplate() });
+    expect(prismaOk.regulation.upsert.mock.calls[0][0].create.ownerPersonId).toBe(
+      'person-cuid-9',
+    );
+
+    const prismaAmb = makePrismaMock();
+    const metricsAmb = makeMetricsMock();
+    const svcAmb = buildSvc({
+      prisma: prismaAmb,
+      llm: makeLlmMock(regToolOutput({ ownerHint: 'Саша' })),
+      metrics: metricsAmb,
+      entities: makeEntitiesMock({
+        resolvePersonByHint: vi.fn().mockResolvedValue(null),
+      }),
+    });
+    await svcAmb.extractAll({ ...argsTemplate() });
+    expect(prismaAmb.regulation.upsert.mock.calls[0][0].create.ownerPersonId).toBeNull();
+    expect(metricsAmb.incRegulationOwnerUnresolved).toHaveBeenCalledWith({
+      tenantTop: tenantTopOf('org-1'),
+    });
+  });
+
+  it('instruction: roles[0] → scope=role:<cuid> проставлен в upsert', async () => {
+    const prisma = makePrismaMock();
+    const entities = makeEntitiesMock({
+      resolveRoleByHint: vi.fn().mockResolvedValue('role-cuid-mgr'),
+    });
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      regulations: [
+        {
+          sourceBlockId: 'blk_1',
+          kind: 'instruction',
+          name: 'Instr-1',
+          statement: 'Шаг 1...',
+          confidence: 0.8,
+          roles: ['Менеджер'],
+        },
+      ],
+    });
+    const svc = buildSvc({ prisma, llm, metrics: makeMetricsMock(), entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(entities.resolveRoleByHint).toHaveBeenCalledWith('org-1', 'Менеджер');
+    const upsertArg = prisma.instruction.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope).toBe('role:role-cuid-mgr');
+    expect(upsertArg.update.scope).toBe('role:role-cuid-mgr');
+  });
+});
+
+describe('SpecialistsCombinedService — persistTasks → материализатор (wiring)', () => {
+  function makeTaskMaterializerMock() {
+    return {
+      materialize: vi
+        .fn()
+        .mockResolvedValue([{ id: 'i1', title: 't', confidence: null }]),
+    };
+  }
+
+  it('маппит tasks[] в drafts, фильтрует по blockIdSet и зовёт materialize один раз', async () => {
+    const prisma = makePrismaMock();
+    const taskMaterializer = makeTaskMaterializerMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      tasks: [
+        {
+          sourceBlockId: 'blk_1',
+          title: 'Сделать X',
+          assignee: 'Иван',
+          dueDate: '2026-07-03',
+          subtasks: [{ title: 'шаг1' }],
+        },
+        {
+          sourceBlockId: 'NOPE',
+          title: 'мимо',
+        },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      taskMaterializer as any,
+    );
+
+    const result = await svc.extractAll({
+      tenantId: 't1',
+      meetingId: 'm-1',
+      meetingTitle: 'Встреча',
+      blocks: [
+        {
+          id: 'blk_1',
+          name: 'Задача',
+          criticalQuestion: 'Что?',
+          trustedAnswer: 'Сделать X.',
+          signalType: 'task',
+          personNames: ['Иван'],
+          evidence: { quote: 'я сделаю X', speaker: 'Иван' },
+        },
+      ],
+      channelKind: 'meeting',
+      sourceType: 'meeting',
+    });
+
+    expect(taskMaterializer.materialize).toHaveBeenCalledTimes(1);
+    expect(taskMaterializer.materialize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 't1',
+        channel: 'meeting',
+        sourceId: 'm-1',
+        sourceTitle: 'Встреча',
+        drafts: [
+          expect.objectContaining({
+            title: 'Сделать X',
+            assignee: 'Иван',
+            dueDate: '2026-07-03',
+            subtasks: [{ title: 'шаг1' }],
+            sourceBlockId: 'blk_1',
+          }),
+        ],
+      }),
+    );
+    const callArg = taskMaterializer.materialize.mock.calls[0]?.[0] as {
+      drafts: unknown[];
+    };
+    expect(callArg.drafts).toHaveLength(1);
+    expect(result.created.tasks).toBe(1);
   });
 });

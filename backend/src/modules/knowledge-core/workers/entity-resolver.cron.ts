@@ -151,6 +151,7 @@ export class EntityResolverCronService {
         FROM "Entity" b
         WHERE b."tenantId" = a."tenantId"
           AND b.type = a.type
+          AND b.type <> 'person'
           AND b.id <> a.id
           AND b."mergedIntoId" IS NULL
           AND b.embedding IS NOT NULL
@@ -158,6 +159,7 @@ export class EntityResolverCronService {
         LIMIT 1
       ) nb
       WHERE a."tenantId" = $1
+        AND a.type <> 'person'
         AND a."mergedIntoId" IS NULL
         AND a.embedding IS NOT NULL
         AND a."updatedAt" >= $2

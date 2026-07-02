@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  dedupBriefItems,
-  dropPromisesThatBecameTasks,
-  type BriefItem,
-} from './personal-daily-brief.synth';
+import { dedupBriefItems, type BriefItem } from './personal-daily-brief.synth';
 
 describe('personal-daily-brief.synth', () => {
   const item = (over: Partial<BriefItem>): BriefItem => ({
@@ -47,7 +43,7 @@ describe('personal-daily-brief.synth', () => {
     it('разные kind с одинаковым dedupKey НЕ схлопываются внутри dedupBriefItems', () => {
       const out = dedupBriefItems([
         item({ kind: 'task', dedupKey: 'a' }),
-        item({ kind: 'my_promise', dedupKey: 'a' }),
+        item({ kind: 'blocker', dedupKey: 'a' }),
       ]);
       expect(out).toHaveLength(2);
     });
@@ -58,30 +54,6 @@ describe('personal-daily-brief.synth', () => {
         item({ dedupKey: '', title: 'two' }),
       ]);
       expect(out).toHaveLength(2);
-    });
-  });
-
-  describe('dropPromisesThatBecameTasks', () => {
-    it('обещание, ставшее задачей (общий dedupKey), считается ОДИН раз (как задача)', () => {
-      const tasks = [item({ kind: 'task', dedupKey: 'block-1', title: 'Задача из обещания' })];
-      const promises = [
-        item({ kind: 'my_promise', dedupKey: 'block-1', title: 'Обещание-источник' }),
-        item({ kind: 'my_promise', dedupKey: 'block-2', title: 'Другое обещание' }),
-      ];
-      const out = dropPromisesThatBecameTasks({ tasks, promises });
-      expect(out.map((p) => p.dedupKey)).toEqual(['block-2']);
-    });
-
-    it('без пересечений ключей — обещания не трогаются', () => {
-      const tasks = [item({ kind: 'task', dedupKey: 't1' })];
-      const promises = [item({ kind: 'my_promise', dedupKey: 'p1' })];
-      const out = dropPromisesThatBecameTasks({ tasks, promises });
-      expect(out).toHaveLength(1);
-    });
-
-    it('пустые задачи — все обещания остаются', () => {
-      const promises = [item({ kind: 'my_promise', dedupKey: 'p1' })];
-      expect(dropPromisesThatBecameTasks({ tasks: [], promises })).toEqual(promises);
     });
   });
 });

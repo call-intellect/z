@@ -1,4 +1,4 @@
-export type BriefItemKind = 'task' | 'my_promise' | 'blocker' | 'promised_to_me';
+export type BriefItemKind = 'task' | 'blocker';
 
 export interface BriefItem {
   kind: BriefItemKind;
@@ -28,17 +28,13 @@ export interface BriefInsightCoOccurrence {
 export interface PersonalDailyBriefPayload {
   dateLocal: string;
   myTasks: BriefItem[];
-  myPromises: BriefItem[];
   myBlockers: BriefItem[];
-  promisedToMe: BriefItem[];
   hint: string;
   knowsWho: BriefKnowsWhoHint | null;
   insightCoOccurrence?: BriefInsightCoOccurrence | null;
   counts: {
     tasks: number;
-    promises: number;
     blockers: number;
-    promisedToMe: number;
   };
 }
 
@@ -67,12 +63,4 @@ export function dedupBriefItems(items: readonly BriefItem[]): BriefItem[] {
     }
   }
   return [...byKey.values()].sort((a, b) => a.index - b.index).map((v) => v.item);
-}
-
-export function dropPromisesThatBecameTasks(args: {
-  tasks: readonly BriefItem[];
-  promises: readonly BriefItem[];
-}): BriefItem[] {
-  const taskKeys = new Set(args.tasks.map((t) => t.dedupKey));
-  return args.promises.filter((p) => !taskKeys.has(p.dedupKey));
 }

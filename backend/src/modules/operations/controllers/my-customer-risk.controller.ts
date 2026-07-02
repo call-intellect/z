@@ -20,16 +20,16 @@ import {
   type CustomerRiskQuery,
   type CustomerRiskListDto,
 } from '../dto/customer-risk.dto';
-import { CommitmentsService } from '../services/commitments.service';
 import { CustomerRiskRadarService } from '../services/customer-risk-radar.service';
+import { SelfPersonResolverService } from '../services/self-person-resolver.service';
 
 @ApiTags('me-customer-risk')
 @Controller('api/v1/me/customer-risk')
 @UseGuards(CookieAuthGuard, TenantGuard)
 export class MyCustomerRiskController {
   constructor(
-    @Inject(CommitmentsService)
-    private readonly commitments: CommitmentsService,
+    @Inject(SelfPersonResolverService)
+    private readonly selfPerson: SelfPersonResolverService,
     @Inject(CustomerRiskRadarService)
     private readonly customerRisk: CustomerRiskRadarService,
   ) {}
@@ -49,7 +49,7 @@ export class MyCustomerRiskController {
 
     let person: { id: string };
     try {
-      person = await this.commitments.resolveSelfPerson({
+      person = await this.selfPerson.resolveSelfPerson({
         tenantId: tenantId!,
         userId: uid,
       });

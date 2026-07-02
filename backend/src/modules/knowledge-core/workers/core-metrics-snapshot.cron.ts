@@ -31,6 +31,7 @@ export class CoreMetricsSnapshotCron {
         this.snapshotEntities(),
         this.snapshotLinks(),
         this.snapshotRawEvents(),
+        this.snapshotRawEventStuck(),
         this.snapshotKcFactsOpen(),
       ]);
     } catch (err) {
@@ -93,6 +94,31 @@ export class CoreMetricsSnapshotCron {
       this.metrics.setCoreRawEvents({
         tenant: row.tenantId,
         processingStatus: row.processingStatus as RawEventProcessingStatus,
+        count: row._count._all,
+      });
+    }
+  }
+
+  private async snapshotRawEventStuck(): Promise<void> {
+    const staleMinutes = await this.cfg.getDynamic<number>(
+      'knowledge.rawEventRecoveryStaleMinutes',
+      undefined,
+      30,
+    );
+    const staleBefore = new Date(Date.now() - staleMinutes * 60_000);
+    const rows = await this.prisma.rawEvent.groupBy({
+      by: ['tenantId', 'sourceType'],
+      where: {
+        processingStatus: 'received',
+        receivedAt: { lt: staleBefore },
+      },
+      _count: { _all: true },
+    });
+    this.metrics.resetRawEventStuck();
+    for (const row of rows) {
+      this.metrics.setRawEventStuck({
+        tenant: row.tenantId,
+        sourceType: row.sourceType,
         count: row._count._all,
       });
     }

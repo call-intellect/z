@@ -103,18 +103,6 @@ export interface PulsePatternKnowledgeVelocityDto {
   topResponders: PulsePatternKnowledgeVelocityResponderDto[];
 }
 
-export interface PulsePatternIrreversibleDecisionItemDto {
-  decisionId: string;
-  statement: string;
-  decidedAt: string;
-  hasAlternatives: boolean;
-}
-
-export interface PulsePatternIrreversibleDecisionsDto {
-  decisions: PulsePatternIrreversibleDecisionItemDto[];
-  alertCount: number;
-}
-
 export interface PulsePatternsDto {
   period: 'week' | 'month';
   generatedAt: string;
@@ -124,5 +112,4 @@ export interface PulsePatternsDto {
   bottlenecks: PulsePatternBottleneckDto;
   goalVector: PulsePatternGoalVectorDto;
   knowledgeVelocity: PulsePatternKnowledgeVelocityDto;
-  irreversibleDecisions: PulsePatternIrreversibleDecisionsDto;
 }

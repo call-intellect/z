@@ -49,6 +49,15 @@ const ROUTES: RouteSeed[] = [
     isActive: true,
   },
   {
+    taskType: 'meeting-skeleton',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-nano' },
+      { provider: 'kie', model: 'gemini-3.1-pro' },
+    ],
+    isActive: true,
+  },
+  {
     taskType: 'block-linker',
     providers: [
       { provider: 'deepseek', model: 'deepseek-v4-flash' },
@@ -133,8 +142,9 @@ const ROUTES: RouteSeed[] = [
   {
     taskType: 'chat-v2',
     providers: [
-      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'deepseek', model: 'deepseek-v4-pro' },
       { provider: 'openai-via-proxy', model: 'gpt-5.4' },
+      { provider: 'kie', model: 'gemini-3.1-pro' },
     ],
     isActive: true,
   },

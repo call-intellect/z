@@ -13,18 +13,11 @@ import type { Request } from 'express';
 import { z } from 'zod';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import {
-  PersonCommitmentsQuerySchema,
-  type PersonCommitmentsQuery,
-  type CommitmentDto,
-} from '../dto/commitments.dto';
 import type { PersonalRelationListDto } from '../dto/operations-dashboard.dto';
-import { CommitmentsService } from '../services/commitments.service';
 import { PersonalRelationService } from '../services/personal-relation.service';
 
 const ListQuerySchema = z
@@ -45,9 +38,6 @@ export class PersonalRelationsController {
     @Inject(PersonalRelationService)
     private readonly svc: PersonalRelationService,
     @Inject(RbacService) private readonly rbac: RbacService,
-    @Inject(CommitmentsService)
-    private readonly commitments: CommitmentsService,
-    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -72,47 +62,6 @@ export class PersonalRelationsController {
       tenantId: tenantId!,
       personId: q.personId,
       relationType: q.relationType,
-      limit: q.limit,
-    });
-  }
-
-  @Get('commitments')
-  @ApiOperation({ summary: 'Обещания человека (исходящие + входящие)' })
-  async commitmentsForPerson(
-    @CurrentOrg() tenantId: string | undefined,
-    @Req() req: Request,
-    @Query(new ZodValidationPipe(PersonCommitmentsQuerySchema))
-    q: PersonCommitmentsQuery,
-  ): Promise<{ outgoing: CommitmentDto[]; incoming: CommitmentDto[] }> {
-    const uid = this.requireUser(req);
-    this.requireTenant(tenantId);
-    const allowed = await this.rbac.canRead(uid, tenantId!, 'commitment');
-    if (!allowed) {
-      throw new ForbiddenException({
-        ok: false,
-        error: { code: 'forbidden', message: 'Нет прав на обещания' },
-      });
-    }
-
-    let personId = q.personId;
-    if (!personId && q.entityId) {
-      const person = await this.prisma.person.findFirst({
-        where: {
-          tenantId: tenantId!,
-          entityId: q.entityId,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      if (!person) {
-        return { outgoing: [], incoming: [] };
-      }
-      personId = person.id;
-    }
-
-    return this.commitments.listForPerson({
-      tenantId: tenantId!,
-      personId: personId!,
       limit: q.limit,
     });
   }

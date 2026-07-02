@@ -1,6 +1,4 @@
 import type {
-  ValueRecapDecisionApi,
-  ValueRecapDecisionStatus,
   ValueRecapDeltaApi,
   ValueRecapPayloadApi,
   ValueRecapRoutineApi,
@@ -92,88 +90,6 @@ export interface ValueRecapRoutineCell {
   deltaTone: "up" | "down" | "flat" | null;
 }
 
-export const VALUE_RECAP_DECISION_STATUS_LABELS: Record<
-  ValueRecapDecisionStatus,
-  string
-> = {
-  done: "внедрено",
-  in_progress: "в работе",
-  stalled: "застряло",
-  not_started: "не начато",
-};
-
-export function decisionStatusTone(
-  status: ValueRecapDecisionStatus,
-): "ok" | "info" | "warning" {
-  switch (status) {
-    case "done":
-      return "ok";
-    case "in_progress":
-      return "info";
-    case "stalled":
-    case "not_started":
-    default:
-      return "warning";
-  }
-}
-
-export function decisionProgressTone(
-  percent: number,
-): "teal" | "warn" | "risk" {
-  if (percent >= 80) return "teal";
-  if (percent >= 40) return "warn";
-  return "risk";
-}
-
-export interface ValueRecapDecision {
-  id: string;
-  statement: string;
-  status: ValueRecapDecisionStatus;
-  statusLabel: string;
-  statusTone: "ok" | "info" | "warning";
-  throughputPercent: number;
-  progressTone: "teal" | "warn" | "risk";
-}
-
-export interface ValueRecapDecisionBreakdown {
-  done: number;
-  inProgress: number;
-  stalled: number;
-  notStarted: number;
-}
-
-function mapDecisions(
-  decisions: ValueRecapDecisionApi[],
-): ValueRecapDecision[] {
-  return decisions.map((d) => ({
-    id: d.id,
-    statement: d.statement,
-    status: d.status,
-    statusLabel: VALUE_RECAP_DECISION_STATUS_LABELS[d.status],
-    statusTone: decisionStatusTone(d.status),
-    throughputPercent: Math.max(
-      0,
-      Math.min(100, Math.round(d.throughputPercent)),
-    ),
-    progressTone: decisionProgressTone(d.throughputPercent),
-  }));
-}
-
-function decisionBreakdown(
-  decisions: ValueRecapDecision[],
-): ValueRecapDecisionBreakdown {
-  return decisions.reduce<ValueRecapDecisionBreakdown>(
-    (acc, d) => {
-      if (d.status === "done") acc.done += 1;
-      else if (d.status === "in_progress") acc.inProgress += 1;
-      else if (d.status === "stalled") acc.stalled += 1;
-      else acc.notStarted += 1;
-      return acc;
-    },
-    { done: 0, inProgress: 0, stalled: 0, notStarted: 0 },
-  );
-}
-
 export interface ValueRecapDomain {
   id: string;
   periodYm: string;
@@ -184,8 +100,6 @@ export interface ValueRecapDomain {
   routineCells: ValueRecapRoutineCell[];
   team: ValueRecapTeamApi | null;
   delta: ValueRecapDeltaApi | null;
-  decisions: ValueRecapDecision[];
-  decisionBreakdown: ValueRecapDecisionBreakdown;
   narrative: string;
 }
 
@@ -209,7 +123,6 @@ export function valueRecapFromApi(
   api: ValueRecapSnapshotApi,
 ): ValueRecapDomain {
   const payload: ValueRecapPayloadApi | null = api.payload;
-  const decisions = payload ? mapDecisions(payload.decisions ?? []) : [];
   return {
     id: api.id,
     periodYm: api.periodYm,
@@ -220,22 +133,11 @@ export function valueRecapFromApi(
     routineCells: payload ? routineCells(payload.routine, payload.delta) : [],
     team: payload?.team ?? null,
     delta: payload?.delta ?? null,
-    decisions,
-    decisionBreakdown: decisionBreakdown(decisions),
     narrative: payload?.narrative ?? "",
   };
-}
-
-export function reliabilityText(team: ValueRecapTeamApi): string {
-  if (team.reliabilityPercent === null) return "мало данных";
-  return `${Math.round(team.reliabilityPercent)}% (из ${team.reliabilityDenominator})`;
 }
 
 export function chatHelpedText(team: ValueRecapTeamApi): string {
   if (team.chatHelpedRatePercent === null) return "мало оценок";
   return `${Math.round(team.chatHelpedRatePercent)}% (из ${team.chatRated} оценок)`;
-}
-
-export function decisionsThroughputText(team: ValueRecapTeamApi): string {
-  return `${Math.round(team.decisionsThroughputPercent)}% доведено (из ${team.decisionsTotal} решений)`;
 }

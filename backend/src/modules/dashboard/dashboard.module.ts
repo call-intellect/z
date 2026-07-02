@@ -13,17 +13,14 @@ import { GoalVectorTrackerCron } from './agents/goal-vector-tracker.cron';
 import { HrRecommenderCron } from './agents/hr-recommender.cron';
 import { KnowledgeVelocityTrackerCron } from './agents/knowledge-velocity-tracker.cron';
 import { MeetingRoiScorerWorker } from './agents/meeting-roi-scorer.worker';
-import { PromiseNetworkAnalyzerCron } from './agents/promise-network-analyzer.cron';
 import { TeamHealthAnalyzerCron } from './agents/team-health-analyzer.cron';
 import { ThemeSilenceDetectorCron } from './agents/theme-silence-detector.cron';
 import { TopicRecurrenceDetectorCron } from './agents/topic-recurrence-detector.cron';
 import { DirectorDashboardController } from './director-dashboard.controller';
 import { ExecutionDashboardController } from './execution-dashboard.controller';
-import { CommitmentReliabilityService } from './services/commitment-reliability.service';
 import { DashboardQueueService } from './services/dashboard-queue.service';
 import { DirectorDashboardService } from './services/director-dashboard.service';
 import { ExecutionDashboardService } from './services/execution-dashboard.service';
-import { HangingDecisionsService } from './services/hanging-decisions.service';
 import { NarrativeCitationsParserService } from './services/narrative-citations-parser.service';
 import { PeopleAtRiskService } from './services/people-at-risk.service';
 import { PulsePatternsService } from './services/pulse-patterns.service';
@@ -37,8 +34,6 @@ import { TeamHealthService } from './services/team-health.service';
   providers: [
     DirectorDashboardService,
     ExecutionDashboardService,
-    CommitmentReliabilityService,
-    HangingDecisionsService,
     SentimentIndexService,
     NarrativeCitationsParserService,
     TeamHealthService,
@@ -53,7 +48,6 @@ import { TeamHealthService } from './services/team-health.service';
     BusFactorAnalyzerCron,
     TopicRecurrenceDetectorCron,
     ThemeSilenceDetectorCron,
-    PromiseNetworkAnalyzerCron,
     GoalVectorTrackerCron,
     KnowledgeVelocityTrackerCron,
     DashboardQueueService,
@@ -61,8 +55,6 @@ import { TeamHealthService } from './services/team-health.service';
     DecisionHygieneScorerWorker,
   ],
   exports: [
-    CommitmentReliabilityService,
-    HangingDecisionsService,
     SentimentIndexService,
     TeamHealthService,
     TeamDetailService,

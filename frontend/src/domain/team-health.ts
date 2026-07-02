@@ -27,9 +27,7 @@ export type TeamHealthRowApi = {
   size: number;
   belowCohort: boolean;
   sentiment: TeamHealthAttrApi;
-  promises: TeamHealthAttrApi;
   conflicts: TeamHealthAttrApi;
-  decisions: TeamHealthAttrApi;
   healthSummary?: TeamHealthSummaryApi | null;
 };
 

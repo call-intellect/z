@@ -26,6 +26,7 @@ export interface DecisionListItemApi {
   affectsEntityIds: string[];
   confidence: number | null;
   trustTier: TrustTierApi;
+  reversibility: string | null;
   previewQuote?: string | null;
   previewSourceRef?: PreviewSourceRefApi | null;
   updatedAt: string;

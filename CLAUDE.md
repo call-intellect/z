@@ -50,10 +50,13 @@
 | Бизнес-контекст, гипотезы, фидбек | `second-brain/01_projects/` |
 | **Что намеренно НЕ сделано / отложено / заблокировано (с причиной)** | `second-brain/04_не-сделано/README.md` |
 | **Анализ фичи / UX-аудит / разбор «как улучшить» / backlog** | `plans/analysis/` |
+| **Архитектура решения человеческим языком** (что есть → что делаем → как будет выглядеть; владелец одобряет ДО ТЗ) | `plans/architecture/` |
 | **ТЗ на реализацию** | `plans/tz/` |
 | Завершённые/отменённые планы | `plans/archive/` |
 
 Правило: **это уже работает или это идея?** Работает → second-brain. Идея → plans.
+
+**Цепочка планирования (скиллы):** `feature-analyst` (анализ рынка/кода) → `solution-blueprint` (архитектура человеческим языком — владелец читает и одобряет) → `tz-author` (ТЗ-контракт) → `tz-orchestrator` (реализация). **Жёсткий gate:** `tz-author` не пишет ТЗ без `plans/architecture/<feature>.md` со `status: approved` — это ловит «сделали не то, что я имел в виду» на дешёвом этапе (текст), а не на дорогом (код).
 
 ### Реестр не-сделанного — `second-brain/04_не-сделано/README.md`
 
@@ -92,7 +95,7 @@
 
 ## Архитектура кода
 
-Корень: `backend/` (NestJS) + `frontend/` (Next.js 14 App Router) + `infra/` (LiveKit/gepa/postgres/loadtest) + `second-brain/` (источник правды) + `plans/` (ТЗ и анализ) + `docs/`.
+Корень: `backend/` (NestJS) + `frontend/` (Next.js 14 App Router) + `infra/` (LiveKit/gepa/postgres/loadtest) + `second-brain/` (источник правды) + `plans/` (анализ · архитектура · ТЗ) + `docs/`.
 
 **Backend** (`backend/src/`):
 - `main.ts` — HTTP-приложение + BullMQ-воркеры/cron **in-process** (через `WorkersModule` в `AppModule`, поверх Redis); глобальный префикс API `/api/v1`. Отдельного worker-процесса нет.

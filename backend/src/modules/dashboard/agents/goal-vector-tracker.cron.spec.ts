@@ -1,25 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config';
-import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
-import {
-  GoalVectorTrackerCron,
-  chooseAttributionField,
-  computeWeekStart,
-} from './goal-vector-tracker.cron';
-
-interface CommitmentRow {
-  id: string;
-  name: string;
-  commitmentStatus: 'fulfilled' | 'missed';
-  commitmentAuthorPersonId: string | null;
-  commitmentAuthor: { id: string; name: string } | null;
-  commitmentRecipientPersonId: string | null;
-  commitmentRecipient: { id: string; name: string } | null;
-}
+import { GoalVectorTrackerCron, computeWeekStart } from './goal-vector-tracker.cron';
 
 interface BuildOpts {
   orgs?: Array<{ id: string; name: string }>;
@@ -32,9 +17,6 @@ interface BuildOpts {
       entity: { persons: Array<{ id: string; name: string }> } | null;
     }>;
   }>;
-  commits?: CommitmentRow[];
-  authorCoverage?: number;
-  authorCoverageMin?: number;
   llmResult?: { text: string; modelUsed: string };
   llmThrow?: Error;
 }
@@ -43,27 +25,16 @@ function buildCron(opts: BuildOpts): {
   cron: GoalVectorTrackerCron;
   llmCall: ReturnType<typeof vi.fn>;
   contributionUpsert: ReturnType<typeof vi.fn>;
-  setCoverage: ReturnType<typeof vi.fn>;
 } {
   const orgs = opts.orgs ?? [{ id: 'org-1', name: 'ACME' }];
   const goals = opts.goals ?? [];
   const ideas = opts.ideas ?? [];
-  const commits = opts.commits ?? [];
-  const coverage = opts.authorCoverage ?? 1;
 
   const orgFindMany = vi.fn(async () => orgs);
   const goalFindMany = vi.fn(async () => goals);
   const ideaBlockFindMany = vi.fn(async (args: { where: { signalType: string } }) => {
     if (args.where.signalType === 'idea') return ideas;
-    if (args.where.signalType === 'commitment') return commits;
     return [];
-  });
-  const TOTAL = 10;
-  const ideaBlockCount = vi.fn(async (args: { where: { commitmentAuthorPersonId?: unknown } }) => {
-    if (args.where.commitmentAuthorPersonId) {
-      return Math.round(coverage * TOTAL);
-    }
-    return TOTAL;
   });
   const issueFindMany = vi.fn(async () => []);
   const personFindMany = vi.fn(async () => []);
@@ -72,19 +43,11 @@ function buildCron(opts: BuildOpts): {
   const prisma = {
     org: { findMany: orgFindMany },
     goal: { findMany: goalFindMany },
-    ideaBlock: { findMany: ideaBlockFindMany, count: ideaBlockCount },
+    ideaBlock: { findMany: ideaBlockFindMany },
     issue: { findMany: issueFindMany },
     person: { findMany: personFindMany },
     personGoalContribution: { upsert: contributionUpsert },
   } as unknown as PrismaService;
-
-  const cfg = {
-    getDynamic: vi.fn(async () => opts.authorCoverageMin ?? 0.6),
-  } as unknown as TypedConfigService;
-  const setCoverage = vi.fn();
-  const metrics = {
-    setCommitmentAuthorCoverageRatio: setCoverage,
-  } as unknown as BusinessMetricsService;
 
   const llmCall = vi.fn(async () => {
     if (opts.llmThrow) throw opts.llmThrow;
@@ -111,11 +74,14 @@ function buildCron(opts: BuildOpts): {
   });
   const llm = { call: llmCall } as unknown as LlmRouterService;
 
+  const cfg = {
+    getDynamic: vi.fn(async (_k: string, _e: unknown, fallback: unknown) => fallback),
+  } as unknown as TypedConfigService;
+
   return {
-    cron: new GoalVectorTrackerCron(prisma, llm, cfg, metrics),
+    cron: new GoalVectorTrackerCron(prisma, llm, cfg),
     llmCall,
     contributionUpsert,
-    setCoverage,
   };
 }
 
@@ -241,58 +207,6 @@ describe('GoalVectorTrackerCron.runOnce', () => {
     expect(llmCall).not.toHaveBeenCalled();
   });
 
-  it('покрытие author >= порога → атрибуция по АВТОРУ (commitmentAuthor)', async () => {
-    const { cron, llmCall } = buildCron({
-      orgs: [{ id: 'org-1', name: 'ACME' }],
-      goals: [{ id: 'g1', name: 'Цель', description: 'Описание' }],
-      authorCoverage: 0.9,
-      commits: [
-        {
-          id: 'c1',
-          name: 'Обещание сделать отчёт',
-          commitmentStatus: 'fulfilled',
-          commitmentAuthorPersonId: 'author-1',
-          commitmentAuthor: { id: 'author-1', name: 'Автор' },
-          commitmentRecipientPersonId: 'recip-1',
-          commitmentRecipient: { id: 'recip-1', name: 'Адресат' },
-        },
-      ],
-    });
-
-    await cron.runOnce();
-
-    const userMessage = (llmCall.mock.calls[0]?.[0] as { userMessage: string }).userMessage;
-    expect(userMessage).toContain('author-1');
-    expect(userMessage).not.toContain('recip-1');
-  });
-
-  it('покрытие author < порога → fallback на адресата (commitmentRecipient)', async () => {
-    const { cron, llmCall, setCoverage } = buildCron({
-      orgs: [{ id: 'org-1', name: 'ACME' }],
-      goals: [{ id: 'g1', name: 'Цель', description: 'Описание' }],
-      authorCoverage: 0.3,
-      commits: [
-        {
-          id: 'c1',
-          name: 'Обещание с NULL-автором',
-          commitmentStatus: 'missed',
-          commitmentAuthorPersonId: null,
-          commitmentAuthor: null,
-          commitmentRecipientPersonId: 'recip-1',
-          commitmentRecipient: { id: 'recip-1', name: 'Адресат' },
-        },
-      ],
-    });
-
-    await cron.runOnce();
-
-    expect(setCoverage).toHaveBeenCalledWith(
-      expect.objectContaining({ value: expect.closeTo(0.3, 5) }),
-    );
-    const userMessage = (llmCall.mock.calls[0]?.[0] as { userMessage: string }).userMessage;
-    expect(userMessage).toContain('recip-1');
-  });
-
   it('LLM throw → errors++ остальные не валятся', async () => {
     const { cron, contributionUpsert } = buildCron({
       orgs: [{ id: 'org-1', name: 'ACME' }],
@@ -315,18 +229,5 @@ describe('GoalVectorTrackerCron.runOnce', () => {
     expect(stats.errors).toBe(1);
     expect(stats.contributionsUpserted).toBe(0);
     expect(contributionUpsert).not.toHaveBeenCalled();
-  });
-});
-
-describe('chooseAttributionField (ТЗ-1 Ф3.D.1)', () => {
-  it('покрытие >= порога → author', () => {
-    expect(chooseAttributionField(0.6, 0.6)).toBe('author');
-    expect(chooseAttributionField(0.9, 0.6)).toBe('author');
-    expect(chooseAttributionField(1, 0.6)).toBe('author');
-  });
-  it('покрытие < порога → recipient (fallback)', () => {
-    expect(chooseAttributionField(0.59, 0.6)).toBe('recipient');
-    expect(chooseAttributionField(0, 0.6)).toBe('recipient');
-    expect(chooseAttributionField(0.3, 0.6)).toBe('recipient');
   });
 });

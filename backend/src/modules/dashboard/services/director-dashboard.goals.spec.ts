@@ -7,9 +7,7 @@ import type { AdminCacheService } from '../../admin/services/admin-cache.service
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { PendingActionsService } from '../../pending-actions/services/pending-actions.service';
 
-import type { CommitmentReliabilityService } from './commitment-reliability.service';
 import { DirectorDashboardService } from './director-dashboard.service';
-import type { HangingDecisionsService } from './hanging-decisions.service';
 import type { NarrativeCitationsParserService } from './narrative-citations-parser.service';
 import type { SentimentIndexService } from './sentiment-index.service';
 
@@ -32,8 +30,6 @@ function makeService(prismaOver: {
     {} as unknown as LlmRouterService,
     {} as unknown as NarrativeCitationsParserService,
     {} as unknown as SentimentIndexService,
-    {} as unknown as CommitmentReliabilityService,
-    {} as unknown as HangingDecisionsService,
     {} as unknown as PendingActionsService,
     {} as unknown as TypedConfigService,
     {} as unknown as BusinessMetricsService,

@@ -29,8 +29,6 @@ import {
   buildDashboardSummaryUserMessage,
   DASHBOARD_SUMMARY_SYSTEM_PROMPT,
 } from '../prompts/dashboard-summary.prompt';
-import { CommitmentReliabilityService } from './commitment-reliability.service';
-import { HangingDecisionsService } from './hanging-decisions.service';
 import {
   NarrativeCitationsParserService,
   type CitationSource,
@@ -66,10 +64,6 @@ export class DirectorDashboardService {
     private readonly citations: NarrativeCitationsParserService,
     @Inject(SentimentIndexService)
     private readonly sentimentSvc: SentimentIndexService,
-    @Inject(CommitmentReliabilityService)
-    private readonly commitSvc: CommitmentReliabilityService,
-    @Inject(HangingDecisionsService)
-    private readonly hangingSvc: HangingDecisionsService,
     @Inject(PendingActionsService)
     private readonly pendingActions: PendingActionsService,
     @Inject(TypedConfigService)
@@ -128,8 +122,6 @@ export class DirectorDashboardService {
       goalsTree,
       goalsPulse,
       sentimentRes,
-      commitRes,
-      hangingRes,
       valueStrip,
       mainReworkEnabled,
     ] = await Promise.all([
@@ -169,39 +161,11 @@ export class DirectorDashboardService {
         totalCheckIns: 0,
         days: 7,
       }),
-      safe(
-        'commitment',
-        () =>
-          this.commitSvc.getReliability({
-            tenantId: args.tenantId,
-            scope: 'company',
-          }),
-        {
-          scope: 'company',
-          scopeId: null,
-          windowDays: 14,
-          kept: 0,
-          broken: 0,
-          overdue: 0,
-          pendingActive: 0,
-          reliabilityPercent: 0,
-          reliabilityLowData: true,
-          delta14d: null,
-          sparkline12w: [],
-        },
-      ),
-      safe('hangingDecisions', () => this.hangingSvc.count({ tenantId: args.tenantId }), {
-        count: 0,
-        minAgeDays: 7,
-        minRaisedCount: 2,
-        sparkline12w: [],
-      }),
       safe('valueStrip', () => this.fetchValueStrip(args.tenantId, args.period), {
         meetingsProtocoled: 0,
         tasksExtracted: 0,
         decisionsExtracted: 0,
         questionsAnsweredByMemory: 0,
-        commitmentsKept: 0,
         tasksResolved: 0,
         ideasCollected: 0,
       }),
@@ -216,7 +180,7 @@ export class DirectorDashboardService {
     this.metrics.incDashboardValueStripServed({ tenantTop });
     this.metrics.setDashboardMainFirstScreenWidgetCount({
       tenantTop,
-      count: 7,
+      count: 5,
     });
 
     const kpiSentimentIndex: DirectorDashboardKpiDto = {
@@ -224,16 +188,6 @@ export class DirectorDashboardService {
       sparkline: sentimentRes.sparkline12w,
       delta: null,
       trend: sentimentRes.trend,
-    };
-    const kpiCommitmentReliability: DirectorDashboardKpiDto = {
-      value: commitRes.reliabilityPercent,
-      sparkline: commitRes.sparkline12w,
-      delta: commitRes.delta14d,
-    };
-    const kpiHangingDecisions: DirectorDashboardKpiDto = {
-      value: hangingRes.count,
-      sparkline: hangingRes.sparkline12w,
-      delta: null,
     };
 
     const totalSignals =
@@ -264,16 +218,6 @@ export class DirectorDashboardService {
           sparkline: [25, 28, 30, 32, 35, 38, 38, 40, 41, 42, 42, 42],
           delta: null,
           trend: 'up',
-        },
-        kpiCommitmentReliability: {
-          value: 82,
-          sparkline: [70, 72, 75, 78, 79, 81, 80, 82, 83, 82, 82, 82],
-          delta: 4,
-        },
-        kpiHangingDecisions: {
-          value: 2,
-          sparkline: [4, 3, 3, 2, 2, 3, 2, 2, 1, 2, 2, 2],
-          delta: null,
         },
         strategicAlignment,
         requiresAction,
@@ -310,8 +254,6 @@ export class DirectorDashboardService {
       openQuestions,
       narrativeSummary,
       kpiSentimentIndex,
-      kpiCommitmentReliability,
-      kpiHangingDecisions,
       strategicAlignment,
       requiresAction,
       goalsTree,
@@ -709,7 +651,6 @@ export class DirectorDashboardService {
       tasksExtracted,
       decisionsExtracted,
       questionsRows,
-      commitmentsKept,
       tasksResolved,
       ideasCollected,
     ] = await Promise.all([
@@ -743,14 +684,6 @@ export class DirectorDashboardService {
                 ELSE false
               END
       `,
-        this.prisma.ideaBlock.count({
-          where: {
-            tenantId,
-            signalType: 'commitment',
-            commitmentStatus: 'fulfilled',
-            createdAt: { gte: since },
-          },
-        }),
         this.prisma.issue.count({
           where: { tenantId, completedAt: { gte: since }, deletedAt: null },
         }),
@@ -766,7 +699,6 @@ export class DirectorDashboardService {
       tasksExtracted,
       decisionsExtracted,
       questionsAnsweredByMemory,
-      commitmentsKept,
       tasksResolved,
       ideasCollected,
     };

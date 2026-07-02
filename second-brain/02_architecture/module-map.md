@@ -2611,4 +2611,12 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **Пересажено на ядро:** support (`support/*` → Conversation/Message+SupportTicket, 0 Issue-пути), чат задачи (`tracker` comments → Message под work_chat).
 - **Push:** `push/` расширен транспорт-агностичным `PushService` (PushToken apns/fcm/rustore/webpush). **Mobile:** `kora-mobile/` (Expo RN scaffold).
 
+## Провайдеры эмбеддингов — CRUD + резолвер (2026-07-02)
+
+**Источник:** ТЗ [`plans/tz/2026-07-02-embedding-providers-crud.md`](../../plans/tz/2026-07-02-embedding-providers-crud.md). Модели — [[data-model]] §«EmbeddingProvider / EmbeddingModel».
+
+- **`backend/src/modules/embeddings/services/embedding-provider-resolver.service.ts`** — `EmbeddingProviderResolverService`: читает активных `EmbeddingProvider` по `priority`, дешифрует `apiKeyEncrypted` (CryptoService) и строит fallback-цепочку (резолв провайдеров **из БД вместо ENV-переключателя** `embeddings.provider`). `EmbeddingFallbackService.buildChain()` теперь async — DB-цепочка через `openai-compatible-embed.util.ts` или code-fallback на `cfg.ai.embeddings` при пустой БД. Публичный `embed()` не изменён.
+- **`backend/src/modules/admin/economics/`** — `AdminEmbeddingProvidersController` + `AdminEmbeddingProvidersService`: 10 маршрутов `/api/v1/admin/embedding-providers` под `SuperAdminGuard` (CRUD провайдеров + вложенных моделей, `:id/activate` с гардом dimension-mismatch, `:id/smoke`). Ключ шифруется на записи, в ответах только `hasApiKey`. Эндпоинты — [[../01_projects/api-layer]] §«Провайдеры эмбеддингов»; UI — [[../01_projects/admin]] §«/admin/ai/embeddings».
+- **`backend/scripts/seed-embedding-providers.ts`** — idempotent-сид (create-if-missing) 2 провайдеров (`local` active / `openai-via-proxy` inactive), в `apply-prod-deploy` STEPS `phase:'seed-base'`.
+
 [[../index|← index]]

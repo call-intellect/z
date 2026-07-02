@@ -509,6 +509,21 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | GET | `/admin/ai-prompts` (он же `/admin/prompts`) | реестр шаблонов промптов |
 | GET | `/admin/ai-prompts/:id` | + версии |
 
+### Провайдеры эмбеддингов (2026-07-02, `super_admin`)
+`AdminEmbeddingProvidersController` (`backend/src/modules/admin/economics/`, `@ApiExcludeController` — не в Swagger), все под `SuperAdminGuard`. Управляемые провайдеры эмбеддингов (`EmbeddingProvider`/`EmbeddingModel`), которые читает резолвер рантайма вместо ENV-переключателя. Ключ шифруется AES-256-GCM на записи, в ответах только `hasApiKey`. Модели — [[../02_architecture/data-model]] §«EmbeddingProvider / EmbeddingModel»; ТЗ [`embedding-providers-crud`](../../plans/tz/2026-07-02-embedding-providers-crud.md). 10 маршрутов:
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/api/v1/admin/embedding-providers` | список (`?includeInactive`) |
+| POST | `/api/v1/admin/embedding-providers` | создать провайдера (endpoint / protocolKind / ключ / priority) |
+| GET | `/api/v1/admin/embedding-providers/:id` | детали |
+| PATCH | `/api/v1/admin/embedding-providers/:id` | редактировать |
+| DELETE | `/api/v1/admin/embedding-providers/:id` | удалить |
+| POST | `/api/v1/admin/embedding-providers/:id/activate` | активировать (гард `embedding_dimension_mismatch_requires_reindex` при несовпадении dimensions с текущей колонкой) |
+| POST | `/api/v1/admin/embedding-providers/:id/smoke` | smoke-проверка провайдера (`lastSmoke*`) |
+| POST | `/api/v1/admin/embedding-providers/:id/models` | добавить модель |
+| PATCH | `/api/v1/admin/embedding-providers/:id/models/:modelId` | редактировать модель |
+| DELETE | `/api/v1/admin/embedding-providers/:id/models/:modelId` | удалить модель |
+
 ### Orgs / Plans / Entitlements (Фаза 4)
 | Метод | Путь | Назначение |
 |---|---|---|

@@ -2097,4 +2097,41 @@ enum PersonaStatus {
 
 **Удаление аккаунта (App Review 5.1.1(v)):** `POST /api/v1/account/delete` → `AccountsService.deleteAccount` в транзакции: `User.deletedAt=now()` (идемпотентно — если уже удалён, не перетирается) + `PushToken.deleteMany` + `ChannelBinding.deleteMany` + `ConversationMember.deleteMany` + revoke всех `UserSession`. Полная анонимизация PII (email/name) — осознанный follow-up (см. `04_не-сделано`).
 
+## EmbeddingProvider + EmbeddingModel — управляемые провайдеры эмбеддингов (2026-07-02, миграция `20260702155742_embedding_providers`)
+
+**Источник:** ТЗ [`plans/tz/2026-07-02-embedding-providers-crud.md`](../../plans/tz/2026-07-02-embedding-providers-crud.md). **Отдельный bounded-context от `LlmProvider`/`LlmTaskRoute`** — это НЕ chat-LLM, а движок эмбеддингов, управляемый из админки (`/admin/ai/embeddings` вкладка «Провайдеры»). Резолвер рантайма `EmbeddingProviderResolverService` читает активных провайдеров из этих таблиц по `priority` (было — ENV-переключатель `embeddings.provider`); `EmbeddingFallbackService.buildChain()` строит fallback-цепочку из БД, при пустой БД падает на code-fallback `cfg.ai.embeddings`. Аддитивная миграция (2 таблицы + индексы + FK, данные не трогает, backfill не нужен). Сид `seed-embedding-providers.ts` (idempotent, в `apply-prod-deploy` STEPS `phase:'seed-base'`) переносит 2 провайдера. Подробно — [[module-map]] §«embeddings».
+
+### EmbeddingProvider
+
+```
+EmbeddingProvider {
+  id, name @unique, displayName, baseUrl,
+  protocolKind ('openai-embeddings' | 'ollama-embeddings'),
+  apiKeyEncrypted?,               -- AES-256-GCM (CryptoService.encrypt на записи; в ответах API только hasApiKey)
+  defaultHeaders Json?,
+  isActive Boolean, priority Int, -- резолв активных по priority (меньше = раньше)
+  needsReindex Boolean,           -- баннер реиндексации при смене размерности активного провайдера
+  lastSmokeAt?, lastSmokeOk?, lastSmokeError?,
+  createdAt, updatedAt
+  models EmbeddingModel[]
+}
+```
+
+`@@map("embedding_providers")`. Ключ провайдера хранится шифрованным (AES-256-GCM), наружу отдаётся только `hasApiKey`.
+
+### EmbeddingModel
+
+```
+EmbeddingModel {
+  id, providerId → EmbeddingProvider (onDelete Cascade),
+  modelKey, displayName,
+  dimensions Int,                 -- размерность вектора (768 / 1536); гейт activate при несовпадении с текущей колонкой
+  pricePerMillionInputTokensKopecks?,  -- справочная цена (НЕ биллинг)
+  isActive Boolean, verifiedAt?, notes?,
+  createdAt, updatedAt
+}
+```
+
+`@@map("embedding_models")`. Активация провайдера с моделью, чья `dimensions` не совпадает с размерностью текущей vector-колонки, блокируется гардом `embedding_dimension_mismatch_requires_reindex` (нужен реиндекс — воркер вне scope этого ТЗ, остаётся заглушка `ReindexTab`).
+
 [[../index|← index]]

@@ -71,6 +71,20 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — CRUD провайдеров эмбеддингов (ТЗ embedding-providers-crud)
+
+> ТЗ `plans/tz/2026-07-02-embedding-providers-crud.md`. Управляемые из админки провайдеры эмбеддингов (`EmbeddingProvider`/`EmbeddingModel`): резолвер рантайма читает активных провайдеров из БД по `priority` и строит fallback-цепочку (было — ENV-переключатель `embeddings.provider`, теперь он депрекейтнут и служит code-fallback при пустой БД). CRUD на `/admin/ai/embeddings` вкладка «Провайдеры» (endpoint / ключ AES-256-GCM / модели / цены / priority / smoke / баннер реиндексации). Публичный контракт `embed()` не изменён.
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`). 🟢 НОВЫХ ENV НЕТ. 🟢 1 НОВЫЙ СИД (в STEPS).** Docker rebuild backend+frontend.
+
+- **Шаг 4 — Prisma миграция, авто через `prisma migrate deploy`** (migrate-контейнер на `docker compose up -d`): `20260702155742_embedding_providers` — аддитивная (2 таблицы `embedding_providers`/`embedding_models` + индексы + FK; данные не трогает, backfill не нужен). **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«EmbeddingProvider / EmbeddingModel».
+- **Шаг 7 — Seed через apply-prod-deploy STEPS, авто** (`docker compose exec backend bun run scripts/apply-prod-deploy.ts`): `scripts/seed-embedding-providers.ts` (`phase:'seed-base'`) — 2 провайдера: `local` (embeddinggemma:latest, 768, active, priority 10) + `openai-via-proxy` (text-embedding-3-small, 1536, inactive из-за dimension-mismatch, priority 20), ключи шифруются AES-256-GCM из существующих ENV (`EMBEDDING_*`/`OPENAI_PROXY_*`/`PROXY_PREFIX`/`CRYPTO_MASTER_KEY`). Идемпотентно (create-if-missing). **Новых ENV НЕТ.**
+- **Шаги 1/5/6/8/9/10 — НЕ затронуты.** **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. **Шаг 12 — Smoke** (после выката): Swagger нет (admin `@ApiExcludeController`); `GET /api/v1/admin/embedding-providers` под супер-админом → 2 провайдера; на `/admin/ai/embeddings` вкладка «Провайдеры» (CRUD провайдеров/моделей, smoke, баннер needsReindex).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-29 — Месяц компании + навигация по датам/архив (ветка feature/month-company-and-report-navigation)
 
 > Две парные фичи. **Месяц компании** — месячный executive-брифинг владельца на `/month` (зеркало «Недели компании»): новая модель `MonthlyOperationsDigest` + `MonthlyDigestService` (свод 4 недель одним LLM-вызовом) + `OperationsMonthlyDigestCron` (1-е число) + `MonthCompanyHero` над canvas. **Навигация/архив** — `available-periods` на 3 ритма + общий `PeriodNavigator` (‹ › + клик-дата + архив-список) + empty-state на героях дня/недели/месяца. Коммиты `9c36a0b6..82e3a893`.

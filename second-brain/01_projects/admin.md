@@ -193,6 +193,15 @@ admin-поверхности с разбором конкретной карто
 - **Навигация:** новый пункт в разделе «AI и модели» admin-навигации (`frontend/app/(admin)/admin/navigation.ts`).
 - **ТЗ:** `plans/tz/2026-06-21-universal-daily-checkin-fixator-tz.md` (TZ3 админ-страница). Процесс детектора — [feature-flags.md](../../docs/operations/feature-flags.md) (`daySignals.enabled`).
 
+### `/admin/ai/embeddings` — вкладка «Провайдеры» (2026-07-02)
+
+Страница super_admin: CRUD управляемых провайдеров эмбеддингов (`EmbeddingProvider`/`EmbeddingModel`), которые резолвер рантайма читает из БД вместо ENV-переключателя. На каждого провайдера — endpoint (`baseUrl` + `protocolKind`), API-ключ (шифруется AES-256-GCM, в ответах только `hasApiKey`), список моделей с размерностью (`dimensions`) и справочной ценой (не биллинг), `priority`, кнопки активации и smoke-проверки, баннер `needsReindex` при смене размерности активного провайдера. Активация с несовпадающей размерностью блокируется гардом `embedding_dimension_mismatch_requires_reindex` (сам реиндекс-воркер вне scope — остаётся заглушка `ReindexTab`).
+
+- **API:** 10 маршрутов `/api/v1/admin/embedding-providers` под `SuperAdminGuard` (см. [api-layer.md](api-layer.md) §«Провайдеры эмбеддингов»), `AdminEmbeddingProvidersController` + `AdminEmbeddingProvidersService` в `backend/src/modules/admin/economics/`.
+- **Фронт:** `frontend/app/(admin)/admin/ai/embeddings/EmbeddingProvidersClient.tsx` (вкладка «Провайдеры»), слои `frontend/src/api/admin-embedding-providers.api.ts` + `frontend/src/domain/admin-embedding-provider.ts`.
+- **Защита:** `CookieAuthGuard` + `SuperAdminGuard`.
+- **ТЗ:** [plans/tz/2026-07-02-embedding-providers-crud.md](../../plans/tz/2026-07-02-embedding-providers-crud.md). Модели — [[../02_architecture/data-model]] §«EmbeddingProvider / EmbeddingModel».
+
 ## Тенанты (Org)
 
 ### `/admin/orgs/[id]` — Карточка организации (табы)

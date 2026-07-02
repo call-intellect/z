@@ -270,4 +270,4 @@ DELETE /api/v1/admin/embedding-providers/:id/models/:mid → soft-delete мод�
 - Ключи нигде не в открытом виде.
 
 ## Итог
-_Заполняет tz-orchestrator по завершении: реализовано целиком / что осталось._
+**Реализовано целиком (2026-07-02, 6 фаз, коммиты cefd31ff→docs).** Ф1 модели+миграция · Ф2 резолвер из БД + async fallback · Ф3 admin CRUD + smoke + гард dimensions · Ф4 фронт-вкладка «Провайдеры» · Ф5 idempotent seed 2 провайдеров + STEPS · Ф6 верификация (boot 0 DI-сбоев, 40/40 тестов) + доки. Осталось вне scope (как и планировалось): reindex-воркер (vNext), интеграция цен в биллинг. Прод: миграция аддитивная + seed в apply-prod-deploy, новых ENV нет. Рефлексия — `second-brain/05_история/2026-07-02-embedding-providers-crud-impl.md`.

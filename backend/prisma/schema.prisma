@@ -3126,6 +3126,14 @@ model LlmProvider {
   globalRps        Int?
   /// Активен ли провайдер для маршрутизации.
   isActive         Boolean   @default(true)
+  /// Ходить через прокси: эффективный baseUrl строится из PROXY_BASE_URL(+proxyPath), ключ префиксуется PROXY_PREFIX.
+  useProxy         Boolean   @default(false)
+  /// Слаг пути на прокси (например 'grsai' → {proxyRoot}/grsai/v1). NULL = корневой upstream прокси (openai).
+  proxyPath        String?   @db.VarChar(120)
+  /// Переопределение hard-timeout dispatch, мс. NULL = LLM_ROUTER_DISPATCH_TIMEOUT_MS.
+  timeoutMs        Int?
+  /// Модель по умолчанию, когда её не задали ни вызов, ни маршрут. NULL = defaultModel legacy-сервиса.
+  defaultModelKey  String?   @db.VarChar(120)
   /// Последний результат smoke-теста.
   lastSmokeAt      DateTime?
   lastSmokeSuccess Boolean?

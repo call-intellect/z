@@ -541,6 +541,10 @@ export function hasSchemaForKey(key: string): boolean {
   return registry.has(key);
 }
 
+export function registeredSettingKeys(): string[] {
+  return [...registry.keys()];
+}
+
 export interface SimpleJsonSchema {
   type: 'number' | 'integer' | 'boolean' | 'string' | 'enum' | 'unknown';
   min?: number;

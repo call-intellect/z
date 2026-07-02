@@ -7,9 +7,9 @@ export const CreateEmbeddingModelSchema = z.object({
   modelKey: z.string().min(1).max(120),
   displayName: z.string().min(1).max(200),
   dimensions: z.number().int().min(64).max(4096),
-  pricePerMillionInputTokensKopecks: z.number().int().min(0).optional(),
+  pricePerMillionInputTokensKopecks: z.number().int().min(0).nullable().optional(),
   isActive: z.boolean().default(true),
-  notes: z.string().optional(),
+  notes: z.string().nullable().optional(),
 });
 export type CreateEmbeddingModelDto = z.infer<typeof CreateEmbeddingModelSchema>;
 

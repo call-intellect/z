@@ -89,6 +89,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — Пакет C, F-4 (block-part): порог склейки IdeaBlock → крутилка + дефолт 0.92→0.85 + унификация ключа (ветка work/2026-06-29)
+
+> Порог косинусной склейки схожих IdeaBlock (distill) выведен в динамическую крутилку и опущен 0.92→0.85 (агрессивнее дедуп; ниже порога спорные решает арбитр-LLM). `block-distill.worker.ts` больше не читает статический `this.cfg.knowledgeCore.distillMergeThreshold`, а резолвит `await this.cfg.getDynamic<number>('knowledge.distillMergeThreshold', 'DISTILL_MERGE_THRESHOLD', 0.85)` (admin→ENV→code-fallback). Унифицировано ТРИ написания ключа в одно каноническое `knowledge.distillMergeThreshold` (совпадает с registry + typed-config); FE-страница `knowledge-core` перешла с фантомного ключа `knowledge.distill.merge_threshold` на канонический.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ** (существующая `DISTILL_MERGE_THRESHOLD`, дефолт 0.92→0.85). **🟢 НОВЫХ ФЛАГОВ НЕТ** (крутилка, не флаг). **🟢 SEED УЖЕ СУЩЕСТВУЕТ** (`seed-admin-settings.ts`, ключ `knowledge.distillMergeThreshold`=0.85, в STEPS `phase:'seed-base'`). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Существующая `DISTILL_MERGE_THRESHOLD` — дефолт `0.92`→`0.85` (ENV-fallback крутилки; code-fallback `getDynamic` тоже 0.85 → согласовано). Задавать в прод-`.env` не обязательно — есть AdminSetting `knowledge.distillMergeThreshold` (сид Шага 7) + code-fallback 0.85. Новый флаг НЕ вводился (крутилка). Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась; новых HNSW/GIN/patch-/backfill-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (идемпотентный, УЖЕ зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-settings.ts` — ключ `knowledge.distillMergeThreshold`=`0.85` (envFloat-fallback уже 0.85; уточнено описание). Защита admin-edited (`updatedBy !== 'system'`) — если владелец уже переопределил порог вручную, сид его не перезаписывает. Повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`BlockDistillWorker.process` резолвит порог через `getDynamic` перед `merger.knnCandidates`; ENV-дефолт 0.85). Frontend (страница `admin/ai/knowledge-core` таб «Distill» — ключ `knowledge.distillMergeThreshold`, дефолт 0.85).
+- **Шаг 12 — Smoke** (после выката):
+  - крутилка `knowledge.distillMergeThreshold` (0.85) видна в админке (`/admin/ai/knowledge-core`, таб Distill) и совпадает по ключу с сохранением (сохранение больше не пишет фантомный `knowledge.distill.merge_threshold`).
+  - `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-settings.ts` (ключ = 0.85 при первом прогоне, потом no-op / metadata-only).
+- **Откат:** крутилка admin-editable; порог/ключ — `git revert` (поведение при 0.92 восстановится сменой значения в админке или ENV). Рискованного переключателя нет (Ship-On).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-01 — День компании v2: письмо COO + полный вход с атрибуцией + виджеты + маршрут DeepSeek Pro→GPT→KIE (day-company-report-v2, ветка work/2026-06-29)
 
 > ТЗ `plans/tz/2026-06-30-day-company-report-v2.md` (Ф1–Ф8). **Надстройка над реализованным «День компании»** (переиспользует `DailyOperationsDigest`/`DailyDigestService`/крон/героя, НЕ новый пайплайн/модель/агент). Переписан промпт письма под эталон COO (12 секций проза+cites, имена людей/клиентов прямо, петля со вчера, «взгляд COO» = `reflection`, сущность «решения» удалена); `buildDayPackage` наполнен 6 слоями входа (`employeeVoice`/`rawConversations`/`signals`/`conflicts`/`reporting`/`yesterdayOpenSignals`) с атрибуцией «кто сказал»; усилена разметка `team_friction` в block-ingest; маршрут дайджеста переведён на DeepSeek Pro→GPT→KIE со снятым `maxTokens`; крон сдвинут 06:00→07:00 МСК; виджеты day-only перегруппированы (блокеры / риски-по-причине / идеи-кластерами / конфликты). Новый сервис `PersonRefResolverService` (единый резолв `userId`/`externalId`→Person).

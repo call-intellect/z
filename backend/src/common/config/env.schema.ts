@@ -299,7 +299,7 @@ const EmailFetchSchema = z.object({
 });
 
 const KnowledgeCoreSchema = z.object({
-  DISTILL_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.92),
+  DISTILL_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
   DISTILL_DEBOUNCE_MS: z.coerce.number().int().positive().default(30_000),
   DISTILL_KNN_TOP_K: z.coerce.number().int().positive().default(5),
   ENTITY_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.88),

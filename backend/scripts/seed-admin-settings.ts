@@ -395,7 +395,7 @@ function buildSettings(): SettingSeed[] {
       'knowledge.distillMergeThreshold',
       envFloat('DISTILL_MERGE_THRESHOLD', 0.85),
       'medium',
-      'KNN cosine-порог merge IdeaBlock',
+      'Порог косинусной близости для склейки схожих IdeaBlock (distill). Ниже 0.85 — арбитр-LLM решает спорные. Диапазон 0–1.',
     ],
     [
       'knowledge.reportBlockConfidenceCap',

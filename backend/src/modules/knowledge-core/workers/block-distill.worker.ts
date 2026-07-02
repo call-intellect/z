@@ -122,11 +122,16 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
 
     this.logger.debug({ blockId, tenantId: block.tenantId }, '[PIPE] block-distill');
 
+    const mergeThreshold = await this.cfg.getDynamic<number>(
+      'knowledge.distillMergeThreshold',
+      'DISTILL_MERGE_THRESHOLD',
+      0.85,
+    );
     const candidates = await this.merger.knnCandidates({
       tenantId: block.tenantId,
       blockId: block.id,
       topK: this.cfg.knowledgeCore.distillKnnTopK,
-      threshold: this.cfg.knowledgeCore.distillMergeThreshold,
+      threshold: mergeThreshold,
     });
 
     if (candidates.length === 0) {

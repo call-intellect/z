@@ -61,12 +61,12 @@ const GROUPS: SettingGroup[] = [
     icon: Wand2,
     settings: [
       {
-        key: "knowledge.distill.merge_threshold",
+        key: "knowledge.distillMergeThreshold",
         label: "Порог слияния (cosine)",
         description:
           "Минимальная косинусная близость для слияния схожих distill-блоков.",
-        schema: ratio01(0.92),
-        defaultValue: 0.92,
+        schema: ratio01(0.85),
+        defaultValue: 0.85,
       },
       {
         key: "knowledge.distill.debounce_ms",

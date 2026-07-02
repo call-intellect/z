@@ -110,29 +110,29 @@
 
 ## Фазы
 
-### [ ] Ф1. Аудит-подтверждение (таблица)
+### [x] Ф1. Аудит-подтверждение (таблица)
 - Собрать все `key:`-литералы из `frontend/app/**/*SettingsClient.tsx` (учесть и `SettingSpec.settings`, и `DomainSettingsClient.specs` — оба используют `key:`).
 - Сверить с ключами реестра; воспроизвести phantom-таблицу выше (Группа A + Группа B).
 - **Приёмка:** список phantom-ключей совпадает с таблицей ТЗ (39 шт.); каждый Группы A имеет доказанный canonical (`grep` camelCase в реестре = найдено); каждый Группы A phantom имеет 0 читателей в `backend/src`, а его canonical — ≥1.
 
-### [ ] Ф2. Унификация FE-ключей (Группа A)
+### [x] Ф2. Унификация FE-ключей (Группа A)
 - В `KnowledgeCoreSettingsClient.tsx` и `EmbeddingsSettingsClient.tsx` заменить каждую строку `key:` из Группы A на canonical camelCase (значения `label`/`description`/`defaultValue`/`schema` не трогать — только `key`). FE-Zod-схема каждой крутилки должна оставаться совместимой с бэковой из реестра (сверить тип/пределы: напр. `knowledge.insightSpikeRatio` в реестре `min(0).max(100)`, на FE было `min(1).max(20)` — привести FE к бэку или к общему безопасному диапазону; аналогично проверить `linkKnnTopK`, `distillKnnTopK` — `POSITIVE_INT` без верхней границы в реестре).
 - Группа B (cron × 4, `betaOps.commitmentFollowupLocalHour`, `daySignals.*`): **НЕ переименовывать вслепую.** Для каждого — реализатор решает сам (правило автономности): найти реального читателя фичи → если фича читает другой ключ, подставить его; если читателя нет вовсе (крутилка мертва) — либо добавить ключ+читатель в бэк, либо убрать крутилку с FE. Для cron-крутилок каноничный путь по принципу 9 CLAUDE.md — завести ключ в реестре и перевести читатель с ENV на `getDynamic` (можно вынести это в отдельный мини-план, если объём растёт). Крайняя граница: НЕ оставлять phantom (guard-тест Ф3 всё равно упадёт).
 - **Приёмка:** после Ф2 запуск сборщика ключей даёт 0 phantom; `typecheck`/`lint` FE зелёные.
 
-### [ ] Ф3. Guard-тест (FE-ключи ⊆ реестр)
+### [x] Ф3. Guard-тест (FE-ключи ⊆ реестр)
 - Экспортировать ключи реестра: добавить `export function registeredSettingKeys(): string[]` в `admin-setting-schema-registry.ts` (возврат `[...registry.keys()]`).
 - Тест (FE vitest или backend-side чтение FE-файлов — реализатор выбирает по расположению; проще backend-тест, читающий `frontend/app/**/*SettingsClient.tsx` через fs + regex): собрать FE-ключи, проверить `feKeys ⊆ registeredSettingKeys()`, при нарушении — упасть с перечнем phantom-ключей и файлов.
 - Негативная проверка: тест умеет ронять на заведомо-ложном ключе (в тесте — временно подмешать фейковый ключ в вход и убедиться, что assert падает; либо отдельный юнит на функцию сравнения).
 - **Приёмка:** тест зелёный на текущем дереве; при внесении заведомо-ложного FE-ключа — красный с понятным сообщением.
 
-### [ ] Ф4. (опц.) Чистка осиротевших строк AdminSetting
+### [x] Ф4. (опц.) Чистка осиротевших строк AdminSetting
 - `set()` пишет строку даже для незарегистрированного ключа, поэтому на проде могли осесть строки под phantom-ключами (если владелец кликал «Сохранить» на phantom-крутилке).
 - Скрипт `backend/scripts/patch-remove-phantom-admin-settings.ts` (idempotent, `createPrismaClient()` из `_lib/prisma`): удалить строки `AdminSetting`, ключ которых НЕ в `registeredSettingKeys()` И совпадает со списком известных phantom (не трогать чужое). Сухой прогон (лог что удалит) по умолчанию, `--apply` для записи.
 - Зарегистрировать в `backend/scripts/apply-prod-deploy.ts` (`STEPS`, `phase: 'patch'`, `skipBootstrap: true`) и в `docs/operations/prod-deploy-log.md` Шаг 6.
 - **Приёмка:** dry-run на проде показывает список; после `--apply` строк под phantom-ключами = 0. (Данные не теряются — это мёртвые строки без читателя.)
 
-### [ ] Ф5. Тесты / верификация
+### [x] Ф5. Тесты / верификация
 - FE: `bun run typecheck` · `bun run lint` · `bun run build` (frontend).
 - Backend: `bunx vitest run` по guard-тесту (Ф3) + затронутым spec (если правился реестр/скрипт).
 - Ручная приёмка (spot-check 1–2 крутилки через qa-tester на korateam.ru): изменить, напр., `knowledge.themeCosineThreshold` в `/admin` → подтвердить, что `GET /api/v1/admin/settings/knowledge.themeCosineThreshold` вернул новое значение и `getDynamic` в кластеризаторе тем его читает (лог/поведение).
@@ -158,4 +158,16 @@
 - **(c) EXPLAIN нового intake KNN на реальных данных.** Новый LATERAL по `IdeaBlockEvidence` в `fact-supersede.service.ts` (Ф8 extraction-rewrite) на боевых объёмах планом не проверен. См. `04_не-сделано` строка 2026-06-30 «EXPLAIN/прогон fact-supersede LATERAL».
 
 ## Итог
-_(заполняется при реализации)_
+
+**Реализовано целиком (ветка work/2026-06-29, коммиты 17ab941f · bba52379 · d5e3b2b8).**
+
+- **Ф1.** Аудит-скрипт подтвердил ровно **39 phantom / 152 OK** (15 `*SettingsClient.tsx`, 192 FE-ключа) — совпало с таблицей ТЗ.
+- **Ф2.** Группа A — 31 rename в camelCase (KnowledgeCore 28 + Embeddings 3); `insightSpikeRatio` FE-схема выровнена на диапазон реестра `z.number().min(0).max(100)`. Группа B (8) закрыта осознанно:
+  - 4 cron-крутилки удалены с FE — оказались phantom **и** нефункциональны (расписание задаётся литералом `@Cron`, а `cfg.*.clusterCron` из ENV уходит только в debug-лог). Настоящая проводка (ENV/литерал → AdminSetting + динамический `SchedulerRegistry`) вынесена в `plans/tz/2026-07-02-cron-schedules-env-to-admin-settings.md` (ждёт greenlight — меняет прод-расписание).
+  - `betaOps.commitmentFollowupLocalHour` — удалена (0 читателей во всём репозитории, фичи нет).
+  - Страница «Фиксатор чек-инов» переведена с фантомных `daySignals.*` на реальные читаемые ключи: `dayReport.enabled`, `dayReport.completenessQualityThreshold`, `daily-checkin.staleDaysThreshold`, `daily-checkin.skipNonWorkingDays`, `daily-checkin.skipHolidays`. `daySignals.processLocalHour` (без читателя, коллектор на хардкод-cron MSK 05:00) вынесен в тот же суб-ТЗ.
+- **Ф3.** `export registeredSettingKeys()` + backend guard-spec `admin-setting-fe-keys.guard.spec.ts` (fs-скан `frontend/**/*SettingsClient.tsx` → `feKeys ⊆ registeredSettingKeys()`, phantom=0) + негативный юнит. 3/3 зелёные; весь модуль admin/settings 38/38.
+- **Ф4.** `patch-remove-phantom-admin-settings.ts` (idempotent, dry-run/`--apply`, known-phantom ∩ unregistered) + юнит-spec 4/4 + шаг `phase:'patch' args:['--apply']` в `apply-prod-deploy.ts`. На dev-БД нашлись и вычищены 4 реальные осиротевшие строки (`daySignals.*` ×3 + `betaOps.commitmentFollowupLocalHour`, `updatedBy=system` — следы кликов по phantom-крутилкам); `--apply` дважды → 4, затем 0 (идемпотентность доказана).
+- **Ф5.** FE typecheck/lint/build зелёные; backend typecheck зелёный; guard + patch spec зелёные. Ручной spot-check в проде (qa-tester на korateam.ru) — **НЕ выполнен в этой сессии** (см. «Что не сделано» в отчёте): доказано кодом (переименованные ключи ∈ читатели `getDynamic`/`resolveSync`, подтверждено grep'ом) + guard-тестом.
+
+**DoD:** phantom=0 (guard зелёный, падает на ложном ключе); Группа B закрыта (подвязано к реальному читателю / удалено / вынесено в суб-ТЗ); осиротевшие строки чистятся идемпотентным скриптом. **Осталось (не в scope этого ТЗ):** суб-ТЗ cron→AdminSetting (greenlight владельца); TC6-Опция 2 (FE потребляет `/schema/:key`) — указатель в `04_не-сделано`.

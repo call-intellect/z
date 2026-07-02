@@ -188,10 +188,12 @@ admin-поверхности с разбором конкретной карто
 
 ### `/admin/checkin-signals` — Сигналы чек-инов (2026-06-21)
 
-Страница super_admin: крутилки универсального фиксатора чек-инов (`daySignals.*` — рубильник `daySignals.enabled`, порог детектора `daySignals.detectThreshold`, локальный час обработки `daySignals.processLocalHour`). Через `AdminSettingField` (history + audit), поверх `AdminSettingsService` / `TypedConfigService.getDynamic` (admin → ENV → code-fallback).
+Страница super_admin: крутилки дневного фиксатора чек-инов. Через `AdminSettingField` (history + audit), поверх `AdminSettingsService` / `TypedConfigService.getDynamic` (admin → ENV → code-fallback).
 
-- **Навигация:** новый пункт в разделе «AI и модели» admin-навигации (`frontend/app/(admin)/admin/navigation.ts`).
-- **ТЗ:** `plans/tz/2026-06-21-universal-daily-checkin-fixator-tz.md` (TZ3 админ-страница). Процесс детектора — [feature-flags.md](../../docs/operations/feature-flags.md) (`daySignals.enabled`).
+- **Ключи (реальные читаемые реестром, 2026-07-02):** рубильник `dayReport.enabled` (читают `day-report-collector.cron` + `meeting-checkin.listener`), порог полноты вечернего отчёта `dayReport.completenessQualityThreshold` (читает `daily-checkin.service`), порог «залежавшегося» чек-ина `daily-checkin.staleDaysThreshold` (читает `telegram-digest.cron`), пропуски `daily-checkin.skipNonWorkingDays` / `daily-checkin.skipHolidays` (читает `daily-checkin-prompt.cron`).
+- **История бага:** до 2026-07-02 страница писала фантомные `daySignals.*` (рубильник/порог детектора/локальный час), которых бэк НЕ читал — крутилки молча ничего не делали (фича с самого начала жила на `dayReport.*`/`daily-checkin.*`). Переведена на реальные ключи в рамках унификации phantom-ключей (`plans/tz/2026-07-02-admin-knob-fe-backend-key-unification.md`). `daySignals.processLocalHour` (без читателя — коллектор на хардкод-cron MSK 05:00) вынесен в `plans/tz/2026-07-02-cron-schedules-env-to-admin-settings.md`.
+- **Guard:** рецидив phantom-ключа на любой `*SettingsClient.tsx` ловит backend-тест `admin-setting-fe-keys.guard.spec.ts` (`feKeys ⊆ registeredSettingKeys()`).
+- **Навигация:** пункт «Фиксатор чек-инов» в admin-навигации (`frontend/app/(admin)/admin/navigation.ts`).
 
 ## Тенанты (Org)
 

@@ -71,6 +71,22 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — Унификация phantom-ключей admin-крутилок FE↔backend (ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-07-02-admin-knob-fe-backend-key-unification.md`. FE-крутилки писали `AdminSetting.key`, которых бэк не читает (39 phantom). Устранено: 31 rename в camelCase (KnowledgeCore/Embeddings), удалены 4 нефункциональные cron-крутилки + мёртвая `betaOps.commitmentFollowupLocalHour`, страница «Фиксатор чек-инов» переведена с `daySignals.*` на реальные `dayReport.*`/`daily-checkin.*`. Guard-тест `admin-setting-fe-keys.guard.spec.ts` (FE⊆реестр) + идемпотентный patch чистки осиротевших строк. Коммиты `17ab941f`/`bba52379`/`d5e3b2b8`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ.** Только backend-правка реестра (`export registeredSettingKeys()`) + 1 patch-скрипт чистки. **Docker rebuild backend+frontend обязателен** (FE начинает писать/читать корректные ключи; backend несёт guard-тест + patch).
+
+- **Шаг 1 — ENV: новых нет.** Крутилки не добавлялись — только переименованы FE-ключи под существующие ключи реестра. Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаг 6 — One-off patch (идемпотентный, УЖЕ в STEPS `phase:'patch'` `args:['--apply']` `skipBootstrap:true`):** `docker compose exec backend bun run scripts/patch-remove-phantom-admin-settings.ts` (dry-run — покажет список) → `--apply` (удалит). Удаляет осиротевшие `AdminSetting`-строки под 39 phantom-ключами (`key ∉ registeredSettingKeys()` И `key ∈ known-phantom` — чужое не трогает). `AdminSettingHistory` сохраняется как аудит. Доезжает агрегатором `apply-prod-deploy.ts --mode update`. Идемпотентен (повтор → 0). На dev-БД вычистил 4 реальные строки (`daySignals.*` ×3 + `betaOps.commitmentFollowupLocalHour`, `updatedBy=system` — следы кликов по phantom-крутилкам); на проде удалит те же, если по phantom-крутилкам кликали «Сохранить».
+- **Шаги 4/5/7/8/9/10 (Prisma/postgres-init/seed/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась; новых сидов/HNSW/backfill/migrate/setup нет.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката): в `/admin/ai/knowledge-core` крутилки пишут camelCase-ключи (`knowledge.themeCosineThreshold` и т.д.) — сменить значение → `GET /api/v1/admin/settings/knowledge.themeCosineThreshold` вернул новое; в `/admin/checkin-signals` («Фиксатор чек-инов») крутилки `dayReport.enabled`/`dayReport.completenessQualityThreshold`/`daily-checkin.*` (нет `daySignals.*`); в `/admin/ai/models` нет крутилки «Час напоминания о коммитментах»; на KnowledgeCore нет cron-крутилок (theme/idea/insight/persona clusterer). Backend-тест `bunx vitest run src/modules/admin/settings/admin-setting-fe-keys.guard.spec.ts` зелёный.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-02 — Пакет A: целостность Person↔Entity (ветка work/2026-06-29)
 
 > Фаза 6 Пакета A: лечение прод-данных после «тихих» авто-мержей (прод: `Person.entityTenantId` = 11/11 NULL + уже-схлопнутые клоны). Извлечён общий переиспользуемый блок репойнта ссылок `migrateEntityRefs` из `mergeEntities` (behavior-preserving, тот же порядок шагов), добавлен `reconcileEntityRefs(tenantId)` — лечит осиротевшие ссылки на уже-слитые (`mergedIntoId != null`) сущности через тот же путь миграции (без дрейфа). Два идемпотентных backfill-скрипта.

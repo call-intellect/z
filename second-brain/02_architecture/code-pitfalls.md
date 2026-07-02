@@ -34,6 +34,8 @@ type: architecture
 
 Конфиг читать ТОЛЬКО через `TypedConfigService` (`resolveSync`/`getDynamic`), объявленный в `env.schema.ts`. На 2026-06-20 было **26 нарушений** (`concierge`/`orchestrator`/`router`-fallback/воркеры) — `process.env.*` без валидации, без единого места дефолтов, без проводки в админку. Также: каждая `*SettingsClient.tsx` держит СВОЮ копию Zod-схемы (автоген из бэкового `/schema/:key` существует, но страницы им не пользуются) — рассинхрон бэк/фронт возможен, держи min/max/int/boolean в синхроне руками.
 
+**Обновление 2026-07-02 (унификация phantom-ключей):** вскрыт худший случай рассинхрона — FE-крутилка писала `AdminSetting.key`, которого бэк НЕ читает (39 phantom-ключей: `knowledge.*` snake vs camelCase реестра, 4 cron-крутилки на литерале `@Cron`, мёртвая `betaOps.commitmentFollowupLocalHour`, целая страница `daySignals.*`). Крутилка сохранялась (`set()` для незарегистрированного ключа лишь warn + всё равно пишет строку), но поведение бэка не менялось. Половина TC6 закрыта: **guard-тест `backend/src/modules/admin/settings/admin-setting-fe-keys.guard.spec.ts`** сверяет `feKeys ⊆ registeredSettingKeys()` (fs-скан всех `*SettingsClient.tsx`) и падает на CI при появлении FE-ключа вне реестра. Вторая половина (FE держит свою копию Zod вместо чтения `/schema/:key`) — ИДЕАЛ, ждёт в `04_не-сделано` (TC6-Опция 2). До неё: **при добавлении FE-крутилки ключ обязан быть в `admin-setting-schema-registry.ts`, min/max/int/enum держи в синхроне руками** (FE может быть строже — подмножество безопасно, но не шире реестра).
+
 ## LiveKit / Egress
 
 ### 1. Egress — потрескивание в записи (Feb 2026)

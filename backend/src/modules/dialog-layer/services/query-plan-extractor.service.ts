@@ -168,12 +168,17 @@ export class QueryPlanExtractorService {
           this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
         }
       }
+      const knownNames = await this.resolveGroundingHints(
+        input.tenantId,
+        input.question,
+      );
       const rawUser = buildUnderstandUserPrompt({
         summary: input.summary,
         history: input.history,
         question: input.question,
         todayIso: input.todayIso,
         orgTimezone,
+        knownNames,
       });
       const systemPrompt = guardOn
         ? withInjectionGuard(DIALOG_UNDERSTAND_SYSTEM_PROMPT)
@@ -640,6 +645,85 @@ export class QueryPlanExtractorService {
     }
 
     return { personIds: out, clarification: null };
+  }
+
+  private async resolveGroundingHints(
+    tenantId: string,
+    question: string,
+  ): Promise<string[]> {
+    try {
+      const enabled = await this.cfg.getDynamic<boolean>(
+        'knowledge.chatV2UnderstandGrounding',
+        undefined,
+        true,
+      );
+      if (!enabled) return [];
+      const topK = await this.cfg.getDynamic<number>(
+        'knowledge.chatV2GroundingTopK',
+        undefined,
+        15,
+      );
+      const tokens = [
+        ...new Set(
+          question
+            .toLowerCase()
+            .split(/[^\p{L}\p{N}]+/u)
+            .map((t) => t.trim())
+            .filter((t) => t.length >= 4),
+        ),
+      ].slice(0, 12);
+      if (tokens.length === 0) return [];
+
+      const [entities, themes] = await Promise.all([
+        this.prisma.entity.findMany({
+          where: {
+            tenantId,
+            mergedIntoId: null,
+            OR: [
+              ...tokens.map((t) => ({
+                canonicalName: { contains: t, mode: 'insensitive' as const },
+              })),
+              { aliases: { hasSome: tokens } },
+            ],
+          },
+          select: { canonicalName: true },
+          take: topK * 2,
+        }),
+        this.prisma.theme.findMany({
+          where: {
+            tenantId,
+            status: 'active',
+            OR: tokens.map((t) => ({
+              name: { contains: t, mode: 'insensitive' as const },
+            })),
+          },
+          select: { name: true },
+          take: topK,
+        }),
+      ]);
+
+      const out: string[] = [];
+      const seen = new Set<string>();
+      for (const name of [
+        ...entities.map((e) => e.canonicalName),
+        ...themes.map((t) => t.name),
+      ]) {
+        const trimmed = name?.trim();
+        if (!trimmed) continue;
+        const key = trimmed.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(trimmed);
+        if (out.length >= topK) break;
+      }
+      return out;
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'resolveGroundingHints упал — fail-open (справочник пуст)',
+      );
+      return [];
+    }
   }
 
   private async resolveEntityHints(tenantId: string, hints: string[]): Promise<string[]> {

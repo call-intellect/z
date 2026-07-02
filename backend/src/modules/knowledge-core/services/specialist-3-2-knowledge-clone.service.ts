@@ -24,6 +24,7 @@ import {
 
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { canonicalizeEntityId } from './entity-companion.helpers';
 import { EntityResolutionService } from './entity-resolution.service';
 import { Specialist32ProbeService } from './specialist-3-2-probe.service';
 
@@ -415,9 +416,11 @@ export class Specialist32Service {
     const lookbackMs = this.cfg.knowledgeClone.lookbackMonths * 30 * 24 * 60 * 60 * 1000;
     const since = new Date(Date.now() - lookbackMs);
 
+    const canonicalEntityId = await canonicalizeEntityId(this.prisma, args.tenantId, entityId);
+
     const mentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
-        entityId,
+        entityId: canonicalEntityId,
         role: { in: ['subject', 'mentioned'] },
         block: {
           tenantId: args.tenantId,

@@ -17,7 +17,7 @@ import {
 } from '../../tables/events/entity-sync.events';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
-import { setPersonEntity } from './entity-companion.helpers';
+import { canonicalizeEntityIds, setPersonEntity } from './entity-companion.helpers';
 
 export function normalizeEntityName(input: string): string {
   if (!input) return '';
@@ -1039,24 +1039,13 @@ export class EntityResolutionService {
     return new Set(rows.map((r) => r.personId));
   }
 
-  /**
-   * Резолв merged-сущностей в канон: для каждого entityId, если у него задан
-   * mergedIntoId — берём канон. tenantId в WHERE. Дедуп.
-   */
   private async canonicalizeEntityIds(
     tenantId: string,
     entityIds: string[],
   ): Promise<string[]> {
     if (entityIds.length === 0) return [];
-    const rows = await this.prisma.entity.findMany({
-      where: { id: { in: entityIds }, tenantId },
-      select: { id: true, mergedIntoId: true },
-    });
-    const out = new Set<string>();
-    for (const r of rows) {
-      out.add(r.mergedIntoId ?? r.id);
-    }
-    return [...out];
+    const map = await canonicalizeEntityIds(this.prisma, tenantId, entityIds);
+    return [...new Set(map.values())];
   }
 
   /**

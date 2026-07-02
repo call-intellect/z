@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  canonicalizeEntityId,
+  canonicalizeEntityIds,
   markBlockMerged,
   markEntityMerged,
   setPersonEntity,
@@ -17,6 +19,18 @@ function makeClient() {
 type MockClient = ReturnType<typeof makeClient>;
 
 const asClient = (c: MockClient) => c as unknown as Parameters<typeof setPersonEntity>[0];
+
+function makeCanonClient(chain: Record<string, string | null>) {
+  const findUnique = vi.fn(async (args: { where: { id_tenantId: { id: string } } }) => {
+    const id = args.where.id_tenantId.id;
+    if (!(id in chain)) return null;
+    return { mergedIntoId: chain[id] };
+  });
+  return { findUnique, client: { entity: { findUnique } } };
+}
+
+const asCanonClient = (c: { entity: { findUnique: unknown } }) =>
+  c as unknown as Parameters<typeof canonicalizeEntityId>[0];
 
 describe('entity-companion.helpers', () => {
   describe('setPersonEntity', () => {
@@ -120,6 +134,54 @@ describe('entity-companion.helpers', () => {
         data: Record<string, unknown>;
       };
       expect(call.data).toHaveProperty('mergedIntoTenantId');
+    });
+  });
+
+  describe('canonicalizeEntityId', () => {
+    it('follows a 2-hop chain A→B→C to the canonical C', async () => {
+      const { client } = makeCanonClient({ A: 'B', B: 'C', C: null });
+      const result = await canonicalizeEntityId(asCanonClient(client), 'tenant-1', 'A');
+      expect(result).toBe('C');
+    });
+
+    it('returns the entity itself when it has no mergedIntoId', async () => {
+      const { client } = makeCanonClient({ X: null });
+      const result = await canonicalizeEntityId(asCanonClient(client), 'tenant-1', 'X');
+      expect(result).toBe('X');
+    });
+
+    it('does not loop forever on a cycle A→B→A', async () => {
+      const { client, findUnique } = makeCanonClient({ A: 'B', B: 'A' });
+      const result = await canonicalizeEntityId(asCanonClient(client), 'tenant-1', 'A');
+      expect(['A', 'B']).toContain(result);
+      expect(findUnique.mock.calls.length).toBeLessThanOrEqual(16);
+    });
+
+    it('returns the last known id when an entity row is missing', async () => {
+      const { client } = makeCanonClient({ A: 'B' });
+      const result = await canonicalizeEntityId(asCanonClient(client), 'tenant-1', 'A');
+      expect(result).toBe('B');
+    });
+  });
+
+  describe('canonicalizeEntityIds', () => {
+    it('maps every input id to its canonical (A→C, B→C, C→C)', async () => {
+      const { client } = makeCanonClient({ A: 'B', B: 'C', C: null });
+      const map = await canonicalizeEntityIds(asCanonClient(client), 'tenant-1', [
+        'A',
+        'B',
+        'C',
+      ]);
+      expect(map.get('A')).toBe('C');
+      expect(map.get('B')).toBe('C');
+      expect(map.get('C')).toBe('C');
+    });
+
+    it('returns an empty map for empty input', async () => {
+      const { client, findUnique } = makeCanonClient({});
+      const map = await canonicalizeEntityIds(asCanonClient(client), 'tenant-1', []);
+      expect(map.size).toBe(0);
+      expect(findUnique).not.toHaveBeenCalled();
     });
   });
 });

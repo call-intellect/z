@@ -25,10 +25,10 @@
 - `entity-resolver.worker.ts:178 applyMerge` → звать `mergeEntities` (убрать урезанную копию, которая не мигрирует EntityLink).
 - Всё в одной транзакции с pre-check на composite-PK конфликты (иначе 25P02 абортит tx).
 
-### [ ] Ф4. Исключить людей из авто-мержа
+### [x] Ф4. Исключить людей из авто-мержа
 - `entity-resolver.cron.ts findCandidatePairs`: в SQL добавить `AND a.type <> 'person' AND b.type <> 'person'`. Люди сливаются только ручным путём (человек подтверждает).
 
-### [ ] Ф5. Read-side defence
+### [x] Ф5. Read-side defence
 - `specialist-3-2-knowledge-clone.service.ts:418 loadBlocksForPerson`: если `entity(entityId).mergedIntoId != null` — резолвить canonical (следовать за цепочкой) перед сбором `IdeaBlockEntity`. Belt-and-suspenders поверх Ф3.
 
 ### [ ] Ф6. Backfill + prod-deploy

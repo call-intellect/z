@@ -624,6 +624,13 @@ const STEPS: Step[] = [
     hint: 'interview → defaultClosedGroupKind=personal (Ф8 knowledge-access)',
     skipBootstrap: true,
   },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-remove-phantom-admin-settings.ts',
+    args: ['--apply'],
+    hint: 'Удаляет осиротевшие AdminSetting-строки под 39 phantom-ключами (нет читателя, unregistered). Идемпотентно (повтор → 0). History сохранён.',
+    skipBootstrap: true,
+  },
 
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-idea-quality.ts', skipBootstrap: true },

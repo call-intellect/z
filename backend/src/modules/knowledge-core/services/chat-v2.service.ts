@@ -750,6 +750,11 @@ interface RetrievalCtx {
   accessWhere: Record<string, unknown> | undefined;
 }
 
+interface RetrievalResult {
+  blockIds: string[];
+  approximate: boolean;
+}
+
 @Injectable()
 export class ChatV2Service {
   private readonly logger = new Logger(ChatV2Service.name);
@@ -897,8 +902,12 @@ export class ChatV2Service {
       this.runEpisodesBranch(input, tenantId),
     ]);
 
-    const rankedBlockIds: string[] =
-      retrievalSettled.status === 'fulfilled' ? retrievalSettled.value : [];
+    const retrievalResult: RetrievalResult =
+      retrievalSettled.status === 'fulfilled'
+        ? retrievalSettled.value
+        : { blockIds: [], approximate: false };
+    const rankedBlockIds: string[] = retrievalResult.blockIds;
+    const answerApproximate = retrievalResult.approximate;
     if (retrievalSettled.status === 'rejected') {
       // Графовый retrieval упал — это критично для chat-v2, но не роняем процесс:
       // дальше contextBlocks будет пустым → честный «недостаточно данных».
@@ -1042,6 +1051,7 @@ export class ChatV2Service {
         themeMap,
         // Ф10 мост К1 — список эпизодов-источников. Пусто → секция «Источники» не выводится.
         episodes,
+        approximate: answerApproximate,
       },
     );
 
@@ -1202,7 +1212,7 @@ export class ChatV2Service {
     input: ChatV2Input,
     ctx: RetrievalCtx,
     trace?: RetrievalTraceSink,
-  ): Promise<string[]> {
+  ): Promise<RetrievalResult> {
     const { tenantId, query, kRetrieve, kContext } = ctx;
 
     if (input.precomputedBlockIds && input.precomputedBlockIds.length > 0) {
@@ -1212,7 +1222,7 @@ export class ChatV2Service {
       trace?.markGraphSkipped('precomputed-block-ids');
       trace?.setPool(precomputed.map((id) => ({ blockId: id, score: 0 })));
       trace?.setRerank(precomputed.map((id) => ({ blockId: id, score: 0 })));
-      return precomputed;
+      return { blockIds: precomputed, approximate: false };
     }
 
     const queries: string[] =
@@ -1254,7 +1264,6 @@ export class ChatV2Service {
 
     if (!bothWays) {
       const semantic = await this.runSemanticRoute(input, ctx, semanticQueries, rrfK, trace);
-      if (semantic.length === 0) return [];
       trace?.setPool(semantic.map((id) => ({ blockId: id, score: 0 })));
       const reranked = await this.conditionalRerank({
         tenantId,
@@ -1265,7 +1274,7 @@ export class ChatV2Service {
         reformulations: queries,
       });
       trace?.setRerank(reranked.slice(0, kContext).map((id) => ({ blockId: id, score: 0 })));
-      return reranked.slice(0, kContext);
+      return this.applyCascade(input, ctx, reranked.slice(0, kContext), rrfK, trace);
     }
 
     const [semanticSettled, structuralSettled] = await Promise.allSettled([
@@ -1289,8 +1298,6 @@ export class ChatV2Service {
         'chat-v2 runRetrieval: структурный маршрут упал — отдаём только семантику',
       );
     }
-
-    if (semantic.length === 0 && structural.length === 0) return [];
 
     const merged =
       structural.length > 0
@@ -1328,7 +1335,80 @@ export class ChatV2Service {
       reformulations: queries,
     });
     trace?.setRerank(reranked.slice(0, kContext).map((id) => ({ blockId: id, score: 0 })));
-    return reranked.slice(0, kContext);
+    return this.applyCascade(input, ctx, reranked.slice(0, kContext), rrfK, trace);
+  }
+
+  private async applyCascade(
+    input: ChatV2Input,
+    ctx: RetrievalCtx,
+    blockIds: string[],
+    rrfK: number,
+    trace?: RetrievalTraceSink,
+  ): Promise<RetrievalResult> {
+    const cascadeEnabled = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2CascadeEnabled',
+      undefined,
+      true,
+    );
+    if (!cascadeEnabled) return { blockIds, approximate: false };
+    const minPool = await this.cfg.getDynamic<number>(
+      'knowledge.chatV2CascadeMinPool',
+      undefined,
+      5,
+    );
+    if (blockIds.length >= minPool) return { blockIds, approximate: false };
+
+    const sf = input.structuralFilters;
+    const hadFilters =
+      !!sf &&
+      ((sf.entityIds?.length ?? 0) > 0 ||
+        (sf.personIds?.length ?? 0) > 0 ||
+        (sf.signalTypes?.length ?? 0) > 0 ||
+        (sf.themeBranches?.length ?? 0) > 0 ||
+        !!sf.dateFrom ||
+        !!sf.dateTo ||
+        !!sf.bitemporalActiveOnly);
+
+    let current = blockIds;
+    let approximate = false;
+
+    if (hadFilters) {
+      const widened = await this.runSemanticRoute(
+        { ...input, structuralFilters: null },
+        ctx,
+        [ctx.query],
+        rrfK,
+        trace,
+      );
+      const merged = dedupe([...current, ...widened]);
+      if (merged.length > current.length) {
+        current = merged.slice(0, ctx.kContext);
+        approximate = true;
+      }
+    }
+
+    if (current.length < minPool && ctx.graphHops < 2) {
+      const deeper = await this.runSemanticRoute(
+        { ...input, structuralFilters: null },
+        { ...ctx, graphHops: ctx.graphHops + 1 },
+        [ctx.query],
+        rrfK,
+        trace,
+      );
+      const merged = dedupe([...current, ...deeper]);
+      if (merged.length > current.length) {
+        current = merged.slice(0, ctx.kContext);
+        approximate = true;
+      }
+    }
+
+    if (approximate) {
+      this.logger.log(
+        { tenantId: ctx.tenantId, before: blockIds.length, after: current.length },
+        'chat-v2 retrieval: каскад расширения применён (близкое, точного совпадения нет)',
+      );
+    }
+    return { blockIds: current, approximate };
   }
 
   private async runSemanticRoute(
@@ -2090,9 +2170,17 @@ export class ChatV2Service {
       temporalRollups?: ReadonlyArray<{ label: string; markdown: string }>;
       themeMap?: ReadonlyArray<{ label: string; markdown: string }>;
       episodes?: ReadonlyArray<ChatV2Episode>;
+      approximate?: boolean;
     },
   ): string {
     const parts: string[] = [];
+
+    if (extra?.approximate) {
+      parts.push(
+        'Важно: ниже — БЛИЗКИЕ по смыслу материалы; точного совпадения по запросу могло не найтись. Ответь по тому, что есть, и если это лишь близкое — прямо обозначь, что точного совпадения нет. Не утверждай отсутствие того, чего ты не искал.',
+        '',
+      );
+    }
 
     // ТЗ 2026-06-15 §6 — Память диалога в НАЧАЛЕ USER (переехала из SYSTEM).
     const summary = extra?.conversationSummary;

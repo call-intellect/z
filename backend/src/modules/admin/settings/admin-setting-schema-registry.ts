@@ -48,6 +48,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.segment_overlap_ratio', UNIT_INTERVAL],
   ['knowledge.contextual_header_enabled', z.boolean()],
   ['knowledge.theme_summary_enabled', z.boolean()],
+  ['knowledge.demoOrgIngestEnabled', z.boolean()],
   ['knowledge.rawEventRecoveryEnabled', z.boolean()],
   ['knowledge.rawEventRecoveryStaleMinutes', POSITIVE_INT],
   ['knowledge.rawEventRecoveryMaxAgeHours', POSITIVE_INT],

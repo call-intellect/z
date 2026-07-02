@@ -255,6 +255,7 @@ const AiFeatureFlagsSchema = z.object({
   DOC_COMPILER_ENABLED: zBool(true),
   REGULATION_GATE_STRICT_ENABLED: zBool(true),
   ASSIGNMENT_NOTIFICATIONS_ENABLED: zBool(true),
+  KNOWLEDGE_DEMO_ORG_INGEST_ENABLED: zBool(true),
 });
 
 const HashingSchema = z.object({

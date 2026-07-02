@@ -860,6 +860,20 @@ const STEPS: Step[] = [
     hint: 'regulation/instruction/policy/process: scope=role:<сырое имя> → role:<cuid> по созданным ролям (Фаза 7б); идемпотентно (cuid-хвост = no-op, неразрешимое остаётся сырьём)',
     skipBootstrap: true,
   },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-entity-tenant-companions.ts',
+    skipBootstrap: true,
+    args: ['--apply'],
+    hint: 'Пакет A: заполнить entityTenantId/mergedIntoTenantId-компаньоны (idempotent)',
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-reconcile-merged-entity-refs.ts',
+    skipBootstrap: true,
+    args: ['--apply'],
+    hint: 'Пакет A: перепривязать осиротевшие ссылки на уже-слитые сущности к канону (idempotent)',
+  },
 ];
 
 interface ParsedArgs {

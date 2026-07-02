@@ -1,5 +1,6 @@
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { backfillEntityTenantCompanions } from '../../../../scripts/backfill-entity-tenant-companions';
 import {
   checkDbAvailable,
   closePrismaClient,
@@ -277,6 +278,102 @@ describe('EntityMergeService.mergeEntities (integration)', () => {
     });
     expect(c?.mergedIntoId).toBe(s.bId);
     expect(c?.mergedIntoTenantId).toBe(s.tenantId);
+  });
+});
+
+describe('EntityMergeService.reconcileEntityRefs (integration)', () => {
+  afterAll(async () => {
+    if (ctx.dbReady) await cleanupMergePair();
+  });
+
+  it('перепривязывает осиротевшие ссылки со слитой F на канон C и идемпотентен', async (testCtx) => {
+    if (skipIfNoDb(testCtx)) return;
+    const prisma = await getPrismaClient();
+    const s = await seedMergePair('recon');
+    const F = s.aId;
+    const C = s.cId;
+
+    await prisma.entity.update({
+      where: { id_tenantId: { id: F, tenantId: s.tenantId } },
+      data: { mergedIntoId: C, mergedIntoTenantId: s.tenantId },
+    });
+
+    const first = await ctx.svc!.reconcileEntityRefs(s.tenantId);
+    expect(first.reconciled).toBeGreaterThanOrEqual(1);
+
+    const assertHealed = async (): Promise<void> => {
+      const ibe = await prisma.ideaBlockEntity.findMany({ where: { blockId: s.blockId } });
+      expect(ibe.every((r) => r.entityId === C)).toBe(true);
+      expect(ibe.some((r) => r.entityId === F)).toBe(false);
+
+      const se = await prisma.sourceEntity.findMany({ where: { rawEventId: s.rawEventId } });
+      expect(se.every((r) => r.entityId === C)).toBe(true);
+      expect(se.some((r) => r.entityId === F)).toBe(false);
+
+      const te = await prisma.themeEntity.findMany({ where: { themeId: s.themeId } });
+      expect(te.every((r) => r.entityId === C)).toBe(true);
+      expect(te.some((r) => r.entityId === F)).toBe(false);
+
+      const link = await prisma.entityLink.findUnique({ where: { id: s.entityLinkId } });
+      expect(link?.fromEntityId).toBe(C);
+
+      const ownerCard = await prisma.card.findUnique({ where: { id: s.ownerCardId } });
+      expect(ownerCard?.entityId).toBe(C);
+      expect(ownerCard?.entityTenantId).toBe(s.tenantId);
+
+      const relatedCard = await prisma.card.findUnique({ where: { id: s.relatedCardId } });
+      expect(relatedCard?.relatedEntityIds).toContain(C);
+      expect(relatedCard?.relatedEntityIds).not.toContain(F);
+
+      const person = await prisma.person.findUnique({ where: { id: s.personId } });
+      expect(person?.entityId).toBe(C);
+      expect(person?.entityTenantId).toBe(s.tenantId);
+    };
+
+    await assertHealed();
+
+    const second = await ctx.svc!.reconcileEntityRefs(s.tenantId);
+    expect(second.scanned).toBeGreaterThanOrEqual(1);
+    await assertHealed();
+  });
+});
+
+describe('backfillEntityTenantCompanions (integration)', () => {
+  afterAll(async () => {
+    if (ctx.dbReady) await cleanupMergePair();
+  });
+
+  it('заполняет NULL-компаньоны и идемпотентен', async (testCtx) => {
+    if (skipIfNoDb(testCtx)) return;
+    const prisma = await getPrismaClient();
+    const s = await seedMergePair('bfcomp');
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE persons SET "entityTenantId" = NULL WHERE id = $1`,
+      s.personId,
+    );
+    await prisma.$executeRawUnsafe(
+      `UPDATE "Entity" SET "mergedIntoId" = $1, "mergedIntoTenantId" = NULL WHERE id = $2 AND "tenantId" = $3`,
+      s.bId,
+      s.aId,
+      s.tenantId,
+    );
+
+    const first = await backfillEntityTenantCompanions(prisma, true);
+    expect(first.persons).toBeGreaterThanOrEqual(1);
+    expect(first.entities).toBeGreaterThanOrEqual(1);
+
+    const person = await prisma.person.findUnique({ where: { id: s.personId } });
+    expect(person?.entityTenantId).toBe(s.tenantId);
+
+    const a = await prisma.entity.findUnique({
+      where: { id_tenantId: { id: s.aId, tenantId: s.tenantId } },
+    });
+    expect(a?.mergedIntoTenantId).toBe(s.tenantId);
+
+    const second = await backfillEntityTenantCompanions(prisma, true);
+    expect(second.persons).toBe(0);
+    expect(second.entities).toBe(0);
   });
 });
 

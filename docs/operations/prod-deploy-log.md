@@ -71,6 +71,24 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — Пакет A: целостность Person↔Entity (ветка work/2026-06-29)
+
+> Фаза 6 Пакета A: лечение прод-данных после «тихих» авто-мержей (прод: `Person.entityTenantId` = 11/11 NULL + уже-схлопнутые клоны). Извлечён общий переиспользуемый блок репойнта ссылок `migrateEntityRefs` из `mergeEntities` (behavior-preserving, тот же порядок шагов), добавлен `reconcileEntityRefs(tenantId)` — лечит осиротевшие ссылки на уже-слитые (`mergedIntoId != null`) сущности через тот же путь миграции (без дрейфа). Два идемпотентных backfill-скрипта.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ. 🟢 2 НОВЫХ BACKFILL (оба в STEPS `phase:'backfill'`, `skipBootstrap`, `--apply`).** Docker rebuild backend.
+
+- **Шаги 1/4/5/6/7/9/10 (ENV/Prisma/postgres-init/patch/seed/migrate/setup) — НЕ затронуты.** Только backfill + behavior-preserving рефактор сервиса.
+- **Шаг 8 — Backfill (2 новых, идемпотентные, зарегистрированы в STEPS `phase:'backfill'`, `skipBootstrap`, порядок важен — companions ПЕРВЫМ):**
+  - `docker compose exec backend bun run scripts/backfill-entity-tenant-companions.ts --apply` — заполняет nullable-компаньоны: `persons.entityTenantId := tenantId` (где `entityId IS NOT NULL AND entityTenantId IS NULL`), `"Entity".mergedIntoTenantId := tenantId` и `"IdeaBlock".mergedIntoTenantId := tenantId` (где `mergedIntoId IS NOT NULL AND *TenantId IS NULL`). 3 идемпотентных raw UPDATE. Прогон без `--apply` = dry-run (counts).
+  - `docker compose exec backend bun run scripts/backfill-reconcile-merged-entity-refs.ts --apply` — по всем тенантам находит сущности с `mergedIntoId != null`, резолвит канон (`canonicalizeEntityId`) и перепривязывает осиротевшие ссылки (IdeaBlockEntity/EntityLink/SourceEntity/ThemeEntity/Card/Person) на канон через тот же `migrateEntityRefs`. Идемпотентен (2-й прогон → все циклы миграции пустые no-op). Прогон без `--apply` = dry-run (счёт слитых сущностей per org); опц. `--tenant=<id>`.
+  - Оба доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `EntityMergeService` += `migrateEntityRefs` (private) + `reconcileEntityRefs` (public); `mergeEntities` вызывает `migrateEntityRefs`, затем как раньше уплощение цепочки + обновление `into` (mentionsCount/aliases) + `markEntityMerged`.
+- **Откат:** backfill только заполняет NULL-компаньоны и перепривязывает битые ссылки — данные лечатся, откат не требуется; рефактор сервиса — `git revert` (поведение идентично).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-01 — День компании v2: письмо COO + полный вход с атрибуцией + виджеты + маршрут DeepSeek Pro→GPT→KIE (day-company-report-v2, ветка work/2026-06-29)
 
 > ТЗ `plans/tz/2026-06-30-day-company-report-v2.md` (Ф1–Ф8). **Надстройка над реализованным «День компании»** (переиспользует `DailyOperationsDigest`/`DailyDigestService`/крон/героя, НЕ новый пайплайн/модель/агент). Переписан промпт письма под эталон COO (12 секций проза+cites, имена людей/клиентов прямо, петля со вчера, «взгляд COO» = `reflection`, сущность «решения» удалена); `buildDayPackage` наполнен 6 слоями входа (`employeeVoice`/`rawConversations`/`signals`/`conflicts`/`reporting`/`yesterdayOpenSignals`) с атрибуцией «кто сказал»; усилена разметка `team_friction` в block-ingest; маршрут дайджеста переведён на DeepSeek Pro→GPT→KIE со снятым `maxTokens`; крон сдвинут 06:00→07:00 МСК; виджеты day-only перегруппированы (блокеры / риски-по-причине / идеи-кластерами / конфликты). Новый сервис `PersonRefResolverService` (единый резолв `userId`/`externalId`→Person).

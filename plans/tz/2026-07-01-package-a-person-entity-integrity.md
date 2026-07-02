@@ -31,7 +31,7 @@
 ### [x] Ф5. Read-side defence
 - `specialist-3-2-knowledge-clone.service.ts:418 loadBlocksForPerson`: если `entity(entityId).mergedIntoId != null` — резолвить canonical (следовать за цепочкой) перед сбором `IdeaBlockEntity`. Belt-and-suspenders поверх Ф3.
 
-### [ ] Ф6. Backfill + prod-deploy
+### [x] Ф6. Backfill + prod-deploy
 - `backend/scripts/backfill-entity-tenant-companions.ts` (idempotent, `createPrismaClient()`, `assertNotProd`-НЕТ — прод-скрипт): `Person.entityTenantId=tenantId` где `entityId` задан; `Entity/IdeaBlock.mergedIntoTenantId=tenantId` где `mergedIntoId` задан.
 - Reconciler осиротевших ссылок на уже-слитые сущности (Person/Card/Theme/Source → canonical по `mergedIntoId`).
 - Зарегистрировать оба в `backend/scripts/apply-prod-deploy.ts` (`STEPS`, phase `update`, `skipBootstrap`).

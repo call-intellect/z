@@ -132,6 +132,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Сколько застрявших RawEvent обрабатывать за один проход cron-а восстановления. По умолчанию 200.',
   },
+  {
+    key: 'knowledge.specialistsCombinedRepairTimeoutMs',
+    value: 60_000,
+    category: 'knowledge',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Таймаут (мс) repair-retry вызова LLM в specialists-combined, когда первый ответ не распарсился. Очередь concurrency=1, поэтому таймаут ограничивает блокировку. По умолчанию 60000.',
+  },
 ];
 
 interface Counters {

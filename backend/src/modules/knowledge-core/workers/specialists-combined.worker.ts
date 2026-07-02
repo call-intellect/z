@@ -10,6 +10,7 @@ import type { SourceType } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { CORE_QUEUE_NAMES, type SpecialistsCombinedJobData } from '../../core-queue/queues';
@@ -41,6 +42,9 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -209,6 +213,7 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
       );
     } catch (err) {
       if (err instanceof SpecialistsCombinedParseError) {
+        this.metrics?.incCombinedParseFailed({ tenant: tenantId, sourceType });
         this.logger.error(
           {
             sourceType,
@@ -217,7 +222,7 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
             err: err.message,
             rawTextPreview: err.rawText?.slice(0, 500) ?? '',
           },
-          'specialists-combined: parse error — финализируем job без retry',
+          'specialists-combined: parse error даже после repair — финализируем job без retry, данные потеряны',
         );
         return;
       }

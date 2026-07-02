@@ -171,7 +171,24 @@ export class SpecialistsCombinedService {
       dataClass: args.dataClass ?? 'internal',
     });
 
-    const parsed = this.parseToolCallOutput(result.toolCalls, result.text);
+    let parsed: SpecialistsCombinedOutput;
+    try {
+      parsed = this.parseToolCallOutput(result.toolCalls, result.text);
+    } catch (parseErr) {
+      if (!(parseErr instanceof SpecialistsCombinedParseError)) throw parseErr;
+      parsed = await this.repairJsonAndRetry({
+        systemPrompt,
+        userMessage,
+        invalidRawText: parseErr.rawText ?? result.text,
+        parseError: parseErr.message,
+        tenantId: args.tenantId,
+        meetingId: args.meetingId,
+        channelKind,
+        dataClass: args.dataClass ?? 'internal',
+        sourceType: args.sourceType ?? 'meeting',
+        ...(args.jobId ? { jobId: args.jobId } : {}),
+      });
+    }
 
     const errors: string[] = [];
     const created = {
@@ -343,6 +360,66 @@ export class SpecialistsCombinedService {
       );
     }
     return validated.data;
+  }
+
+  private async repairJsonAndRetry(args: {
+    systemPrompt: string;
+    userMessage: string;
+    invalidRawText: string;
+    parseError: string;
+    tenantId: string;
+    meetingId: string;
+    channelKind: CombinedChannelKind;
+    dataClass: DataClass;
+    sourceType: string;
+    jobId?: string;
+  }): Promise<SpecialistsCombinedOutput> {
+    const timeoutMs = this.cfg
+      ? await this.cfg.getDynamic<number>(
+          'knowledge.specialistsCombinedRepairTimeoutMs',
+          undefined,
+          60_000,
+        )
+      : 60_000;
+
+    const repairUserMessage = [
+      'Твой предыдущий ответ невалиден (не распарсился по схеме инструмента).',
+      'Вот он:',
+      args.invalidRawText.slice(0, 12_000),
+      '',
+      `Ошибка: ${args.parseError}`,
+      '',
+      `Верни ВАЛИДНЫЙ JSON строго по схеме инструмента ${SPECIALISTS_COMBINED_TOOL_NAME}, без пояснений.`,
+      '',
+      'Исходные данные для извлечения:',
+      args.userMessage,
+    ].join('\n');
+
+    this.logger.warn(
+      {
+        tenantId: args.tenantId,
+        externalId: args.meetingId,
+        sourceType: args.sourceType,
+        parseError: args.parseError,
+      },
+      'specialists-combined: первый ответ не распарсился — repair-retry',
+    );
+
+    const repaired = await this.llm.call({
+      taskType: SPECIALISTS_COMBINED_TASK_TYPE,
+      systemPrompt: args.systemPrompt,
+      userMessage: repairUserMessage,
+      tenantId: args.tenantId,
+      ...(args.channelKind === 'meeting' ? { meetingId: args.meetingId } : {}),
+      ...(args.jobId ? { jobId: args.jobId } : {}),
+      maxTokens: SPECIALISTS_COMBINED_MAX_TOKENS,
+      tools: [SUBMIT_ALL_ENTITIES_TOOL],
+      sourceRef: { type: args.sourceType, id: args.meetingId },
+      dataClass: args.dataClass,
+      timeoutMs,
+    });
+
+    return this.parseToolCallOutput(repaired.toolCalls, repaired.text);
   }
 
   private async persistDecisions(

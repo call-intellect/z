@@ -244,3 +244,57 @@ describe('BusinessMetricsService — метрики извлекающего с�
     }).not.toThrow();
   });
 });
+
+describe('BusinessMetricsService — Пакет D (F-9 / F-8 / Ф3)', () => {
+  let service: BusinessMetricsService;
+
+  beforeEach(() => {
+    register.clear();
+    service = new BusinessMetricsService();
+    service.onModuleInit();
+  });
+
+  afterEach(() => {
+    register.clear();
+  });
+
+  async function rows(name: string) {
+    const metrics = await register.getMetricsAsJSON();
+    return metrics.find((m) => m.name === name)?.values ?? [];
+  }
+
+  it('F-9: setRawEventStuck выставляет gauge raw_event_stuck_gauge{tenant,source_type}', async () => {
+    service.setRawEventStuck({ tenant: 't1', sourceType: 'meeting', count: 4 });
+    const vals = await rows('raw_event_stuck_gauge');
+    expect(
+      vals.find((v) => v.labels.tenant === 't1' && v.labels.source_type === 'meeting')?.value,
+    ).toBe(4);
+  });
+
+  it('F-9: resetRawEventStuck обнуляет ряды gauge (разгруженный бэклог → absent)', async () => {
+    service.setRawEventStuck({ tenant: 't1', sourceType: 'meeting', count: 4 });
+    service.resetRawEventStuck();
+    const vals = await rows('raw_event_stuck_gauge');
+    expect(vals).toHaveLength(0);
+  });
+
+  it('F-8: incCombinedParseFailed инкрементит combined_parse_failed_total{tenant,source_type}', async () => {
+    service.incCombinedParseFailed({ tenant: 't1', sourceType: 'chatbox' });
+    service.incCombinedParseFailed({ tenant: 't1', sourceType: 'chatbox' });
+    const vals = await rows('combined_parse_failed_total');
+    expect(
+      vals.find((v) => v.labels.tenant === 't1' && v.labels.source_type === 'chatbox')?.value,
+    ).toBe(2);
+  });
+
+  it('Ф3: observeEntityMergeConfidenceGap пишет в гистограмму entity_merge_confidence_gap', async () => {
+    service.observeEntityMergeConfidenceGap(0.03);
+    service.observeEntityMergeConfidenceGap(0.4);
+    service.observeEntityMergeConfidenceGap(-1);
+    const vals = await rows('entity_merge_confidence_gap');
+    const count = vals.find(
+      (v) => (v as { metricName?: string }).metricName === 'entity_merge_confidence_gap_count',
+    )?.value;
+    expect(count).toBe(2);
+  });
+});

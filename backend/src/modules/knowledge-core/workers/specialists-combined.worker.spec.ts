@@ -1,12 +1,15 @@
 import type { Job } from 'bullmq';
 import { describe, expect, it, vi } from 'vitest';
 
+import { SpecialistsCombinedParseError } from '../services/specialists-combined.service';
+
 import { SpecialistsCombinedWorker } from './specialists-combined.worker';
 
 interface Deps {
   prisma: any;
   blockFetch: { getCanonicalBlocksForSource: ReturnType<typeof vi.fn> };
   combined: { extractAll: ReturnType<typeof vi.fn> };
+  metrics: { incCombinedParseFailed: ReturnType<typeof vi.fn> };
 }
 
 function buildWorker(
@@ -71,15 +74,18 @@ function buildWorker(
 
   const cfg = { specialistsCombined: { enabled: true, delayMs: 0 } } as any;
 
+  const metrics = { incCombinedParseFailed: vi.fn() };
+
   const worker = new SpecialistsCombinedWorker(
     {} as any, // redis
     prisma as any, // prisma
     blockFetch as any, // blockFetch
     combined as any, // combined
     cfg, // cfg (Optional)
+    metrics as any, // metrics (Optional)
   );
 
-  return { worker, deps: { prisma, blockFetch, combined } };
+  return { worker, deps: { prisma, blockFetch, combined, metrics } };
 }
 
 function chatJob(): Job<any> {
@@ -242,5 +248,32 @@ describe('SpecialistsCombinedWorker — WP-A канало-агностичный
 
     expect(deps.prisma.rawEvent.findFirst).not.toHaveBeenCalled();
     expect(deps.combined.extractAll).not.toHaveBeenCalled();
+  });
+
+  it('F-8: SpecialistsCombinedParseError (repair исчерпан) → incCombinedParseFailed + финализация без throw', async () => {
+    const { worker, deps } = buildWorker({
+      rawEvent: { sourceTitle: 'Чат', dataClass: 'sensitive' },
+    });
+    deps.combined.extractAll.mockRejectedValueOnce(
+      new SpecialistsCombinedParseError('parse failed after repair', 'raw'),
+    );
+
+    await expect(worker.process(chatJob())).resolves.toBeUndefined();
+
+    expect(deps.metrics.incCombinedParseFailed).toHaveBeenCalledTimes(1);
+    expect(deps.metrics.incCombinedParseFailed).toHaveBeenCalledWith({
+      tenant: 'tenant-1',
+      sourceType: 'chatbox',
+    });
+  });
+
+  it('F-8: не-parse ошибка extractAll пробрасывается (BullMQ retry), метрика НЕ инкрементится', async () => {
+    const { worker, deps } = buildWorker({
+      rawEvent: { sourceTitle: 'Чат', dataClass: 'sensitive' },
+    });
+    deps.combined.extractAll.mockRejectedValueOnce(new Error('llm down'));
+
+    await expect(worker.process(chatJob())).rejects.toThrow('llm down');
+    expect(deps.metrics.incCombinedParseFailed).not.toHaveBeenCalled();
   });
 });

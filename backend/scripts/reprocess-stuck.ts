@@ -13,6 +13,7 @@ async function main(): Promise<void> {
         tenantId: orgId,
         processingStatus: 'received',
         sourceType: { not: 'tracker_event' as never },
+        // Prod «stuck» (raw-event-recovery.cron + raw_event_stuck_gauge) TIME-based; здесь evidence-based — намеренно.
         evidence: { none: {} },
       },
       select: { id: true, sourceType: true, sourceExternalId: true },

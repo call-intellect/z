@@ -11,6 +11,7 @@ import { type Entity } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { CORE_QUEUE_NAMES, type EntityResolverJobData } from '../../core-queue/queues';
@@ -42,6 +43,9 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(EventEmitter2)
     private readonly eventEmitter?: EventEmitter2,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -85,10 +89,11 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.gate.checkOrThrow(entity.tenantId, 'entity-resolver');
 
+    const mergeThreshold = this.cfg.knowledgeCore.entityMergeThreshold;
     const candidates = await this.merger.findCandidates({
       tenantId: entity.tenantId,
       entityId: entity.id,
-      threshold: this.cfg.knowledgeCore.entityMergeThreshold,
+      threshold: mergeThreshold,
     });
     if (candidates.length === 0) {
       this.logger.debug({ entityId }, 'entity-resolver: кандидатов нет');
@@ -116,6 +121,7 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         continue;
       }
       // verdict='merge'
+      this.metrics?.observeEntityMergeConfidenceGap(c.similarity - mergeThreshold);
       try {
         await this.applyMerge({
           entity,

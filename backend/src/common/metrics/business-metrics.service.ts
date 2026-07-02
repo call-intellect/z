@@ -191,6 +191,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private coreEntitiesTotal!: Gauge<'tenant' | 'type'>;
   private coreLinksTotal!: Gauge<'tenant' | 'relation_type'>;
   private coreRawEventsTotal!: Gauge<'tenant' | 'processing_status'>;
+  private rawEventStuckGauge!: Gauge<'tenant' | 'source_type'>;
   /**
    * KC-Temporal W1.1 (2026-05-25) — gauge «открытых» (validUntil IS NULL)
    * IdeaBlock'ов, разрезанных по `signal_type`. Снапшотится тем же кроном
@@ -198,6 +199,7 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   private kcFactsOpenGauge!: Gauge<'tenant' | 'signal_type'>;
   private corePipelineDurationSeconds!: Histogram<'worker'>;
+  private entityMergeConfidenceGap!: Histogram<string>;
   private coreLlmTokensTotal!: Counter<'tenant' | 'task_type'>;
   private coreRetentionDeletedTotal!: Counter<'kind'>;
   private corePersonalDataErasuresTotal!: Counter<string>;
@@ -484,6 +486,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // SBA α-7 — счётчик неуспешных LLM-extraction'ов специалистов (reason:
   // 'llm_error', 'json_parse', 'schema_validation', 'arbiter_skip', ...).
   private coreSpecialistExtractionFailuresTotal!: Counter<'type' | 'reason'>;
+  private combinedParseFailedTotal!: Counter<'tenant' | 'source_type'>;
   private corePartialLossTotal!: Counter<'reason'>;
   private strategicAlignmentParseSkipTotal!: Counter<'reason'>;
   private rawEventRecoveryReenqueuedTotal!: Counter<string>;
@@ -1573,6 +1576,11 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Количество RawEvent по processingStatus (snapshot).',
       labelNames: ['tenant', 'processing_status'] as const,
     });
+    this.rawEventStuckGauge = this.getOrCreateGauge({
+      name: 'raw_event_stuck_gauge',
+      help: 'RawEvent застряли в processingStatus=received дольше окна staleMinutes (snapshot).',
+      labelNames: ['tenant', 'source_type'] as const,
+    });
     // KC-Temporal W1.1 — «открытые» (validUntil IS NULL) IdeaBlock'и по signal_type.
     this.kcFactsOpenGauge = this.getOrCreateGauge({
       name: 'kc_facts_open_gauge',
@@ -1584,6 +1592,11 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Длительность knowledge-core воркеров в секундах (label: worker).',
       labelNames: ['worker'] as const,
       buckets: [0.5, 1, 2, 5, 10, 30, 60, 120, 300],
+    });
+    this.entityMergeConfidenceGap = this.getOrCreateHistogram({
+      name: 'entity_merge_confidence_gap',
+      help: 'entity-resolver: разрыв (similarity - threshold) на verdict=merge. Малый gap = пограничное слияние — наблюдение точности merge.',
+      buckets: [0, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5],
     });
     this.coreLlmTokensTotal = this.getOrCreateCounter({
       name: 'core_llm_tokens_total',
@@ -2481,6 +2494,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_partial_loss_total',
       help: 'block-ingest: частичная/полная потеря блоков (reason). reason: extraction_window_failed | persist_null',
       labelNames: ['reason'] as const,
+    });
+    this.combinedParseFailedTotal = this.getOrCreateCounter({
+      name: 'combined_parse_failed_total',
+      help: 'specialists-combined: LLM-output не распарсился даже после repair-retry → job финализирован, данные потеряны.',
+      labelNames: ['tenant', 'source_type'] as const,
     });
     this.strategicAlignmentParseSkipTotal = this.getOrCreateCounter({
       name: 'strategic_alignment_parse_skip_total',
@@ -4875,10 +4893,26 @@ export class BusinessMetricsService implements OnModuleInit {
     );
   }
 
+  resetRawEventStuck(): void {
+    this.rawEventStuckGauge.reset();
+  }
+
+  setRawEventStuck(args: { tenant: string; sourceType: string; count: number }): void {
+    this.rawEventStuckGauge.set(
+      { tenant: args.tenant, source_type: args.sourceType },
+      args.count,
+    );
+  }
+
   /** Длительность завершившегося воркера knowledge-core (в секундах). */
   observeCorePipelineDuration(args: { worker: string; seconds: number }): void {
     if (args.seconds < 0) return;
     this.corePipelineDurationSeconds.observe({ worker: args.worker }, args.seconds);
+  }
+
+  observeEntityMergeConfidenceGap(gap: number): void {
+    if (!Number.isFinite(gap) || gap < 0) return;
+    this.entityMergeConfidenceGap.observe(gap);
   }
 
   /**
@@ -6160,6 +6194,13 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incCorePartialLoss(args: { reason: string; count?: number }): void {
     this.corePartialLossTotal.inc({ reason: args.reason }, args.count ?? 1);
+  }
+
+  incCombinedParseFailed(args: { tenant: string; sourceType: string }): void {
+    this.combinedParseFailedTotal.inc({
+      tenant: args.tenant,
+      source_type: args.sourceType,
+    });
   }
 
   incStrategicAlignmentParseSkip(args: { reason: string }): void {

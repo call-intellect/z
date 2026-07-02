@@ -5,7 +5,7 @@
 
 ## Фаза F-9 — метрика застрявших RawEvents
 
-### [ ] Ф1
+### [x] Ф1
 - `business-metrics.service.ts` (~:490): объявить `rawEventStuckGauge!: Gauge<'tenant'|'source_type'>`; в `onModuleInit` (~:2490) — `getOrCreateGauge({ name:'raw_event_stuck_gauge', help:'...' })`; метод `setRawEventStuck(count, {tenant, source_type})`.
 - `raw-event-recovery.cron.ts`: метод `observeStuckCount(staleMinutes, now=new Date())` — считает `processingStatus='received' AND receivedAt < staleBefore`, группирует по tenant/source_type; вызвать после `sweep()` в `runOnce()` и выставить gauge.
 - Окно — существующая крутилка `staleMinutes`/`maxAgeHours` (`getDynamic`), не менять.
@@ -13,7 +13,7 @@
 
 ## Фаза F-8 — retry на combined parse-error
 
-### [ ] Ф2
+### [x] Ф2
 - `specialists-combined.service.ts`: `repairJsonAndRetry(originalError, tenantId, args, attempt)` — repair-prompt («твой ответ невалиден, верни валидный JSON по схеме»), bounded.
 - `SpecialistsCombinedParseError`: добавить `repairContext?: {attempt, previousRawText?}`.
 - `specialists-combined.worker.ts:210-223`: заменить тихий `return void` на `repairAndRetry(..., maxAttempts=2)`; при исчерпании — метрика `combined_parse_failed_total{tenant,source_type}` (не тихий проглот).
@@ -21,12 +21,12 @@
 
 ## Фаза мониторинга масштаба (метрики, не переписывание)
 
-### [ ] Ф3
+### [x] Ф3
 - Панель/метрика **точности слияния сущностей**: доля merge с низким зазором уверенности + счётчик ручных откатов; alert на всплеск. (Порог арбитра — крутилка, не трогаем сейчас.)
 - Метрика **атрибуции автора**: доля low-confidence атрибуций блок→person; выборочный аудит.
 - Зафиксировать в `second-brain/04_не-сделано/README.md`: cap=4 (`core_router_trimmed_total`) и whitelist рёбер AGE — **не действия сейчас** (cap — крутилка при реальном тримминге; whitelist — только под «фазу 2» AGE).
 
-### [ ] Ф4. Тесты
+### [x] Ф4. Тесты
 - F-9: N застрявших RawEvents → gauge = N по tenant/source_type.
 - F-8: кривой JSON → repair-prompt чинит; неисправимый → `combined_parse_failed_total++`, не тихий return.
 
@@ -39,4 +39,9 @@
 - Новые метрики → `prod-deploy-log.md` Шаг 12 (smoke: `/metrics` grep `raw_event_stuck_gauge`, `combined_parse_failed_total`).
 
 ## Итог
-_Заполнить после реализации._
+**Реализовано (F-9, F-8, Ф3).** Один коммит.
+- **F-9:** gauge `raw_event_stuck_gauge{tenant,source_type}` (время-based: received + receivedAt<staleBefore, `staleMinutes` из той же крутилки крона), считается в `core-metrics-snapshot.cron.snapshotRawEventStuck` с `.reset()` на каждом проходе (снятый бэклог исчезает, не залипает). Коммент о расхождении в `reprocess-stuck.ts` (тот по evidence.none — намеренно).
+- **F-8:** `specialists-combined` — parse-error больше НЕ теряется тихо: `repairJsonAndRetry` (один bounded repair-LLM-вызов, repair-промпт с невалидным текстом+ошибкой, timeout-крутилка `knowledge.specialistsCombinedRepairTimeoutMs`=60000); при исчерпании — `combined_parse_failed_total{tenant,source_type}` (worker), не тихий return.
+- **Ф3:** `entity_merge_confidence_gap` (histogram, эмитится в entity-resolver.worker: similarity−threshold на merge); атрибуция автора — пропущено (в пайплайне `confidence: null`, нет числа без нового plumbing) → в реестр не-сделанного; cap=4 и AGE-whitelist зафиксированы как «не действия сейчас».
+
+Верификация: typecheck 0 · lint 0 · build DI PASS · knowledge-core+metrics 1123/1123. Прод: новая крутилка (сид в STEPS) + Шаг 12 smoke `/metrics` (raw_event_stuck_gauge, combined_parse_failed_total, entity_merge_confidence_gap).

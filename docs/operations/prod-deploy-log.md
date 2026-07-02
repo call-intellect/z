@@ -89,6 +89,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — Пакет D: надёжность и наблюдаемость (F-9 raw_event_stuck, F-8 combined repair-retry, Ф3 scale monitoring) (ветка work/2026-06-29)
+
+> F-9: gauge `raw_event_stuck_gauge{tenant,source_type}` (сколько RawEvent застряли в `processingStatus=received` дольше окна `staleMinutes` — snapshot тем же `CoreMetricsSnapshotCron` каждые 5 мин, `.reset()` в начале снапшота чтобы разгруженные бэклоги падали в absent, не в stale-nonzero). F-8: repair-retry в `specialists-combined` — если LLM-ответ не распарсился, ОДИН повторный LLM-вызов с repair-промптом (bounded, `timeoutMs` крутилка, очередь concurrency=1); если repair тоже не распарсился → счётчик `combined_parse_failed_total{tenant,source_type}` в воркере (раньше = тихая финализация job = потеря данных). Ф3 (наблюдение): гистограмма `entity_merge_confidence_gap` (gap `similarity - threshold` на verdict=merge в `entity-resolver`).
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (1 новая крутилка `knowledge.specialistsCombinedRepairTimeoutMs`, не флаг). **🟢 SEED УЖЕ ЗАРЕГИСТРИРОВАН** (`seed-admin-setting-worker-knobs.ts`, +1 ключ, в STEPS `phase` существующая). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** 1 новая крутилка `knowledge.specialistsCombinedRepairTimeoutMs`=`60000` (таймаут мс repair-вызова LLM; очередь concurrency=1 → ограничивает блокировку) — чистый AdminSetting (`getDynamic`, code-fallback 60000, работает до сида — Ship-On). Новый флаг НЕ вводился (крутилка). Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась; новых HNSW/GIN/patch-/backfill-/migrate-/setup-скриптов нет. Только новые метрики (in-memory prom-client), repair-логика сервиса и снапшот-крон.
+- **Шаг 7 — Seed (идемпотентный, УЖЕ зарегистрирован в STEPS, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-setting-worker-knobs.ts` — +1 ключ `knowledge.specialistsCombinedRepairTimeoutMs`=`60000` (section `workers`, severity `low`). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `BusinessMetricsService` += gauge `raw_event_stuck_gauge` + counter `combined_parse_failed_total` + histogram `entity_merge_confidence_gap` (+ сеттеры/reset/inc/observe); `CoreMetricsSnapshotCron` += `snapshotRawEventStuck` (groupBy по `sourceType`, окно `knowledge.rawEventRecoveryStaleMinutes`); `SpecialistsCombinedService` += `repairJsonAndRetry` (ОДИН bounded repair-вызов); `SpecialistsCombinedWorker` += `incCombinedParseFailed` перед финализацией на исчерпанном parse-fail; `EntityResolverWorker` += `observeEntityMergeConfidenceGap` на verdict=merge.
+- **Шаг 12 — Smoke** (после выката):
+  - `/metrics` содержит `raw_event_stuck_gauge` и `combined_parse_failed_total` и `entity_merge_confidence_gap` (могут быть 0/absent на старте — наблюдение): `docker compose exec backend sh -c 'curl -s localhost:3000/metrics | grep -E "raw_event_stuck_gauge|combined_parse_failed_total|entity_merge_confidence_gap"'`.
+  - крутилка `knowledge.specialistsCombinedRepairTimeoutMs` (60000) видна в админке (настройки, section `workers`); `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-worker-knobs.ts` (created=1 при первом прогоне, потом no-op).
+- **Откат:** метрики/repair/снапшот аддитивны (рискованного переключателя нет, Ship-On); крутилка admin-editable; логика — `git revert`. Repair-вызов bounded (maxAttempts=2, timeout) — при инциденте на LLM его достаточно опустить крутилкой в 1000мс, не выкат.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-02 — Пакет C, F-4 (block-part): порог склейки IdeaBlock → крутилка + дефолт 0.92→0.85 + унификация ключа (ветка work/2026-06-29)
 
 > Порог косинусной склейки схожих IdeaBlock (distill) выведен в динамическую крутилку и опущен 0.92→0.85 (агрессивнее дедуп; ниже порога спорные решает арбитр-LLM). `block-distill.worker.ts` больше не читает статический `this.cfg.knowledgeCore.distillMergeThreshold`, а резолвит `await this.cfg.getDynamic<number>('knowledge.distillMergeThreshold', 'DISTILL_MERGE_THRESHOLD', 0.85)` (admin→ENV→code-fallback). Унифицировано ТРИ написания ключа в одно каноническое `knowledge.distillMergeThreshold` (совпадает с registry + typed-config); FE-страница `knowledge-core` перешла с фантомного ключа `knowledge.distill.merge_threshold` на канонический.

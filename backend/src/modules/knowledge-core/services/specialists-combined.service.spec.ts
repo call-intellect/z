@@ -334,6 +334,62 @@ describe('SpecialistsCombinedService.extractAll', () => {
     );
   });
 
+  function llmResult(over: { text?: string; toolCalls?: unknown }) {
+    return {
+      text: over.text ?? '',
+      modelUsed: 'deepseek:deepseek-v4-pro',
+      inputTokens: 1,
+      outputTokens: 1,
+      cachedTokens: 0,
+      durationMs: 1,
+      tier: 'primary',
+      toolCalls: over.toolCalls ?? [],
+    };
+  }
+
+  it('F-8: первый ответ невалиден → repair-retry возвращает валидный → extractAll успешен', async () => {
+    const prisma = makePrismaMock();
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce(llmResult({ text: 'сломанный {{{' }))
+      .mockResolvedValueOnce(
+        llmResult({ toolCalls: [{ name: SPECIALISTS_COMBINED_TOOL_NAME, input: VALID_8_EMPTY }] }),
+      );
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      { call } as any,
+      makeMetricsMock() as any,
+    );
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(result.created.decisions).toBe(0);
+    expect(result.errors).toEqual([]);
+    const repairArg = call.mock.calls[1]![0] as any;
+    expect(repairArg.tools).toHaveLength(1);
+    expect(repairArg.timeoutMs).toBe(60_000);
+    expect(repairArg.userMessage).toContain('невалиден');
+  });
+
+  it('F-8: repair тоже невалиден → extractAll бросает SpecialistsCombinedParseError (не глотает)', async () => {
+    const prisma = makePrismaMock();
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce(llmResult({ text: 'сломано 1 {{{' }))
+      .mockResolvedValueOnce(llmResult({ text: 'сломано 2 {{{' }));
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      { call } as any,
+      makeMetricsMock() as any,
+    );
+
+    await expect(svc.extractAll({ ...argsTemplate() })).rejects.toBeInstanceOf(
+      SpecialistsCombinedParseError,
+    );
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+
   it('пропускает сущности с sourceBlockId, которых нет в наборе блоков (защита от галлюцинаций)', async () => {
     const prisma = makePrismaMock();
     const llm = makeLlmMock({

@@ -41,6 +41,10 @@ export class ProviderInfoResolver {
       apiKeyEncrypted: string | null;
       protocolKind: string;
       defaultHeaders: unknown;
+      useProxy: boolean;
+      proxyPath: string | null;
+      timeoutMs: number | null;
+      capability: string;
     } | null = null;
     try {
       row = await this.prisma.llmProvider.findUnique({
@@ -51,6 +55,10 @@ export class ProviderInfoResolver {
           apiKeyEncrypted: true,
           protocolKind: true,
           defaultHeaders: true,
+          useProxy: true,
+          proxyPath: true,
+          timeoutMs: true,
+          capability: true,
         },
       });
     } catch (err) {
@@ -60,14 +68,29 @@ export class ProviderInfoResolver {
     }
 
     if (row) {
+      // Ф3 — резолв эффективного подключения (единственная реализация; см.
+      // раздел «Резолв эффективного подключения» ТЗ 2026-07-02): прокси-тумблер
+      // провайдера перекрывает baseUrl/apiKey, ключ префиксуется PROXY_PREFIX.
+      const proxyRoot = this.cfg.ai.proxy.baseUrl.replace(/\/v1\/?$/, '');
+      const effectiveBaseUrl = !row.useProxy
+        ? row.baseUrl
+        : row.proxyPath
+          ? `${proxyRoot}/${row.proxyPath}/v1`
+          : this.cfg.ai.proxy.baseUrl;
       const decryptedApiKey =
         row.apiKeyEncrypted && this.crypto.isEncrypted(row.apiKeyEncrypted)
           ? this.crypto.decrypt(row.apiKeyEncrypted)
           : row.apiKeyEncrypted;
+      const effectiveApiKey =
+        row.useProxy && decryptedApiKey
+          ? `${this.cfg.ai.proxy.prefix}:${decryptedApiKey}`
+          : decryptedApiKey;
       const info: ProtocolAdapterProviderInfo = {
         name: row.name,
-        baseUrl: row.baseUrl,
-        apiKey: decryptedApiKey,
+        baseUrl: effectiveBaseUrl,
+        apiKey: effectiveApiKey,
+        capability: row.capability,
+        timeoutMs: row.timeoutMs,
         ...(row.defaultHeaders &&
         typeof row.defaultHeaders === 'object' &&
         !Array.isArray(row.defaultHeaders)
@@ -158,6 +181,25 @@ export class ProviderInfoResolver {
             defaultModel: 'qwen3.5:9b',
           },
           protocolKind: 'ollama-native',
+        };
+      case 'kie':
+        return {
+          info: {
+            name,
+            baseUrl: this.cfg.ai.kie.baseUrl,
+            apiKey: this.cfg.ai.kie.apiKey,
+            timeoutMs: this.cfg.ai.kie.timeoutMs,
+          },
+          protocolKind: 'kie-native',
+        };
+      case 'grsai':
+        return {
+          info: {
+            name,
+            baseUrl: this.cfg.ai.grsai.baseUrl,
+            apiKey: this.cfg.ai.grsai.apiKey,
+          },
+          protocolKind: 'grsai-native',
         };
       default:
         return null;

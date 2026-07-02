@@ -1562,11 +1562,16 @@ export class LlmRouterService implements OnModuleInit {
         ? params
         : { ...params, systemPrompt: effectiveSystemPrompt };
 
-    // Фаза 11: фильтр по dataClass.
-    const filtered = providers.filter((entry) => {
-      const cap = PROVIDER_CAPABILITY[entry.provider];
-      return DATA_CLASS_RANK[cap.maxDataClass] >= DATA_CLASS_RANK[effectiveDataClass];
-    });
+    // Фаза 11: фильтр по dataClass. Ф3 (2026-07-02): capability читается из
+    // ProviderInfoResolver (DB) при включённом реестре (Б12), с фолбэком на
+    // хардкод-карту PROVIDER_CAPABILITY — см. resolveProviderCapability().
+    const filtered: ProviderEntry[] = [];
+    for (const entry of providers) {
+      const cap = await this.resolveProviderCapability(entry.provider);
+      if (DATA_CLASS_RANK[cap.maxDataClass] >= DATA_CLASS_RANK[effectiveDataClass]) {
+        filtered.push(entry);
+      }
+    }
 
     if (filtered.length === 0) {
       this.metrics?.incCoreDataClassViolation({
@@ -1633,7 +1638,14 @@ export class LlmRouterService implements OnModuleInit {
         // Per-call override (params.timeoutMs): caller'ы с долгим синтезом
         // (например chat-v2) могут поднять таймаут выше глобального, не трогая
         // остальные вызовы. Если не задан — поведение байт-в-байт прежнее.
-        const effectiveTimeoutMs = params.timeoutMs ?? this.dispatchTimeoutMs;
+        // Ф3 (2026-07-02): между per-call override и глобальным дефолтом —
+        // provider-level timeoutMs из ProviderInfo (DB), активен только при
+        // включённом реестре.
+        const providerTimeoutMs = this.isRegistryActive()
+          ? (await this.providerInfo!.resolveByName(entry.provider))?.info.timeoutMs
+          : undefined;
+        const effectiveTimeoutMs =
+          params.timeoutMs ?? providerTimeoutMs ?? this.dispatchTimeoutMs;
         const out = await Promise.race([
           this.dispatch(entry, effectiveParams),
           new Promise<never>((_resolve, reject) =>
@@ -1903,6 +1915,41 @@ export class LlmRouterService implements OnModuleInit {
     return { providers: DEFAULT_FALLBACK_CHAIN, experimentGroup: null };
   }
 
+  /**
+   * Ф3 (2026-07-02): реестр активен, когда флаг `USE_PROTOCOL_ADAPTER_REGISTRY`
+   * включён И оба optional-зависимости (adapterRegistry/providerInfo) заинжектены
+   * (тесты без DI на регистре продолжают работать со старым legacy-путём).
+   */
+  private isRegistryActive(): boolean {
+    return (
+      this.cfg?.budget?.useProtocolAdapterRegistry === true &&
+      this.adapterRegistry !== undefined &&
+      this.providerInfo !== undefined
+    );
+  }
+
+  /**
+   * Б12: capability провайдера — из ProviderInfoResolver (DB), с фолбэком на
+   * хардкод-карту PROVIDER_CAPABILITY, если реестр выключен, DB-строки нет,
+   * или resolveByName упал (best-effort — не блокируем dispatch).
+   */
+  private async resolveProviderCapability(
+    provider: LlmProviderName,
+  ): Promise<{ maxDataClass: DataClass; localOnly: boolean }> {
+    const fallback = PROVIDER_CAPABILITY[provider];
+    if (!this.isRegistryActive()) return fallback;
+    try {
+      const resolved = await this.providerInfo!.resolveByName(provider);
+      const cap = resolved?.info.capability;
+      if (cap === 'public' || cap === 'internal' || cap === 'sensitive' || cap === 'private') {
+        return { maxDataClass: cap, localOnly: fallback.localOnly };
+      }
+    } catch {
+      /* фолбэк на хардкод — best-effort, не блокируем вызов */
+    }
+    return fallback;
+  }
+
   private async dispatch(
     entry: ProviderEntry,
     params: LlmCallParams,
@@ -1928,10 +1975,7 @@ export class LlmRouterService implements OnModuleInit {
     // SBA α-10 wave 3 — Feature-flag USE_PROTOCOL_ADAPTER_REGISTRY.
     // false (default, production safety) → legacy switch ниже.
     // true → LlmProtocolAdapterRegistry резолвит protocolKind из LlmProvider/ENV.
-    const useRegistry =
-      this.cfg?.budget?.useProtocolAdapterRegistry === true &&
-      this.adapterRegistry !== undefined &&
-      this.providerInfo !== undefined;
+    const useRegistry = this.isRegistryActive();
     if (useRegistry) {
       const resolved = await this.providerInfo!.resolveByName(entry.provider);
       if (resolved) {

@@ -220,7 +220,7 @@ export const PutChainSchema = z.object({
 - Acceptance: unit-тесты — (a) create с apiKey → в БД `gcm:v1:`-префикс; (b) ответы list/get/create/update не содержат подстроки ключа (негативный тест) и содержат `hasApiKey`; (c) patch дважды → второй прогон 0 изменений; (d) резолвер отдаёт расшифрованный ключ. `bunx vitest run src/modules/admin/economics/admin-llm-providers.service.spec.ts` зелёный.
 - Закрывает: R2, R3.
 
-### Ф3 — Честные адаптеры + прокси + capability `[ ]`
+### Ф3 — Честные адаптеры + прокси + capability `[x]`
 **Ценность:** как LLM-роутер, вызываю любого провайдера по данным из БД (endpoint/ключ/headers/таймаут/прокси), а не по ENV.
 - Входит: `LlmConnectionOverride` + опциональный параметр в `AnthropicService/MinimaxService/OllamaService/KieService/GrsaiService.complete()`; адаптеры `anthropic-messages`/`ollama-native` передают override из ProviderInfo; новые `KieProtocolAdapter`/`GrsaiProtocolAdapter` (`kie-native`/`grsai-native`) + регистрация в `LlmProtocolAdapterRegistry`; enum protocolKind в DTO расширен; effective-URL/ключ по формуле Контракта в `ProviderInfoResolver`; `buildFromEnv` учит kie/grsai (+ поля useProxy из текущих ENV-эвристик grsai); dataClass-фильтр читает `capability` из ProviderInfo с фолбэком на `PROVIDER_CAPABILITY` (Б12); фикс `normalizeProviderName` — usage-атрибуция сохраняет фактический slug провайдера (не 'deepseek'); `timeoutMs` провайдера участвует в `Promise.race` dispatch.
 - НЕ входит: включение флага (Ф4), сиды (Ф9).

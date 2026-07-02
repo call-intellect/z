@@ -5,6 +5,8 @@ import { TypedConfigService } from '../../../common/config/typed-config.service'
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
+import type { StringWithSuggestions } from './llm.types';
+
 export type AiAgentType =
   | 'transcribe'
   | 'summary'
@@ -14,7 +16,7 @@ export type AiAgentType =
   | 'custom'
   | 'client_protocol';
 
-export type AiProvider =
+export type AiProvider = StringWithSuggestions<
   | 'anthropic'
   | 'vox'
   | 'openai'
@@ -23,7 +25,8 @@ export type AiProvider =
   | 'deepseek'
   | 'ollama'
   | 'kie'
-  | 'grsai';
+  | 'grsai'
+>;
 
 export interface RecordAiUsageInput {
   tenantId?: string | null;

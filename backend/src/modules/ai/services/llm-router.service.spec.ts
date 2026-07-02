@@ -348,4 +348,74 @@ describe('LlmRouterService', () => {
       expect.objectContaining({ provider: 'deepseek', status: 'success' }),
     );
   });
+
+  // Ф3 (2026-07-02): dataClass-фильтр перешёл с providers.filter(...) на
+  // асинхронный for-цикл (resolveProviderCapability читает DB при включённом
+  // реестре). Роутер в этих тестах строится БЕЗ cfg/adapterRegistry/providerInfo
+  // (isRegistryActive()===false) — поведение должно остаться байт-в-байт
+  // идентичным старому синхронному .filter() по хардкод-карте PROVIDER_CAPABILITY.
+  describe('dataClass-фильтр: filter→for-loop не меняет состав/порядок (регресс, реестр выключен)', () => {
+    it('dataClass=sensitive: только anthropic проходит (minimax=internal отсекается)', async () => {
+      const ctx = build({
+        routes: [
+          {
+            taskType: 'chapters',
+            providers: ['minimax', 'anthropic'],
+            isActive: true,
+          },
+        ],
+      });
+      await ctx.router.refreshCache();
+
+      const out = await ctx.router.call({
+        ...baseParams,
+        taskType: 'chapters' as LlmTaskType,
+        dataClass: 'sensitive',
+      });
+
+      expect(ctx.anthropic.complete).toHaveBeenCalledOnce();
+      expect(ctx.minimax.complete).not.toHaveBeenCalled();
+      expect(out.modelUsed.startsWith('anthropic:')).toBe(true);
+    });
+
+    it('dataClass=private: minimax (internal) единственный кандидат → NoEligibleProvider', async () => {
+      const ctx = build({
+        routes: [{ taskType: 'chapters', providers: ['minimax'], isActive: true }],
+      });
+      await ctx.router.refreshCache();
+
+      await expect(
+        ctx.router.call({
+          ...baseParams,
+          taskType: 'chapters' as LlmTaskType,
+          dataClass: 'private',
+        }),
+      ).rejects.toThrow();
+      expect(ctx.minimax.complete).not.toHaveBeenCalled();
+    });
+
+    it('dataClass не задан (internal по умолчанию): порядок providers сохраняется как раньше', async () => {
+      const ctx = build({
+        routes: [
+          {
+            taskType: 'chapters',
+            providers: ['minimax', 'anthropic', 'ollama'],
+            isActive: true,
+          },
+        ],
+      });
+      await ctx.router.refreshCache();
+
+      const out = await ctx.router.call({
+        ...baseParams,
+        taskType: 'chapters' as LlmTaskType,
+      });
+
+      // Все 3 капабилити (internal/sensitive/private) >= public — первый в
+      // цепочке (minimax) должен диспатчиться первым, без переупорядочивания.
+      expect(ctx.minimax.complete).toHaveBeenCalledOnce();
+      expect(ctx.anthropic.complete).not.toHaveBeenCalled();
+      expect(out.modelUsed.startsWith('minimax:')).toBe(true);
+    });
+  });
 });

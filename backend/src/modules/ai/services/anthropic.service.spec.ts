@@ -5,15 +5,28 @@ import type { TypedConfigService } from '../../../common/config/index';
 let lastSdkInstance: {
   messages: { create: ReturnType<typeof vi.fn>; stream: ReturnType<typeof vi.fn> };
 } | null = null;
+let lastSdkCtorOpts: unknown = null;
+
+const DEFAULT_STREAM_RESULT = {
+  finalMessage: async () => ({
+    content: [{ type: 'text', text: '' }],
+    usage: { input_tokens: 0, output_tokens: 0 },
+  }),
+};
 
 vi.mock('@anthropic-ai/sdk', () => {
   return {
     default: class FakeAnthropic {
       messages: { create: ReturnType<typeof vi.fn>; stream: ReturnType<typeof vi.fn> };
-      constructor(_opts: unknown) {
+      constructor(opts: unknown) {
+        lastSdkCtorOpts = opts;
         this.messages = {
           create: vi.fn(),
-          stream: vi.fn(),
+          // Дефолтная реализация — иначе синхронный вызов до mockReturnValueOnce
+          // (override строит клиент до первого await внутри complete()) падает
+          // на `undefined.finalMessage is not a function`. mockReturnValueOnce,
+          // выставленный ДО complete(), по-прежнему приоритетнее.
+          stream: vi.fn(async () => DEFAULT_STREAM_RESULT),
         };
         // eslint-disable-next-line @typescript-eslint/no-this-alias -- тест-фейк: захватываем созданный SDK-инстанс в module-scope для assertions
         lastSdkInstance = this;
@@ -256,5 +269,57 @@ describe('AnthropicService.complete: T7-F6 responseFormat:json_schema → tool_u
     };
     expect(req.tools).toBeUndefined();
     expect(req.tool_choice).toBeUndefined();
+  });
+});
+
+describe('AnthropicService.complete: connection-override (Ф3)', () => {
+  beforeEach(() => {
+    lastSdkInstance = null;
+    lastSdkCtorOpts = null;
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('override передан → новый клиент строится с override.baseUrl/apiKey (не с ENV/конструкторским клиентом)', async () => {
+    const svc = new AnthropicService(makeCfg());
+    if (!lastSdkInstance) throw new Error('constructor sdk not set');
+    const constructorSdk = lastSdkInstance;
+    const constructorOpts = lastSdkCtorOpts;
+
+    const result = await svc.complete(
+      { system: { text: 's' }, user: 'u' },
+      { baseUrl: 'https://override.example/v1', apiKey: 'override-key' },
+    );
+
+    expect(lastSdkInstance).not.toBe(constructorSdk);
+    const capturedOpts = lastSdkCtorOpts as { apiKey?: string; baseURL?: string };
+    expect(capturedOpts).not.toBe(constructorOpts);
+    expect(capturedOpts.baseURL).toBe('https://override.example/v1');
+    expect(capturedOpts.apiKey).toBe('override-key');
+    expect(result.text).toBe('');
+  });
+
+  it('override.apiKey=null → fallback на ENV apiKey, baseUrl всё равно из override', async () => {
+    const svc = new AnthropicService(makeCfg());
+
+    await svc.complete(
+      { system: { text: 's' }, user: 'u' },
+      { baseUrl: 'https://override.example/v1', apiKey: null },
+    );
+
+    const capturedOpts = lastSdkCtorOpts as { apiKey?: string; baseURL?: string };
+    expect(capturedOpts.baseURL).toBe('https://override.example/v1');
+    expect(capturedOpts.apiKey).toBe('sk-ant-test');
+  });
+
+  it('override отсутствует → используется конструкторский клиент, новый не создаётся', async () => {
+    const svc = new AnthropicService(makeCfg());
+    if (!lastSdkInstance) throw new Error('constructor sdk not set');
+    const constructorSdk = lastSdkInstance;
+
+    await svc.complete({ system: { text: 's' }, user: 'u' });
+
+    expect(lastSdkInstance).toBe(constructorSdk);
   });
 });

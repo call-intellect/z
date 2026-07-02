@@ -6,6 +6,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { ensureJsonWordInUser } from './json-mode.util';
 import type { LlmCompleteInput, LlmCompleteOutput, LlmToolCall } from './llm.types';
 import { LlmError } from './llm.types';
+import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
 
 @Injectable()
 export class OllamaService {
@@ -22,8 +23,19 @@ export class OllamaService {
     });
   }
 
-  async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
+  private buildClient(override: LlmConnectionOverride): OpenAI {
+    return new OpenAI({
+      baseURL: override.baseUrl,
+      apiKey: override.apiKey || 'no-key',
+    });
+  }
+
+  async complete(
+    input: LlmCompleteInput,
+    override?: LlmConnectionOverride,
+  ): Promise<LlmCompleteOutput> {
     const model = input.model ?? this.defaultModel;
+    const client = override ? this.buildClient(override) : this.client;
 
     if (input.responseFormat?.type === 'json_schema') {
       this.logger.debug(
@@ -36,8 +48,8 @@ export class OllamaService {
     let lastErr: unknown;
     for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt++) {
       try {
-        const response = await this.client.chat.completions.create(
-          params as unknown as Parameters<typeof this.client.chat.completions.create>[0],
+        const response = await client.chat.completions.create(
+          params as unknown as Parameters<typeof client.chat.completions.create>[0],
         );
         return this.mapResponse(response, model);
       } catch (err) {

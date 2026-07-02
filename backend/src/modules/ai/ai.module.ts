@@ -24,6 +24,8 @@ import { ParticipantContextService } from './services/participant-context.servic
 import { PromptResolverService } from './services/prompt-resolver.service';
 import { AnthropicMessagesProtocolAdapter } from './services/protocol-adapter/adapters/anthropic-messages.adapter';
 import { CustomHttpProtocolAdapter } from './services/protocol-adapter/adapters/custom-http.adapter';
+import { GrsaiProtocolAdapter } from './services/protocol-adapter/adapters/grsai-native.adapter';
+import { KieProtocolAdapter } from './services/protocol-adapter/adapters/kie-native.adapter';
 import { OllamaNativeProtocolAdapter } from './services/protocol-adapter/adapters/ollama-native.adapter';
 import { OpenAiChatProtocolAdapter } from './services/protocol-adapter/adapters/openai-chat.adapter';
 import { OpenAiResponsesProtocolAdapter } from './services/protocol-adapter/adapters/openai-responses.adapter';
@@ -58,6 +60,8 @@ import { VoxService } from './services/vox.service';
     OpenAiResponsesProtocolAdapter,
     AnthropicMessagesProtocolAdapter,
     OllamaNativeProtocolAdapter,
+    KieProtocolAdapter,
+    GrsaiProtocolAdapter,
     CustomHttpProtocolAdapter,
     LlmProtocolAdapterRegistry,
     ProviderInfoResolver,

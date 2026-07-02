@@ -4,6 +4,7 @@ import { TypedConfigService } from '../../../common/config/index';
 
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import { LlmError } from './llm.types';
+import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
 
 @Injectable()
 export class GrsaiService {
@@ -13,16 +14,23 @@ export class GrsaiService {
 
   constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {}
 
-  async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
+  async complete(
+    input: LlmCompleteInput,
+    override?: LlmConnectionOverride,
+  ): Promise<LlmCompleteOutput> {
     const model = input.model;
     if (!model) {
       throw new LlmError('GRSAI: input.model обязателен.');
     }
-    return this.withRetry(() => this.callOnce(input, model));
+    return this.withRetry(() => this.callOnce(input, model, override));
   }
 
-  private async callOnce(input: LlmCompleteInput, model: string): Promise<LlmCompleteOutput> {
-    const { url, auth } = this.resolveEndpoint();
+  private async callOnce(
+    input: LlmCompleteInput,
+    model: string,
+    override?: LlmConnectionOverride,
+  ): Promise<LlmCompleteOutput> {
+    const { url, auth } = this.resolveEndpoint(override);
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       model,
@@ -59,7 +67,15 @@ export class GrsaiService {
     };
   }
 
-  private resolveEndpoint(): { url: string; auth: string } {
+  private resolveEndpoint(override?: LlmConnectionOverride): { url: string; auth: string } {
+    if (override) {
+      const base = override.baseUrl.replace(/\/+$/, '');
+      const withV1 = base.endsWith('/v1') ? base : `${base}/v1`;
+      return {
+        url: `${withV1}/chat/completions`,
+        auth: override.apiKey ? `Bearer ${override.apiKey}` : '',
+      };
+    }
     const grsaiBase = this.cfg.ai.grsai.baseUrl.replace(/\/+$/, '');
     const proxyBase = this.cfg.ai.proxy.baseUrl.replace(/\/+$/, '');
     const proxyPrefix = this.cfg.ai.proxy.prefix;

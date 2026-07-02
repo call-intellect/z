@@ -334,3 +334,62 @@ describe('KieService — таймаут из крутилки ai.kie.timeoutMs',
     expect(timeoutSpy).toHaveBeenCalledWith(123_456);
   });
 });
+
+describe('KieService.complete — connection-override (Ф3)', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    vi.clearAllMocks();
+  });
+
+  it('override.baseUrl/apiKey бьёт по override-URL, а не по ENV-дефолту', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content: [{ type: 'text', text: 'override-ok' }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }),
+          { status: 200 },
+        ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const svc = new KieService(makeCfg());
+    const out = await svc.complete(
+      { system: { text: 's' }, user: 'u', model: 'claude-opus-4-7' },
+      { baseUrl: 'https://override.kie.example/', apiKey: 'override-key' },
+    );
+
+    expect(out.text).toBe('override-ok');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe('https://override.kie.example/claude/v1/messages');
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer override-key');
+  });
+
+  it('override.apiKey=null → fallback на ENV apiKey, baseUrl из override', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: 'ok' } }],
+            usage: { prompt_tokens: 1, completion_tokens: 1 },
+          }),
+          { status: 200 },
+        ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const svc = new KieService(makeCfg());
+    await svc.complete(
+      { system: { text: 's' }, user: 'u', model: 'gemini-3-pro' },
+      { baseUrl: 'https://override.kie.example', apiKey: null },
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe('https://override.kie.example/gemini-3-pro/v1/chat/completions');
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer kie-test-key');
+  });
+});

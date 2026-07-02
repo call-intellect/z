@@ -5,6 +5,8 @@ export const ProtocolKindSchema = z.enum([
   'openai-responses',
   'anthropic-messages',
   'ollama-native',
+  'kie-native',
+  'grsai-native',
   'custom-http',
 ]);
 

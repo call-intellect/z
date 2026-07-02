@@ -4,6 +4,7 @@ import { TypedConfigService } from '../../../common/config/index';
 
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import { LlmError } from './llm.types';
+import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
 
 @Injectable()
 export class KieService {
@@ -17,19 +18,24 @@ export class KieService {
     this.baseUrl = this.cfg.ai.kie.baseUrl.replace(/\/+$/, '');
   }
 
-  async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
+  async complete(
+    input: LlmCompleteInput,
+    override?: LlmConnectionOverride,
+  ): Promise<LlmCompleteOutput> {
     const model = input.model;
     if (!model) {
       throw new LlmError('KIE: input.model обязателен (по нему выбирается формат API).');
     }
+    const baseUrl = (override?.baseUrl ?? this.baseUrl).replace(/\/+$/, '');
+    const apiKey = override?.apiKey ?? this.apiKey;
     const format = this.detectFormat(model);
     switch (format) {
       case 'claude':
-        return this.withRetry(() => this.completeClaudeFormat(input, model));
+        return this.withRetry(() => this.completeClaudeFormat(input, model, baseUrl, apiKey));
       case 'gpt':
-        return this.withRetry(() => this.completeGptFormat(input, model));
+        return this.withRetry(() => this.completeGptFormat(input, model, baseUrl, apiKey));
       case 'gemini':
-        return this.withRetry(() => this.completeGeminiFormat(input, model));
+        return this.withRetry(() => this.completeGeminiFormat(input, model, baseUrl, apiKey));
     }
   }
 
@@ -45,8 +51,10 @@ export class KieService {
   private async completeClaudeFormat(
     input: LlmCompleteInput,
     model: string,
+    baseUrl: string,
+    apiKey: string,
   ): Promise<LlmCompleteOutput> {
-    const url = `${this.baseUrl}/claude/v1/messages`;
+    const url = `${baseUrl}/claude/v1/messages`;
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body = {
       model,
@@ -62,7 +70,7 @@ export class KieService {
     const data = await this.postJson<{
       content?: Array<{ type?: string; text?: string }>;
       usage?: { input_tokens?: number; output_tokens?: number };
-    }>(url, body);
+    }>(url, body, apiKey);
     const text = (data.content ?? [])
       .filter((b) => b?.type === 'text')
       .map((b) => b.text ?? '')
@@ -80,8 +88,10 @@ export class KieService {
   private async completeGptFormat(
     input: LlmCompleteInput,
     model: string,
+    baseUrl: string,
+    apiKey: string,
   ): Promise<LlmCompleteOutput> {
-    const url = `${this.baseUrl}/codex/v1/responses`;
+    const url = `${baseUrl}/codex/v1/responses`;
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       model,
@@ -109,7 +119,7 @@ export class KieService {
         content?: Array<{ type?: string; text?: string }>;
       }>;
       usage?: { input_tokens?: number; output_tokens?: number };
-    }>(url, body);
+    }>(url, body, apiKey);
     const msg = (data.output ?? []).find((o) => o?.type === 'message');
     const text = (msg?.content ?? [])
       .filter((c) => c?.type === 'output_text')
@@ -128,8 +138,10 @@ export class KieService {
   private async completeGeminiFormat(
     input: LlmCompleteInput,
     model: string,
+    baseUrl: string,
+    apiKey: string,
   ): Promise<LlmCompleteOutput> {
-    const url = `${this.baseUrl}/${model}/v1/chat/completions`;
+    const url = `${baseUrl}/${model}/v1/chat/completions`;
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       stream: false,
@@ -156,7 +168,7 @@ export class KieService {
     const data = await this.postJson<{
       choices?: Array<{ message?: { content?: unknown } }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
-    }>(url, body);
+    }>(url, body, apiKey);
     const raw = data.choices?.[0]?.message?.content ?? '';
     const text =
       typeof raw === 'string'
@@ -174,12 +186,12 @@ export class KieService {
     };
   }
 
-  private async postJson<T>(url: string, body: unknown): Promise<T> {
+  private async postJson<T>(url: string, body: unknown, apiKey: string): Promise<T> {
     const resp = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.cfg.ai.kie.timeoutMs),

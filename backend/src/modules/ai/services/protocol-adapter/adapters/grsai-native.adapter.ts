@@ -1,8 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
+import { GrsaiService } from '../../grsai.service';
 import type { LlmCompleteInput, LlmCompleteOutput } from '../../llm.types';
 import { LlmError } from '../../llm.types';
-import { OllamaService } from '../../ollama.service';
 import type {
   LlmProtocolAdapter,
   ProtocolAdapterProviderInfo,
@@ -10,11 +10,10 @@ import type {
 } from '../protocol-adapter.types';
 
 @Injectable()
-export class OllamaNativeProtocolAdapter implements LlmProtocolAdapter {
-  readonly protocolKind: ProtocolKind = 'ollama-native';
-  private readonly logger = new Logger(OllamaNativeProtocolAdapter.name);
+export class GrsaiProtocolAdapter implements LlmProtocolAdapter {
+  readonly protocolKind: ProtocolKind = 'grsai-native';
 
-  constructor(@Inject(OllamaService) private readonly ollama: OllamaService) {}
+  constructor(@Inject(GrsaiService) private readonly grsai: GrsaiService) {}
 
   async complete(args: {
     provider: ProtocolAdapterProviderInfo;
@@ -22,7 +21,7 @@ export class OllamaNativeProtocolAdapter implements LlmProtocolAdapter {
   }): Promise<LlmCompleteOutput> {
     const { provider, input } = args;
     try {
-      return await this.ollama.complete(input, {
+      return await this.grsai.complete(input, {
         baseUrl: provider.baseUrl,
         apiKey: provider.apiKey,
         defaultHeaders: provider.defaultHeaders,
@@ -31,7 +30,7 @@ export class OllamaNativeProtocolAdapter implements LlmProtocolAdapter {
     } catch (err) {
       if (err instanceof LlmError) throw err;
       const message = err instanceof Error ? err.message : String(err);
-      throw new LlmError(`ollama-native ${provider.name}: ${message}`, undefined, err);
+      throw new LlmError(`grsai-native ${provider.name}: ${message}`, undefined, err);
     }
   }
 }

@@ -197,15 +197,6 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
   }
 
   private normalizeProviderName(slug: string): LlmCompleteOutput['provider'] {
-    switch (slug) {
-      case 'anthropic':
-      case 'minimax':
-      case 'openai-via-proxy':
-      case 'deepseek':
-      case 'ollama':
-        return slug;
-      default:
-        return 'deepseek';
-    }
+    return slug;
   }
 }

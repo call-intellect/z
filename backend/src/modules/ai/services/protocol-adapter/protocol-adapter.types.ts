@@ -5,6 +5,8 @@ export type ProtocolKind =
   | 'openai-responses'
   | 'anthropic-messages'
   | 'ollama-native'
+  | 'kie-native'
+  | 'grsai-native'
   | 'custom-http';
 
 export interface ProtocolAdapterProviderInfo {
@@ -14,6 +16,18 @@ export interface ProtocolAdapterProviderInfo {
   defaultHeaders?: Record<string, string>;
   defaultModel?: string;
   authPrefix?: string;
+  /** DataClass провайдера ('public'|'internal'|'sensitive'|'private') из LlmProvider.capability. undefined = нет DB-строки, роутер фолбэкается на хардкод-карту. */
+  capability?: string;
+  /** Переопределение hard-timeout dispatch, мс. NULL/undefined = используется дефолт роутера. */
+  timeoutMs?: number | null;
+}
+
+/** Единый контракт переопределения подключения — передаётся из ProviderInfoResolver (DB) в легаси-сервисы, чтобы admin-правка baseUrl/ключа реально действовала. */
+export interface LlmConnectionOverride {
+  baseUrl: string;
+  apiKey: string | null;
+  defaultHeaders?: Record<string, string> | null;
+  timeoutMs?: number | null;
 }
 
 export interface LlmProtocolAdapter {

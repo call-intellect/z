@@ -11,6 +11,7 @@ import {
 } from './anthropic.service';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import { LlmError } from './llm.types';
+import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
 
 @Injectable()
 export class MinimaxService {
@@ -25,11 +26,22 @@ export class MinimaxService {
     });
   }
 
-  async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
+  private buildClient(override: LlmConnectionOverride): Anthropic {
+    return new Anthropic({
+      apiKey: override.apiKey ?? this.cfg.ai.minimax.apiKey,
+      baseURL: override.baseUrl,
+    });
+  }
+
+  async complete(
+    input: LlmCompleteInput,
+    override?: LlmConnectionOverride,
+  ): Promise<LlmCompleteOutput> {
     const model = input.model ?? this.defaultModel;
+    const client = override ? this.buildClient(override) : this.client;
     try {
       const { tools, toolChoice } = buildAnthropicToolBindings(input);
-      const message = await this.client.messages.create({
+      const message = await client.messages.create({
         model,
         max_tokens: input.maxTokens ?? 4096,
         ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),

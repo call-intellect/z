@@ -5,6 +5,7 @@ import type { LlmCompleteInput, LlmCompleteOutput } from '../../llm.types';
 import { LlmError } from '../../llm.types';
 import { MinimaxService } from '../../minimax.service';
 import type {
+  LlmConnectionOverride,
   LlmProtocolAdapter,
   ProtocolAdapterProviderInfo,
   ProtocolKind,
@@ -25,17 +26,23 @@ export class AnthropicMessagesProtocolAdapter implements LlmProtocolAdapter {
     input: LlmCompleteInput;
   }): Promise<LlmCompleteOutput> {
     const { provider, input } = args;
+    const override: LlmConnectionOverride = {
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      defaultHeaders: provider.defaultHeaders,
+      timeoutMs: provider.timeoutMs,
+    };
     try {
       if (provider.name === 'anthropic') {
-        return await this.anthropic.complete(input);
+        return await this.anthropic.complete(input, override);
       }
       if (provider.name === 'minimax') {
-        return await this.minimax.complete(input);
+        return await this.minimax.complete(input, override);
       }
       this.logger.warn(
         `anthropic-messages: unknown provider=${provider.name}, fallback на MinimaxService`,
       );
-      return await this.minimax.complete(input);
+      return await this.minimax.complete(input, override);
     } catch (err) {
       if (err instanceof LlmError) throw err;
       const message = err instanceof Error ? err.message : String(err);

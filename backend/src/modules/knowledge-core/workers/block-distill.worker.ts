@@ -304,6 +304,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         data: {
           status: 'merged_into',
           mergedIntoId: canonicalId,
+          mergedIntoTenantId: block.tenantId,
         },
       });
 
@@ -463,6 +464,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         data: {
           status: 'merged_into',
           mergedIntoId: transcriptBlock.id,
+          mergedIntoTenantId: transcriptBlock.tenantId,
         },
       });
 
@@ -531,6 +533,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         data: {
           status: 'canonical',
           mergedIntoId: null,
+          mergedIntoTenantId: null,
           evidenceCount: newEvidenceCount,
           confidence: new Prisma.Decimal(maxConf.toFixed(3)),
           tags: mergedTags,

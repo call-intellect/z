@@ -806,7 +806,7 @@ async function ensureDemoAuthorEntity(
 
   await prisma.person.update({
     where: { id: person.id },
-    data: { entityId: entity.id },
+    data: { entityId: entity.id, entityTenantId: tenantId },
   });
 
   entityCache.set(personId, entity.id);

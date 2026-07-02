@@ -9,14 +9,14 @@
 
 ## Фазы
 
-### [ ] Ф1. F-1 — мёртвый резолв персон
+### [x] Ф1. F-1 — мёртвый резолв персон
 - `entity-resolution.service.ts:1120`: `FROM "Person"` → `FROM persons` (проверить остальной SQL метода на имена таблиц).
 - Убрать тихий `catch { return []; }` → логировать ошибку (warn с контекстом) и/или пробрасывать; 42P01 больше не прячется.
 - Скан того же файла и соседей на другие PascalCase-таблицы в raw SQL (Decision→decisions, Idea→ideas, Insight→insights, Regulation→regulations, Process→processes, Experiment→experiments).
 
-### [ ] Ф2. Companion-инвариант (F-5 + S-M3)
-- Писать `entityTenantId` вместе с `entityId`: `entity-resolution.service.ts:1316, 1376, 1417`; `onboarding/demo-data/knowledge-graph.ts:807`.
-- Писать `mergedIntoTenantId` вместе с `mergedIntoId`: `entity-merge.service.ts:429`; `entity-resolver.worker.ts:216`; `block-distill.worker.ts:306, 465, 533` (при обнулении `mergedIntoId` — обнулять и компаньон).
+### [x] Ф2. Companion-инвариант (F-5 + S-M3)
+- Писать `entityTenantId` вместе с `entityId`: `entity-resolution.service.ts:1316, 1376, 1417`; `onboarding/demo-data/knowledge-graph.ts:807`. ✅ через `setPersonEntity`.
+- Писать `mergedIntoTenantId` вместе с `mergedIntoId`: `block-distill.worker.ts:306, 465, 533` (при обнулении `mergedIntoId` — обнулять и компаньон) ✅. Entity-сайты `entity-merge.service.ts:429` / `entity-resolver.worker.ts:216` покрываются в **Ф3** через `markEntityMerged` внутри единого мержера (не дублируем правку, которую Ф3 всё равно перепишет).
 - Ввести узкие хелперы: `setPersonEntity(personId, entity)`, `markEntityMerged(from, into)`, `markBlockMerged(block, canonical)` — физически не дают написать id без компаньона.
 - Spec-инвариант: тест, падающий, если в кодовой базе появился prisma-write `entityId`/`mergedIntoId` без пары (или защита на уровне хелпера + запрет прямых `.update({data:{mergedIntoId}})` линтом/ревью-нотой в docs).
 

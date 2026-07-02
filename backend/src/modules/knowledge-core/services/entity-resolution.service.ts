@@ -17,6 +17,7 @@ import {
 } from '../../tables/events/entity-sync.events';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { setPersonEntity } from './entity-companion.helpers';
 
 export function normalizeEntityName(input: string): string {
   if (!input) return '';
@@ -1117,7 +1118,7 @@ export class EntityResolutionService {
       rows = await this.prisma.$queryRawUnsafe<Row[]>(
         `
         SELECT p.id AS id, 1 - (e.embedding <=> $1::vector(1536)) AS score
-        FROM "Person" p
+        FROM persons p
         JOIN "Entity" e ON e.id = p."entityId"
         WHERE p."tenantId" = $2
           AND p."deletedAt" IS NULL
@@ -1128,7 +1129,14 @@ export class EntityResolutionService {
         this.toVectorLiteral(vec),
         tenantId,
       );
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'resolvePersonByEmbedding: pgvector KNN упал — возвращаем []',
+      );
       return [];
     }
     const out: Array<{ id: string; score: number }> = [];
@@ -1313,9 +1321,9 @@ export class EntityResolutionService {
     }
     const entity = matches[0]!;
 
-    await this.prisma.person.update({
-      where: { id: args.personId },
-      data: { entityId: entity.id },
+    await setPersonEntity(this.prisma, args.personId, {
+      id: entity.id,
+      tenantId: args.tenantId,
     });
     this.logger.debug(
       { personId: args.personId, entityId: entity.id },
@@ -1373,9 +1381,9 @@ export class EntityResolutionService {
       return;
     }
     const match = matches[0]!;
-    await this.prisma.person.update({
-      where: { id: match.id },
-      data: { entityId: args.entityId },
+    await setPersonEntity(this.prisma, match.id, {
+      id: args.entityId,
+      tenantId: args.tenantId,
     });
     this.logger.debug(
       { personId: match.id, entityId: args.entityId },
@@ -1414,9 +1422,9 @@ export class EntityResolutionService {
       type: 'person',
       name: person.name,
     });
-    await this.prisma.person.update({
-      where: { id: args.personId },
-      data: { entityId: entity.id },
+    await setPersonEntity(this.prisma, args.personId, {
+      id: entity.id,
+      tenantId: args.tenantId,
     });
     this.logger.debug(
       { personId: args.personId, entityId: entity.id },

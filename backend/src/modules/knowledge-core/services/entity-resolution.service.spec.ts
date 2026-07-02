@@ -400,7 +400,7 @@ describe('EntityResolutionService — Entity↔Person линковка тёзо�
       expect(personUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'p-1' },
-          data: { entityId: 'e-1' },
+          data: { entityId: 'e-1', entityTenantId: 't1' },
         }),
       );
     });
@@ -483,7 +483,7 @@ describe('EntityResolutionService — Entity↔Person линковка тёзо�
       expect(personUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'p-1' },
-          data: { entityId: 'e-1' },
+          data: { entityId: 'e-1', entityTenantId: 't1' },
         }),
       );
     });

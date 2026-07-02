@@ -32,10 +32,9 @@ const INTO_ID = 'ent-into';
 const TENANT = 'org-1';
 
 function makeMocks() {
-  // entity.findUnique вызывается и ВНЕ tx (загрузка from/into), и через tx —
-  // в mergeManually tx.entity нужен только для update. Делаем общий мок.
   const entityFindUnique = vi.fn();
   const entityUpdate = vi.fn().mockResolvedValue({});
+  const entityUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
 
   const ideaBlockEntityFindMany = vi.fn();
   const ideaBlockEntityFindUnique = vi.fn();
@@ -47,8 +46,26 @@ function makeMocks() {
   const entityLinkUpdate = vi.fn().mockResolvedValue({});
   const entityLinkDelete = vi.fn().mockResolvedValue({});
 
+  const sourceEntityFindMany = vi.fn().mockResolvedValue([]);
+  const sourceEntityFindUnique = vi.fn();
+  const sourceEntityUpdate = vi.fn().mockResolvedValue({});
+  const sourceEntityDelete = vi.fn().mockResolvedValue({});
+
+  const themeEntityFindMany = vi.fn().mockResolvedValue([]);
+  const themeEntityFindUnique = vi.fn();
+  const themeEntityUpdate = vi.fn().mockResolvedValue({});
+  const themeEntityDelete = vi.fn().mockResolvedValue({});
+
+  const cardUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+  const cardFindMany = vi.fn().mockResolvedValue([]);
+  const cardUpdate = vi.fn().mockResolvedValue({});
+
+  const personUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+
+  const countFn = vi.fn().mockResolvedValue(0);
+
   const tx = {
-    entity: { findUnique: entityFindUnique, update: entityUpdate },
+    entity: { findUnique: entityFindUnique, update: entityUpdate, updateMany: entityUpdateMany },
     ideaBlockEntity: {
       findMany: ideaBlockEntityFindMany,
       findUnique: ideaBlockEntityFindUnique,
@@ -61,6 +78,20 @@ function makeMocks() {
       update: entityLinkUpdate,
       delete: entityLinkDelete,
     },
+    sourceEntity: {
+      findMany: sourceEntityFindMany,
+      findUnique: sourceEntityFindUnique,
+      update: sourceEntityUpdate,
+      delete: sourceEntityDelete,
+    },
+    themeEntity: {
+      findMany: themeEntityFindMany,
+      findUnique: themeEntityFindUnique,
+      update: themeEntityUpdate,
+      delete: themeEntityDelete,
+    },
+    card: { updateMany: cardUpdateMany, findMany: cardFindMany, update: cardUpdate },
+    person: { updateMany: personUpdateMany },
   };
 
   const transaction = vi.fn(
@@ -69,8 +100,15 @@ function makeMocks() {
 
   const prisma = {
     $transaction: transaction,
-    // entity.findUnique вне tx (загрузка from/into).
-    entity: { findUnique: entityFindUnique },
+    vendor: { count: countFn },
+    customer: { count: countFn },
+    event: { count: countFn },
+    goal: { count: countFn },
+    document: { count: countFn },
+    market: { count: countFn },
+    orgUnit: { count: countFn },
+    role: { count: countFn },
+    department: { count: countFn },
   } as unknown as PrismaService;
 
   return {
@@ -78,6 +116,7 @@ function makeMocks() {
     transaction,
     entityFindUnique,
     entityUpdate,
+    entityUpdateMany,
     ideaBlockEntityFindMany,
     ideaBlockEntityFindUnique,
     ideaBlockEntityUpdate,
@@ -86,6 +125,12 @@ function makeMocks() {
     entityLinkFindUnique,
     entityLinkUpdate,
     entityLinkDelete,
+    sourceEntityFindMany,
+    themeEntityFindMany,
+    cardUpdateMany,
+    cardFindMany,
+    personUpdateMany,
+    countFn,
   };
 }
 

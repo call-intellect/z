@@ -20,7 +20,7 @@
 - Ввести узкие хелперы: `setPersonEntity(personId, entity)`, `markEntityMerged(from, into)`, `markBlockMerged(block, canonical)` — физически не дают написать id без компаньона.
 - Spec-инвариант: тест, падающий, если в кодовой базе появился prisma-write `entityId`/`mergedIntoId` без пары (или защита на уровне хелпера + запрет прямых `.update({data:{mergedIntoId}})` линтом/ревью-нотой в docs).
 
-### [ ] Ф3. Единый безопасный мергер
+### [x] Ф3. Единый безопасный мергер
 - В `entity-merge.service.ts` собрать полный `mergeEntities(tenantId, fromId, intoId, actor)`: мигрирует `IdeaBlockEntity` (уже есть, pre-check composite-PK), `EntityLink` in/out **с учётом fromType/toType** (не по id вслепую), `Card.entityId`+`relatedEntityIds[]`, `ThemeEntity`, `SourceEntity`; **перепривязывает `Person.entityId`(+entityTenantId)**; ставит `mergedIntoId`+компаньон; разворачивает 2-хоп цепочку (`canonicalizeEntityIds` — транзитивно).
 - `entity-resolver.worker.ts:178 applyMerge` → звать `mergeEntities` (убрать урезанную копию, которая не мигрирует EntityLink).
 - Всё в одной транзакции с pre-check на composite-PK конфликты (иначе 25P02 абортит tx).

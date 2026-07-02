@@ -305,8 +305,10 @@ typecheck (вкл. `.spec`)/lint/build зелёные; vitest по затрон�
 | Ф7 под-фаза | Статус | Коммит |
 |---|---|---|
 | Ф7.2 — Regulation/Instruction: owner author-fallback + personSubjectIds union (живой combined-путь) | [x] реализовано | `922df7f5` |
-| Ф7.1 — legacy-чистка probe-инспектора регламентов (сохранить owner-resolver-лестницу) | [ ] к реализации | — |
-| Ф7.3 — Process/Policy: owner author-fallback + personSubjectIds (пост-привязка в block-ingest, без правки guard GraphService) | [ ] к реализации | — |
+| Ф7.1 — legacy-чистка probe-инспектора регламентов (сохранена owner-resolver-лестница) | [x] реализовано | `7091e316` |
+| Ф7.3 — Process/Policy: owner author-fallback + personSubjectIds (пост-привязка в block-ingest, без правки guard GraphService) | [x] реализовано | `4bdb9655` |
+
+**Ф7 — реализовано целиком (2026-07-02).** Verify по всем: typecheck 0, eslint 0, build(tsc) 0; vitest затронутых — combined 30 + probe/specialist-3-1 130 + block-ingest.typed-author 9 = зелёные. Авто-назначение владельца по owner-resolver-лестнице подтверждено тестом (Ф7.1 убрала только вопросы, не привязку). Остаток (не блокирует): спец. unit'ы acceptance Ф7.2 + зависимость от фикса Person→Entity резолва (см. `04_не-сделано`).
 
 **Ф7.2 реализовано (2026-07-02):** helper `resolveBlockAuthor` (evidence→`authorPersonId`→Person `id`+`entityId`); в `persistRegulations`/`persistInstructions` — owner-цепочка `ownerHint` → existing (не перебивать) → author-fallback (create + backfill при `ownerPersonId=null` на update), `personSubjectIds` union автора (create + update). Verify: typecheck зелёный, spec `specialists-combined.service.spec.ts` — 30 passed. Убраны narrative-комментарии Б57 в редактируемых блоках (CLAUDE.md). Юнит-тесты на новую логику (acceptance Ф7.2) — **добрать** (строка в `04_не-сделано`). Ф7.3 обновлён: пост-привязка в block-ingest (после `graph.upsertEntity`), guard `upsertEntity` НЕ трогаем — накопление subjects идёт вторым update'ом.
 

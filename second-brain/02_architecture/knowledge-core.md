@@ -337,6 +337,17 @@ ideas-closing-loop (IdeasClosingLoopHandler — @OnEvent 'idea.status_changed') 
 - В каждом merge — re-load под транзакцией + проверка `mergedIntoId === null`,
   чтобы исключить race с параллельным merge.
 
+### Целостность Person↔Entity при мерже (Пакет A, 2026-07-02)
+
+Инвариант: *«id составного ключа никогда не пишется без tenant-компаньона; человек не сливается автоматически; мерж мигрирует ВСЕ ссылки на сущность; читатель по entityId устойчив к merged-away»*.
+
+- **Companion-инвариант.** Составные FK `Person.entity [entityId, entityTenantId]`, `Entity.mergedInto [mergedIntoId, mergedIntoTenantId]`, `IdeaBlock.mergedInto [mergedIntoId, mergedIntoTenantId]` пишутся ТОЛЬКО через хелперы `setPersonEntity` / `markEntityMerged` / `markBlockMerged` ([entity-companion.helpers.ts](../../backend/src/modules/knowledge-core/services/entity-companion.helpers.ts)) — id без tenant-компаньона написать нельзя (иначе relation тихо рвётся в null).
+- **Единый мержер `EntityMergeService.mergeEntities(from,into)`** — один путь для ручного endpoint'а и авто-worker'а (`entity-resolver.worker.applyMerge` теперь зовёт его, а не свою урезанную копию). В одной транзакции мигрирует ВСЕ ссылки: `IdeaBlockEntity`, `EntityLink` (in/out, полиморфно с учётом fromType/toType), `SourceEntity`, `ThemeEntity`, `Card.entityId`+`relatedEntityIds[]`, `Person.entityId`(+companion) — переиспользуемый `migrateEntityRefs`; затем flatten 2-хоп цепочки + обновление `into` (mentionsCount/aliases) + `markEntityMerged`. Типизированные 1:1-сабрекорды (vendor/customer/…) вне scope миграции → `warn` (видимый over-merge, не тихий сирота).
+- **Person вне авто-мержа.** `entity-resolver.cron.findCandidatePairs` исключает `type='person'` — идентичности людей сливает только ручной путь (человек подтверждает). Снимает клон-коллапс (S-C3) у источника.
+- **Read-side транзитивный canonicalize.** Читатели по `entityId` следуют за `mergedIntoId` к канону (`canonicalizeEntityId`/`canonicalizeEntityIds`, cap 16 hops + cycle-guard): `loadBlocksForPerson`, `knowledge-clone-rebuild.cron`, `narrowByContextEntities`. Belt поверх write-side re-point.
+- **F-1.** `resolvePersonByEmbedding` чинён: `FROM "Person"` → `persons` (@@map); тихий `catch→[]` теперь логирует warn.
+- **Прод-лечение (idempotent):** `backfill-entity-tenant-companions` (заполнить NULL-компаньоны) + `backfill-reconcile-merged-entity-refs` (перепривязать осиротевшие ссылки на уже-слитые к канону через тот же `migrateEntityRefs`). ТЗ [`plans/tz/2026-07-01-package-a-person-entity-integrity.md`](../../plans/tz/2026-07-01-package-a-person-entity-integrity.md).
+
 ### Диагностика сбоя: AGE vs LLM-extract (F7, 2026-06-22)
 
 `block-ingest.worker` теперь разводит throw-текст по реальному источнику отказа: провал LLM-извлечения → `llm_extraction`, недоступность графовой базы Apache AGE → `age_unavailable`. Раньше текст «системный отказ графа AGE» кидался и при провале LLM — диагностика ложно винила AGE; метрика `age_unavailable` теперь растёт только при реальном сбое AGE. ТЗ [`meeting-to-tracker-and-models-unified-fix`](../../plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md) F7.

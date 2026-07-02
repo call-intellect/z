@@ -71,6 +71,22 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-03 — Переработка recall «Мастера» (chat-v2 retrieval): 7 фаз + 10 крутилок (ветка work/2026-07-02)
+
+> ТЗ `plans/tz/2026-07-02-recall-master-retrieval-redesign.md`. Поиск «Мастера» перестал гасить себя структурным фильтром: граф-обход блоков участвует всегда (Ф1), фильтр стал boost вместо cutoff (Ф2), в recall читается `EntityLink` вещь↔вещь (Ф3), бедный пул → каскад расширения (Ф4), broad/списки → сводка без ложного отрицания (Ф5), понималщик получает справочник тенанта (Ф6), глубина обхода адаптивна 1-2 (Ф7). Приёмка Ф8 (перепрогон 111): верно 59.5→79.3%, граф 14→100%, провал 33→8%, 0 галлюцинаций. Коммиты `b487ebe8`/`e264fa9d`/`192c10e8`/`6116ea86`/`9212fadf`/`f05ceb19`/`33ddade8`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ОБЯЗАТЕЛЬНЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ — 10 kill-switch (реестр `feature-flags.md`).** **🟢 1 НОВЫЙ СИД** (`seed-admin-setting-chat-v2-recall.ts`, в STEPS `phase:'seed-base'`). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых обязательных нет.** 10 новых крутилок `knowledge.chatV2*` читаются через `getDynamic` с code-fallback (значения-дефолты ниже, все Ship-On/ON и работают ДО сида) — ENV не требуется (admin→code-fallback): `chatV2GraphAlwaysExpand`=`true`, `chatV2FilterMode`=`boost`, `chatV2FilterBoostWeight`=`0.3`, `chatV2EntityLinkHops`=`1`, `chatV2CascadeEnabled`=`true`, `chatV2CascadeMinPool`=`5`, `chatV2AggregationMode`=`true`, `chatV2UnderstandGrounding`=`true`, `chatV2GroundingTopK`=`15`, `chatV2AdaptiveHops`=`true`. Реестр флагов — `docs/operations/feature-flags.md` (10 новых строк, тип kill-switch, состояние ON).
+- **Шаг 7 — Seed (НОВЫЙ, идемпотентный, зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-setting-chat-v2-recall.ts` — 10 ключей `knowledge.chatV2{GraphAlwaysExpand,FilterMode,FilterBoostWeight,EntityLinkHops,CascadeEnabled,CascadeMinPool,AggregationMode,UnderstandGrounding,GroundingTopK,AdaptiveHops}` (6 рубильников + 4 порога переработки recall, section `knowledge`). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась (EntityLink/Theme/Entity уже есть); patch/backfill/migrate/setup нет.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `chat-v2-retrieval.service.ts` (`expandViaGraph` всегда, `rankByStructuralBoost`, `expandViaEntityLinks`, `listEpisodesByDateRange`, 2-й block-link hop); `chat-v2.service.ts` (`applyCascade`, адаптивный `graphHops`, `detectMultiHop`, `broadCoverage`, `RetrievalResult`); `chat-v2-retrieval-trace.ts` (`viaSource` block-link/entity-link); `query-plan-extractor.service.ts` + `understand.prompt.ts` (grounding).
+- **Шаг 12 — Smoke** (после выката): `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-chat-v2-recall.ts` (created=10 при первом прогоне, потом no-op); 10 крутилок `knowledge.chatV2*` видны в админке (`/admin/ai/knowledge-core`, section `knowledge`), сменить значение → `GET /api/v1/admin/settings/knowledge.chatV2FilterMode` вернул новое; вопрос «Что с ошибкой 429?» в чате «Мастера» отвечает по существу (не пустой отказ).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-02 — Унификация phantom-ключей admin-крутилок FE↔backend (ветка work/2026-06-29)
 
 > ТЗ `plans/tz/2026-07-02-admin-knob-fe-backend-key-unification.md`. FE-крутилки писали `AdminSetting.key`, которых бэк не читает (39 phantom). Устранено: 31 rename в camelCase (KnowledgeCore/Embeddings), удалены 4 нефункциональные cron-крутилки + мёртвая `betaOps.commitmentFollowupLocalHour`, страница «Фиксатор чек-инов» переведена с `daySignals.*` на реальные `dayReport.*`/`daily-checkin.*`. Guard-тест `admin-setting-fe-keys.guard.spec.ts` (FE⊆реестр) + идемпотентный patch чистки осиротевших строк. Коммиты `17ab941f`/`bba52379`/`d5e3b2b8`.

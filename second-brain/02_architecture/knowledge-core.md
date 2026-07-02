@@ -1031,5 +1031,19 @@ ReportIngestListener (@OnEvent, в ingest/knowledge-core)
 
 `IdeaBlock`/`Entity` HASH-партиционированы по `tenantId` (64 партиции, составной PK) — снят scale-killer «глобальный HNSW + `WHERE tenantId`». HNSW-параметры `m=16, ef_construction=128` на IdeaBlock/Entity + новые HNSW на `Theme.embedding` и `SourceEpisode.embedding`, `ef_search` — крутилка `knowledge.hnsw_ef_search` (100). Все в `postgres-init.sql` (Prisma 7 их не умеет). Детали схемы/FK-рефактора — [[data-model]] §«Партиционирование IdeaBlock/Entity по tenantId».
 
+### Контур recall Мастера (переработка 2026-07-03)
+
+**Источник:** ТЗ [`2026-07-02-recall-master-retrieval-redesign.md`](../../plans/tz/2026-07-02-recall-master-retrieval-redesign.md) (Ф1–Ф7), приёмка — after-report [`2026-07-02-recall-master-after-redesign.md`](../../plans/analysis/2026-07-02-recall-master-after-redesign.md). Диагноз, из которого выросла переработка: поиск гасил сам себя структурным фильтром — граф-обход был выключен в 86% случаев, буквальный фильтр по узлу давал пул 0 (точный вопрос отвечал хуже описательного), broad-вопросы уверенно отрицали существующее.
+
+Новый контур поиска «Мастера» человеческим языком:
+- **Широкий сбор всегда.** Пул наполняется семантикой + BM25 + **граф блоков** (`IdeaBlockLink`, `expandViaGraph` — больше НЕ выключается активным структурным фильтром) + **граф вещей** (`EntityLink`, `expandViaEntityLinks` — обход вещь↔вещь от резолвнутых сущностей к блокам связанной вещи, напр. «429»→«Битрикс»).
+- **Структурный фильтр — как boost, не как забор.** Совпадение с распознанной структурой (дата/`signalType`/entity/тема) даёт **прибавку к score** (`rankByStructuralBoost`), несовпавшее остаётся в пуле ниже — фильтр перестаёт быть AND-cutoff. `runStructuralRoute` при нераспознанной сущности откатывается на семантику, а не в пустоту.
+- **Пустой/бедный пул → каскад расширения** (`applyCascade`): снять фильтр → углубить граф → в пределе честное «вот близкое, точного нет», а не отказ (расширение помечается «возможно не всё» — честность держится).
+- **Широкий вопрос → режим сводки без ложного отрицания** (`broadCoverage`): overview/list не отбрасывают перефразы; список эпизодов за период — полный (`listEpisodesByDateRange`), без «других не зафиксировано».
+- **Адаптивная глубина обхода 1-2** (`detectMultiHop`): многошаговый вопрос («кто отвечает за то, что блокирует X») → `graphHops=2` (и block-link, и entity-link), простой — 1 hop (латентность не растёт).
+- **Понималщик со справочником названий тенанта** (grounding): перед `understand` подаются канонические имена Entity/Theme, похожие на слова вопроса (ILIKE/pg_trgm, cap `chatV2GroundingTopK`) — разговорное «медиа-движок» резолвится в «LiveKit» ещё на входе.
+
+Всё за 10 kill-switch-крутилок (ON по умолчанию, через `getDynamic` + `admin-setting-schema-registry` + сид `seed-admin-setting-chat-v2-recall.ts`): `knowledge.chatV2GraphAlwaysExpand` · `chatV2FilterMode` (boost\|hard) · `chatV2FilterBoostWeight` · `chatV2EntityLinkHops` · `chatV2CascadeEnabled` · `chatV2CascadeMinPool` · `chatV2AggregationMode` · `chatV2UnderstandGrounding` · `chatV2GroundingTopK` · `chatV2AdaptiveHops`. Трейс `RetrievalTraceSink` помечает источник соседа (`viaSource` block-link/entity-link). **Замер перепрогоном 111 вопросов:** верно 59.5→79.3%, обход по связям 14→100%, провал recall 33→8%, **0 галлюцинаций** (детали — after-report).
+
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

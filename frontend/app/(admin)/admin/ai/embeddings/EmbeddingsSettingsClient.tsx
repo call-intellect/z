@@ -8,6 +8,7 @@ import {
   Layers,
   Loader2,
   Scissors,
+  Server,
 } from "lucide-react";
 import { toast } from "sonner";
 import { z, type ZodTypeAny } from "zod";
@@ -26,6 +27,7 @@ import { Textarea } from "@/ui/shadcn/textarea";
 
 import { AdminEmpty } from "../../AdminStateViews";
 import { adminRootCrumb } from "@/ui/components/admin/brand";
+import { EmbeddingProvidersClient } from "./EmbeddingProvidersClient";
 
 type SettingSpec<T> = {
   key: string;
@@ -103,6 +105,7 @@ const BATCH_SETTINGS: SettingSpec<unknown>[] = [
 ];
 
 const TABS: AdminTabDef[] = [
+  { value: "providers", label: "Провайдеры", icon: Server },
   { value: "model", label: "Модель", icon: DatabaseZap },
   { value: "chunking", label: "Chunking", icon: Scissors },
   { value: "batch", label: "Batch", icon: Boxes },
@@ -122,9 +125,10 @@ export function EmbeddingsSettingsClient() {
       title="Эмбеддинги"
       description="Провайдер, размер чанков, batch и реиндексация. Смена модели или размерности требует полной реиндексации pgvector-индексов."
     >
-      <AdminTabs tabs={TABS} defaultTab="model">
+      <AdminTabs tabs={TABS} defaultTab="providers">
         {(active) => (
           <>
+            {active === "providers" && <EmbeddingProvidersClient />}
             {active === "model" && (
               <SettingsGrid
                 settings={MODEL_SETTINGS}

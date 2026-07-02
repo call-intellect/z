@@ -335,4 +335,11 @@ export const PutChainSchema = z.object({
 - Рефлексия в `second-brain/05_история/`.
 
 ## Итог
-_Заполняется оркестратором по завершении: реализовано целиком или нет, что осталось._
+
+**Реализовано целиком (2026-07-02, 10 фаз + 2 внеплановых фикса, коммиты `2df905c1`→`21c9190b`).** DB-реестр `LlmProvider` — боевой источник подключений (`USE_PROTOCOL_ADAPTER_REGISTRY=true` по умолчанию, Ship-On) для всех 7 провайдеров: шифрованные ключи, честные `kie-native`/`grsai-native` адаптеры, единая прокси-формула, дискавери моделей, единый write-API маршрутов (`PUT .../chain`), 2 фронт-экрана («Провайдеры и модели», «Маршрутизация»), актуальные сиды, e2e-доказательство encrypt→decrypt→dispatch.
+
+Найдено и закрыто по ходу (не отложено): plaintext-ключи в БД/API-ответах; 3-й (пропущенный аудитом) адаптер, игнорировавший ProviderInfo (`OpenAiResponsesProtocolAdapter`); непрефиксованный ключ в ENV-фолбэке openai-via-proxy; дубль `process-template-extract` в реестре taskType; регрессия Ф6→Ф8 на 2 фронт-страницах вне scope ТЗ (`FunctionDetailClient`/`FunctionDetailAnalyticsClient`); зомби-процессы `scripts/dev.ts` после Ctrl+C (внеплановая находка пользователя, не связана с ТЗ, исправлена в процессе).
+
+Осталось вне scope (как и было спланировано, задокументировано в `04_не-сделано/README.md`): фикс рантайма `LlmModelExperiment` (A/B по моделям), оживление `AiUsageLog.costRub`/hard-cap бюджета, миграция `analyze.worker` с `LlmFallbackService` на единый роутер, org-overrides маршрутов (`tenantId != null` в `LlmTaskRoute` — колонка остаётся мёртвой). `ProviderInfoResolver.buildFromEnv('grsai')` не воспроизводит легаси-эвристику авто-детекта прокси — закрывается автоматически первым прогоном `apply-prod-deploy.ts` на проде (Ф9 уже сеет/патчит явные `useProxy`/`proxyPath`).
+
+Прод: 1 аддитивная миграция (`llm_provider_proxy_defaults`), 2 idempotent patch-скрипта (дважды прогнаны на dev-БД — no-op), 1 обновлённый сид, 1 поведенческое изменение флага (откат — `USE_PROTOCOL_ADAPTER_REGISTRY=false` в `.env`, без ребилда). Backend: 108 файлов/858 тестов зелёные (максимальный срез); frontend: typecheck/lint/build чистые на каждой фазе. Рефлексия — `second-brain/05_история/2026-07-02-llm-providers-models-routing-admin-impl.md`.

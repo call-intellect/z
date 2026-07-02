@@ -88,6 +88,17 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — Демо-орг LLM-гейт (dev token-saver)
+
+> Крутилка-рубильник `knowledge.demoOrgIngestEnabled` (тип A). Гейт в `WorkerOrgGate.checkOrThrow` скипает фоновые воркеры для демо-оргов (`Org.demoWorkspaceSeededAt != null`), когда флаг OFF. Коммит `fcb4278a`.
+
+- **Шаг 1 — ENV: 1 новый опц.** `KNOWLEDGE_DEMO_ORG_INGEST_ENABLED` (zBool default **true**, `backend/src/common/config/env.schema.ts`). **Прод-действий НЕ требует** — без ENV дефолт true = демо-орги обрабатываются как раньше. Тип A kill-switch (реестр — `docs/operations/feature-flags.md`), резолв `resolveSync` admin→ENV→code. `false` ставить только в dev (не жечь токены на демо-кабинетах).
+- **Шаги 4–12 — НЕ затронуты** (миграций/seed/скриптов/rebuild-зависимостей нет; только код воркер-гейта + env.schema + registry).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-30 — Миграция эмбеддингов на embeddinggemma 768 dim (локальная Ollama через llm.korateam.ru/v1)
 
 > ТЗ `plans/tz/2026-06-30-embeddinggemma-768-migration.md`. Переключение embedding-стека с `text-embedding-3-small` (OpenAI через `proxy.agent-lia.ru`, 1536 dim) на локальную Ollama-модель `embeddinggemma:latest` (768 dim) через `https://llm.korateam.ru/v1`. **🟡 ОПАСНАЯ МИГРАЦИЯ СХЕМЫ: 26 колонок `vector(1536) → vector(768)`** — после применения миграции все существующие эмбеддинги обнулятся (несовместимая размерность), retrieval в degraded-режиме до завершения backfill.

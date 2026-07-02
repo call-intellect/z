@@ -359,6 +359,7 @@ export class Specialist315TasksService {
                 objectKindRu: 'задача',
                 message: `Из ${channel ?? 'внешнего'}-сообщения извлечена задача «${draft.title}», но не указан срок.`,
                 suggestedQuestion: `К какому сроку нужно сделать «${draft.title}»?`,
+                sourceOccurredAtIso: block.evidence[0]?.sourceTimestamp?.toISOString(),
               },
               recipientCandidates: [recipient],
               priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
@@ -651,7 +652,8 @@ export class Specialist315TasksService {
       });
       for (const intake of intakes) {
         try {
-          const recipient = await this.resolveSetterRecipientFromIntake(intake);
+          const setter = await this.resolveSetterRecipientFromIntake(intake);
+          const recipient = setter.recipient;
           if (!recipient) continue;
           const title = intake.extractedTitle ?? 'задача';
           const askAssignee = intake.suggestedAssigneeId == null;
@@ -671,6 +673,9 @@ export class Specialist315TasksService {
               suggestedQuestion: askAssignee
                 ? `Кому поручить задачу «${title}»?`
                 : `К какому сроку нужно сделать «${title}»?`,
+              ...(askAssignee
+                ? {}
+                : { sourceOccurredAtIso: setter.sourceOccurredAtIso }),
             },
             recipientCandidates: [recipient],
             priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
@@ -688,7 +693,7 @@ export class Specialist315TasksService {
     tenantId: string;
     extractedDescription: string | null;
     sourceBlockIds: string[];
-  }): Promise<string | null> {
+  }): Promise<{ recipient: string | null; sourceOccurredAtIso: string | undefined }> {
     const blockId = intake.sourceBlockIds[0];
     if (blockId) {
       const block = await this.prisma.ideaBlock.findUnique({
@@ -699,10 +704,16 @@ export class Specialist315TasksService {
       });
       if (block) {
         const draft = { sourceQuote: intake.extractedDescription ?? '' } as TaskDraft;
-        return this.resolveSetterRecipient(block, draft);
+        return {
+          recipient: await this.resolveSetterRecipient(block, draft),
+          sourceOccurredAtIso: block.evidence[0]?.sourceTimestamp?.toISOString(),
+        };
       }
     }
-    return this.resolveProbeRecipient(intake.tenantId);
+    return {
+      recipient: await this.resolveProbeRecipient(intake.tenantId),
+      sourceOccurredAtIso: undefined,
+    };
   }
 }
 

@@ -762,7 +762,7 @@ export class ProbeResponseHandler {
       }
 
       if (args.reason === 'task.due_date_missing') {
-        const due = parseRussianDueDate(answer, new Date());
+        const due = parseRussianDueDate(answer, this.resolveDueAnchor(args.probePayload));
         if (!due) {
           if (mode.kind === 'value') {
             return { status: 'needs_clarification', gap: 'date_unparsed' };
@@ -1270,6 +1270,15 @@ export class ProbeResponseHandler {
 
   private toStringOrUndef(v: unknown): string | undefined {
     return typeof v === 'string' && v.length > 0 ? v : undefined;
+  }
+
+  private resolveDueAnchor(probePayload: Record<string, unknown>): Date {
+    const iso = this.toStringOrUndef(probePayload.sourceOccurredAtIso);
+    if (iso) {
+      const parsed = new Date(iso);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    return new Date();
   }
 
   private extractQuestionText(probePayload: Record<string, unknown>): string | undefined {

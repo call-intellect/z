@@ -5,14 +5,14 @@
 
 ## Фаза F-2 — якорь срока к дате источника
 
-### [ ] Ф1
+### [x] Ф1
 - `specialist-3-15-tasks.service.ts:353-365`: при `probe.suggest()` для `task.due_date_missing` взять самую раннюю `block.evidence[].sourceTimestamp` (`:88`, по возрастанию) и положить `sourceOccurredAtIso` в payload пробы.
 - `probe-response.handler.ts:765`: достать `sourceOccurredAtIso` из payload, распарсить в `Date`, передать вторым аргументом в `parseRussianDueDate(answer, anchor)`; fallback на `new Date()` если якоря нет.
 - Тест: `parse-russian-due-date.spec.ts` — `'во вторник'` с якорем = прошлый понедельник → следующий вторник ОТ якоря (не от сегодня).
 
 ## Фаза F-3 — исполнитель из «X берёт на себя»
 
-### [ ] Ф2
+### [x] Ф2
 - `task-extract.prompt.ts`: добавить `SELF_ASSIGNMENT_RULE` в `TASK_EXTRACT_SYSTEM_PROMPT` (после `TASK_VS_DECISION_RULE`, ~`:36`): «если говорящий берёт задачу на себя (‘беру’, ‘сделаю’, ‘на мне’) — `assigneeHint` = имя автора реплики». Промпт уже получает `«quote» — автор: NAME` (`:397-409`).
 - Тест извлечения: «Я беру аудит на себя» (автор Михаил) → `assigneeHint='Михаил'`; далее существующий `AssigneeResolverService` резолвит в person.
 

@@ -5,6 +5,7 @@ import {
 
 import { signalTypeLabel } from './signal-type-label';
 import {
+  SELF_ASSIGNMENT_RULE,
   TASK_VS_DECISION_RULE,
   renderExamplesForTaskExtractor,
 } from './task-decision-examples';
@@ -35,6 +36,8 @@ export const TASK_EXTRACT_SYSTEM_PROMPT = withAsrNote(
       '- confidence — уверенность 0..1, что это настоящая конкретная задача.',
       '',
       TASK_VS_DECISION_RULE,
+      '',
+      SELF_ASSIGNMENT_RULE,
       '',
       renderExamplesForTaskExtractor(),
       '',

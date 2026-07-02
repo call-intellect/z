@@ -806,6 +806,46 @@ describe('ProbeResponseHandler — task-probe для intake_issue (A5)', () => {
     });
     expect(call.data.suggestedDueDate).toBeInstanceOf(Date);
   });
+
+  it('due_date_missing якорит относительный срок к payload.sourceOccurredAtIso (F-2), а не к now()', async () => {
+    const mocks = makeMocks();
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason: 'task.due_date_missing',
+        payload: {
+          contextCardId: 'intake-7',
+          contextCardKind: 'intake_issue',
+          contextCardTitle: 'Сделать отчёт',
+          suggestedQuestion: 'К какому сроку?',
+          sourceOccurredAtIso: '2024-01-01T00:00:00.000Z',
+        },
+      });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'во вторник' } });
+
+    expect(mocks.intakeIssueUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.intakeIssueUpdateMany.mock.calls[0]![0] as {
+      data: { suggestedDueDate: Date };
+    };
+    expect(call.data.suggestedDueDate.toISOString()).toBe('2024-01-02T00:00:00.000Z');
+  });
+
+  it('due_date_missing без sourceOccurredAtIso → якорь = now() (fallback F-2)', async () => {
+    const mocks = makeMocks();
+    setIntakeTaskProbe(mocks, 'task.due_date_missing');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'завтра' } });
+
+    expect(mocks.intakeIssueUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.intakeIssueUpdateMany.mock.calls[0]![0] as {
+      data: { suggestedDueDate: Date };
+    };
+    expect(call.data.suggestedDueDate.getUTCFullYear()).toBeGreaterThanOrEqual(2026);
+  });
 });
 
 describe('ProbeResponseHandler — Фаза 6 отрицательная ветка (мягкое удаление)', () => {

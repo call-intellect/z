@@ -674,7 +674,7 @@ const BudgetSchema = z.object({
   PROVIDER_SMOKE_TEST_ENABLED: zBool(true),
   PROVIDER_SMOKE_TEST_INTERVAL_MINUTES: z.coerce.number().int().positive().default(30),
   PROVIDER_SMOKE_TEST_FAIL_THRESHOLD: z.coerce.number().int().positive().default(3),
-  USE_PROTOCOL_ADAPTER_REGISTRY: zBool(false),
+  USE_PROTOCOL_ADAPTER_REGISTRY: zBool(true),
 });
 
 const TrackerSchema = z.object({

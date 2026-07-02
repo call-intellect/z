@@ -228,7 +228,7 @@ export const PutChainSchema = z.object({
 - Acceptance: unit-тесты адаптеров — override.baseUrl/apiKey реально попадают в HTTP-клиент (мок); `useProxy=true, proxyPath='grsai'` → baseUrl `https://proxy.agent-lia.ru/grsai/v1`, ключ с префиксом; `useProxy=true, proxyPath=null` → `PROXY_BASE_URL`; провайдер с capability='sensitive' проходит фильтр для dataClass sensitive (и негативный кейс); smoke kie/grsai через новые адаптеры зелёный (мок). `bun run typecheck` (NODE_OPTIONS=--max-old-space-size=8192) чистый.
 - Закрывает: R4, R5, R6, R7.
 
-### Ф4 — Включение реестра по умолчанию (Ship-On) `[ ]`
+### Ф4 — Включение реестра по умолчанию (Ship-On) `[x]`
 **Ценность:** как супер-админ, создаю провайдера в админке — и он реально участвует в вызовах без деплоя.
 - Входит: `USE_PROTOCOL_ADAPTER_REGISTRY: zBool(false)` → `zBool(true)` ([env.schema.ts:682](backend/src/common/config/env.schema.ts#L682)); parity-тесты: для каждого из 7 легаси-провайдеров dispatch через адаптер формирует эквивалентный вызов (модель/URL/ключ/headers — мок HTTP, сравнение с legacy-веткой); сохранение существующего warn-фолбэка на legacy-switch при сбое резолва; строка в `docs/operations/feature-flags.md` (тип (а) kill-switch: фича ON, флаг только для инцидента).
 - НЕ входит: удаление legacy-switch.

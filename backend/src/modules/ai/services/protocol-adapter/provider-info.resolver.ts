@@ -156,8 +156,12 @@ export class ProviderInfoResolver {
           info: {
             name,
             baseUrl: this.cfg.ai.proxy.baseUrl,
-            apiKey: this.cfg.ai.openai.apiKey,
-            authPrefix: this.cfg.ai.proxy.prefix,
+            // Легаси OpenAiProxyService всегда ходит через прокси и всегда
+            // префиксует ключ `${PROXY_PREFIX}:${OPENAI_API_KEY}` (см. его
+            // конструктор) — buildFromEnv обязан вернуть тот же готовый к
+            // использованию ключ, иначе override.apiKey уйдёт в прокси без
+            // префикса и получит 401.
+            apiKey: `${this.cfg.ai.proxy.prefix}:${this.cfg.ai.openai.apiKey}`,
             defaultModel: 'gpt-5-mini',
           },
           protocolKind: 'openai-responses',

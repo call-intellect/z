@@ -15,7 +15,6 @@ export interface ProtocolAdapterProviderInfo {
   apiKey: string | null;
   defaultHeaders?: Record<string, string>;
   defaultModel?: string;
-  authPrefix?: string;
   /** DataClass провайдера ('public'|'internal'|'sensitive'|'private') из LlmProvider.capability. undefined = нет DB-строки, роутер фолбэкается на хардкод-карту. */
   capability?: string;
   /** Переопределение hard-timeout dispatch, мс. NULL/undefined = используется дефолт роутера. */

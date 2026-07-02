@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ensureJsonHint } from './openai-proxy.service';
+import type { TypedConfigService } from '../../../common/config/index';
+
+import { ensureJsonHint, OpenAiProxyService } from './openai-proxy.service';
 
 describe('ensureJsonHint', () => {
   it('добавляет суффикс с "JSON", если слова json в инструкциях нет', () => {
@@ -29,5 +31,98 @@ describe('ensureJsonHint', () => {
     const twice = ensureJsonHint(once);
 
     expect(twice).toBe(once);
+  });
+});
+
+interface FakeResponses {
+  create: ReturnType<typeof vi.fn>;
+}
+
+let lastClient: { responses: FakeResponses } | null = null;
+let lastCtorOpts: unknown = null;
+
+const DEFAULT_RESPONSE = {
+  output_text: '',
+  output: [],
+  usage: { input_tokens: 0, output_tokens: 0 },
+};
+
+vi.mock('openai', () => {
+  return {
+    default: class FakeOpenAI {
+      responses: FakeResponses;
+      constructor(opts: unknown) {
+        lastCtorOpts = opts;
+        const create = vi.fn(async () => DEFAULT_RESPONSE);
+        this.responses = { create };
+        // eslint-disable-next-line @typescript-eslint/no-this-alias -- тест-фейк: захватываем созданный SDK-инстанс в module-scope для assertions
+        lastClient = this;
+      }
+    },
+  };
+});
+
+function makeCfg(): TypedConfigService {
+  return {
+    ai: {
+      proxy: {
+        baseUrl: 'https://proxy.internal/v1',
+        prefix: 'testprefix',
+      },
+      openai: {
+        apiKey: 'env-openai-key',
+      },
+    },
+  } as unknown as TypedConfigService;
+}
+
+describe('OpenAiProxyService.complete: connection-override (Ф4)', () => {
+  beforeEach(() => {
+    lastClient = null;
+    lastCtorOpts = null;
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('override передан → новый клиент строится с override.baseUrl/apiKey (вместо ENV-дефолта)', async () => {
+    const svc = new OpenAiProxyService(makeCfg());
+    if (!lastClient) throw new Error('constructor client not set');
+    const constructorClient = lastClient;
+
+    await svc.complete(
+      { system: { text: 's' }, user: 'u' },
+      { baseUrl: 'https://override.example/v1', apiKey: 'override-key' },
+    );
+
+    expect(lastClient).not.toBe(constructorClient);
+    const opts = lastCtorOpts as { apiKey?: string; baseURL?: string };
+    expect(opts.baseURL).toBe('https://override.example/v1');
+    expect(opts.apiKey).toBe('override-key');
+  });
+
+  it('override.apiKey=null → fallback на ENV-дефолт с префиксом прокси', async () => {
+    const svc = new OpenAiProxyService(makeCfg());
+
+    await svc.complete(
+      { system: { text: 's' }, user: 'u' },
+      { baseUrl: 'https://override.example/v1', apiKey: null },
+    );
+
+    const opts = lastCtorOpts as { apiKey?: string; baseURL?: string };
+    expect(opts.baseURL).toBe('https://override.example/v1');
+    expect(opts.apiKey).toBe('testprefix:env-openai-key');
+  });
+
+  it('override отсутствует → используется конструкторский клиент (ENV, как раньше)', async () => {
+    const svc = new OpenAiProxyService(makeCfg());
+    if (!lastClient) throw new Error('constructor client not set');
+    const constructorClient = lastClient;
+
+    await svc.complete({ system: { text: 's' }, user: 'u' });
+
+    expect(lastClient).toBe(constructorClient);
+    const opts = lastCtorOpts as { apiKey?: string; baseURL?: string };
+    expect(opts.apiKey).toBe('testprefix:env-openai-key');
   });
 });

@@ -146,6 +146,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private queryPlanEmptyPoolTotal!: Counter<'result'>;
   private routerQueryClassTotal!: Counter<'class'>;
   private routerBothWaysTotal!: Counter<'triggered'>;
+  private structuralFallbackUsedTotal!: Counter<'queryClass'>;
 
   // ── task assignee resolver (ТЗ 2026-05-25 hard-participant-identification) ─
   // Инкрементируется в `TaskAssigneeResolverService`, когда участников с
@@ -1453,6 +1454,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_router_both_ways_total',
       help: 'Слой источника Ф3 — confidence-gated both-ways в retrieval: triggered="yes" запущены структурный И семантический маршруты параллельно (RRF), "no" только семантика (уверенный topic/fact).',
       labelNames: ['triggered'] as const,
+    });
+    this.structuralFallbackUsedTotal = this.getOrCreateCounter({
+      name: 'z_structural_fallback_used_total',
+      help: 'Пакет B (2026-06-29) — структурный маршрут (агрегация по person/entity) отработал для НЕ-list класса запроса (queryClass=fact|topic). Рост = data-driven страховка на фактовых/тематических вопросах «что решили по X / что знает Y».',
+      labelNames: ['queryClass'] as const,
     });
 
     this.taskAssigneeAmbiguousTotal = this.getOrCreateCounter({
@@ -4270,6 +4276,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incRouterBothWays(args: { triggered: 'yes' | 'no' }): void {
     this.routerBothWaysTotal.inc({ triggered: args.triggered });
+  }
+
+  incStructuralFallbackUsed(args: { queryClass: 'fact' | 'topic' }): void {
+    this.structuralFallbackUsedTotal.inc({ queryClass: args.queryClass });
   }
 
   incQueryPlanEmptyPool(args: { result: 'empty' }): void {

@@ -12,6 +12,7 @@ import {
 
 function makeService(args: {
   resolvePersonCandidates: ReturnType<typeof vi.fn>;
+  resolvePersonByHint?: ReturnType<typeof vi.fn>;
   ambiguityDelta?: number;
   entityFindFirst?: ReturnType<typeof vi.fn>;
 }) {
@@ -35,6 +36,8 @@ function makeService(args: {
   } as unknown as BusinessMetricsService;
   const entityResolution = {
     resolvePersonCandidates: args.resolvePersonCandidates,
+    resolvePersonByHint:
+      args.resolvePersonByHint ?? vi.fn().mockResolvedValue(null),
   } as unknown as never;
   const service = new QueryPlanExtractorService(
     llm,
@@ -118,9 +121,13 @@ describe('QueryPlanExtractorService.resolveStructuralFiltersWithClarify (Ф4 R14
     expect(res.filters?.personIds).toEqual(['A1']);
   });
 
-  it('класс не list → резолв имён не запускается (clarification всегда null)', async () => {
+  it('класс topic → personIds резолвятся через resolvePersonByHint (fuzzy, без clarify)', async () => {
     const resolvePersonCandidates = vi.fn();
-    const { service } = makeService({ resolvePersonCandidates });
+    const resolvePersonByHint = vi.fn().mockResolvedValue('P-topic');
+    const { service } = makeService({
+      resolvePersonCandidates,
+      resolvePersonByHint,
+    });
     const plan = listPlan(['Александр']);
     plan.queryClass = 'topic';
     plan.filters.signalTypes = ['decision'];
@@ -131,6 +138,47 @@ describe('QueryPlanExtractorService.resolveStructuralFiltersWithClarify (Ф4 R14
     });
     expect(res.clarification).toBeNull();
     expect(resolvePersonCandidates).not.toHaveBeenCalled();
+    expect(resolvePersonByHint).toHaveBeenCalled();
+    expect(res.filters?.personIds).toEqual(['P-topic']);
+  });
+
+  it('класс fact → personIds резолвятся через resolvePersonByHint (best-match, без clarify)', async () => {
+    const resolvePersonCandidates = vi.fn();
+    const resolvePersonByHint = vi.fn().mockResolvedValue('P-fact');
+    const { service } = makeService({
+      resolvePersonCandidates,
+      resolvePersonByHint,
+    });
+    const plan = listPlan(['Михаил']);
+    plan.queryClass = 'fact';
+    const res = await service.resolveStructuralFiltersWithClarify({
+      tenantId: 't1',
+      userId: 'u1',
+      plan,
+    });
+    expect(res.clarification).toBeNull();
+    expect(resolvePersonCandidates).not.toHaveBeenCalled();
+    expect(res.filters?.personIds).toEqual(['P-fact']);
+  });
+
+  it('класс overview → резолв имён не запускается (clarification всегда null)', async () => {
+    const resolvePersonCandidates = vi.fn();
+    const resolvePersonByHint = vi.fn();
+    const { service } = makeService({
+      resolvePersonCandidates,
+      resolvePersonByHint,
+    });
+    const plan = listPlan(['Александр']);
+    plan.queryClass = 'overview';
+    plan.filters.signalTypes = ['decision'];
+    const res = await service.resolveStructuralFiltersWithClarify({
+      tenantId: 't1',
+      userId: 'u1',
+      plan,
+    });
+    expect(res.clarification).toBeNull();
+    expect(resolvePersonCandidates).not.toHaveBeenCalled();
+    expect(resolvePersonByHint).not.toHaveBeenCalled();
     expect(res.filters?.personIds).toEqual([]);
   });
 });

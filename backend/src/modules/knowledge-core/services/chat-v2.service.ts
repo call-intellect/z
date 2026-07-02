@@ -913,16 +913,22 @@ export class ChatV2Service {
       themeMap.length === 0 &&
       episodes.length === 0
     ) {
+      const personIds = input.structuralFilters?.personIds ?? [];
+      const entityIds = input.structuralFilters?.entityIds ?? [];
+      const namedPhrase =
+        personIds.length > 0 || entityIds.length > 0
+          ? await this.describePersonAndEntityFilters(tenantId, personIds, entityIds)
+          : '';
       const desc = input.structuralFilters
         ? describeStructuralFilters(input.structuralFilters)
         : '';
-      const message = input.structuralFilters
-        ? desc
-          ? `По заданным условиям (${desc}) в памяти ничего не нашлось.`
-          : 'По заданным условиям в памяти ничего не нашлось.'
-        : 'Недостаточно данных: я не нашёл подходящих блоков знаний по этому запросу.';
-      // Query Understanding Волна 1 — применённый структурный фильтр дал пустой
-      // пул (misroute-proxy): честный ответ «в памяти нет».
+      const message = namedPhrase
+        ? `По ${namedPhrase} в памяти ничего не нашлось.`
+        : input.structuralFilters
+          ? desc
+            ? `По заданным условиям (${desc}) в памяти ничего не нашлось.`
+            : 'По заданным условиям в памяти ничего не нашлось.'
+          : 'Недостаточно данных: я не нашёл подходящих блоков знаний по этому запросу.';
       if (input.structuralFilters) {
         this.metrics.incQueryPlanEmptyPool({ result: 'empty' });
       }
@@ -1155,8 +1161,15 @@ export class ChatV2Service {
     const queryClassConfidence = input.queryClassConfidence ?? 1;
     const isStructuralClass =
       queryClass === 'list' || queryClass === 'temporal' || queryClass === 'overview';
+    const forceStructuralFallback =
+      (queryClass === 'fact' || queryClass === 'topic') &&
+      (((input.structuralFilters?.personIds?.length ?? 0) > 0) ||
+        ((input.structuralFilters?.entityIds?.length ?? 0) > 0));
     const bothWays =
-      routerEnabled && (queryClassConfidence < threshold || isStructuralClass);
+      routerEnabled &&
+      (queryClassConfidence < threshold ||
+        isStructuralClass ||
+        forceStructuralFallback);
 
     this.metrics.incRouterBothWays({ triggered: bothWays ? 'yes' : 'no' });
 
@@ -1272,16 +1285,6 @@ export class ChatV2Service {
       : perQuery[0]!.slice(0, kRetrieve).map((r) => r.blockId);
   }
 
-  /**
-   * Слой источника Ф4 (R1) — маршрут К1 «список/агрегат по человеку/группе».
-   * Точный детерминированный обход по уже разрешённым (Ф3) personIds/entityIds
-   * через `SourceParticipant`/`SourceEntity` → блоки. Семантическая страховка —
-   * both-ways в runRetrieval (этот маршрут отдаёт только структурную ногу).
-   *
-   * Возвращает [] (общий результат = семантика) если:
-   *   - класс не 'list' (К3/К4/К2/К5 — другие маршруты / семантика), ИЛИ
-   *   - нет разрешённых personIds и entityIds (резолв пуст → страховка).
-   */
   private async runStructuralRoute(
     input: ChatV2Input,
     ctx: RetrievalCtx,
@@ -1289,10 +1292,17 @@ export class ChatV2Service {
     if (input.queryClass === 'overview') {
       return this.runOverviewStructuralRoute(input, ctx);
     }
-    if (input.queryClass !== 'list') return [];
+    const queryClass = input.queryClass;
+    if (queryClass !== 'list' && queryClass !== 'fact' && queryClass !== 'topic') {
+      return [];
+    }
     const personIds = input.structuralFilters?.personIds ?? [];
     const entityIds = input.structuralFilters?.entityIds ?? [];
     if (personIds.length === 0 && entityIds.length === 0) return [];
+
+    if (queryClass === 'fact' || queryClass === 'topic') {
+      this.metrics.incStructuralFallbackUsed({ queryClass });
+    }
 
     return this.retrieval.runStructuralAggregate({
       tenantId: ctx.tenantId,
@@ -1300,6 +1310,45 @@ export class ChatV2Service {
       entityIds,
       limit: ctx.kRetrieve,
     });
+  }
+
+  private async describePersonAndEntityFilters(
+    tenantId: string,
+    personIds: ReadonlyArray<string>,
+    entityIds: ReadonlyArray<string>,
+  ): Promise<string> {
+    try {
+      const names: string[] = [];
+      if (personIds.length > 0) {
+        const persons = await this.prisma.person.findMany({
+          where: { tenantId, id: { in: [...personIds] } },
+          select: { name: true },
+        });
+        for (const p of persons) {
+          const n = p.name?.trim();
+          if (n) names.push(n);
+        }
+      }
+      const entityPhrases: string[] = [];
+      if (entityIds.length > 0) {
+        const entities = await this.prisma.entity.findMany({
+          where: { tenantId, id: { in: [...entityIds] } },
+          select: { canonicalName: true },
+        });
+        for (const e of entities) {
+          const n = e.canonicalName?.trim();
+          if (n) entityPhrases.push(`компании «${n}»`);
+        }
+      }
+      const parts = dedupe([...names, ...entityPhrases]);
+      return parts.join(' / ');
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 describePersonAndEntityFilters упал — общий текст',
+      );
+      return '';
+    }
   }
 
   private async runOverviewStructuralRoute(

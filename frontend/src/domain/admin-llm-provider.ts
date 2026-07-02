@@ -6,6 +6,10 @@ export type AdminLlmProviderApi = {
   protocolKind: string;
   capability: string;
   isActive: boolean;
+  useProxy: boolean;
+  proxyPath: string | null;
+  timeoutMs: number | null;
+  defaultModelKey: string | null;
   hasApiKey: boolean;
   defaultHeaders: Record<string, string> | null;
   globalRps: number | null;
@@ -26,6 +30,10 @@ export type AdminLlmProviderDomain = {
   protocolKind: string;
   capability: string;
   isActive: boolean;
+  useProxy: boolean;
+  proxyPath: string | null;
+  timeoutMs: number | null;
+  defaultModelKey: string | null;
   hasApiKey: boolean;
   defaultHeaders: Record<string, string> | null;
   globalRps: number | null;
@@ -47,6 +55,10 @@ export function adminLlmProviderFromApi(
     protocolKind: api.protocolKind,
     capability: api.capability,
     isActive: api.isActive,
+    useProxy: api.useProxy,
+    proxyPath: api.proxyPath,
+    timeoutMs: api.timeoutMs,
+    defaultModelKey: api.defaultModelKey,
     hasApiKey: api.hasApiKey,
     defaultHeaders: api.defaultHeaders,
     globalRps: api.globalRps,
@@ -58,26 +70,42 @@ export function adminLlmProviderFromApi(
   };
 }
 
+export type LlmProtocolKind =
+  | "openai-chat"
+  | "openai-responses"
+  | "anthropic-messages"
+  | "ollama-native"
+  | "kie-native"
+  | "grsai-native"
+  | "custom-http";
+
+export type LlmProviderCapability =
+  | "public"
+  | "internal"
+  | "sensitive"
+  | "private";
+
 export type CreateLlmProviderRequest = {
   name: string;
   displayName: string;
   baseUrl: string;
-  protocolKind:
-    | "openai-chat"
-    | "openai-responses"
-    | "anthropic-messages"
-    | "ollama-native"
-    | "custom-http";
-  capability?: "public" | "internal" | "sensitive" | "private";
+  protocolKind: LlmProtocolKind;
+  capability?: LlmProviderCapability;
   apiKey?: string;
   defaultHeaders?: Record<string, string>;
   globalRps?: number;
   isActive?: boolean;
+  useProxy?: boolean;
+  proxyPath?: string | null;
+  timeoutMs?: number | null;
+  defaultModelKey?: string | null;
 };
 
 export type UpdateLlmProviderRequest = Partial<
-  Omit<CreateLlmProviderRequest, "name">
->;
+  Omit<CreateLlmProviderRequest, "name" | "apiKey">
+> & {
+  apiKey?: string | null;
+};
 
 export type SmokeTestResultApi = {
   provider: string;
@@ -85,3 +113,7 @@ export type SmokeTestResultApi = {
   durationSeconds: number;
   error?: string;
 };
+
+export type DiscoverModelsResultApi =
+  | { ok: true; models: Array<{ id: string; alreadyInCatalog: boolean }> }
+  | { ok: false; error: string };

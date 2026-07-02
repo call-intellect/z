@@ -4,6 +4,7 @@ import type {
   AdminLlmProviderApi,
   AdminLlmProviderListApi,
   CreateLlmProviderRequest,
+  DiscoverModelsResultApi,
   SmokeTestResultApi,
   UpdateLlmProviderRequest,
 } from "@/domain/admin-llm-provider";
@@ -32,6 +33,12 @@ export const adminLlmProvidersApi = {
   smokeTest: (id: string) =>
     apiClient.post<SmokeTestResultApi>(
       `/api/v1/admin/llm-providers/${id}/smoke-test`,
+      {},
+    ),
+
+  discoverModels: (id: string) =>
+    apiClient.post<DiscoverModelsResultApi>(
+      `/api/v1/admin/llm-providers/${id}/models/discover`,
       {},
     ),
 };

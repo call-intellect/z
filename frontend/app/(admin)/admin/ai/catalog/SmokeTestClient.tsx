@@ -5,20 +5,22 @@ import { Loader2, PlayCircle, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api/api-error";
-import {
-  ADMIN_SMOKE_TEST_PROVIDERS,
-  type AdminSmokeTestProvider,
-  adminSmokeTestApi,
-} from "@/api/admin-smoke-test.api";
+import { adminSmokeTestApi } from "@/api/admin-smoke-test.api";
+import { adminLlmProvidersApi } from "@/api/admin-llm-providers.api";
 import {
   mapSmokeTestRun,
   providerLabel,
   type SmokeTestRunUi,
 } from "@/domain/admin-smoke-test";
+import {
+  adminLlmProviderFromApi,
+  type AdminLlmProviderDomain,
+} from "@/domain/admin-llm-provider";
 import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
 
-import { AdminEmpty } from "../../AdminStateViews";
+import { AdminEmpty, AdminError, AdminLoading } from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
 type LastByProvider = Record<string, SmokeTestRunUi | null>;
 
@@ -30,25 +32,38 @@ export function SmokeTestClient() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
-  const loadStatus = useCallback(async () => {
-    try {
-      const res = await adminSmokeTestApi.status();
-      const map: LastByProvider = {};
-      for (const item of res.providers) {
-        map[item.provider] = item.lastRun
-          ? mapSmokeTestRun(item.lastRun)
-          : null;
-      }
-      setLastByProvider(map);
-    } catch {}
-  }, []);
+  const providersQ = useAdminQuery(
+    "admin-llm-providers-for-smoke",
+    async () => {
+      const res = await adminLlmProvidersApi.list({ includeInactive: false });
+      return res.items.map(adminLlmProviderFromApi);
+    },
+    [],
+  );
+
+  const providerDisplayNameByName = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of providersQ.data ?? []) map[p.name] = p.displayName;
+    return map;
+  }, [providersQ.data]);
+
+  const resolveLabel = useCallback(
+    (provider: string) => providerDisplayNameByName[provider] ?? providerLabel(provider),
+    [providerDisplayNameByName],
+  );
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
       const res = await adminSmokeTestApi.history();
-      setHistory(res.items.map(mapSmokeTestRun));
+      const mapped = res.items.map((item) => mapSmokeTestRun(item, resolveLabel));
+      setHistory(mapped);
+      const lastMap: LastByProvider = {};
+      for (const run of mapped) {
+        if (!(run.provider in lastMap)) lastMap[run.provider] = run;
+      }
+      setLastByProvider(lastMap);
     } catch (e) {
       setHistory([]);
       setHistoryError(
@@ -57,22 +72,21 @@ export function SmokeTestClient() {
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [resolveLabel]);
 
   useEffect(() => {
-    void loadStatus();
     void loadHistory();
-  }, [loadStatus, loadHistory]);
+  }, [loadHistory]);
 
   const handleRun = useCallback(
-    async (provider: AdminSmokeTestProvider) => {
-      setBusy((b) => ({ ...b, [provider]: true }));
+    async (provider: AdminLlmProviderDomain) => {
+      setBusy((b) => ({ ...b, [provider.name]: true }));
       try {
-        const run = await adminSmokeTestApi.run(provider);
-        const ui = mapSmokeTestRun(run);
-        setLastByProvider((m) => ({ ...m, [provider]: ui }));
+        const run = await adminSmokeTestApi.run(provider.name);
+        const ui = mapSmokeTestRun(run, resolveLabel);
+        setLastByProvider((m) => ({ ...m, [provider.name]: ui }));
         toast.success(
-          `${providerLabel(provider)}: ${ui.statusLabel} · ${ui.latencyLabel}`,
+          `${ui.providerLabel}: ${ui.statusLabel} · ${ui.latencyLabel}`,
         );
         await loadHistory();
       } catch (e) {
@@ -80,10 +94,10 @@ export function SmokeTestClient() {
           e instanceof ApiError ? e.message : "Не удалось запустить smoke-тест",
         );
       } finally {
-        setBusy((b) => ({ ...b, [provider]: false }));
+        setBusy((b) => ({ ...b, [provider.name]: false }));
       }
     },
-    [loadHistory],
+    [loadHistory, resolveLabel],
   );
 
   const handleRunAll = useCallback(async () => {
@@ -91,11 +105,12 @@ export function SmokeTestClient() {
     try {
       const res = await adminSmokeTestApi.runAll();
       const next: LastByProvider = { ...lastByProvider };
-      for (const r of res.runs) {
-        next[r.provider] = mapSmokeTestRun(r);
+      for (const r of res.items) {
+        const ui = mapSmokeTestRun(r, resolveLabel);
+        next[ui.provider] = ui;
       }
       setLastByProvider(next);
-      toast.success(`Smoke-тесты выполнены: ${res.runs.length}`);
+      toast.success(`Smoke-тесты выполнены: ${res.items.length}`);
       await loadHistory();
     } catch (e) {
       toast.error(
@@ -104,9 +119,9 @@ export function SmokeTestClient() {
     } finally {
       setAllBusy(false);
     }
-  }, [lastByProvider, loadHistory]);
+  }, [lastByProvider, loadHistory, resolveLabel]);
 
-  const providers = useMemo(() => [...ADMIN_SMOKE_TEST_PROVIDERS], []);
+  const providers = providersQ.data ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -117,14 +132,14 @@ export function SmokeTestClient() {
               Smoke-тесты провайдеров
             </h2>
             <p className="text-xs text-fg-secondary">
-              Минимальный запрос к каждому провайдеру для проверки доступности и
-              латентности.
+              Минимальный запрос к каждому активному провайдеру из реестра для
+              проверки доступности и латентности.
             </p>
           </div>
           <Button
             size="sm"
             onClick={() => void handleRunAll()}
-            disabled={allBusy}
+            disabled={allBusy || providers.length === 0}
           >
             {allBusy ? (
               <Loader2 size={14} className="mr-1 animate-spin" />
@@ -135,77 +150,89 @@ export function SmokeTestClient() {
           </Button>
         </div>
 
-        <div className="overflow-hidden rounded border border-border-subtle">
-          <table className="w-full text-sm">
-            <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Провайдер</th>
-                <th className="px-3 py-2 text-left font-medium">Статус</th>
-                <th className="px-3 py-2 text-right font-medium">
-                  Латентность
-                </th>
-                <th className="px-3 py-2 text-right font-medium">Время</th>
-                <th className="px-3 py-2 text-right font-medium">Действие</th>
-              </tr>
-            </thead>
-            <tbody>
-              {providers.map((p) => {
-                const last = lastByProvider[p];
-                return (
-                  <tr key={p} className="border-t border-border-subtle">
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-fg-primary">
-                        {providerLabel(p)}
-                      </div>
-                      <div className="font-mono text-[10px] text-fg-tertiary">
-                        {p}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      {last ? (
-                        <Badge
-                          variant="outline"
-                          className={
-                            last.statusTone === "success"
-                              ? "border-chip-success-bg bg-chip-success-bg text-chip-success-fg"
-                              : "border-chip-danger-bg bg-chip-danger-bg text-chip-danger-fg"
-                          }
-                        >
-                          {last.statusLabel}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-fg-tertiary">
-                          — не запускали —
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs text-fg-secondary">
-                      {last ? last.latencyLabel : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs text-fg-secondary">
-                      {last ? last.ranAtLabel : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={Boolean(busy[p]) || allBusy}
-                        onClick={() => void handleRun(p)}
-                      >
-                        {busy[p] ? (
-                          <Loader2 size={12} className="mr-1 animate-spin" />
+        {providersQ.isLoading && <AdminLoading rows={3} />}
+        {!providersQ.isLoading && providersQ.error && (
+          <AdminError message={providersQ.error} onRetry={providersQ.refetch} />
+        )}
+        {!providersQ.isLoading && !providersQ.error && providers.length === 0 && (
+          <AdminEmpty
+            title="Активных провайдеров нет"
+            description="Добавьте и активируйте провайдера на вкладке «Провайдеры», чтобы запускать smoke-тесты."
+          />
+        )}
+        {!providersQ.isLoading && !providersQ.error && providers.length > 0 && (
+          <div className="overflow-hidden rounded border border-border-subtle">
+            <table className="w-full text-sm">
+              <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Провайдер</th>
+                  <th className="px-3 py-2 text-left font-medium">Статус</th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    Латентность
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">Время</th>
+                  <th className="px-3 py-2 text-right font-medium">Действие</th>
+                </tr>
+              </thead>
+              <tbody>
+                {providers.map((p) => {
+                  const last = lastByProvider[p.name];
+                  return (
+                    <tr key={p.id} className="border-t border-border-subtle">
+                      <td className="px-3 py-2">
+                        <div className="font-medium text-fg-primary">
+                          {p.displayName}
+                        </div>
+                        <div className="font-mono text-[10px] text-fg-tertiary">
+                          {p.name}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        {last ? (
+                          <Badge
+                            variant="outline"
+                            className={
+                              last.statusTone === "success"
+                                ? "border-chip-success-bg bg-chip-success-bg text-chip-success-fg"
+                                : "border-chip-danger-bg bg-chip-danger-bg text-chip-danger-fg"
+                            }
+                          >
+                            {last.statusLabel}
+                          </Badge>
                         ) : (
-                          <Zap size={12} className="mr-1" />
+                          <span className="text-xs text-fg-tertiary">
+                            — не запускали —
+                          </span>
                         )}
-                        Запустить
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs text-fg-secondary">
+                        {last ? last.latencyLabel : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs text-fg-secondary">
+                        {last ? last.ranAtLabel : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={Boolean(busy[p.name]) || allBusy}
+                          onClick={() => void handleRun(p)}
+                        >
+                          {busy[p.name] ? (
+                            <Loader2 size={12} className="mr-1 animate-spin" />
+                          ) : (
+                            <Zap size={12} className="mr-1" />
+                          )}
+                          Запустить
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="rounded-lg border border-border-subtle bg-bg-card p-4">

@@ -414,6 +414,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             sourceProvenance: prov,
           });
           await this.linkProvenance(event.tenantId, 'process', res.id, prov, proc.confidence);
+          await this.attachBlockAuthorToTypedEntity(
+            event.tenantId,
+            'process',
+            res.id,
+            proc.sourceBlockIndex != null
+              ? (indexToBlockId.get(proc.sourceBlockIndex) ?? null)
+              : null,
+          );
           this.metrics.incExtractionEntity({ type: 'process' });
           this.metrics.observeExtractionConfidence({
             type: 'process',
@@ -478,6 +486,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             sourceProvenance: prov,
           });
           await this.linkProvenance(event.tenantId, 'policy', res.id, prov, pol.confidence);
+          await this.attachBlockAuthorToTypedEntity(
+            event.tenantId,
+            'policy',
+            res.id,
+            pol.sourceBlockIndex != null
+              ? (indexToBlockId.get(pol.sourceBlockIndex) ?? null)
+              : null,
+          );
           this.metrics.incExtractionEntity({ type: 'policy' });
           this.metrics.observeExtractionConfidence({
             type: 'policy',
@@ -1593,6 +1609,63 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       },
       'block-ingest: автор помечен role=subject',
     );
+  }
+
+  private async attachBlockAuthorToTypedEntity(
+    tenantId: string,
+    table: 'process' | 'policy',
+    entityId: string,
+    blockId: string | null,
+  ): Promise<void> {
+    if (!blockId) return;
+    try {
+      const ev = await this.prisma.ideaBlockEvidence.findFirst({
+        where: { blockId, tenantId, authorPersonId: { not: null } },
+        orderBy: { sourceTimestamp: { sort: 'asc', nulls: 'last' } },
+        select: { authorPersonId: true },
+      });
+      const authorPersonId = ev?.authorPersonId ?? null;
+      if (!authorPersonId) return;
+      const person = await this.prisma.person.findFirst({
+        where: { id: authorPersonId, tenantId, deletedAt: null },
+        select: { id: true, entityId: true },
+      });
+      if (!person) return;
+
+      const existing =
+        table === 'process'
+          ? await this.prisma.process.findFirst({
+              where: { id: entityId, tenantId },
+              select: { ownerPersonId: true, personSubjectIds: true },
+            })
+          : await this.prisma.policy.findFirst({
+              where: { id: entityId, tenantId },
+              select: { ownerPersonId: true, personSubjectIds: true },
+            });
+      if (!existing) return;
+
+      const nextSubjects = Array.from(
+        new Set([...existing.personSubjectIds, ...(person.entityId ? [person.entityId] : [])]),
+      );
+      const setOwner = existing.ownerPersonId == null;
+      const subjectsChanged = nextSubjects.length !== existing.personSubjectIds.length;
+      if (!setOwner && !subjectsChanged) return;
+
+      const data: { ownerPersonId?: string; personSubjectIds?: string[] } = {};
+      if (setOwner) data.ownerPersonId = person.id;
+      if (subjectsChanged) data.personSubjectIds = nextSubjects;
+
+      if (table === 'process') {
+        await this.prisma.process.update({ where: { id: entityId }, data });
+      } else {
+        await this.prisma.policy.update({ where: { id: entityId }, data });
+      }
+    } catch (err) {
+      this.logger.warn(
+        { entityId, table, err: err instanceof Error ? err.message : String(err) },
+        `block-ingest: привязка автора к ${table} не удалась — пропускаю`,
+      );
+    }
   }
 
   private async attributeCommitmentAuthor(args: {

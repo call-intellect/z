@@ -37,7 +37,7 @@
 - Зарегистрировать оба в `backend/scripts/apply-prod-deploy.ts` (`STEPS`, phase `update`, `skipBootstrap`).
 - Обновить `docs/operations/prod-deploy-log.md` Шаг 8 (backfill).
 
-### [ ] Ф7. Тесты
+### [x] Ф7. Тесты
 - Unit: каждый write-site пишет компаньон; обнуление обнуляет пару; `findCandidatePairs` без person.
 - Integration: форс-мерж двух НЕ-person → Person/Card/Theme/Source/EntityLink мигрированы, `include:{entity}`/`include:{mergedInto}` резолвятся.
 - **Regression S-C3 через авто-путь** (`applyMerge`): person исключён → клон-рид НЕ падает в 0.
@@ -51,4 +51,10 @@
 - Резолв персон по embedding возвращает кандидатов.
 
 ## Итог
-_Заполнить после реализации: реализовано целиком / что осталось._
+**Реализовано целиком (Ф1–Ф7).** Коммиты: `770fcba6` (Ф1+Ф2 F-1 + companion), `0cd6877e` (Ф3 единый мержер), `99eabd15` (Ф4+Ф5 person вне авто-мержа + read-side canonicalize), `d2cee062` (Ф6 backfill + reconciler), + Ф7 тесты.
+
+Верификация: typecheck 0 · lint 0 · тесты knowledge-core зелёные (merger-интеграция на реальном Postgres: все 6 ссылок мигрированы + companion + flatten; reconcile idempotent; backfill idempotent; F-1 KNN возвращает кандидатов; findCandidatePairs исключает person).
+
+Прод: 2 идемпотентных backfill (`backfill-entity-tenant-companions`, `backfill-reconcile-merged-entity-refs`) в `apply-prod-deploy` (phase:backfill, `--apply`) + `prod-deploy-log` Шаг 8. Миграций Prisma / ENV / флагов нет.
+
+Осознанно вне scope (одобренная архитектура Р-2): типизированные 1:1-сабрекорды (vendor/customer/…) при мерже не мигрируются — мержер даёт видимый `warn` (не тихий сирота).

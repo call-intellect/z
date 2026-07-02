@@ -49,6 +49,7 @@ import { CyclesService } from './services/cycles.service';
 import { HolidayService } from './services/holiday.service';
 import { ImportService } from './services/import.service';
 import { IntakeAutoTriageQueueService } from './services/intake-auto-triage-queue.service';
+import { IntakeIssueSimilarService } from './services/intake-issue-similar.service';
 import { IntakeService } from './services/intake.service';
 import { IntegrationsStatusService } from './services/integrations-status.service';
 import { IssueActivityDigestService } from './services/issue-activity-digest.service';
@@ -194,6 +195,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IssueGoalSuggestService,
     IntakeAutoTriageQueueService,
     IntakeAutoTriageWorker,
+    IntakeIssueSimilarService,
     ImportService,
     ImportTrackerWorker,
     TrelloImportStrategy,
@@ -226,6 +228,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     SprintAnalystService,
     SkillRoutingService,
     MorningTasksDigestService,
+    IntakeIssueSimilarService,
     // TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler (operations)
     // переиспользует findSimilarByVector для семантического матча
     // сигнал-блок «сделал X» → открытая Issue (кандидат на закрытие).

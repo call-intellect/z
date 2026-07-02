@@ -928,6 +928,12 @@ function buildSettings(): SettingSeed[] {
       'high',
       'Порог авто-создания Issue из триажа встречи (confidence LLM 0..1). Дефолт 0.75 под живую речь; жёсткие гейты source=meeting+assignee+project остаются страховкой.',
     ],
+    [
+      'tracker.intakeDedupThreshold',
+      0.15,
+      'medium',
+      'Порог косинусной ДИСТАНЦИИ для семантического дедупа задач при материализации (IntakeIssue). Меньше = строже. ~0.15 ≈ сходство 0.85. Диапазон 0–1.',
+    ],
   ];
   for (const [key, value, severity, description] of tracker) {
     out.push({ key, value, category: 'integrations', section: 'tracker', severity, description });

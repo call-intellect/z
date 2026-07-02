@@ -552,6 +552,28 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Package C F-4 (2026-07-02 materialization dedup) — IntakeIssue.embedding.
+--   HNSW индекс (cosine) для KNN-дедупа входящих карточек при материализации:
+--   ищем похожие pending-IntakeIssue до записи новой (link-on-match).
+--   Заполняется на лету при материализации. WHERE embedding IS NOT NULL —
+--   у легаси/непосчитанных карточек вектора нет.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'IntakeIssue' AND column_name = 'embedding'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "IntakeIssue_embedding_hnsw_cosine_idx"
+      ON "IntakeIssue" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Ф5 (TZ 2026-06-16 task-dedup) — Goal.embedding.
 --   HNSW индекс (cosine) для семантического дедупа целей (specialist-3-14):
 --   KNN по Goal.embedding вместо ILIKE по 2 словам. Заполняется goal-embed.worker.

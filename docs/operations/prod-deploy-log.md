@@ -108,6 +108,28 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — Пакет C, F-4 (mat-part): персист-embedding + KNN «похожие pending» + порог дедупа задач при материализации (IntakeIssue) (ветка work/2026-06-29)
+
+> Инфраструктура семантического дедупа задач при материализации (Part A). У `IntakeIssue` появились persist-поля `embedding vector(1536)` + `embeddingHash` (зеркало `Issue`), HNSW-индекс (cosine) на них, KNN-сервис `IntakeIssueSimilarService.findSimilarByVector` (ищет похожие `status='pending'` карточки того же tenant, threshold по дистанции, over-fetch ×2), и крутилка `tracker.intakeDedupThreshold`=0.15 (косинусная ДИСТАНЦИЯ; строже сиблинга `SimilarIssuesService` 0.18 для link-on-match precision, ~сходство 0.85). Part B (интеграция сервиса в specialist knowledge-core для дедупа на записи) — отдельным пушем.
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260702000000_intake_issue_embedding` (2 ADD COLUMN, без DROP). 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (крутилка, не флаг). 🟢 1 НОВЫЙ HNSW-индекс (postgres-init, идемпотентно). 🟢 SEED УЖЕ СУЩЕСТВУЕТ (`seed-admin-settings.ts`, ключ `tracker.intakeDedupThreshold`=0.15, в STEPS `phase:'seed-base'`). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** Порог — крутилка AdminSetting `tracker.intakeDedupThreshold` (сид Шага 7) + code-fallback 0.15 в сервисе. Новый флаг НЕ вводился. Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260702000000_intake_issue_embedding` — `ALTER TABLE "IntakeIssue" ADD COLUMN "embedding" vector(1536), ADD COLUMN "embeddingHash" TEXT`. Аддитивная (2 nullable-колонки, без DROP/ALTER существующих), безопасна, backfill НЕ нужен (вектор считается на лету при материализации). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Отразить в `data-model.md` §«IntakeIssue».
+- **Шаг 5 — Postgres-init (идемпотентно, `IF NOT EXISTS`, применяется на каждом `up -d` через `apply-prod-deploy --with-schema`):** новый HNSW-индекс `IntakeIssue_embedding_hnsw_cosine_idx` — `CREATE INDEX ... ON "IntakeIssue" USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL` (KNN cosine для дедупа входящих карточек; guard по наличию колонки). Повтор = no-op.
+- **Шаги 6/8/9/10 (patch/backfill/migrate/setup) — НЕ затронуты.** Новых patch-/backfill-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (идемпотентный, УЖЕ зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-settings.ts` — новый ключ `tracker.intakeDedupThreshold`=`0.15` (косинусная ДИСТАНЦИЯ дедупа задач при материализации, section `tracker`, severity `medium`, диапазон 0–1). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: новый `IntakeIssueSimilarService` (провайдер+экспорт `TrackerModule`); registry-строка `tracker.intakeDedupThreshold` (UNIT_INTERVAL). FE не затронут (Part A).
+- **Шаг 12 — Smoke** (после выката):
+  - колонки: `docker compose exec backend sh -c 'psql "$DATABASE_URL" -c "\d \"IntakeIssue\""'` — присутствуют `embedding` (vector) + `embeddingHash` (text).
+  - индекс: `docker compose exec backend sh -c 'psql "$DATABASE_URL" -c "\di \"IntakeIssue_embedding_hnsw_cosine_idx\""'` — HNSW-индекс существует.
+  - крутилка `tracker.intakeDedupThreshold` (0.15) видна в админке (настройки, section `tracker`); `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-settings.ts` (ключ = 0.15 при первом прогоне, потом no-op).
+- **Откат:** колонки/индекс аддитивны (безвредны, backfill не было); крутилка admin-editable; сервис — `git revert` (в проде ещё не вызывается до Part B). Рискованного переключателя нет (Ship-On).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-01 — День компании v2: письмо COO + полный вход с атрибуцией + виджеты + маршрут DeepSeek Pro→GPT→KIE (day-company-report-v2, ветка work/2026-06-29)
 
 > ТЗ `plans/tz/2026-06-30-day-company-report-v2.md` (Ф1–Ф8). **Надстройка над реализованным «День компании»** (переиспользует `DailyOperationsDigest`/`DailyDigestService`/крон/героя, НЕ новый пайплайн/модель/агент). Переписан промпт письма под эталон COO (12 секций проза+cites, имена людей/клиентов прямо, петля со вчера, «взгляд COO» = `reflection`, сущность «решения» удалена); `buildDayPackage` наполнен 6 слоями входа (`employeeVoice`/`rawConversations`/`signals`/`conflicts`/`reporting`/`yesterdayOpenSignals`) с атрибуцией «кто сказал»; усилена разметка `team_friction` в block-ingest; маршрут дайджеста переведён на DeepSeek Pro→GPT→KIE со снятым `maxTokens`; крон сдвинут 06:00→07:00 МСК; виджеты day-only перегруппированы (блокеры / риски-по-причине / идеи-кластерами / конфликты). Новый сервис `PersonRefResolverService` (единый резолв `userId`/`externalId`→Person).

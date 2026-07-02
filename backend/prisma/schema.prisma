@@ -10219,6 +10219,9 @@ model IntakeIssue {
 
   checklistJson Json?
 
+  embedding     Unsupported("vector(1536)")?
+  embeddingHash String?
+
   /// Редизайн Ф4 (2026-06-13) — авто-протухание pending-intake: после
   /// `expiresAt` sweep-крон (CurationItemLifecycleCron) переводит pending →
   /// rejected («авто-закрыт по сроку»), чтобы входящие не висели вечно. TTL

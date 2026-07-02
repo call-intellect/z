@@ -386,6 +386,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.goalAlignmentLowLowRatio', UNIT_INTERVAL],
   ['tracker.goalAlignmentLowDedupTtlSec', POSITIVE_INT],
   ['tracker.taskDedupGrayBand', UNIT_INTERVAL],
+  ['tracker.intakeDedupThreshold', UNIT_INTERVAL],
   ['tracker.assigneeMatchMaxEdits', z.number().int().min(0).max(4)],
   ['tracker.progressAutoDraftEnabled', z.boolean()],
   ['tracker.progressAutoDraftMinSignals', z.number().int().min(1)],

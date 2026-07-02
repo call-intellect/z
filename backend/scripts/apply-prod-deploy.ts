@@ -293,6 +293,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-clone-coverage.ts',
+    hint: 'knowledgeClone.profileMinConfidence (0.55) — мягкий порог материализации профиля-клона (F-7): provisional/light ≥ порога сохраняются, deep остаётся на ручной курации',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-probe-curation.ts',
     hint: 'probe.* (10) + knowledge.curation{ItemExpiryDays,StaleMonthsThreshold,StaleDynamicScoreThreshold} (config Шаг 7 — probe + остаток курации в AdminSetting)',
   },

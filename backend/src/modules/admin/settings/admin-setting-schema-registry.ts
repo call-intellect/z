@@ -112,6 +112,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['clone.regulations.retrieval.min_similarity', UNIT_INTERVAL],
   ['clone.regulations.snapshot.max_items', POSITIVE_INT],
   ['clone.regulations.scope.include_org', z.boolean()],
+  ['knowledgeClone.profileMinConfidence', UNIT_INTERVAL],
 
   ['companyProfile.autoSummaryEnabled', z.boolean()],
   ['companyProfile.summaryRebuildHours', POSITIVE_INT],

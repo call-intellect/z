@@ -231,7 +231,28 @@ export class Specialist32Service {
         return;
       }
 
-      if (triageDecision === 'auto') {
+      const profileMinConfidence = this.cfg
+        ? await this.cfg.getDynamic<number>('knowledgeClone.profileMinConfidence', undefined, 0.55)
+        : 0.55;
+      const materializedViaFloor =
+        triageDecision !== 'auto' &&
+        triageDecision !== 'deep' &&
+        profileConfidence >= profileMinConfidence;
+      const shouldMaterialize = triageDecision === 'auto' || materializedViaFloor;
+
+      if (shouldMaterialize) {
+        if (materializedViaFloor) {
+          this.logger.debug(
+            {
+              personId: person.id,
+              triageDecision,
+              profileConfidence,
+              profileMinConfidence,
+              reason: 'materialized_provisional',
+            },
+            'specialist-3-2: материализация профиля по мягкому порогу (без auto-триажа)',
+          );
+        }
         try {
           await this.prisma.person.update({
             where: { id: person.id },
@@ -245,7 +266,7 @@ export class Specialist32Service {
           this.metrics.observeKnowledgeCloneProfileSizeKb(estimateProfileSizeKb(serialized));
           this.metrics.incCoreSpecialistCards({
             type: Specialist32Service.METRIC_TYPE,
-            status: 'canonical',
+            status: materializedViaFloor ? 'canonical_provisional' : 'canonical',
           });
           await this.rebuildCategoryEmbeddings({
             tenantId: args.tenantId,
@@ -445,7 +466,11 @@ export class Specialist32Service {
           select: { entityId: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { confidence: 'desc' },
+        { evidenceCount: 'desc' },
+        { createdAt: 'desc' },
+      ],
       take: 60,
     });
 
@@ -712,7 +737,10 @@ function computeProfileConfidence(profile: KnowledgeProfileDraft): number {
     0.05,
     profile.categories.reduce((acc, c) => acc + Math.log2(1 + c.observationCount), 0) / 200,
   );
-  return Math.min(1, avg + obsBoost);
+  const wellObservedFraction =
+    profile.categories.filter((c) => c.observationCount >= 3).length / count;
+  const wellObservedBoost = 0.03 * wellObservedFraction;
+  return Math.min(1, avg + obsBoost + wellObservedBoost);
 }
 
 function estimateProfileSizeKb(profile: SerializedKnowledgeProfile): number {

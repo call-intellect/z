@@ -52,8 +52,6 @@ const positiveInt = (def: number, max?: number) => {
   return s.default(def);
 };
 
-const cronExpr = z.string().min(9).max(64);
-
 const GROUPS: SettingGroup[] = [
   {
     value: "distill",
@@ -69,14 +67,14 @@ const GROUPS: SettingGroup[] = [
         defaultValue: 0.85,
       },
       {
-        key: "knowledge.distill.debounce_ms",
+        key: "knowledge.distillDebounceMs",
         label: "Debounce, мс",
         description: "Задержка между повторными ингестами одного источника.",
         schema: positiveInt(2000),
         defaultValue: 2000,
       },
       {
-        key: "knowledge.distill.knn_top_k",
+        key: "knowledge.distillKnnTopK",
         label: "kNN top-k",
         description:
           "Сколько ближайших соседей рассматривать при кандидате на слияние.",
@@ -91,7 +89,7 @@ const GROUPS: SettingGroup[] = [
     icon: Network,
     settings: [
       {
-        key: "knowledge.entity.merge_threshold",
+        key: "knowledge.entityMergeThreshold",
         label: "Порог слияния сущностей",
         description: "Косинус для дедупа Entity (люди, компании, проекты).",
         schema: ratio01(0.86),
@@ -105,7 +103,7 @@ const GROUPS: SettingGroup[] = [
     icon: Layers,
     settings: [
       {
-        key: "knowledge.theme.cosine_threshold",
+        key: "knowledge.themeCosineThreshold",
         label: "Порог темы (cosine)",
         description:
           "Минимальная близость для отнесения блока к существующей теме.",
@@ -113,25 +111,18 @@ const GROUPS: SettingGroup[] = [
         defaultValue: 0.78,
       },
       {
-        key: "knowledge.theme.cluster_min_size",
+        key: "knowledge.themeClusterMinSize",
         label: "Мин. размер кластера",
         description: "Минимум блоков для создания темы.",
         schema: positiveInt(3),
         defaultValue: 3,
       },
       {
-        key: "knowledge.theme.clustering_min_blocks",
+        key: "knowledge.themeClusteringMinBlocks",
         label: "Мин. блоков для запуска кластеризатора",
         description: "Если в Org меньше блоков — кластеризация пропускается.",
         schema: positiveInt(20),
         defaultValue: 20,
-      },
-      {
-        key: "knowledge.theme.clusterer_cron",
-        label: "Cron темы-кластеризатора",
-        description: "Расписание задачи theme-clusterer.",
-        schema: cronExpr,
-        defaultValue: "0 */6 * * *",
       },
     ],
   },
@@ -141,19 +132,13 @@ const GROUPS: SettingGroup[] = [
     icon: Sparkles,
     settings: [
       {
-        key: "knowledge.idea.cluster_threshold",
+        key: "knowledge.ideaClusterThreshold",
         label: "Порог кластера идей",
         schema: ratio01(0.82),
         defaultValue: 0.82,
       },
       {
-        key: "knowledge.idea.clusterer_cron",
-        label: "Cron кластеризатора идей",
-        schema: cronExpr,
-        defaultValue: "0 */8 * * *",
-      },
-      {
-        key: "knowledge.idea.min_supporters_for_cluster",
+        key: "knowledge.ideaMinSupportersForCluster",
         label: "Мин. сторонников идеи",
         description:
           "Минимум упоминаний разными участниками для группировки в Idea.",
@@ -168,29 +153,23 @@ const GROUPS: SettingGroup[] = [
     icon: Brain,
     settings: [
       {
-        key: "knowledge.insight.cluster_threshold",
+        key: "knowledge.insightClusterThreshold",
         label: "Порог кластера инсайтов",
         schema: ratio01(0.84),
         defaultValue: 0.84,
       },
       {
-        key: "knowledge.insight.cluster_cron",
-        label: "Cron кластеризатора инсайтов",
-        schema: cronExpr,
-        defaultValue: "0 */12 * * *",
-      },
-      {
-        key: "knowledge.insight.frequency_window_days",
+        key: "knowledge.insightFrequencyWindowDays",
         label: "Окно частоты (дни)",
         description: "Окно, в котором считаем повторяемость инсайта.",
         schema: positiveInt(30),
         defaultValue: 30,
       },
       {
-        key: "knowledge.insight.spike_ratio",
+        key: "knowledge.insightSpikeRatio",
         label: "Коэффициент всплеска",
         description: "Во сколько раз частота должна превысить базовую линию.",
-        schema: z.number().min(1).max(20).default(2),
+        schema: z.number().min(0).max(100).default(2),
         defaultValue: 2,
       },
     ],
@@ -201,32 +180,32 @@ const GROUPS: SettingGroup[] = [
     icon: Cpu,
     settings: [
       {
-        key: "knowledge.skill.min_observations",
+        key: "knowledge.skillMinObservations",
         label: "Мин. наблюдений по скиллу",
         schema: positiveInt(3),
         defaultValue: 3,
       },
       {
-        key: "knowledge.skill.trait_similarity_threshold",
+        key: "knowledge.skillTraitSimilarityThreshold",
         label: "Порог схожести трейтов",
         schema: ratio01(0.8),
         defaultValue: 0.8,
       },
       {
-        key: "knowledge.skill.lookback_months",
+        key: "knowledge.skillLookbackMonths",
         label: "Глубина просмотра (мес.)",
         schema: positiveInt(6),
         defaultValue: 6,
       },
       {
-        key: "knowledge.skill.decay_months",
+        key: "knowledge.skillDecayMonths",
         label: "Месяцы затухания",
         description: "Через сколько месяцев скилл начинает «угасать».",
         schema: positiveInt(12),
         defaultValue: 12,
       },
       {
-        key: "knowledge.skill.archive_months",
+        key: "knowledge.skillArchiveMonths",
         label: "Месяцы до архивации",
         schema: positiveInt(24),
         defaultValue: 24,
@@ -239,26 +218,20 @@ const GROUPS: SettingGroup[] = [
     icon: UserSquare,
     settings: [
       {
-        key: "knowledge.persona.build_cron",
-        label: "Cron сборки персон",
-        schema: cronExpr,
-        defaultValue: "0 3 * * *",
-      },
-      {
-        key: "knowledge.persona.min_traits",
+        key: "knowledge.personaMinTraits",
         label: "Мин. трейтов для персоны",
         schema: positiveInt(5),
         defaultValue: 5,
       },
       {
-        key: "knowledge.persona.role_agg_min_persons",
+        key: "knowledge.personaRoleAggMinPersons",
         label: "Мин. персон для роли",
         description: "Сколько людей нужно для агрегата роли.",
         schema: positiveInt(3),
         defaultValue: 3,
       },
       {
-        key: "knowledge.persona.executable_threshold_traits_count",
+        key: "knowledge.executablePersonaThresholdTraitsCount",
         label: "Порог executable-персоны (трейтов)",
         description:
           "С какого количества трейтов персона считается executable.",
@@ -273,7 +246,7 @@ const GROUPS: SettingGroup[] = [
     icon: Layers,
     settings: [
       {
-        key: "knowledge.block_ingest.window_segments",
+        key: "knowledge.blockIngestWindowSegments",
         label: "Размер окна сегментов",
         description:
           "Сколько сегментов транскрипта объединять в один кандидат-блок.",
@@ -281,13 +254,13 @@ const GROUPS: SettingGroup[] = [
         defaultValue: 8,
       },
       {
-        key: "knowledge.block_ingest.max_tokens_per_segment",
+        key: "knowledge.blockIngestMaxTokensPerSegment",
         label: "Макс. токенов на сегмент",
         schema: positiveInt(500),
         defaultValue: 500,
       },
       {
-        key: "knowledge.block.dynamic_score_decay_days",
+        key: "knowledge.blockDynamicScoreDecayDays",
         label: "Затухание динамики (дни)",
         description: "За сколько дней «свежесть» блока падает вдвое.",
         schema: positiveInt(14),
@@ -301,19 +274,19 @@ const GROUPS: SettingGroup[] = [
     icon: Link2,
     settings: [
       {
-        key: "knowledge.link.min_confidence",
+        key: "knowledge.linkMinConfidence",
         label: "Мин. уверенность связи",
         schema: ratio01(0.55),
         defaultValue: 0.55,
       },
       {
-        key: "knowledge.link.knn_top_k",
+        key: "knowledge.linkKnnTopK",
         label: "kNN top-k связей",
         schema: positiveInt(15, 100),
         defaultValue: 15,
       },
       {
-        key: "knowledge.linker.min_blocks",
+        key: "knowledge.linkerMinBlocks",
         label: "Мин. блоков для линкера",
         schema: positiveInt(10),
         defaultValue: 10,
@@ -326,7 +299,7 @@ const GROUPS: SettingGroup[] = [
     icon: Target,
     settings: [
       {
-        key: "knowledge.curation.auto_threshold_default",
+        key: "knowledge.curationAutoThresholdDefault",
         label: "Порог автокурации",
         description:
           "С какой confidence факт идёт в curation-очередь без человеческой проверки.",
@@ -334,7 +307,7 @@ const GROUPS: SettingGroup[] = [
         defaultValue: 0.9,
       },
       {
-        key: "knowledge.curation.deep_review_threshold_default",
+        key: "knowledge.curationDeepReviewThresholdDefault",
         label: "Порог deep-review",
         description:
           "Ниже этой уверенности факт уходит на глубокую проверку владельцем.",
@@ -342,7 +315,7 @@ const GROUPS: SettingGroup[] = [
         defaultValue: 0.65,
       },
       {
-        key: "knowledge.curation.item_expiry_days",
+        key: "knowledge.curationItemExpiryDays",
         label: "Срок жизни элемента очереди (дни)",
         schema: positiveInt(30),
         defaultValue: 30,

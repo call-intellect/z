@@ -9,12 +9,14 @@ import type { StructuralRetrievalFilters } from '../../dialog-layer/services/que
 import { RetrievalCacheService } from '../../dialog-layer/services/retrieval-cache.service';
 import {
   ChatV2Service as KnowledgeCoreChatV2Service,
+  RetrievalTraceSink,
   type ChatV2AnswerKind,
   type ChatV2Citation,
   type ChatV2Episode,
   type ChatV2Output,
   type ChatV2Scope as KnowledgeChatV2Scope,
   type ChatV2Stage,
+  type RetrievalTrace,
 } from '../../knowledge-core/services/chat-v2.service';
 
 export interface SynthesisInput {
@@ -37,6 +39,7 @@ export interface SynthesisInput {
   queryClass?: QueryClass | null;
   queryClassConfidence?: number | null;
   onStage?: (stage: ChatV2Stage) => void;
+  collectTrace?: boolean;
 }
 
 export interface SynthesisResult {
@@ -49,6 +52,7 @@ export interface SynthesisResult {
   needsClarification: boolean;
   answerKind: ChatV2AnswerKind;
   episodes?: ChatV2Episode[];
+  retrievalTrace?: RetrievalTrace;
 }
 
 @Injectable()
@@ -144,27 +148,36 @@ export class SynthesisService {
       }
     }
 
-    const result: ChatV2Output = await this.chatV2.ask({
-      tenantId: input.tenantId,
-      userId: input.userId,
-      scope: knowledgeScope,
-      scopeId: input.scopeRefId,
-      query: effectiveQuery,
-      history: input.history,
-      conversationSummary: input.conversationSummary ?? null,
-      queries: input.queries ?? undefined,
-      validAt: input.validAt ?? null,
-      structuralFilters: input.structuralFilters ?? null,
-      tableEntityHints: input.tableEntityHints,
-      tableEntityIds: input.tableEntityIds,
-      tableAggregation: input.tableAggregation,
-      intent: input.intent ?? undefined,
-      queryClass: input.queryClass ?? undefined,
-      queryClassConfidence: input.queryClassConfidence ?? undefined,
-      systemPromptOverride,
-      precomputedBlockIds: cachedRetrieval?.blockIds,
-      onStage: input.onStage,
-    });
+    const traceSink = input.collectTrace ? new RetrievalTraceSink() : undefined;
+
+    const result: ChatV2Output = await this.chatV2.ask(
+      {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        scope: knowledgeScope,
+        scopeId: input.scopeRefId,
+        query: effectiveQuery,
+        history: input.history,
+        conversationSummary: input.conversationSummary ?? null,
+        queries: input.queries ?? undefined,
+        validAt: input.validAt ?? null,
+        structuralFilters: input.structuralFilters ?? null,
+        tableEntityHints: input.tableEntityHints,
+        tableEntityIds: input.tableEntityIds,
+        tableAggregation: input.tableAggregation,
+        intent: input.intent ?? undefined,
+        queryClass: input.queryClass ?? undefined,
+        queryClassConfidence: input.queryClassConfidence ?? undefined,
+        systemPromptOverride,
+        precomputedBlockIds: cachedRetrieval?.blockIds,
+        onStage: input.onStage,
+      },
+      traceSink,
+    );
+
+    const retrievalTrace = traceSink
+      ? await this.chatV2.finalizeTrace(input.tenantId, traceSink)
+      : undefined;
 
     if (!cachedRetrieval && result.usedBlockIds.length > 0) {
       await this.retrievalCache.set(cacheKeyArgs, {
@@ -202,6 +215,7 @@ export class SynthesisService {
       needsClarification: result.needsClarification,
       answerKind: result.answerKind,
       episodes: result.episodes,
+      retrievalTrace,
     };
   }
 

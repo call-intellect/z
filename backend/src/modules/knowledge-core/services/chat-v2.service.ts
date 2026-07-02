@@ -28,8 +28,12 @@ import {
   RagRerankSchema,
   buildRagRerankUser,
 } from '../prompts/rag-pipeline.prompts';
-import { fuseRankedLists } from '../utils/rank-fusion.util';
+import { fuseRankedLists, reciprocalRankFusion } from '../utils/rank-fusion.util';
 
+import {
+  RetrievalTraceSink,
+  type RetrievalTrace,
+} from './chat-v2-retrieval-trace';
 import {
   ChatV2RetrievalService,
   type ChatV2Scope,
@@ -55,6 +59,10 @@ import { ReasoningChainService } from './reasoning-chain.service';
  * Не делает stream/SSE — это vNext (см. decisions-log Фаза 6).
  */
 export type { ChatV2Scope } from './chat-v2-retrieval.service';
+export {
+  RetrievalTraceSink,
+  type RetrievalTrace,
+} from './chat-v2-retrieval-trace';
 
 /**
  * §4 Ф1 (2026-06-11) — стадии прогресса AI-чата для SSE-стриминга. Эмитятся
@@ -793,10 +801,11 @@ export class ChatV2Service {
    * на уровне chat.service.ts (через ChatRepository) — этот сервис чистый,
    * без побочных эффектов на историю.
    */
-  async ask(input: ChatV2Input): Promise<ChatV2Output> {
+  async ask(input: ChatV2Input, trace?: RetrievalTraceSink): Promise<ChatV2Output> {
     const { tenantId, scope, scopeId, query } = input;
     const { kRetrieve, kContext } = await this.resolveKSplit();
     const graphHops = this.cfg.knowledgeCore.chatV2GraphHops;
+    trace?.setGraphHops(graphHops);
 
     // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
     const kaEnforcement = this.cfg.knowledgeAccess.enforcement;
@@ -840,16 +849,20 @@ export class ChatV2Service {
       overviewSettled,
       episodesSettled,
     ] = await Promise.allSettled([
-      this.runRetrieval(input, {
-        tenantId,
-        scope,
-        scopeId: scopeId ?? null,
-        query,
-        kRetrieve,
-        kContext,
-        graphHops,
-        accessWhere,
-      }),
+      this.runRetrieval(
+        input,
+        {
+          tenantId,
+          scope,
+          scopeId: scopeId ?? null,
+          query,
+          kRetrieve,
+          kContext,
+          graphHops,
+          accessWhere,
+        },
+        trace,
+      ),
       this.runTableBranch(input, tenantId),
       this.runTemporalBranch(input, tenantId),
       this.runOverviewBranch(input, tenantId),
@@ -1093,6 +1106,7 @@ export class ChatV2Service {
       contextBlocks,
     );
     const usedBlockIds = this.parseUsedBlockIds(clarifyStripped, contextBlocks);
+    trace?.setUsedBlockIds(usedBlockIds);
 
     return {
       message: stripBlockMarkers(clarifyStripped),
@@ -1107,6 +1121,29 @@ export class ChatV2Service {
       answerKind,
       episodes: episodes.length > 0 ? episodes : undefined,
     };
+  }
+
+  async finalizeTrace(
+    tenantId: string,
+    trace: RetrievalTraceSink,
+  ): Promise<RetrievalTrace> {
+    const ids = trace.collectBlockIds();
+    const names = new Map<string, string>();
+    if (ids.length > 0) {
+      try {
+        const rows = await this.prisma.ideaBlock.findMany({
+          where: { id: { in: ids }, tenantId },
+          select: { id: true, name: true },
+        });
+        for (const r of rows) names.set(r.id, r.name);
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'chat-v2 finalizeTrace: загрузка имён блоков упала — трейс с id вместо имён',
+        );
+      }
+    }
+    return trace.build(names);
   }
 
   // ─────────────────────────── private ───────────────────────────
@@ -1136,15 +1173,23 @@ export class ChatV2Service {
   private async runRetrieval(
     input: ChatV2Input,
     ctx: RetrievalCtx,
+    trace?: RetrievalTraceSink,
   ): Promise<string[]> {
     const { tenantId, query, kRetrieve, kContext } = ctx;
 
     if (input.precomputedBlockIds && input.precomputedBlockIds.length > 0) {
-      return [...input.precomputedBlockIds].slice(0, kContext);
+      const precomputed = [...input.precomputedBlockIds].slice(0, kContext);
+      trace?.setQueries(input.queries && input.queries.length > 0 ? [...input.queries] : [query]);
+      trace?.setRoute('semantic-only');
+      trace?.markGraphSkipped('precomputed-block-ids');
+      trace?.setPool(precomputed.map((id) => ({ blockId: id, score: 0 })));
+      trace?.setRerank(precomputed.map((id) => ({ blockId: id, score: 0 })));
+      return precomputed;
     }
 
     const queries: string[] =
       input.queries && input.queries.length > 0 ? [...input.queries] : [query];
+    trace?.setQueries(queries);
 
     const routerEnabled = await this.cfg.getDynamic<boolean>(
       'knowledge.router_v2_enabled',
@@ -1172,6 +1217,7 @@ export class ChatV2Service {
         forceStructuralFallback);
 
     this.metrics.incRouterBothWays({ triggered: bothWays ? 'yes' : 'no' });
+    trace?.setRoute(bothWays ? 'both' : 'semantic-only');
 
     const useSingleSemanticQuery = routerEnabled && isStructuralClass;
     const semanticQueries = useSingleSemanticQuery ? [query] : queries;
@@ -1179,8 +1225,9 @@ export class ChatV2Service {
     const rrfK = await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60);
 
     if (!bothWays) {
-      const semantic = await this.runSemanticRoute(input, ctx, semanticQueries, rrfK);
+      const semantic = await this.runSemanticRoute(input, ctx, semanticQueries, rrfK, trace);
       if (semantic.length === 0) return [];
+      trace?.setPool(semantic.map((id) => ({ blockId: id, score: 0 })));
       const reranked = await this.conditionalRerank({
         tenantId,
         question: query,
@@ -1189,12 +1236,13 @@ export class ChatV2Service {
         history: input.history,
         reformulations: queries,
       });
+      trace?.setRerank(reranked.slice(0, kContext).map((id) => ({ blockId: id, score: 0 })));
       return reranked.slice(0, kContext);
     }
 
     const [semanticSettled, structuralSettled] = await Promise.allSettled([
-      this.runSemanticRoute(input, ctx, semanticQueries, rrfK),
-      this.runStructuralRoute(input, ctx),
+      this.runSemanticRoute(input, ctx, semanticQueries, rrfK, trace),
+      this.runStructuralRoute(input, ctx, trace),
     ]);
 
     const semantic =
@@ -1227,6 +1275,22 @@ export class ChatV2Service {
           ).slice(0, kRetrieve)
         : semantic.slice(0, kRetrieve);
 
+    if (trace) {
+      const fusionScores =
+        structural.length > 0
+          ? reciprocalRankFusion(
+              [
+                structural.map((id) => ({ id })),
+                semantic.map((id) => ({ id })),
+              ],
+              rrfK,
+            )
+          : null;
+      trace.setPool(
+        merged.map((id) => ({ blockId: id, score: fusionScores?.get(id) ?? 0 })),
+      );
+    }
+
     const reranked = await this.conditionalRerank({
       tenantId,
       question: query,
@@ -1235,6 +1299,7 @@ export class ChatV2Service {
       history: input.history,
       reformulations: queries,
     });
+    trace?.setRerank(reranked.slice(0, kContext).map((id) => ({ blockId: id, score: 0 })));
     return reranked.slice(0, kContext);
   }
 
@@ -1243,6 +1308,7 @@ export class ChatV2Service {
     ctx: RetrievalCtx,
     queries: ReadonlyArray<string>,
     rrfK: number,
+    trace?: RetrievalTraceSink,
   ): Promise<string[]> {
     const { tenantId, scope, scopeId, kRetrieve, graphHops, accessWhere } = ctx;
 
@@ -1255,23 +1321,26 @@ export class ChatV2Service {
     for (const q of queries) {
       if (!q || q.length === 0) continue;
       perQuery.push(
-        await this.retrieval.fetchCandidates({
-          tenantId,
-          scope,
-          scopeId: scopeId ?? null,
-          query: q,
-          limit: perQueryLimit,
-          graphHops,
-          validAt: input.validAt ?? null,
-          accessWhere,
-          dateFrom: input.structuralFilters?.dateFrom ?? null,
-          dateTo: input.structuralFilters?.dateTo ?? null,
-          signalTypes: input.structuralFilters?.signalTypes,
-          entityIds: input.structuralFilters?.entityIds,
-          themeBranches: input.structuralFilters?.themeBranches,
-          bitemporalActiveOnly:
-            input.structuralFilters?.bitemporalActiveOnly ?? false,
-        }),
+        await this.retrieval.fetchCandidates(
+          {
+            tenantId,
+            scope,
+            scopeId: scopeId ?? null,
+            query: q,
+            limit: perQueryLimit,
+            graphHops,
+            validAt: input.validAt ?? null,
+            accessWhere,
+            dateFrom: input.structuralFilters?.dateFrom ?? null,
+            dateTo: input.structuralFilters?.dateTo ?? null,
+            signalTypes: input.structuralFilters?.signalTypes,
+            entityIds: input.structuralFilters?.entityIds,
+            themeBranches: input.structuralFilters?.themeBranches,
+            bitemporalActiveOnly:
+              input.structuralFilters?.bitemporalActiveOnly ?? false,
+          },
+          trace,
+        ),
       );
     }
 
@@ -1288,9 +1357,15 @@ export class ChatV2Service {
   private async runStructuralRoute(
     input: ChatV2Input,
     ctx: RetrievalCtx,
+    trace?: RetrievalTraceSink,
   ): Promise<string[]> {
     if (input.queryClass === 'overview') {
-      return this.runOverviewStructuralRoute(input, ctx);
+      const ids = await this.runOverviewStructuralRoute(input, ctx);
+      trace?.setStructuralAggregateHits(
+        'overview:themes',
+        ids.map((id) => ({ blockId: id, score: 0 })),
+      );
+      return ids;
     }
     const queryClass = input.queryClass;
     if (queryClass !== 'list' && queryClass !== 'fact' && queryClass !== 'topic') {
@@ -1304,12 +1379,17 @@ export class ChatV2Service {
       this.metrics.incStructuralFallbackUsed({ queryClass });
     }
 
-    return this.retrieval.runStructuralAggregate({
+    const ids = await this.retrieval.runStructuralAggregate({
       tenantId: ctx.tenantId,
       personIds,
       entityIds,
       limit: ctx.kRetrieve,
     });
+    trace?.setStructuralAggregateHits(
+      'aggregate:persons+entities',
+      ids.map((id) => ({ blockId: id, score: 0 })),
+    );
+    return ids;
   }
 
   private async describePersonAndEntityFilters(

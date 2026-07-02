@@ -28,6 +28,7 @@ import type {
   ChatV2AnswerKind,
   ChatV2Episode,
   ChatV2Stage,
+  RetrievalTrace,
 } from '../knowledge-core/services/chat-v2.service';
 
 import { ChatV2ConversationsService } from './services/conversations.service';
@@ -71,6 +72,7 @@ export interface EphemeralAnswer {
   mode: ChatV2Mode;
   answerKind: ChatV2AnswerKind;
   episodes?: ChatV2Episode[];
+  retrievalTrace?: RetrievalTrace;
 }
 
 interface ResolveAnswerArgs {
@@ -86,6 +88,7 @@ interface ResolveAnswerArgs {
   history: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
   conversationSummary: string | null;
   onStage?: (stage: ChatV2Stage) => void;
+  collectTrace?: boolean;
 }
 
 interface ResolvedAnswer {
@@ -99,6 +102,7 @@ interface ResolvedAnswer {
   cacheHit: boolean;
   answerKind: ChatV2AnswerKind;
   episodes?: ChatV2Episode[];
+  retrievalTrace?: RetrievalTrace;
 }
 
 @Injectable()
@@ -261,6 +265,7 @@ export class ChatV2OrchestrationService {
     intent?: DialogIntent;
     asOf?: string;
     onStage?: (stage: ChatV2Stage) => void;
+    collectTrace?: boolean;
   }): Promise<EphemeralAnswer> {
     const mode: ChatV2Mode = input.mode ?? this.cfg.chatV2.defaultMode;
     const scope: ChatV2Scope = input.scope ?? 'org';
@@ -289,6 +294,7 @@ export class ChatV2OrchestrationService {
       history: input.history,
       conversationSummary: input.conversationSummary ?? null,
       onStage: input.onStage,
+      collectTrace: input.collectTrace,
     });
 
     return {
@@ -301,6 +307,7 @@ export class ChatV2OrchestrationService {
       mode,
       answerKind: resolved.answerKind,
       episodes: resolved.episodes,
+      retrievalTrace: resolved.retrievalTrace,
     };
   }
 
@@ -382,6 +389,7 @@ export class ChatV2OrchestrationService {
       queryClass: dialogResult.queryClass,
       queryClassConfidence: dialogResult.queryClassConfidence,
       onStage: args.onStage,
+      collectTrace: args.collectTrace,
     });
 
     const usedBlockIds = (result.retrievalMeta?.usedBlockIds as string[] | undefined) ?? [];
@@ -439,6 +447,7 @@ export class ChatV2OrchestrationService {
       cacheHit: false,
       answerKind: result.answerKind,
       episodes: result.episodes,
+      retrievalTrace: result.retrievalTrace,
       llmMeta: result.llmMeta,
       retrievalMeta: result.retrievalMeta,
     };

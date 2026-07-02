@@ -185,6 +185,7 @@ describe('ChatV2Service — split K (kRetrieve пул → реранк → kCont
 
     expect(fetchCandidates).toHaveBeenCalledWith(
       expect.objectContaining({ limit: 30 }),
+      undefined,
     );
   });
 

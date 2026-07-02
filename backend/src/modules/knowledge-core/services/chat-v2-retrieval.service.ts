@@ -5,6 +5,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 
+import { RetrievalTraceSink } from './chat-v2-retrieval-trace';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { ACTIVE_LINK_FILTER } from './link-read-filter';
 
@@ -237,7 +238,10 @@ export class ChatV2RetrievalService {
   /**
    * Главный entry-point. Возвращает blockId'ы в порядке убывания релевантности.
    */
-  async fetchCandidates(input: RetrievalInput): Promise<RankedBlockId[]> {
+  async fetchCandidates(
+    input: RetrievalInput,
+    trace?: RetrievalTraceSink,
+  ): Promise<RankedBlockId[]> {
     let qvec: number[] | null = null;
     try {
       qvec = await this.embeddings.embedQuery(input.query);
@@ -316,23 +320,41 @@ export class ChatV2RetrievalService {
         limit: input.limit,
       });
     }
-    if (ranked.length === 0) return [];
+    trace?.addDoorHits(
+      input.query,
+      structural ? 'structural' : 'semantic',
+      ranked.map((r) => ({ blockId: r.blockId, score: r.score })),
+    );
+    if (ranked.length === 0) {
+      if (structural) trace?.markGraphSkipped('structural-filter-active');
+      else if (input.graphHops <= 0) trace?.markGraphSkipped('graphHops<=0');
+      else trace?.markGraphSkipped('no-seed-blocks');
+      return [];
+    }
 
     // 3) 1-hop graph expansion (по IdeaBlockLink, status='active').
     // При структурном фильтре граф ПРОПУСКАЕМ: фильтр задаёт точное множество
     // ответа, а 1-hop-соседи вне фильтра вернули бы тихие типовые/временные
     // ошибки (совпавшие соседи и так уже в pool).
+    if (structural) {
+      trace?.markGraphSkipped('structural-filter-active');
+    } else if (input.graphHops <= 0) {
+      trace?.markGraphSkipped('graphHops<=0');
+    }
     const graphAdded =
       !structural && input.graphHops > 0
-        ? await this.expandViaGraph({
-            tenantId: input.tenantId,
-            seedBlockIds: ranked.map((r) => r.blockId),
-            knownIds: new Set(ranked.map((r) => r.blockId)),
-            extraLimit: input.graphHops * 5,
-            validAt: input.validAt ?? null,
-            accessWhere: input.accessWhere,
-            contourGroupId: input.contourGroupId,
-          })
+        ? await this.expandViaGraph(
+            {
+              tenantId: input.tenantId,
+              seedBlockIds: ranked.map((r) => r.blockId),
+              knownIds: new Set(ranked.map((r) => r.blockId)),
+              extraLimit: input.graphHops * 5,
+              validAt: input.validAt ?? null,
+              accessWhere: input.accessWhere,
+              contourGroupId: input.contourGroupId,
+            },
+            trace,
+          )
         : [];
 
     return [...ranked, ...graphAdded];
@@ -1118,17 +1140,20 @@ export class ChatV2RetrievalService {
    * Учитываем все типы связей — для chat'а полезны и `causes`, и `develops`,
    * и `shares_topic`, и `shares_entity`. Лимит — `extraLimit` всего.
    */
-  private async expandViaGraph(args: {
-    tenantId: string;
-    seedBlockIds: string[];
-    knownIds: Set<string>;
-    extraLimit: number;
-    validAt: Date | null;
-    accessWhere?: Record<string, unknown>;
-    /** Support-desk Ф2 (R-INV-1) — закрытый контур: 1-hop-соседи тоже обязаны
-     *  быть в контуре, иначе граф-расширение «протечёт» наружу. Безусловный. */
-    contourGroupId?: string;
-  }): Promise<RankedBlockId[]> {
+  private async expandViaGraph(
+    args: {
+      tenantId: string;
+      seedBlockIds: string[];
+      knownIds: Set<string>;
+      extraLimit: number;
+      validAt: Date | null;
+      accessWhere?: Record<string, unknown>;
+      /** Support-desk Ф2 (R-INV-1) — закрытый контур: 1-hop-соседи тоже обязаны
+       *  быть в контуре, иначе граф-расширение «протечёт» наружу. Безусловный. */
+      contourGroupId?: string;
+    },
+    trace?: RetrievalTraceSink,
+  ): Promise<RankedBlockId[]> {
     const { tenantId, seedBlockIds, knownIds, extraLimit, validAt } = args;
     if (seedBlockIds.length === 0 || extraLimit <= 0) return [];
 
@@ -1217,7 +1242,7 @@ export class ChatV2RetrievalService {
     });
     const valid = new Set(canonical.map((b) => b.id));
 
-    return sorted
+    const result = sorted
       .filter(([id]) => valid.has(id))
       .map(([id, conf]) => ({
         blockId: id,
@@ -1225,6 +1250,82 @@ export class ChatV2RetrievalService {
         score: -1 + conf * 0.001,
         fromGraph: true,
       }));
+
+    if (trace) {
+      await this.recordGraphExpansionTrace(
+        trace,
+        tenantId,
+        seedBlockIds,
+        result.map((r) => r.blockId),
+        temporalWhere,
+      );
+    }
+
+    return result;
+  }
+
+  private async recordGraphExpansionTrace(
+    trace: RetrievalTraceSink,
+    tenantId: string,
+    seedBlockIds: string[],
+    neighborIds: string[],
+    temporalWhere: Record<string, unknown>,
+  ): Promise<void> {
+    if (neighborIds.length === 0) {
+      trace.addGraphExpansion(seedBlockIds, []);
+      return;
+    }
+    const seedSet = new Set(seedBlockIds);
+    const neighborSet = new Set(neighborIds);
+    try {
+      const edges = await this.prisma.ideaBlockLink.findMany({
+        where: {
+          tenantId,
+          ...ACTIVE_LINK_FILTER,
+          ...temporalWhere,
+          OR: [
+            { fromBlockId: { in: seedBlockIds }, toBlockId: { in: neighborIds } },
+            { fromBlockId: { in: neighborIds }, toBlockId: { in: seedBlockIds } },
+          ],
+        },
+        select: {
+          fromBlockId: true,
+          toBlockId: true,
+          relationType: true,
+          confidence: true,
+        },
+        orderBy: { confidence: 'desc' },
+      });
+      const seen = new Set<string>();
+      const neighbors = [];
+      for (const e of edges) {
+        const neighbor = neighborSet.has(e.toBlockId) ? e.toBlockId : e.fromBlockId;
+        const seed = seedSet.has(e.fromBlockId) ? e.fromBlockId : e.toBlockId;
+        if (seen.has(neighbor)) continue;
+        seen.add(neighbor);
+        neighbors.push({
+          blockId: neighbor,
+          viaRelation: String(e.relationType),
+          fromBlockId: seed,
+          confidence: toFiniteNumber(e.confidence) ?? 0,
+        });
+      }
+      trace.addGraphExpansion(seedBlockIds, neighbors);
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: recordGraphExpansionTrace упал — трейс без деталей рёбер',
+      );
+      trace.addGraphExpansion(
+        seedBlockIds,
+        neighborIds.map((id) => ({
+          blockId: id,
+          viaRelation: 'unknown',
+          fromBlockId: seedBlockIds[0] ?? id,
+          confidence: 0,
+        })),
+      );
+    }
   }
 }
 

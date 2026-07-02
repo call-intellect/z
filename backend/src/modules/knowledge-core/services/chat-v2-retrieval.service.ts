@@ -581,6 +581,54 @@ export class ChatV2RetrievalService {
     }));
   }
 
+  async listEpisodesByDateRange(args: {
+    tenantId: string;
+    dateFrom: Date;
+    dateTo: Date;
+    limit: number;
+  }): Promise<
+    Array<{
+      id: string;
+      title: string;
+      occurredAt: Date;
+      kind: string;
+      rawEventId: string;
+    }>
+  > {
+    const { tenantId, dateFrom, dateTo, limit } = args;
+    if (limit <= 0) return [];
+    try {
+      const rows = await this.prisma.sourceEpisode.findMany({
+        where: {
+          tenantId,
+          occurredAt: { gte: dateFrom, lte: dateTo },
+        },
+        select: {
+          id: true,
+          title: true,
+          occurredAt: true,
+          kind: true,
+          rawEventId: true,
+        },
+        orderBy: { occurredAt: 'desc' },
+        take: limit,
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        occurredAt: r.occurredAt,
+        kind: r.kind,
+        rawEventId: r.rawEventId,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: listEpisodesByDateRange упал — возвращаем []',
+      );
+      return [];
+    }
+  }
+
   async selectTopThemes(args: {
     tenantId: string;
     query: string;

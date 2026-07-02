@@ -747,6 +747,7 @@ interface RetrievalCtx {
   filterMode: 'boost' | 'hard';
   filterBoostWeight: number;
   entityLinkHops: number;
+  aggregationMode: boolean;
   accessWhere: Record<string, unknown> | undefined;
 }
 
@@ -835,6 +836,14 @@ export class ChatV2Service {
       undefined,
       1,
     );
+    const aggregationMode = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2AggregationMode',
+      undefined,
+      true,
+    );
+    const broadCoverage =
+      aggregationMode &&
+      (input.queryClass === 'overview' || input.queryClass === 'list');
 
     // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
     const kaEnforcement = this.cfg.knowledgeAccess.enforcement;
@@ -892,6 +901,7 @@ export class ChatV2Service {
           filterMode,
           filterBoostWeight,
           entityLinkHops,
+          aggregationMode,
           accessWhere,
         },
         trace,
@@ -1052,6 +1062,7 @@ export class ChatV2Service {
         // Ф10 мост К1 — список эпизодов-источников. Пусто → секция «Источники» не выводится.
         episodes,
         approximate: answerApproximate,
+        broadCoverage,
       },
     );
 
@@ -1257,7 +1268,13 @@ export class ChatV2Service {
     this.metrics.incRouterBothWays({ triggered: bothWays ? 'yes' : 'no' });
     trace?.setRoute(bothWays ? 'both' : 'semantic-only');
 
-    const useSingleSemanticQuery = routerEnabled && isStructuralClass;
+    const useSingleSemanticQuery =
+      routerEnabled &&
+      isStructuralClass &&
+      !(
+        ctx.aggregationMode &&
+        (queryClass === 'overview' || queryClass === 'list')
+      );
     const semanticQueries = useSingleSemanticQuery ? [query] : queries;
 
     const rrfK = await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60);
@@ -1741,12 +1758,37 @@ export class ChatV2Service {
     if (input.queryClass !== 'list') return [];
     const personIds = input.structuralFilters?.personIds ?? [];
     const entityIds = input.structuralFilters?.entityIds ?? [];
-    if (personIds.length === 0 && entityIds.length === 0) return [];
     const limit = await this.cfg.getDynamic<number>(
       'knowledge.list_episodes_limit',
       undefined,
       30,
     );
+    if (personIds.length === 0 && entityIds.length === 0) {
+      const dateFrom = input.structuralFilters?.dateFrom ?? null;
+      const dateTo = input.structuralFilters?.dateTo ?? null;
+      const aggregationMode = await this.cfg.getDynamic<boolean>(
+        'knowledge.chatV2AggregationMode',
+        undefined,
+        true,
+      );
+      if (aggregationMode && dateFrom && dateTo) {
+        try {
+          return await this.retrieval.listEpisodesByDateRange({
+            tenantId,
+            dateFrom,
+            dateTo,
+            limit,
+          });
+        } catch (err) {
+          this.logger.warn(
+            { tenantId, err: err instanceof Error ? err.message : String(err) },
+            'chat-v2 runEpisodesBranch: перечень за период упал — возвращаем []',
+          );
+          return [];
+        }
+      }
+      return [];
+    }
     try {
       return await this.retrieval.listEpisodesByActors({
         tenantId,
@@ -2171,6 +2213,7 @@ export class ChatV2Service {
       themeMap?: ReadonlyArray<{ label: string; markdown: string }>;
       episodes?: ReadonlyArray<ChatV2Episode>;
       approximate?: boolean;
+      broadCoverage?: boolean;
     },
   ): string {
     const parts: string[] = [];
@@ -2178,6 +2221,13 @@ export class ChatV2Service {
     if (extra?.approximate) {
       parts.push(
         'Важно: ниже — БЛИЗКИЕ по смыслу материалы; точного совпадения по запросу могло не найтись. Ответь по тому, что есть, и если это лишь близкое — прямо обозначь, что точного совпадения нет. Не утверждай отсутствие того, чего ты не искал.',
+        '',
+      );
+    }
+
+    if (extra?.broadCoverage) {
+      parts.push(
+        'Это обзорный или списочный вопрос: перечисли ВСЁ найденное по теме из контекста ниже. НЕ утверждай, что чего-то нет или «не зафиксировано», если ты этого не искал — просто не упоминай отсутствующее.',
         '',
       );
     }

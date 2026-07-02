@@ -304,7 +304,7 @@ typecheck (вкл. `.spec`)/lint/build зелёные; vitest по затрон�
 
 | Ф7 под-фаза | Статус | Коммит |
 |---|---|---|
-| Ф7.2 — Regulation/Instruction: owner author-fallback + personSubjectIds union (живой combined-путь) | [x] реализовано | `work/2026-06-29` |
+| Ф7.2 — Regulation/Instruction: owner author-fallback + personSubjectIds union (живой combined-путь) | [x] реализовано | `922df7f5` |
 | Ф7.1 — legacy-чистка probe-инспектора регламентов (сохранить owner-resolver-лестницу) | [ ] к реализации | — |
 | Ф7.3 — Process/Policy: owner author-fallback + personSubjectIds (пост-привязка в block-ingest, без правки guard GraphService) | [ ] к реализации | — |
 

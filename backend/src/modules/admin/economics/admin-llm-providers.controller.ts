@@ -81,4 +81,9 @@ export class AdminLlmProvidersController {
     const provider = await this.svc.getById(id);
     return this.smokeTest.testProvider(provider.name);
   }
+
+  @Post(':id/models/discover')
+  discoverModels(@Param('id') id: string) {
+    return this.svc.discoverModels(id);
+  }
 }

@@ -19,6 +19,8 @@ export interface ProtocolAdapterProviderInfo {
   capability?: string;
   /** Переопределение hard-timeout dispatch, мс. NULL/undefined = используется дефолт роутера. */
   timeoutMs?: number | null;
+  /** Модель по умолчанию провайдера из LlmProvider.defaultModelKey (DB). Отдельно от defaultModel (ENV-фолбэк buildFromEnv). */
+  defaultModelKey?: string | null;
 }
 
 /** Единый контракт переопределения подключения — передаётся из ProviderInfoResolver (DB) в легаси-сервисы, чтобы admin-правка baseUrl/ключа реально действовала. */

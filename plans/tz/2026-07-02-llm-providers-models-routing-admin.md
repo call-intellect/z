@@ -236,7 +236,7 @@ export const PutChainSchema = z.object({
 - Acceptance: `grep -q "USE_PROTOCOL_ADAPTER_REGISTRY: zBool(true)" backend/src/common/config/env.schema.ts`; parity-spec зелёный на всех 7; `bunx vitest run src/modules/ai/services` зелёный целиком; строка флага в feature-flags.md.
 - Закрывает: R8.
 
-### Ф5 — Дискавери моделей + defaultModelKey в dispatch `[ ]`
+### Ф5 — Дискавери моделей + defaultModelKey в dispatch `[x]`
 **Ценность:** как супер-админ, получаю список моделей провайдера кнопкой, а не ручным вводом вслепую.
 - Входит: `POST /api/v1/admin/llm-providers/:id/models/discover` (контракт выше, Zod-DTO, Swagger); `dispatch` использует `providerInfo.defaultModelKey` перед фолбэком на defaultModel legacy-сервиса (`params.model ?? entry.model ?? info.defaultModelKey ?? legacy`).
 - НЕ входит: UI (Ф7); авто-импорт без выбора админа.

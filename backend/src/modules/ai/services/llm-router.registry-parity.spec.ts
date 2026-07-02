@@ -464,3 +464,130 @@ describe('Фаза 4 — parity: registry-путь эквивалентен lega
     expect(registryRecord?.fallbackReason).toContain('rate_limit');
   });
 });
+
+describe('Фаза 5 — dispatch учитывает LlmProvider.defaultModelKey из БД', () => {
+  /**
+   * Строит registry-роутер для 'kie' с DB-строкой llmProvider (не buildFromEnv)
+   * — resolveByName идёт по DB-ветке ProviderInfoResolver, откуда и берётся
+   * defaultModelKey. Маршрут — плоский массив ['kie'] (без объекта {model}),
+   * т.е. entry.model не задан.
+   */
+  function buildKieRouter(opts: { defaultModelKey: string | null }) {
+    const findMany = vi.fn(async () => [
+      {
+        id: 'r-kie',
+        taskType: 'chat-v2',
+        providers: ['kie'],
+        isActive: true,
+        tenantId: null,
+        experiment: null,
+        updatedAt: new Date(),
+      },
+    ]);
+    const llmProviderFindUnique = vi.fn(async () => ({
+      name: 'kie',
+      baseUrl: 'https://kie.db.test',
+      apiKeyEncrypted: null,
+      protocolKind: 'kie-native',
+      defaultHeaders: null,
+      useProxy: false,
+      proxyPath: null,
+      timeoutMs: null,
+      // effectiveDataClass по умолчанию='internal' (Фаза 11) — capability
+      // провайдера должен покрывать хотя бы 'internal', иначе фильтр
+      // dataClass отбрасывает кандидата до диспатча (NoEligibleProviderError).
+      capability: 'internal',
+      defaultModelKey: opts.defaultModelKey,
+    }));
+    const prisma = {
+      llmTaskRoute: {
+        findMany,
+        findFirst: vi.fn(async () => null),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      llmModelPrice: { findFirst: vi.fn(async () => null) },
+      llmProvider: { findUnique: llmProviderFindUnique },
+    } as unknown as PrismaService;
+
+    const kieSpy = vi.fn(async () => makeOutput('kie', 'used-model'));
+    const kieSvc = { complete: kieSpy } as unknown as KieService;
+    const anthropicSvc = { complete: vi.fn() } as unknown as AnthropicService;
+    const minimaxSvc = { complete: vi.fn() } as unknown as MinimaxService;
+    const openaiSvc = { complete: vi.fn() } as unknown as OpenAiProxyService;
+    const deepseekSvc = { complete: vi.fn() } as unknown as DeepSeekService;
+    const ollamaSvc = { complete: vi.fn() } as unknown as OllamaService;
+    const grsaiSvc = { complete: vi.fn() } as unknown as GrsaiService;
+
+    const usage = { record: vi.fn() } as unknown as AiUsageLogService;
+    const metrics = {
+      incLlmRouterDispatch: vi.fn(),
+      incCoreDataClassViolation: vi.fn(),
+      incLlmCostUnpriced: vi.fn(),
+      incCoreLlmNoProvider: vi.fn(),
+      incLlmBudgetExceeded: vi.fn(),
+      incLlmThinkingModelGuard: vi.fn(),
+      incDeepseekSchemaToToolConversion: vi.fn(),
+    } as unknown as BusinessMetricsService;
+
+    const cfg = makeCfg();
+    const crypto = makeCryptoNoop();
+    const providerInfo = new ProviderInfoResolver(prisma, cfg, crypto);
+
+    const anthropicMessagesAdapter = new AnthropicMessagesProtocolAdapter(anthropicSvc, minimaxSvc);
+    const ollamaNativeAdapter = new OllamaNativeProtocolAdapter(ollamaSvc);
+    const kieNativeAdapter = new KieProtocolAdapter(kieSvc);
+    const grsaiNativeAdapter = new GrsaiProtocolAdapter(grsaiSvc);
+    const openaiChatAdapter = new OpenAiChatProtocolAdapter(cfg, undefined);
+    const openaiResponsesAdapter = new OpenAiResponsesProtocolAdapter(openaiSvc);
+    const customHttpAdapter = new CustomHttpProtocolAdapter();
+    const registry = new LlmProtocolAdapterRegistry(
+      openaiChatAdapter,
+      openaiResponsesAdapter,
+      anthropicMessagesAdapter,
+      ollamaNativeAdapter,
+      kieNativeAdapter,
+      grsaiNativeAdapter,
+      customHttpAdapter,
+    );
+
+    const router = new LlmRouterService(
+      prisma,
+      anthropicSvc,
+      minimaxSvc,
+      openaiSvc,
+      deepseekSvc,
+      ollamaSvc,
+      kieSvc,
+      grsaiSvc,
+      usage,
+      metrics,
+      cfg,
+      registry,
+      providerInfo,
+    );
+    return { router, kieSpy };
+  }
+
+  it('маршрут без явной модели у провайдера с defaultModelKey="my-default-model" → адаптер вызывается с input.model="my-default-model"', async () => {
+    const { router, kieSpy } = buildKieRouter({ defaultModelKey: 'my-default-model' });
+    await router.refreshCache();
+    await router.call({ ...baseParams, taskType: 'chat-v2' as LlmTaskType });
+
+    expect(kieSpy).toHaveBeenCalledOnce();
+    const call = kieSpy.mock.calls[0] as unknown[];
+    const input = call[0] as { model?: string };
+    expect(input.model).toBe('my-default-model');
+  });
+
+  it('маршрут без явной модели у провайдера с defaultModelKey=null → input.model не передаётся вовсе (undefined, поведение как раньше)', async () => {
+    const { router, kieSpy } = buildKieRouter({ defaultModelKey: null });
+    await router.refreshCache();
+    await router.call({ ...baseParams, taskType: 'chat-v2' as LlmTaskType });
+
+    expect(kieSpy).toHaveBeenCalledOnce();
+    const call = kieSpy.mock.calls[0] as unknown[];
+    const input = call[0] as { model?: string };
+    expect(input.model).toBeUndefined();
+  });
+});

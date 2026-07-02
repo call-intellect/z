@@ -1,7 +1,12 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdminLlmProvidersService } from './admin-llm-providers.service';
+import { discoverProviderModels } from './discover-provider-models.util';
+
+vi.mock('./discover-provider-models.util', () => ({
+  discoverProviderModels: vi.fn(),
+}));
 
 const FIXED_DATE = new Date('2026-01-01T00:00:00.000Z');
 
@@ -36,17 +41,20 @@ describe('AdminLlmProvidersService', () => {
   const findUnique = vi.fn();
   const create = vi.fn();
   const update = vi.fn();
+  const llmModelFindMany = vi.fn();
   const encrypt = vi.fn(() => 'gcm:v1:mocked');
   const isEncrypted = vi.fn((v: string) => v.startsWith('gcm:v1:'));
   const invalidate = vi.fn();
+  const resolveByName = vi.fn();
 
   const prisma = {
     llmProvider: { findMany, findUnique, create, update },
+    llmModel: { findMany: llmModelFindMany },
   } as unknown as ConstructorParameters<typeof AdminLlmProvidersService>[0];
   const crypto = { encrypt, isEncrypted } as unknown as ConstructorParameters<
     typeof AdminLlmProvidersService
   >[1];
-  const providerInfo = { invalidate } as unknown as ConstructorParameters<
+  const providerInfo = { invalidate, resolveByName } as unknown as ConstructorParameters<
     typeof AdminLlmProvidersService
   >[2];
 
@@ -55,6 +63,7 @@ describe('AdminLlmProvidersService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     encrypt.mockReturnValue('gcm:v1:mocked');
+    llmModelFindMany.mockResolvedValue([]);
     svc = new AdminLlmProvidersService(prisma, crypto, providerInfo);
   });
 
@@ -66,6 +75,7 @@ describe('AdminLlmProvidersService', () => {
     capability: 'public' as const,
     apiKey: 'secret-key',
     isActive: true,
+    useProxy: false,
   };
 
   it('(a) create с apiKey шифрует ключ через crypto.encrypt (gcm:v1:-префикс в data)', async () => {
@@ -192,5 +202,57 @@ describe('AdminLlmProvidersService', () => {
       }),
     );
     expect(invalidate).toHaveBeenCalled();
+  });
+
+  describe('discoverModels', () => {
+    it('(a) успех: resolveByName даёт effective baseUrl/apiKey, discoverProviderModels — 2 модели, одна уже в каталоге', async () => {
+      findUnique.mockResolvedValueOnce(fakeProvider({ protocolKind: 'openai-chat' }));
+      resolveByName.mockResolvedValueOnce({
+        info: { baseUrl: 'https://x', apiKey: 'k' },
+        protocolKind: 'openai-chat',
+      });
+      llmModelFindMany.mockResolvedValueOnce([{ modelKey: 'm1' }]);
+      vi.mocked(discoverProviderModels).mockResolvedValueOnce([{ id: 'm1' }, { id: 'm2' }]);
+
+      const res = await svc.discoverModels('p1');
+
+      expect(resolveByName).toHaveBeenCalledWith('deepseek');
+      expect(discoverProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({ baseUrl: 'https://x', apiKey: 'k' }),
+      );
+      expect(res).toEqual({
+        ok: true,
+        models: [
+          { id: 'm1', alreadyInCatalog: true },
+          { id: 'm2', alreadyInCatalog: false },
+        ],
+      });
+    });
+
+    it('(b) protocolKind=anthropic-messages → бросает BadRequestException discovery_not_supported', async () => {
+      findUnique.mockResolvedValueOnce(fakeProvider({ protocolKind: 'anthropic-messages' }));
+
+      let err: unknown;
+      try {
+        await svc.discoverModels('p1');
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toMatchObject({
+        error: { code: 'discovery_not_supported' },
+      });
+      expect(discoverProviderModels).not.toHaveBeenCalled();
+    });
+
+    it('(c) discoverProviderModels бросает → {ok:false, error} без throw наружу', async () => {
+      findUnique.mockResolvedValueOnce(fakeProvider({ protocolKind: 'openai-chat' }));
+      resolveByName.mockResolvedValueOnce(null);
+      vi.mocked(discoverProviderModels).mockRejectedValueOnce(new Error('boom'));
+
+      const res = await svc.discoverModels('p1');
+
+      expect(res).toEqual({ ok: false, error: 'boom' });
+    });
   });
 });

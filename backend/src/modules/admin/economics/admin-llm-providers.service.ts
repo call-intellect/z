@@ -1,10 +1,17 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, type LlmProvider } from '@prisma/client';
 
 import { CryptoService } from '../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ProviderInfoResolver } from '../../ai/services/protocol-adapter/provider-info.resolver';
 
+import { discoverProviderModels } from './discover-provider-models.util';
 import type { CreateLlmProviderDto, UpdateLlmProviderDto } from './dto/admin-llm-providers.dto';
 
 @Injectable()
@@ -48,6 +55,10 @@ export class AdminLlmProvidersService {
         protocolKind: dto.protocolKind,
         capability: dto.capability,
         isActive: dto.isActive,
+        useProxy: dto.useProxy,
+        ...(dto.proxyPath !== undefined ? { proxyPath: dto.proxyPath } : {}),
+        ...(dto.timeoutMs !== undefined ? { timeoutMs: dto.timeoutMs } : {}),
+        ...(dto.defaultModelKey !== undefined ? { defaultModelKey: dto.defaultModelKey } : {}),
         ...(dto.apiKey ? { apiKeyEncrypted: this.crypto.encrypt(dto.apiKey) } : {}),
         ...(dto.defaultHeaders
           ? { defaultHeaders: dto.defaultHeaders as Prisma.InputJsonValue }
@@ -69,6 +80,10 @@ export class AdminLlmProvidersService {
         ...(dto.protocolKind !== undefined ? { protocolKind: dto.protocolKind } : {}),
         ...(dto.capability !== undefined ? { capability: dto.capability } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.useProxy !== undefined ? { useProxy: dto.useProxy } : {}),
+        ...(dto.proxyPath !== undefined ? { proxyPath: dto.proxyPath } : {}),
+        ...(dto.timeoutMs !== undefined ? { timeoutMs: dto.timeoutMs } : {}),
+        ...(dto.defaultModelKey !== undefined ? { defaultModelKey: dto.defaultModelKey } : {}),
         ...(dto.apiKey === null
           ? { apiKeyEncrypted: null }
           : dto.apiKey
@@ -92,6 +107,42 @@ export class AdminLlmProvidersService {
     });
     this.providerInfo.invalidate();
     return { ok: true as const };
+  }
+
+  async discoverModels(id: string) {
+    const row = await this.getRow(id);
+    if (row.protocolKind === 'anthropic-messages') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'discovery_not_supported',
+          message: 'Anthropic Messages API не поддерживает discovery моделей (нет GET /models)',
+        },
+      });
+    }
+    const resolved = await this.providerInfo.resolveByName(row.name);
+    const baseUrl = resolved?.info.baseUrl ?? row.baseUrl;
+    const apiKey = resolved?.info.apiKey ?? null;
+    const existing = await this.prisma.llmModel.findMany({
+      where: { providerId: id, deletedAt: null },
+      select: { modelKey: true },
+    });
+    const existingKeys = new Set(existing.map((m) => m.modelKey));
+    try {
+      const models = await discoverProviderModels({
+        baseUrl,
+        apiKey,
+        defaultHeaders: resolved?.info.defaultHeaders,
+        timeoutMs: resolved?.info.timeoutMs,
+      });
+      return {
+        ok: true as const,
+        models: models.map((m) => ({ id: m.id, alreadyInCatalog: existingKeys.has(m.id) })),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false as const, error: message };
+    }
   }
 
   private async getRow(id: string): Promise<LlmProvider> {

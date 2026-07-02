@@ -20,6 +20,10 @@ export const CreateLlmProviderSchema = z.object({
   defaultHeaders: z.record(z.string(), z.string()).optional(),
   globalRps: z.number().int().positive().optional(),
   isActive: z.boolean().default(true),
+  useProxy: z.boolean().default(false),
+  proxyPath: z.string().max(120).nullable().optional(),
+  timeoutMs: z.number().int().positive().nullable().optional(),
+  defaultModelKey: z.string().max(120).nullable().optional(),
 });
 export type CreateLlmProviderDto = z.infer<typeof CreateLlmProviderSchema>;
 

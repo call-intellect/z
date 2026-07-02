@@ -1954,8 +1954,24 @@ export class LlmRouterService implements OnModuleInit {
     entry: ProviderEntry,
     params: LlmCallParams,
   ): Promise<LlmCompleteOutput> {
-    // Приоритет: явный override через params.model, иначе модель из route entry.
-    const effectiveModel = params.model ?? entry.model;
+    // SBA α-10 wave 3 — Feature-flag USE_PROTOCOL_ADAPTER_REGISTRY.
+    // false (default, production safety) → legacy switch ниже.
+    // true → LlmProtocolAdapterRegistry резолвит protocolKind из LlmProvider/ENV.
+    const useRegistry = this.isRegistryActive();
+    // Ф5 (2026-07-02): резолв provider info ДО построения input, чтобы
+    // defaultModelKey (DB) мог участвовать в выборе модели — переиспользуем
+    // `resolved` дальше, повторный resolveByName() не нужен.
+    const resolved = useRegistry ? await this.providerInfo!.resolveByName(entry.provider) : null;
+    if (useRegistry && !resolved) {
+      this.logger.warn(
+        `LlmRouter: ProviderInfoResolver не нашёл провайдера ${entry.provider}; fallback на legacy switch`,
+      );
+    }
+    // Приоритет: явный override через params.model → модель из route entry →
+    // дефолт-модель провайдера из БД (Ф5, defaultModelKey) → дефолт
+    // легаси-сервиса (ниже, если ни один из трёх не задан — input.model не
+    // передаётся вовсе).
+    const effectiveModel = params.model ?? entry.model ?? resolved?.info.defaultModelKey ?? undefined;
     const input: LlmCompleteInput = {
       system: { text: params.systemPrompt, cacheControl: 'ephemeral' },
       user: params.userMessage,
@@ -1972,19 +1988,9 @@ export class LlmRouterService implements OnModuleInit {
       // автоматически (см. DeepSeekService.buildParams / OpenAiProxyService).
       ...(params.tools && params.tools.length > 0 ? { tools: params.tools } : {}),
     };
-    // SBA α-10 wave 3 — Feature-flag USE_PROTOCOL_ADAPTER_REGISTRY.
-    // false (default, production safety) → legacy switch ниже.
-    // true → LlmProtocolAdapterRegistry резолвит protocolKind из LlmProvider/ENV.
-    const useRegistry = this.isRegistryActive();
-    if (useRegistry) {
-      const resolved = await this.providerInfo!.resolveByName(entry.provider);
-      if (resolved) {
-        const adapter = this.adapterRegistry!.resolve(resolved.protocolKind);
-        return adapter.complete({ provider: resolved.info, input });
-      }
-      this.logger.warn(
-        `LlmRouter: ProviderInfoResolver не нашёл провайдера ${entry.provider}; fallback на legacy switch`,
-      );
+    if (useRegistry && resolved) {
+      const adapter = this.adapterRegistry!.resolve(resolved.protocolKind);
+      return adapter.complete({ provider: resolved.info, input });
     }
     switch (entry.provider) {
       case 'anthropic':

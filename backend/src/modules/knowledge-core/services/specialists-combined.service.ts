@@ -853,15 +853,21 @@ export class SpecialistsCombinedService {
         continue;
       }
       const scope = await this.resolveScope(tenantId, r.scope);
-      const ownerPersonId = await this.resolveOwnerPersonHint(tenantId, r.ownerHint);
+      const hintOwner = await this.resolveOwnerPersonHint(tenantId, r.ownerHint);
+      const author = await this.resolveBlockAuthor(tenantId, r.sourceBlockId);
       try {
-        // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`:
-        // pre-fetch существующего массива → дедуп при повторной встрече того же
-        // имени. Контракт совпадает с single-путём (mergeIntoExisting).
         const existingReg = await this.prisma.regulation.findUnique({
           where: { tenantId_name: { tenantId, name: r.name } },
-          select: { sourceBlockIds: true },
+          select: { sourceBlockIds: true, personSubjectIds: true, ownerPersonId: true },
         });
+        const ownerOnUpdate =
+          hintOwner ??
+          (existingReg && existingReg.ownerPersonId == null
+            ? author?.personId ?? undefined
+            : undefined);
+        const subjectUnion = author?.entityId
+          ? this.union(existingReg?.personSubjectIds ?? [], [author.entityId])
+          : null;
         await this.prisma.regulation.upsert({
           where: {
             tenantId_name: { tenantId, name: r.name },
@@ -876,7 +882,8 @@ export class SpecialistsCombinedService {
             confidence: r.confidence,
             category: r.kind === 'standard' ? 'standard' : 'regulation',
             scope,
-            ownerPersonId,
+            ...(ownerOnUpdate ? { ownerPersonId: ownerOnUpdate } : {}),
+            ...(subjectUnion ? { personSubjectIds: { set: subjectUnion } } : {}),
           },
           create: {
             tenantId,
@@ -887,7 +894,8 @@ export class SpecialistsCombinedService {
             confidence: r.confidence,
             sourceBlockIds: [r.sourceBlockId],
             scope,
-            ownerPersonId,
+            ownerPersonId: hintOwner ?? author?.personId ?? null,
+            ...(author?.entityId ? { personSubjectIds: [author.entityId] } : {}),
           },
         });
         created += 1;
@@ -922,14 +930,21 @@ export class SpecialistsCombinedService {
         tenantId,
         r.scope ?? (forRole ? `role:${forRole}` : null),
       );
-      const ownerPersonId = await this.resolveOwnerPersonHint(tenantId, r.ownerHint);
+      const hintOwner = await this.resolveOwnerPersonHint(tenantId, r.ownerHint);
+      const author = await this.resolveBlockAuthor(tenantId, r.sourceBlockId);
       try {
-        // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`
-        // (см. persistRegulations).
         const existingInstr = await this.prisma.instruction.findUnique({
           where: { tenantId_name: { tenantId, name: r.name } },
-          select: { sourceBlockIds: true },
+          select: { sourceBlockIds: true, personSubjectIds: true, ownerPersonId: true },
         });
+        const ownerOnUpdate =
+          hintOwner ??
+          (existingInstr && existingInstr.ownerPersonId == null
+            ? author?.personId ?? undefined
+            : undefined);
+        const subjectUnion = author?.entityId
+          ? this.union(existingInstr?.personSubjectIds ?? [], [author.entityId])
+          : null;
         await this.prisma.instruction.upsert({
           where: { tenantId_name: { tenantId, name: r.name } },
           update: {
@@ -944,7 +959,8 @@ export class SpecialistsCombinedService {
             forRole: forRole ?? undefined,
             status,
             scope,
-            ownerPersonId,
+            ...(ownerOnUpdate ? { ownerPersonId: ownerOnUpdate } : {}),
+            ...(subjectUnion ? { personSubjectIds: { set: subjectUnion } } : {}),
           },
           create: {
             tenantId,
@@ -956,7 +972,8 @@ export class SpecialistsCombinedService {
             status,
             sourceBlockIds: [r.sourceBlockId],
             scope,
-            ownerPersonId,
+            ownerPersonId: hintOwner ?? author?.personId ?? null,
+            ...(author?.entityId ? { personSubjectIds: [author.entityId] } : {}),
           },
         });
         created += 1;
@@ -1268,6 +1285,29 @@ export class SpecialistsCombinedService {
     if (!personId)
       this.metrics?.incRegulationOwnerUnresolved?.({ tenantTop: tenantTopOf(tenantId) });
     return personId ?? null;
+  }
+
+  private async resolveBlockAuthor(
+    tenantId: string,
+    sourceBlockId: string,
+  ): Promise<{ personId: string; entityId: string | null } | null> {
+    try {
+      const ev = await this.prisma.ideaBlockEvidence.findFirst({
+        where: { blockId: sourceBlockId, tenantId, authorPersonId: { not: null } },
+        orderBy: { sourceTimestamp: { sort: 'asc', nulls: 'last' } },
+        select: { authorPersonId: true },
+      });
+      const authorPersonId = ev?.authorPersonId ?? null;
+      if (!authorPersonId) return null;
+      const person = await this.prisma.person.findFirst({
+        where: { id: authorPersonId, tenantId, deletedAt: null },
+        select: { id: true, entityId: true },
+      });
+      if (!person) return null;
+      return { personId: person.id, entityId: person.entityId ?? null };
+    } catch {
+      return null;
+    }
   }
 
   private clamp01(value: number): number {

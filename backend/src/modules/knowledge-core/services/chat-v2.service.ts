@@ -743,6 +743,7 @@ interface RetrievalCtx {
   kRetrieve: number;
   kContext: number;
   graphHops: number;
+  graphAlwaysExpand: boolean;
   accessWhere: Record<string, unknown> | undefined;
 }
 
@@ -806,6 +807,11 @@ export class ChatV2Service {
     const { kRetrieve, kContext } = await this.resolveKSplit();
     const graphHops = this.cfg.knowledgeCore.chatV2GraphHops;
     trace?.setGraphHops(graphHops);
+    const graphAlwaysExpand = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2GraphAlwaysExpand',
+      undefined,
+      true,
+    );
 
     // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
     const kaEnforcement = this.cfg.knowledgeAccess.enforcement;
@@ -859,6 +865,7 @@ export class ChatV2Service {
           kRetrieve,
           kContext,
           graphHops,
+          graphAlwaysExpand,
           accessWhere,
         },
         trace,
@@ -1310,7 +1317,7 @@ export class ChatV2Service {
     rrfK: number,
     trace?: RetrievalTraceSink,
   ): Promise<string[]> {
-    const { tenantId, scope, scopeId, kRetrieve, graphHops, accessWhere } = ctx;
+    const { tenantId, scope, scopeId, kRetrieve, graphHops, graphAlwaysExpand, accessWhere } = ctx;
 
     const perQueryLimit =
       queries.length > 1
@@ -1329,6 +1336,7 @@ export class ChatV2Service {
             query: q,
             limit: perQueryLimit,
             graphHops,
+            graphAlwaysExpand,
             validAt: input.validAt ?? null,
             accessWhere,
             dateFrom: input.structuralFilters?.dateFrom ?? null,

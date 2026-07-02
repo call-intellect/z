@@ -59,6 +59,7 @@ export interface RetrievalInput {
   entityIds?: string[];
   themeBranches?: string[];
   bitemporalActiveOnly?: boolean;
+  graphAlwaysExpand?: boolean;
 }
 
 export interface RankedBlockId {
@@ -333,29 +334,28 @@ export class ChatV2RetrievalService {
     }
 
     // 3) 1-hop graph expansion (по IdeaBlockLink, status='active').
-    // При структурном фильтре граф ПРОПУСКАЕМ: фильтр задаёт точное множество
-    // ответа, а 1-hop-соседи вне фильтра вернули бы тихие типовые/временные
-    // ошибки (совпавшие соседи и так уже в pool).
-    if (structural) {
-      trace?.markGraphSkipped('structural-filter-active');
-    } else if (input.graphHops <= 0) {
+    const graphAlwaysExpand = input.graphAlwaysExpand === true;
+    const graphEligible =
+      input.graphHops > 0 && (!structural || graphAlwaysExpand);
+    if (input.graphHops <= 0) {
       trace?.markGraphSkipped('graphHops<=0');
+    } else if (structural && !graphAlwaysExpand) {
+      trace?.markGraphSkipped('structural-filter-active');
     }
-    const graphAdded =
-      !structural && input.graphHops > 0
-        ? await this.expandViaGraph(
-            {
-              tenantId: input.tenantId,
-              seedBlockIds: ranked.map((r) => r.blockId),
-              knownIds: new Set(ranked.map((r) => r.blockId)),
-              extraLimit: input.graphHops * 5,
-              validAt: input.validAt ?? null,
-              accessWhere: input.accessWhere,
-              contourGroupId: input.contourGroupId,
-            },
-            trace,
-          )
-        : [];
+    const graphAdded = graphEligible
+      ? await this.expandViaGraph(
+          {
+            tenantId: input.tenantId,
+            seedBlockIds: ranked.map((r) => r.blockId),
+            knownIds: new Set(ranked.map((r) => r.blockId)),
+            extraLimit: input.graphHops * 5,
+            validAt: input.validAt ?? null,
+            accessWhere: input.accessWhere,
+            contourGroupId: input.contourGroupId,
+          },
+          trace,
+        )
+      : [];
 
     return [...ranked, ...graphAdded];
   }

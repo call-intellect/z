@@ -213,6 +213,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-chat-v2-recall.ts',
+    hint: 'knowledge.chatV2{GraphAlwaysExpand,FilterMode,FilterBoostWeight,EntityLinkHops,CascadeEnabled,CascadeMinPool,AggregationMode,UnderstandGrounding,GroundingTopK,AdaptiveHops} — 6 рубильников + 4 порога переработки recall «Мастера» (ТЗ 2026-07-02-recall-master-retrieval-redesign)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-personal-brief.ts',
     hint: 'operations.personal_daily_brief.{enabled,morning_hour} + operations.knows_who.enabled + knows_who.min_confidence (TZ-1 Ф2 движок рядового)',
   },

@@ -281,6 +281,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-admin-setting-llm-models-and-gray.ts',
     hint: 'ai.{anthropic.model,vox.model,deepseek.defaultModel} + gepa.{reflectionLm,taskLm} + ai.mainReport.primary kill-switch + mail.dryRun + operations.daily_digest.deliver_to_webpush + betaOps.*LocalHour/Day часы дайджестов (config Шаг 8 — GRAY: модели LLM, рубильники, часы)',
   },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-embedding-providers.ts',
+    hint: '2 провайдера эмбеддингов (local active/openai-via-proxy inactive) в DB, ключи AES-256-GCM',
+  },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   {

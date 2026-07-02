@@ -27,6 +27,22 @@ type: architecture
 - **Claude / Anthropic — НЕ закупаем** (решение владельца). Канал `anthropic` в роутере не используется. См. [llm-cache-status.md](llm-cache-status.md) (строка 11) и [llm-providers-verified.md](../01_projects/llm-providers-verified.md).
 - **Прочие каналы роутера:** `openai-via-proxy` (gpt-5* через `proxy.agent-lia.ru/v1/responses`), `minimax` (Anthropic-совместимый, прямой). Полная verified-карта — [llm-providers-verified.md](../01_projects/llm-providers-verified.md).
 
+#### DB-реестр `LlmProvider` — боевой источник подключений (2026-07-02)
+
+С 2026-07-02 (`USE_PROTOCOL_ADAPTER_REGISTRY=true` по умолчанию, Ship-On) все 7 провайдеров резолвятся через `ProviderInfoResolver` из таблицы `LlmProvider`, а не из ENV напрямую:
+
+- **Резолв:** `ProviderInfoResolver.resolveByName(name)` — сперва DB-строка `LlmProvider` (кэш 60с), при отсутствии — `buildFromEnv()` (тот же ENV, что раньше читали легаси-сервисы конструкторами — обратная совместимость гарантирована parity-тестами).
+- **Прокси-формула** (единственная реализация, в резолвере): `useProxy=false` → `baseUrl` как есть; `useProxy=true, proxyPath=null` → корневой `PROXY_BASE_URL`; `useProxy=true, proxyPath='X'` → `{proxyRoot}/X/v1`. Ключ при `useProxy=true` префиксуется `PROXY_PREFIX:`.
+- **Честные протоколы** (`ProtocolKind`): `openai-chat`/`openai-responses`/`anthropic-messages`/`ollama-native`/`kie-native`/`grsai-native`/`custom-http` — каждый резолвится в `LlmProtocolAdapterRegistry`. `kie-native`/`grsai-native` заменили фейковый `custom-http`, на котором до этой фазы smoke kie/grsai был гарантированно красным (несуществующий протокол).
+- **Connection-override:** легаси-сервисы (`AnthropicService`/`MinimaxService`/`OllamaService`/`KieService`/`GrsaiService`/`OpenAiProxyService`) принимают опциональный `override?: LlmConnectionOverride` — без override поведение байт-в-байт как раньше (ENV), с override — строят клиент/URL из переданных значений (DB).
+- **Дискавери моделей:** `POST /api/v1/admin/llm-providers/:id/models/discover` → `GET {effectiveBaseUrl}/models` (OpenAI-формат); недоступно для `anthropic-messages` (нет `/models` в Anthropic API).
+- **Дефолт-модель провайдера:** `LlmProvider.defaultModelKey` — приоритет в `dispatch()`: `params.model ?? entry.model ?? defaultModelKey ?? легаси-дефолт-сервиса`.
+- **dataClass-фильтр:** читает `LlmProvider.capability` из БД с фолбэком на хардкод-карту `PROVIDER_CAPABILITY` (код).
+- **Дефолт-цепочка** (когда для taskType нет маршрута) — `AdminSetting` ключ `llm.router.defaultChain` (code-fallback = прежний хардкод `DEFAULT_FALLBACK_CHAIN`: deepseek→openai-via-proxy→kie/gemini-3.1-pro).
+- **Kill-switch:** `USE_PROTOCOL_ADAPTER_REGISTRY=false` в `.env` откатывает на legacy ENV-switch (прежнее поведение) без изменения кода — см. `feature-flags.md`.
+- **Управление из UI:** `/admin/ai/catalog` (CRUD провайдеров/моделей, см. [[../01_projects/admin]]).
+- **ТЗ:** [plans/tz/2026-07-02-llm-providers-models-routing-admin.md](../../plans/tz/2026-07-02-llm-providers-models-routing-admin.md).
+
 ### Embeddings — локальная Ollama через `llm.korateam.ru` (`LocalEmbeddingService`)
 
 - **Сервис:** `LocalEmbeddingService` (`embeddings/services/local-embedding.service.ts`), провайдер `local` (`EMBEDDING_PROVIDER=local` — primary с 2026-06-30).

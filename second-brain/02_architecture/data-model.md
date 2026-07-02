@@ -293,6 +293,41 @@ LlmModelPrice {
 }
 ```
 
+### LlmProvider + LlmModel — реестр LLM-провайдеров (боевой источник с 2026-07-02)
+
+`LlmProvider` (`@@map("llm_providers")`) — раньше существовал как «спящая» витрина (заполнялся, но dispatch шёл мимо, по ENV-switch); с ТЗ `2026-07-02-llm-providers-models-routing-admin` (миграция `20260702165640_llm_provider_proxy_defaults` добавила 4 поля) стал боевым при `USE_PROTOCOL_ADAPTER_REGISTRY=true` (дефолт). Подробно про резолв — [[ai-integration]] §«DB-реестр LlmProvider».
+
+```
+LlmProvider {
+  id, name (@unique, slug: 'deepseek'|'openai-via-proxy'|'anthropic'|'ollama'|'minimax'|'kie'|'grsai'),
+  displayName, baseUrl,
+  protocolKind ('openai-chat'|'openai-responses'|'anthropic-messages'|'ollama-native'|'kie-native'|'grsai-native'|'custom-http'),
+  capability ('public'|'internal'|'sensitive'|'private', default 'public' — dataClass-фильтр роутера),
+  apiKeyEncrypted? (AES-256-GCM, формат gcm:v1:..., НИКОГДА не отдаётся в API-ответах — только hasApiKey),
+  defaultHeaders? (Json),
+  globalRps?,
+  isActive (default true),
+  useProxy (default false, 2026-07-02) — идёт ли через proxy.agent-lia.ru,
+  proxyPath? (2026-07-02) — слаг пути на прокси (напр. 'grsai'); null = корневой прокси,
+  timeoutMs? (2026-07-02) — переопределение hard-timeout dispatch,
+  defaultModelKey? (2026-07-02) — модель, если её не задали ни вызов, ни маршрут,
+  lastSmokeAt?, lastSmokeSuccess?, lastSmokeError?,
+  deletedAt? (soft-delete)
+  @@index([isActive, protocolKind])
+}
+
+LlmModel {
+  id, providerId (FK → LlmProvider),
+  modelKey, displayName,
+  contextWindow?, capabilitiesJson? (Json),
+  category? ('flagship'|'fast'|'reasoning'|'embedding'|'experimental'),
+  isActive (default true), verifiedAt?, notes?
+  @@unique([providerId, modelKey])
+}
+```
+
+Управление — `/admin/ai/catalog` (см. [[../01_projects/admin]]). Удаление/деактивация провайдера с активным маршрутом или в дефолт-цепочке — 409 `provider_in_use_by_routes`.
+
 ### Расширения существующих моделей
 
 **`User.isSuperAdmin: Boolean (default false)`** — флаг владельца Z-Admin (Фаза 7). Bypass RBAC.

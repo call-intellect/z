@@ -496,17 +496,34 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | GET | `/admin/analytics/knowledge` | Knowledge-Core |
 | GET | `/admin/analytics/concierge` | Concierge / AI-чат |
 
-### AI и модели (Фаза 3)
+### AI и модели — маршрутизация (Фаза 3, переработано 2026-07-02)
+`AdminAiModelsController` (`backend/src/modules/admin/ai-models/`), путь `/admin/ai-models` — **единственная** точка правки `LlmTaskRoute` (дублирующий `LlmRoutesController`/`/admin/llm-routes` удалён 2026-07-02, ловил тот же путь другим форматом записи).
 | Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/admin/ai-models` | список taskType (legacy URL роутится сюда же из `/admin/ai/routing`) |
+| GET | `/admin/ai-models` | список taskType по группам (фронт — `/admin/ai/routing`) |
 | GET | `/admin/ai-models/:taskType` | детали + цепочка |
-| GET | `/admin/ai-models/:taskType/metrics` | `?period=24h\|7d\|30d` (legacy ось периода; UI шлёт через mapper из `day/week/month`) |
-| GET | `/admin/ai-models/:taskType/history` | audit переключений |
-| POST | `/admin/ai-models/:taskType/switch-primary` | switch + опц. A/B |
-| GET | `/admin/llm-routes` | роуты LLM по `dataClass` + `taskType` |
+| **PUT** | **`/admin/ai-models/:taskType/chain`** | **(2026-07-02) единый write-эндпоинт** — заменяет `switch-primary`/`add-provider`/`provider/:id` как основной путь: `{entries:[{tier,providerName,model?,priority}],isActive,pinnedVersionNote?,reason}` → транзакция delete+createMany tier-строк. `providerName` валидируется по union(активный `LlmProvider`-реестр, legacy-7) → 422 `route_provider_unknown`; модель вне каталога `LlmModel` — `warnings`, не блок. |
+| GET | `/admin/ai-models/:taskType/metrics` | `?period=24h\|7d\|30d`; ответ + `usdRubRate` (2026-07-02, `CurrencyRateService`) |
+| GET | `/admin/ai-models/:taskType/history` | audit переключений (`changeType` включает `chain_replaced`) |
+| POST | `/admin/ai-models/:taskType/switch-primary` | точечный switch + опц. A/B (оставлен для истории аудита; новый UI использует `chain`) |
+| POST | `/admin/ai-models/:taskType/add-provider` / DELETE `.../provider/:id` | точечное добавление/удаление (оставлены, не обязательны для нового UI) |
+| GET/POST | `/admin/llm-model-experiments*` | A/B-эксперименты (`LlmModelExperiment` — **рантаймом НЕ читается**, см. `04_не-сделано/README.md`) |
 | GET | `/admin/ai-prompts` (он же `/admin/prompts`) | реестр шаблонов промптов |
 | GET | `/admin/ai-prompts/:id` | + версии |
+
+### Реестр LLM-провайдеров/моделей (2026-07-02, `super_admin`, боевой источник)
+`AdminLlmProvidersController`/`AdminLlmModelsController` (`backend/src/modules/admin/economics/`, `@ApiExcludeController`), под `SuperAdminGuard`+`SuperAdminAuditInterceptor`. `LlmProvider`/`LlmModel` — [[../02_architecture/data-model]] §«LlmProvider + LlmModel»; резолв рантайма — [[../02_architecture/ai-integration]] §«DB-реестр LlmProvider». Фронт — `/admin/ai/catalog` ([[admin]] §«Провайдеры и модели»). ТЗ [`llm-providers-models-routing-admin`](../../plans/tz/2026-07-02-llm-providers-models-routing-admin.md).
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/llm-providers?includeInactive` | список (маскированный, `hasApiKey`) |
+| GET | `/admin/llm-providers/:id` | один провайдер |
+| POST | `/admin/llm-providers` | создать (ключ шифруется AES-256-GCM) |
+| PATCH | `/admin/llm-providers/:id` | редактировать (`apiKey`: отсутствует/пусто=не менять, `null`=очистить, строка=заменить); 409 `provider_in_use_by_routes` при деактивации провайдера в активном маршруте/дефолт-цепочке |
+| DELETE | `/admin/llm-providers/:id` | soft-delete; тот же гард `provider_in_use_by_routes` |
+| POST | `/admin/llm-providers/:id/smoke-test` | пробный вызов через `ProviderSmokeTestCron.testProvider` |
+| **POST** | **`/admin/llm-providers/:id/models/discover`** | **(2026-07-02)** `GET {effectiveBaseUrl}/models` (OpenAI-формат) → `{ok,models:[{id,alreadyInCatalog}]}`; `anthropic-messages` → 400 `discovery_not_supported` (нет `/models` в Anthropic API) |
+| GET/POST/PATCH/DELETE | `/admin/llm-models*` | CRUD моделей (`providerId`+`modelKey`) |
+| GET | `/admin/llm-models/:id/price-history` | история цен модели |
 
 ### Провайдеры эмбеддингов (2026-07-02, `super_admin`)
 `AdminEmbeddingProvidersController` (`backend/src/modules/admin/economics/`, `@ApiExcludeController` — не в Swagger), все под `SuperAdminGuard`. Управляемые провайдеры эмбеддингов (`EmbeddingProvider`/`EmbeddingModel`), которые читает резолвер рантайма вместо ENV-переключателя. Ключ шифруется AES-256-GCM на записи, в ответах только `hasApiKey`. Модели — [[../02_architecture/data-model]] §«EmbeddingProvider / EmbeddingModel»; ТЗ [`embedding-providers-crud`](../../plans/tz/2026-07-02-embedding-providers-crud.md). 10 маршрутов:
@@ -798,5 +815,6 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-06-30 (Месяц компании — герой `/month`):** новый контроллер `MonthlyDigestController` (`/api/v1/dashboard/operations/monthly-digest`) — 4 эндпоинта: `GET /?period=YYYY-MM` (getStored или null), `GET /latest`, `POST /generate` (owner/admin/super; ОДИН capable LLM-вызов `operations-monthly-digest` сводит 4 недельных дайджеста → вердикт/письмо/компас/тренд по неделям, persist в `MonthlyOperationsDigest`), `GET /available-periods?limit=`. RBAC чтения — `canViewOperationsDashboard`. Новая модель `MonthlyOperationsDigest`, новый таскТайп `operations-monthly-digest`, крон `OperationsMonthlyDigestCron`. См. [[director-dashboard]] §«Месяц компании», [[ai-jobs]] §«operations-monthly-digest», [[../02_architecture/data-model]] §«MonthlyOperationsDigest».
 - **2026-06-30 (Навигация по датам + архив отчётов):** к 3 ритмам добавлен `GET /api/v1/dashboard/operations/{daily,weekly,monthly}-digest/available-periods?limit=` → `{rhythm, periods:[{period,stateHint,title}], latest}` (метод `listAvailablePeriods` в daily/weekly/monthly-сервисах; shared `available-periods.dto.ts`). Кормит общий фронт-навигатор `PeriodNavigator` (stepper + попап «Недавние отчёты» + date-picker). Крутилка лимита `operations.report_archive.recent_limit` (default 12, getDynamic + admin-сид `seed-admin-setting-report-archive.ts`). См. [[director-dashboard]] §«Месяц компании», [[frontend-contexts-hooks]] §«PeriodNavigator».
 - **2026-07-01 (снос соц-слоя обещаний, ТЗ commitment-social-layer-cleanup, Ф5):** **МИНУС эндпоинты** — `GET /dashboard/operations/open-commitments`, `GET /me/promises`, `POST /me/promises/:blockId/mark`, `PATCH /me/promises/:blockId/reschedule`, `GET /personal-relations/commitments` удалены вместе с `MyPromisesController` и надзорным соц-слоем обещаний (см. помеченные строки выше). RBAC-ресурс `commitment` больше не питает эти роуты. `weekly-per-person` / `people-at-risk` / `me/social-contribution/opt-out` **остаются** (граница факта / отдельные фичи). Источник: [plans/tz/2026-06-29-commitment-social-layer-cleanup.md](../../plans/tz/2026-06-29-commitment-social-layer-cleanup.md).
+- **2026-07-02 (управление LLM-провайдерами/моделями/маршрутизацией, ТЗ llm-providers-models-routing-admin, 10 фаз):** **МИНУС** `GET/PUT /admin/llm-routes*` (`LlmRoutesController` удалён — дублировал write-путь к `LlmTaskRoute`). **ПЛЮС** `PUT /admin/ai-models/:taskType/chain` (единый write-эндпоинт цепочки, валидация providerName по union DB-реестра+legacy-7, 422 `route_provider_unknown`); `usdRubRate` в ответе `.../metrics`; `POST /admin/llm-providers/:id/models/discover` (дискавери моделей провайдера); 409 `provider_in_use_by_routes` на DELETE/деактивации провайдера в активном маршруте. `USE_PROTOCOL_ADAPTER_REGISTRY` сменил дефолт `false→true` — DB-реестр `LlmProvider` стал боевым источником подключений (было — ENV-switch). Источник: [plans/tz/2026-07-02-llm-providers-models-routing-admin.md](../../plans/tz/2026-07-02-llm-providers-models-routing-admin.md).
 
 [[../index|← index]]

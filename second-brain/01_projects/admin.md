@@ -137,31 +137,27 @@ admin-поверхности с разбором конкретной карто
 
 ## AI и модели
 
-### `/admin/llm-routes` — Управление роутами LLM
+### `/admin/ai/catalog` — Провайдеры и модели (2026-07-02, переработано целиком)
 
-Страница для super_admin: таблица всех ~80 `taskType` (типов задач LLM) с
-цепочкой моделей primary → secondary → tertiary. Позволяет менять провайдера
-и модель для любого taskType без правки seed-скриптов.
+Единый экран super_admin для реестра LLM-провайдеров (`LlmProvider`/`LlmModel`) — DB-реестр стал **боевым источником правды** для dispatch (раньше был витриной, вызовы шли по захардкоженному ENV-switch). Табы: «Провайдеры» (CRUD), «Модели» (CRUD, фильтр по провайдеру), «Цены» (`LlmPricesClient`, не менялся), «Smoke-тесты» (починен — список из реального реестра, не хардкода).
 
-- **API:** `GET / PUT /api/v1/admin/llm-routes` —
-  `backend/src/modules/admin/llm-routes/llm-routes.controller.ts`.
-- **Защита:** `CookieAuthGuard` + `SuperAdminGuard`. Не-super_admin получает
-  403 → UI показывает `AdminForbidden`.
-- **Фронт:**
-  - `frontend/app/(admin)/admin/llm-routes/page.tsx`
-  - `frontend/app/(admin)/admin/llm-routes/LlmRoutesClient.tsx`
-  - `frontend/app/(admin)/admin/llm-routes/EditRouteDialog.tsx`
-  - `frontend/src/api/admin-llm-routes.api.ts`
-  - `frontend/src/domain/admin-llm-route.ts`
-  - `frontend/src/hooks/useLlmRoutes.ts`
-- **Особенности:**
-  - Поддерживается оба формата записи `LlmTaskRoute`: нормализованный
-    (по `tier`) и legacy (`providers` JSON-массив).
-  - После сохранения роут получает `editedByAdmin=true` — seed-скрипты его
-    больше не перезатирают (см. `safe-seed-rules`).
-  - Для DeepSeek-Pro в модалке предупреждение про автоконвертацию
-    `json_schema → tools` (ТЗ `deepseek-pro-output-format-fix`).
-- **ТЗ:** [plans/archive/2026-05-25-admin-llm-routes-frontend.md](../../plans/archive/2026-05-25-admin-llm-routes-frontend.md).
+- **Провайдеры:** `name`(slug)/`displayName`/`baseUrl`/`protocolKind` (7: `openai-chat`/`openai-responses`/`anthropic-messages`/`ollama-native`/`kie-native`/`grsai-native`/`custom-http`)/`capability` (dataClass-фильтр роутера)/ключ (шифруется AES-256-GCM, в ответах только `hasApiKey`)/тумблер «Напрямую / Через прокси» (`useProxy`+`proxyPath`, эффективный `baseUrl`/ключ строит `ProviderInfoResolver` по единой формуле)/`timeoutMs`/`defaultModelKey` (с кнопкой «Получить модели» — дискавери `GET {baseUrl}/models`, импорт выбранных)/`globalRps`/доп. HTTP-заголовки/`isActive`/smoke-тест. Удаление или деактивация провайдера, у которого есть активный маршрут или он в дефолт-цепочке — блокируется 409 `provider_in_use_by_routes`.
+- **Модели:** `providerId`+`modelKey`(уникальны в паре)/`displayName`/`contextWindow`/`category`/`notes`/`isActive`.
+- **API:** `/api/v1/admin/llm-providers` (CRUD+`:id/smoke-test`+`:id/models/discover`), `/api/v1/admin/llm-models` (CRUD) — см. [api-layer.md](api-layer.md).
+- **Фронт:** `frontend/app/(admin)/admin/ai/catalog/{CatalogClient,LlmProvidersClient,LlmModelsClient,SmokeTestClient}.tsx` (провайдеры/модели перенесены сюда из легаси `admin/llm/providers|models/` — та папка удалена).
+- **Защита:** `CookieAuthGuard` + `SuperAdminGuard` + `SuperAdminAuditInterceptor`, `@ApiExcludeController` (не в Swagger).
+- **ТЗ:** [plans/tz/2026-07-02-llm-providers-models-routing-admin.md](../../plans/tz/2026-07-02-llm-providers-models-routing-admin.md).
+
+### `/admin/ai/routing` — Маршрутизация (2026-07-02, единственная точка правки)
+
+Единый экран цепочек `taskType → provider(+model) по tier`. **Заменяет** удалённый `/admin/llm-routes` (дублировал этот же путь записи другим форматом — контроллер `LlmRoutesController` удалён из бэкенда) и legacy `/admin/ai-models/*` (список слит сюда, деталка `TaskTypeDetailsClient` — в `RoutingDetailClient`, тройное дублирование метрик/истории на вкладке «Цепочка» устранено).
+
+- **Список** (`RoutingClient.tsx`) — таблица taskType по группам (ai-pipeline/knowledge-core/competitor-parity), read-only бейджи по tier, ссылка «Подробно».
+- **Деталка** (`[taskType]/RoutingDetailClient.tsx`) — 3 вкладки: «Цепочка» (редактор по tier: Select провайдера из живого реестра `LlmProvider`, Select/ручной ввод модели, поле «причина» — сохранение через единый `PUT /api/v1/admin/ai-models/:taskType/chain`), «Метрики» (+ курс `usdRubRate` от `CurrencyRateService`, раньше был хардкод 90 ₽/$), «История». A/B-контролы (`switchPrimary` с `abSplitPercent`) скрыты из UI — `LlmModelExperiment` рантаймом не читается (см. «Не сделано» ниже), решение владельца — не чинить в этом ТЗ.
+- **API:** `PUT /api/v1/admin/ai-models/:taskType/chain` — валидирует `providerName` по union(активный DB-реестр, legacy-7) → 422 `route_provider_unknown`; модель вне каталога — `warnings`, не блок.
+- **Побочный фикс:** `/admin/usage/functions/:taskType` и `/admin/analytics/functions/:taskType` («Функции») тоже писали цепочку через теперь-удалённый `/admin/llm-routes` — их save-хендлеры переведены на `putChain` (позиция в массиве → tier: 0=primary/1=secondary/2+=tertiary).
+- **Навигация:** пункт «Управление роутами LLM» убран из меню (страница удалена).
+- **ТЗ:** [plans/tz/2026-07-02-llm-providers-models-routing-admin.md](../../plans/tz/2026-07-02-llm-providers-models-routing-admin.md).
 
 ### `/admin/clones` — Доступы к клонам (2026-05-26)
 

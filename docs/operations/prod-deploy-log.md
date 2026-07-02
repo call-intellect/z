@@ -71,6 +71,36 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — Управление LLM-провайдерами/моделями/маршрутизацией (ТЗ llm-providers-models-routing-admin, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ `plans/tz/2026-07-02-llm-providers-models-routing-admin.md`, 10 фаз. DB-реестр `LlmProvider` стал **боевым источником правды** для всех 7 легаси-провайдеров (`anthropic`/`minimax`/`openai-via-proxy`/`deepseek`/`ollama`/`kie`/`grsai`) вместо захардкоженного ENV-switch: honest-адаптеры с connection-override (baseUrl/ключ/прокси/таймаут реально читаются из БД), новые `kie-native`/`grsai-native` протоколы (заменили фейковый `custom-http`, из-за которого smoke этих двух провайдеров был гарантированно красным), дискавери моделей (`GET {baseUrl}/models`), единый write-API маршрутов (`PUT /admin/ai-models/:taskType/chain`, заменил дублирующий `PUT /admin/llm-routes/:taskType`), дефолт-цепочка вынесена в `AdminSetting` (`llm.router.defaultChain`). Фронт: 2 экрана — «Провайдеры и модели» (`/admin/ai/catalog`, полноценный CRUD) и «Маршрутизация» (`/admin/ai/routing`, единая точка правки).
+>
+> Побочно найдено и закрыто в процессе: (1) ключи `LlmProvider.apiKeyEncrypted` хранились и отдавались наружу **в открытом виде** — зашифрованы AES-256-GCM + замаскированы во всех ответах API; (2) `buildFromEnv('openai-via-proxy')` отдавал непрефиксованный ключ — 401 на втором tier дефолт-цепочки при флаге ON без DB-строки; (3) `admin-usage/functions` и `admin-analytics/functions` (отдельная страница «Функции») тоже писали через теперь-удалённый `PUT /admin/llm-routes/:taskType` — переведены на `putChain`.
+>
+> **🟡 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA. 🟡 ФЛАГ `USE_PROTOCOL_ADAPTER_REGISTRY` СМЕНИЛ ДЕФОЛТ false→true (поведенческое изменение критичного chat-пути, доказано 29 parity-тестами — см. риски ниже). 🟢 НОВЫХ ENV НЕТ. 🟢 2 НОВЫХ PATCH + 1 ОБНОВЛЁННЫЙ SEED (все в STEPS).** Docker rebuild backend+frontend обязателен.
+
+- **Шаг 1 — ENV: новых ключей нет.** Существующий `USE_PROTOCOL_ADAPTER_REGISTRY` (`env.schema.ts`) сменил дефолт `zBool(false)`→`zBool(true)` — это **не новый ключ**, а Ship-On переключение поведения (CLAUDE.md принцип 8): DB-реестр провайдеров становится боевым для dispatch вместо legacy-switch. Строка в `docs/operations/feature-flags.md` (раздел «🔴 Аварийные рубильники», тип A) — рубильник на случай инцидента: `USE_PROTOCOL_ADAPTER_REGISTRY=false` в `.env` откатывает на прежний legacy-switch (прямые ENV-сервисы, поведение до 2026-07-02) без даунтайма и без отката кода.
+- **Шаг 4 — Prisma миграция, авто через `prisma migrate deploy`** (migrate-контейнер на `docker compose up -d`): `20260702165640_llm_provider_proxy_defaults` — аддитивная (4 колонки на `llm_providers`: `useProxy Boolean @default(false)`, `proxyPath String?`, `timeoutMs Int?`, `defaultModelKey String?`; данные существующих строк не трогает). Соответствует `data-model.md` §«LlmProvider».
+- **Шаг 6 — One-off patch-скрипты (порядок неважен между собой, оба идемпотентны, оба УЖЕ в STEPS `phase:'patch'`, `skipBootstrap:true`):**
+  - `docker compose exec backend bun run scripts/patch-encrypt-llm-provider-keys.ts` — шифрует АES-256-GCM все `LlmProvider.apiKeyEncrypted`, которые ещё хранятся plaintext (гейт `!isEncrypted(...)` — уже зашифрованные пропускает). Повторный прогон = 0 изменений.
+  - `docker compose exec backend bun run scripts/patch-llm-provider-protocols.ts` — чинит строки `kie`/`grsai`, засеянные ДО этой фазы с фейковым `protocolKind='custom-http'`: переводит на честные `kie-native`/`grsai-native` (+`grsai` получает `useProxy=true, proxyPath='grsai'`), деактивирует опечатку-модель `kie/gpt-5-4` (реальный ключ — `gpt-5.4`, с точкой). Повторный прогон = `providersPatched=0, modelsDeactivated=0`.
+- **Шаг 7 — Seed через apply-prod-deploy STEPS, авто** (`docker compose exec backend bun run scripts/apply-prod-deploy.ts`): `scripts/seed-default-llm-providers-and-models.ts` (`phase:'seed-llm-core'`, уже в STEPS, без изменений реестрации) — обновлён: 7 провайдеров получают `defaultModelKey` (совпадает с реально используемым дефолтом каждого легаси-сервиса — `deepseek-v4-flash`/`gpt-5-mini`/`qwen3:30b-a3b-instruct-2507`/`MiniMax-M2.5`/`claude-sonnet-4-6`/`gemini-3.1-pro`); 4 протухшие модели (`gpt-4o`/`gpt-4o-mini`/`deepseek-chat`/`qwen3.5:9b`) деактивированы; 5 реально маршрутизируемых моделей добавлены. Идемпотентно (create-if-missing, admin-правки не перезаписывает).
+- **Шаги 5/8/9/10 — НЕ затронуты.** postgres-init/backfill/migrate/setup — не требуются (аддитивные колонки без vector/HNSW).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката, порядок важен — сначала Шаг 6 патчи, потом смоук):
+  - `GET /api/v1/admin/llm-providers` (супер-админ) → 7 провайдеров, `hasApiKey:true` у всех с ключом, ни один ответ не содержит подстроку `gcm:v1` или plaintext-ключ.
+  - `POST /api/v1/admin/llm-providers/:id/smoke-test` для `kie`/`grsai` → `success:true` (были гарантированно `false` до патча Шага 6 — если красные, патч не применился или credentials невалидны, проверить оба варианта раздельно).
+  - `POST /api/v1/admin/llm-providers/:id/models/discover` на любом `openai-chat`/`openai-responses`/`kie-native`/`grsai-native`-провайдере → `{ok:true, models:[...]}` (для `anthropic-messages` — ожидаемо `400 discovery_not_supported`).
+  - `/admin/ai/catalog` открывается, CRUD провайдера (создать тестового → редактировать → удалить) работает без 500.
+  - `/admin/ai/routing` открывается, детальная `/admin/ai/routing/chat-v2` — вкладка «Цепочка» сохраняет через новый `PUT .../chain` (проверить в Network-вкладке браузера сам путь и 200-ответ), вкладки «Метрики»/«История» без дублирования.
+  - `/admin/llm-routes` (старый путь) → 404/redirect, НЕ 500 (backend-контроллер удалён Шагом раньше в этой же фазе).
+  - **Критичный smoke на живой чат-путь:** прогнать реальный AI-вызов (любой существующий воркер, использующий `LlmRouterService.call()` — например, ручное создание meeting-summary) и убедиться, что ответ приходит успешно **при включённом флаге** (`USE_PROTOCOL_ADAPTER_REGISTRY=true` по умолчанию) — это самый рискованный пункт выката, 29 parity-тестов доказывают эквивалентность на уровне юнит-тестов, но реальный прод-трафик через registry-путь ранее не проходил.
+- **Откат при инциденте:** `USE_PROTOCOL_ADAPTER_REGISTRY=false` в `.env` + `docker compose up -d backend` (без rebuild) — мгновенный откат dispatch на legacy-switch, миграция/сиды/патчи не откатываются (они аддитивны и безвредны в любом состоянии флага).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-02 — CRUD провайдеров эмбеддингов (ТЗ embedding-providers-crud)
 
 > ТЗ `plans/tz/2026-07-02-embedding-providers-crud.md`. Управляемые из админки провайдеры эмбеддингов (`EmbeddingProvider`/`EmbeddingModel`): резолвер рантайма читает активных провайдеров из БД по `priority` и строит fallback-цепочку (было — ENV-переключатель `embeddings.provider`, теперь он депрекейтнут и служит code-fallback при пустой БД). CRUD на `/admin/ai/embeddings` вкладка «Провайдеры» (endpoint / ключ AES-256-GCM / модели / цены / priority / smoke / баннер реиндексации). Публичный контракт `embed()` не изменён.

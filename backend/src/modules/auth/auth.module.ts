@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
+import { PasswordModule } from '../accounts/password.module';
+
 import { AuthController } from './auth.controller';
 import { AdminGuard } from './guards/admin.guard';
 import { CookieAuthGuard } from './guards/cookie-auth.guard';
@@ -13,6 +15,7 @@ import { JwtService } from './services/jwt.service';
 
 @Global()
 @Module({
+  imports: [PasswordModule],
   controllers: [AuthController],
   providers: [
     JwtService,

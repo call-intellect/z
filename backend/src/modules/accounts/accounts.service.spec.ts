@@ -65,6 +65,7 @@ describe('AccountsService', () => {
   let passwords: {
     hash: ReturnType<typeof vi.fn>;
     verify: ReturnType<typeof vi.fn>;
+    needsRehash: ReturnType<typeof vi.fn>;
   };
   let sessions: {
     issue: ReturnType<typeof vi.fn>;
@@ -99,6 +100,11 @@ describe('AccountsService', () => {
     incMagicLinkRequest: ReturnType<typeof vi.fn>;
     incMagicLinkConsume: ReturnType<typeof vi.fn>;
     incBotLoginCommand: ReturnType<typeof vi.fn>;
+    incInviteAccepted: ReturnType<typeof vi.fn>;
+  };
+  let orgInvitations: {
+    acceptViaMagicLink: ReturnType<typeof vi.fn>;
+    acceptViaPassword: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -117,6 +123,7 @@ describe('AccountsService', () => {
     passwords = {
       hash: vi.fn(async () => 'hashed'),
       verify: vi.fn(async () => true),
+      needsRehash: vi.fn(() => false),
     };
     sessions = {
       issue: vi.fn(async () => ({ session: { id: 's1', jti: 'jti-1' }, token: 'jwt' })),
@@ -163,6 +170,11 @@ describe('AccountsService', () => {
       incMagicLinkRequest: vi.fn(),
       incMagicLinkConsume: vi.fn(),
       incBotLoginCommand: vi.fn(),
+      incInviteAccepted: vi.fn(),
+    };
+    orgInvitations = {
+      acceptViaMagicLink: vi.fn(),
+      acceptViaPassword: vi.fn(async () => null),
     };
   });
 
@@ -178,7 +190,7 @@ describe('AccountsService', () => {
       orgs as unknown as OrgsService,
       redis as unknown as RedisService,
       metrics as unknown as BusinessMetricsService,
-      {} as unknown as OrgInvitationsService,
+      orgInvitations as unknown as OrgInvitationsService,
     );
   }
 
@@ -280,6 +292,117 @@ describe('AccountsService', () => {
       const svc = make();
       const result = await svc.login({ email: 'a@b.c', password: 'temp' });
       expect(result.mustChangePassword).toBe(true);
+    });
+
+    it('нового юзера нет, но есть pending-инвайт с temp-паролем → принимает инвайт и выдаёт сессию', async () => {
+      repo.findStandaloneByEmail.mockResolvedValue(null);
+      orgInvitations.acceptViaPassword.mockResolvedValue({
+        orgId: 'org-1',
+        userId: 'u-new',
+        sessionToken: 'jwt-invite',
+        membership: { role: 'manager', joinedAt: '2026-06-30T00:00:00.000Z' },
+      });
+      repo.findById.mockResolvedValue(makeUser({ id: 'u-new', mustChangePassword: true }));
+
+      const svc = make();
+      const result = await svc.login({ email: 'new@example.com', password: 'temp-pw' });
+
+      expect(orgInvitations.acceptViaPassword).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'new@example.com', password: 'temp-pw' }),
+      );
+      expect(result.token).toBe('jwt-invite');
+      expect(result.mustChangePassword).toBe(true);
+      expect(result.user.id).toBe('u-new');
+    });
+
+    it('юзера нет и инвайт по паролю не подошёл → LoginInvalidError', async () => {
+      repo.findStandaloneByEmail.mockResolvedValue(null);
+      orgInvitations.acceptViaPassword.mockResolvedValue(null);
+      const svc = make();
+      await expect(
+        svc.login({ email: 'new@example.com', password: 'wrong' }),
+      ).rejects.toBeInstanceOf(LoginInvalidError);
+      expect(sessions.issue).not.toHaveBeenCalled();
+    });
+
+    it('существующий юзер со своим паролем → инвайт-фолбэк не дёргается', async () => {
+      repo.findStandaloneByEmail.mockResolvedValue(makeUser());
+      passwords.verify.mockResolvedValue(true);
+      const svc = make();
+      await svc.login({ email: 'alice@example.com', password: 'real-pw' });
+      expect(orgInvitations.acceptViaPassword).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('acceptInvitationMagicLink', () => {
+    it('существующий standalone-юзер → пароль НЕ сбрасывается (upsertStandalone не вызывается)', async () => {
+      repo.findStandaloneByEmail.mockResolvedValue(makeUser({ id: 'u-exist', email: 'ex@e.com' }));
+      repo.findById.mockResolvedValue(makeUser({ id: 'u-exist', email: 'ex@e.com' }));
+      orgInvitations.acceptViaMagicLink.mockImplementation(
+        async (input: {
+          upsertUserByEmail: (a: {
+            email: string;
+            name: string;
+            passwordHash?: string;
+          }) => Promise<{ id: string; email: string; role: 'user' | 'admin' }>;
+        }) => {
+          const u = await input.upsertUserByEmail({
+            email: 'ex@e.com',
+            name: 'Ex',
+            passwordHash: 'temp-hash',
+          });
+          return {
+            orgId: 'org-1',
+            userId: u.id,
+            sessionToken: 'jwt',
+            membership: { role: 'manager', joinedAt: '2026-06-30T00:00:00.000Z' },
+          };
+        },
+      );
+
+      const svc = make();
+      const r = await svc.acceptInvitationMagicLink({ magicToken: 'm' });
+
+      expect(repo.upsertStandalone).not.toHaveBeenCalled();
+      expect(r.token).toBe('jwt');
+    });
+
+    it('нового юзера нет → создаётся с temp-паролем и mustChangePassword=true', async () => {
+      repo.findStandaloneByEmail.mockResolvedValue(null);
+      repo.upsertStandalone.mockResolvedValue(makeUser({ id: 'u-new', mustChangePassword: true }));
+      repo.findById.mockResolvedValue(makeUser({ id: 'u-new', mustChangePassword: true }));
+      orgInvitations.acceptViaMagicLink.mockImplementation(
+        async (input: {
+          upsertUserByEmail: (a: {
+            email: string;
+            name: string;
+            passwordHash?: string;
+          }) => Promise<{ id: string; email: string; role: 'user' | 'admin' }>;
+        }) => {
+          const u = await input.upsertUserByEmail({
+            email: 'new@e.com',
+            name: 'New',
+            passwordHash: 'temp-hash',
+          });
+          return {
+            orgId: 'org-1',
+            userId: u.id,
+            sessionToken: 'jwt2',
+            membership: { role: 'manager', joinedAt: '2026-06-30T00:00:00.000Z' },
+          };
+        },
+      );
+
+      const svc = make();
+      await svc.acceptInvitationMagicLink({ magicToken: 'm' });
+
+      expect(repo.upsertStandalone).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'new@e.com',
+          passwordHash: 'temp-hash',
+          mustChangePassword: true,
+        }),
+      );
     });
   });
 
@@ -740,6 +863,36 @@ describe('AccountsService', () => {
 
       expect(me?.currentOrgRole).toBeNull();
       expect(me?.currentOrgId).toBeNull();
+    });
+
+    it('активная орга (X-Org-Id) → возвращает её роль, переопределяя свою', async () => {
+      repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
+      prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
+      prisma.membership.findFirst
+        .mockResolvedValueOnce({ orgId: 'org-active', role: 'manager' })
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ orgId: 'own-org', role: 'owner' });
+
+      const svc = make();
+      const me = await svc.getMe('u1', 'org-active');
+
+      expect(me?.currentOrgId).toBe('org-active');
+      expect(me?.currentOrgRole).toBe('manager');
+    });
+
+    it('активная орга невалидна (не член) → fallback на свою орг', async () => {
+      repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
+      prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
+      prisma.membership.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ orgId: 'own-org', role: 'owner' });
+
+      const svc = make();
+      const me = await svc.getMe('u1', 'ghost-org');
+
+      expect(me?.currentOrgId).toBe('own-org');
+      expect(me?.currentOrgRole).toBe('owner');
     });
   });
 });

@@ -11,12 +11,12 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { MembershipRole, OrgInvitation, Prisma } from '@prisma/client';
-import argon2 from 'argon2';
 import { nanoid } from 'nanoid';
 
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PasswordService } from '../accounts/password.service';
 import { ConversationalLinkCodeService } from '../conversational/link-code.service';
 import { MailService } from '../mail/mail.service';
 import {
@@ -71,6 +71,7 @@ export class OrgInvitationsService {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
+    @Inject(PasswordService) private readonly passwords: PasswordService,
   ) {}
 
   private emitMembershipCreated(payload: MembershipCreatedPayload): void {
@@ -149,6 +150,7 @@ export class OrgInvitationsService {
         (normalizedEmail ? normalizedEmail.split('@')[0] : null) ||
         'Сотрудник').slice(0, 120);
 
+    let existingStandaloneUser: { id: string; name: string } | null = null;
     if (normalizedEmail) {
       const existing = await this.prisma.orgInvitation.findFirst({
         where: { orgId: input.orgId, email: normalizedEmail, status: 'pending' },
@@ -162,12 +164,13 @@ export class OrgInvitationsService {
           },
         });
       }
-      const userByEmail = await this.prisma.user.findFirst({
-        where: { email: normalizedEmail, deletedAt: null },
+      existingStandaloneUser = await this.prisma.user.findFirst({
+        where: { email: normalizedEmail, signupSource: 'standalone', deletedAt: null },
+        select: { id: true, name: true },
       });
-      if (userByEmail) {
+      if (existingStandaloneUser) {
         const existingMembership = await this.prisma.membership.findUnique({
-          where: { orgId_userId: { orgId: input.orgId, userId: userByEmail.id } },
+          where: { orgId_userId: { orgId: input.orgId, userId: existingStandaloneUser.id } },
         });
         if (existingMembership) {
           throw new ConflictException({
@@ -188,8 +191,9 @@ export class OrgInvitationsService {
     const magicTokenHash = sha256Hex(magicToken);
     const expiresAt = new Date(Date.now() + ttlSec * 1000);
 
-    const tempPassword = normalizedEmail ? generateInviteTempPassword() : null;
-    const tempPasswordHash = tempPassword ? await this.hashPasswordArgon2(tempPassword) : null;
+    const tempPassword =
+      normalizedEmail && !existingStandaloneUser ? generateInviteTempPassword() : null;
+    const tempPasswordHash = tempPassword ? await this.passwords.hash(tempPassword) : null;
 
     const linkCodeOwner =
       input.actorUserId;
@@ -225,22 +229,38 @@ export class OrgInvitationsService {
     const manualShareUrl = magicLinkUrl;
     const qrCodeDataUrl = await this.tryBuildQrCode(magicLinkUrl);
 
-    if (normalizedEmail && tempPassword) {
-      const sendResult = await this.mail.sendInviteWithCredentials({
-        to: normalizedEmail,
-        name: displayName,
-        inviterName: invitation.inviter?.name ?? 'Руководитель',
-        orgName: invitation.org.name,
-        loginEmail: normalizedEmail,
-        tempPassword,
-        loginUrl: this.buildLoginUrl(),
-        magicLinkUrl,
-        telegramDeepLink,
-        ttlDays,
-      });
+    if (normalizedEmail) {
+      const inviterName = invitation.inviter?.name ?? 'Руководитель';
+      const sendResult = existingStandaloneUser
+        ? await this.mail.sendInviteNotification({
+            to: normalizedEmail,
+            name: existingStandaloneUser.name || displayName,
+            inviterName,
+            orgName: invitation.org.name,
+            loginUrl: this.buildLoginUrl(),
+            magicLinkUrl,
+            telegramDeepLink,
+            ttlDays,
+          })
+        : await this.mail.sendInviteWithCredentials({
+            to: normalizedEmail,
+            name: displayName,
+            inviterName,
+            orgName: invitation.org.name,
+            loginEmail: normalizedEmail,
+            tempPassword: tempPassword as string,
+            loginUrl: this.buildLoginUrl(),
+            magicLinkUrl,
+            telegramDeepLink,
+            ttlDays,
+          });
       if (!sendResult.ok) {
         this.logger.warn(
-          { email: normalizedEmail, err: sendResult.error },
+          {
+            email: normalizedEmail,
+            err: sendResult.error,
+            existingUser: Boolean(existingStandaloneUser),
+          },
           'createInvitation: ошибка отправки письма (инвайт сохранён, можно переслать вручную)',
         );
       }
@@ -309,8 +329,15 @@ export class OrgInvitationsService {
     });
 
     const resendEmail = invite.email;
-    const tempPassword = resendEmail ? generateInviteTempPassword() : null;
-    const tempPasswordHash = tempPassword ? await this.hashPasswordArgon2(tempPassword) : null;
+    const existingStandaloneUser = resendEmail
+      ? await this.prisma.user.findFirst({
+          where: { email: resendEmail, signupSource: 'standalone', deletedAt: null },
+          select: { id: true, name: true },
+        })
+      : null;
+    const tempPassword =
+      resendEmail && !existingStandaloneUser ? generateInviteTempPassword() : null;
+    const tempPasswordHash = tempPassword ? await this.passwords.hash(tempPassword) : null;
 
     const updated = await this.prisma.orgInvitation.update({
       where: { id: invitationId },
@@ -335,22 +362,38 @@ export class OrgInvitationsService {
       ? (updated.email.split('@')[0] ?? 'Сотрудник')
       : 'Сотрудник';
 
-    if (updated.email && tempPassword) {
-      const sendResult = await this.mail.sendInviteWithCredentials({
-        to: updated.email,
-        name: displayName,
-        inviterName: updated.inviter?.name ?? 'Руководитель',
-        orgName: updated.org.name,
-        loginEmail: updated.email,
-        tempPassword,
-        loginUrl: this.buildLoginUrl(),
-        magicLinkUrl,
-        telegramDeepLink,
-        ttlDays,
-      });
+    if (updated.email) {
+      const inviterName = updated.inviter?.name ?? 'Руководитель';
+      const sendResult = existingStandaloneUser
+        ? await this.mail.sendInviteNotification({
+            to: updated.email,
+            name: existingStandaloneUser.name || displayName,
+            inviterName,
+            orgName: updated.org.name,
+            loginUrl: this.buildLoginUrl(),
+            magicLinkUrl,
+            telegramDeepLink,
+            ttlDays,
+          })
+        : await this.mail.sendInviteWithCredentials({
+            to: updated.email,
+            name: displayName,
+            inviterName,
+            orgName: updated.org.name,
+            loginEmail: updated.email,
+            tempPassword: tempPassword as string,
+            loginUrl: this.buildLoginUrl(),
+            magicLinkUrl,
+            telegramDeepLink,
+            ttlDays,
+          });
       if (!sendResult.ok) {
         this.logger.warn(
-          { email: updated.email, err: sendResult.error },
+          {
+            email: updated.email,
+            err: sendResult.error,
+            existingUser: Boolean(existingStandaloneUser),
+          },
           'resendInvitation: ошибка отправки письма',
         );
       }
@@ -422,11 +465,6 @@ export class OrgInvitationsService {
         },
       };
     }
-
-    await this.assertNoOtherActiveMembership({
-      userId,
-      targetOrgId: invite.orgId,
-    });
 
     const membership = await this.prisma.$transaction(async (tx) =>
       this.acceptInsideTransaction({
@@ -520,11 +558,6 @@ export class OrgInvitationsService {
       ? await input.upsertUserByEmail({ email: invite.email, name: displayName, passwordHash })
       : await input.createUserWithoutEmail({ name: displayName, passwordHash });
 
-    await this.assertNoOtherActiveMembership({
-      userId: user.id,
-      targetOrgId: invite.orgId,
-    });
-
     const membership = await this.prisma.$transaction(async (tx) => {
       const m = await this.acceptInsideTransaction({
         tx,
@@ -552,6 +585,91 @@ export class OrgInvitationsService {
     });
 
     this.metrics.incInviteAccepted({ path: 'magic_link' });
+
+    return {
+      orgId: invite.orgId,
+      userId: user.id,
+      sessionToken: token,
+      membership: {
+        role: membership.role,
+        joinedAt: membership.joinedAt.toISOString(),
+      },
+    };
+  }
+
+  async acceptViaPassword(input: {
+    email: string;
+    password: string;
+    upsertUserByEmail: (args: {
+      email: string;
+      name: string;
+      passwordHash: string;
+    }) => Promise<{ id: string; email: string; role: 'user' | 'admin' }>;
+    issueSession: (args: {
+      userId: string;
+      email: string;
+      role: 'user' | 'admin';
+    }) => Promise<{ token: string }>;
+  }): Promise<AcceptViaMagicLinkResult | null> {
+    const email = input.email.trim().toLowerCase();
+    if (!email) return null;
+
+    const candidates = await this.prisma.orgInvitation.findMany({
+      where: { email, status: 'pending', tempPasswordHash: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    });
+
+    let invite: (typeof candidates)[number] | null = null;
+    for (const candidate of candidates) {
+      if (
+        candidate.tempPasswordHash &&
+        (await this.passwords.verify(candidate.tempPasswordHash, input.password))
+      ) {
+        invite = candidate;
+        break;
+      }
+    }
+    if (!invite || !invite.email || !invite.tempPasswordHash) return null;
+
+    if (invite.expiresAt.getTime() <= Date.now()) {
+      await this.prisma.orgInvitation.update({
+        where: { id: invite.id },
+        data: { status: 'expired' },
+      });
+      this.metrics.incInviteExpired();
+      return null;
+    }
+
+    const displayName = invite.email.split('@')[0] ?? 'Сотрудник';
+    const user = await input.upsertUserByEmail({
+      email: invite.email,
+      name: displayName,
+      passwordHash: invite.tempPasswordHash,
+    });
+
+    const accepted = invite;
+    const membership = await this.prisma.$transaction(async (tx) =>
+      this.acceptInsideTransaction({
+        tx,
+        invitationId: accepted.id,
+        userId: user.id,
+        orgId: accepted.orgId,
+        role: accepted.role,
+        invitedBy: accepted.invitedBy,
+        personId: accepted.personId,
+      }),
+    );
+
+    this.rbac.invalidate(user.id, invite.orgId);
+    this.metrics.incInviteAccepted({ path: 'password' });
+    this.emitMembershipCreated({ tenantId: invite.orgId, userId: user.id });
+
+    const { token } = await input.issueSession({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
 
     return {
       orgId: invite.orgId,
@@ -638,32 +756,6 @@ export class OrgInvitationsService {
     return { removed: deleted.count };
   }
 
-
-  private async assertNoOtherActiveMembership(input: {
-    userId: string;
-    targetOrgId: string;
-  }): Promise<void> {
-    const otherMembership = await this.prisma.membership.findFirst({
-      where: {
-        userId: input.userId,
-        orgId: { not: input.targetOrgId },
-        org: { deletedAt: null },
-      },
-      include: { org: { select: { name: true } } },
-    });
-    if (otherMembership) {
-      throw new ConflictException({
-        ok: false,
-        error: {
-          code: 'already_in_another_org',
-          message:
-            `Вы уже состоите в компании «${otherMembership.org.name}». ` +
-            'Чтобы перейти в новую — попросите администратора старой исключить вас.',
-        },
-      });
-    }
-  }
-
   private async acceptInsideTransaction(args: {
     tx: Prisma.TransactionClient;
     invitationId: string;
@@ -735,15 +827,6 @@ export class OrgInvitationsService {
 
   private async tryBuildQrCode(_url: string): Promise<string | null> {
     return null;
-  }
-
-  private async hashPasswordArgon2(plain: string): Promise<string> {
-    return argon2.hash(plain, {
-      type: argon2.argon2id,
-      memoryCost: this.cfg.argon.memoryKb,
-      timeCost: this.cfg.argon.iterations,
-      parallelism: this.cfg.argon.parallelism,
-    });
   }
 
   private toDomain(i: OrgInvitation, orgName: string): OrgInvitationDomain {

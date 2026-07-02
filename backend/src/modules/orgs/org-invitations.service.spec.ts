@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../common/config/index';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import { PasswordService } from '../accounts/password.service';
 import type { ConversationalLinkCodeService } from '../conversational/link-code.service';
 import type { MailService } from '../mail/mail.service';
 import type { RbacService } from '../rbac/rbac.service';
@@ -47,6 +48,7 @@ describe('OrgInvitationsService (β-9)', () => {
   };
   let mail: {
     sendInviteWithCredentials: ReturnType<typeof vi.fn>;
+    sendInviteNotification: ReturnType<typeof vi.fn>;
     sendInviteReminder: ReturnType<typeof vi.fn>;
     sendInviteDirectorTimeout: ReturnType<typeof vi.fn>;
   };
@@ -87,6 +89,7 @@ describe('OrgInvitationsService (β-9)', () => {
     };
     mail = {
       sendInviteWithCredentials: vi.fn(async () => ({ ok: true })),
+      sendInviteNotification: vi.fn(async () => ({ ok: true })),
       sendInviteReminder: vi.fn(async () => ({ ok: true })),
       sendInviteDirectorTimeout: vi.fn(async () => ({ ok: true })),
     };
@@ -114,6 +117,7 @@ describe('OrgInvitationsService (β-9)', () => {
       linkCodes as unknown as ConversationalLinkCodeService,
       metrics as unknown as BusinessMetricsService,
       { emit: vi.fn() } as unknown as EventEmitter2,
+      new PasswordService(cfg),
     );
   }
 
@@ -196,6 +200,56 @@ describe('OrgInvitationsService (β-9)', () => {
       expect(sentPassword.length).toBeGreaterThanOrEqual(20);
       expect(await argon2.verify(stored as string, sentPassword)).toBe(true);
       expect(metrics.incInviteCreated).toHaveBeenCalledWith({ hasEmail: true });
+    });
+
+    it('пользователь уже существует → НЕ генерит пароль, шлёт уведомление', async () => {
+      prisma.user.findFirst.mockResolvedValue({ id: 'u-existing', name: 'Айназ' });
+      prisma.orgInvitation.create.mockResolvedValue({
+        id: 'inv-x',
+        orgId: 'org-1',
+        email: 'ainaz@example.com',
+        role: 'manager',
+        status: 'pending',
+        invitedBy: 'u-actor',
+        createdAt: new Date('2026-06-30'),
+        expiresAt: new Date('2026-07-14'),
+        acceptedAt: null,
+        org: { name: 'ООО Ромашка' },
+        inviter: { name: 'Иван' },
+      });
+
+      const svc = make();
+      const result = await svc.createInvitation({
+        orgId: 'org-1',
+        actorUserId: 'u-actor',
+        email: 'Ainaz@Example.com',
+        role: 'manager',
+      });
+
+      expect(result.email).toBe('ainaz@example.com');
+      expect(mail.sendInviteNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'ainaz@example.com', name: 'Айназ', orgName: 'ООО Ромашка' }),
+      );
+      expect(mail.sendInviteWithCredentials).not.toHaveBeenCalled();
+      const createCall = prisma.orgInvitation.create.mock.calls[0]?.[0] as
+        | { data: { tempPasswordHash: string | null } }
+        | undefined;
+      expect(createCall?.data.tempPasswordHash).toBeNull();
+    });
+
+    it('пользователь уже состоит в компании → Conflict (already_member)', async () => {
+      prisma.user.findFirst.mockResolvedValue({ id: 'u-existing', name: 'Айназ' });
+      prisma.membership.findUnique.mockResolvedValueOnce({ id: 'mem-1' });
+      const svc = make();
+      await expect(
+        svc.createInvitation({
+          orgId: 'org-1',
+          actorUserId: 'u-actor',
+          email: 'ainaz@example.com',
+          role: 'manager',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.orgInvitation.create).not.toHaveBeenCalled();
     });
 
     it('owner/admin only — manager-у запрещено', async () => {
@@ -387,7 +441,7 @@ describe('OrgInvitationsService (β-9)', () => {
       expect(upsertUserByEmail).not.toHaveBeenCalled();
     });
 
-    it('Conflict при уже существующем Membership в другой Org', async () => {
+    it('multi-org: вступает в новую Org, даже если уже состоит в другой', async () => {
       prisma.orgInvitation.findUnique.mockResolvedValue({
         id: 'inv-1',
         orgId: 'org-1',
@@ -413,15 +467,18 @@ describe('OrgInvitationsService (β-9)', () => {
         email: 'ivan@example.com',
         role: 'user' as const,
       }));
+      const issueSession = vi.fn(async () => ({ token: 'jwt-multi' }));
 
-      await expect(
-        svc.acceptViaMagicLink({
-          magicToken: 'raw',
-          issueSession: vi.fn(),
-          upsertUserByEmail,
-          createUserWithoutEmail: vi.fn(),
-        }),
-      ).rejects.toBeInstanceOf(ConflictException);
+      const result = await svc.acceptViaMagicLink({
+        magicToken: 'raw',
+        issueSession,
+        upsertUserByEmail,
+        createUserWithoutEmail: vi.fn(),
+      });
+
+      expect(result.orgId).toBe('org-1');
+      expect(result.sessionToken).toBe('jwt-multi');
+      expect(prisma.membership.create).toHaveBeenCalled();
     });
 
     it('NotFound для несуществующего magic-token', async () => {
@@ -435,6 +492,103 @@ describe('OrgInvitationsService (β-9)', () => {
           createUserWithoutEmail: vi.fn(),
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('acceptViaPassword', () => {
+    const futureExpire = new Date(Date.now() + 7 * 86_400_000);
+
+    async function makeCandidate(
+      password: string,
+      over: Record<string, unknown> = {},
+    ): Promise<Record<string, unknown>> {
+      const tempPasswordHash = await new PasswordService(cfg).hash(password);
+      return {
+        id: 'inv-1',
+        orgId: 'org-1',
+        email: 'new@example.com',
+        role: 'manager',
+        status: 'pending',
+        invitedBy: 'u-actor',
+        expiresAt: futureExpire,
+        tempPasswordHash,
+        personId: null,
+        ...over,
+      };
+    }
+
+    it('верный temp-пароль → провижинит User+Membership, выдаёт сессию', async () => {
+      prisma.orgInvitation.findMany.mockResolvedValue([await makeCandidate('temp-pw')]);
+      const svc = make();
+      const upsertUserByEmail = vi.fn(async () => ({
+        id: 'u-new',
+        email: 'new@example.com',
+        role: 'user' as const,
+      }));
+      const issueSession = vi.fn(async () => ({ token: 'jwt-pw' }));
+
+      const result = await svc.acceptViaPassword({
+        email: 'New@Example.com',
+        password: 'temp-pw',
+        upsertUserByEmail,
+        issueSession,
+      });
+
+      expect(result?.sessionToken).toBe('jwt-pw');
+      expect(result?.orgId).toBe('org-1');
+      expect(upsertUserByEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'new@example.com' }),
+      );
+      expect(prisma.membership.create).toHaveBeenCalled();
+      expect(metrics.incInviteAccepted).toHaveBeenCalledWith({ path: 'password' });
+    });
+
+    it('неверный пароль → null, ничего не провижинит', async () => {
+      prisma.orgInvitation.findMany.mockResolvedValue([await makeCandidate('temp-pw')]);
+      const svc = make();
+      const upsertUserByEmail = vi.fn();
+
+      const result = await svc.acceptViaPassword({
+        email: 'new@example.com',
+        password: 'WRONG',
+        upsertUserByEmail,
+        issueSession: vi.fn(),
+      });
+
+      expect(result).toBeNull();
+      expect(upsertUserByEmail).not.toHaveBeenCalled();
+      expect(prisma.membership.create).not.toHaveBeenCalled();
+    });
+
+    it('нет pending-инвайтов с temp-паролем → null', async () => {
+      prisma.orgInvitation.findMany.mockResolvedValue([]);
+      const svc = make();
+
+      const result = await svc.acceptViaPassword({
+        email: 'new@example.com',
+        password: 'temp-pw',
+        upsertUserByEmail: vi.fn(),
+        issueSession: vi.fn(),
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('инвайт истёк → null, помечает expired', async () => {
+      prisma.orgInvitation.findMany.mockResolvedValue([
+        await makeCandidate('temp-pw', { expiresAt: new Date(Date.now() - 1000) }),
+      ]);
+      const svc = make();
+
+      const result = await svc.acceptViaPassword({
+        email: 'new@example.com',
+        password: 'temp-pw',
+        upsertUserByEmail: vi.fn(),
+        issueSession: vi.fn(),
+      });
+
+      expect(result).toBeNull();
+      expect(metrics.incInviteExpired).toHaveBeenCalled();
     });
   });
 

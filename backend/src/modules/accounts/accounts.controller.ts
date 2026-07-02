@@ -20,6 +20,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 
 import { AccountsService } from './accounts.service';
 import { ChangePasswordSchema, type ChangePasswordDto } from './dto/change-password.dto';
@@ -220,11 +221,14 @@ export class AccountsController {
   @Get('me')
   @OptionalAuth()
   @UseGuards(CookieAuthGuard)
-  async me(@CurrentUser() user: CurrentUserPayload | null): Promise<{
+  async me(
+    @CurrentUser() user: CurrentUserPayload | null,
+    @CurrentOrg() activeOrgId: string | undefined,
+  ): Promise<{
     user: Awaited<ReturnType<AccountsService['getMe']>> | null;
   }> {
     if (!user) return { user: null };
-    const fresh = await this.accounts.getMe(user.id);
+    const fresh = await this.accounts.getMe(user.id, activeOrgId ?? null);
     return { user: fresh };
   }
 

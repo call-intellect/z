@@ -753,14 +753,17 @@ docker compose run --rm --no-deps backend \
 >
 > **Зачем:** чат с несколькими клиентами в одном треде размечается флагом `isGroup`; детальный API отдаёт участников с резолвленными именами/ролями; channel-client'ы go-forward становятся контактами `Entity{person}` со связью `works_at` к аккаунту-Customer; UI показывает бейдж «Группа», список участников и имена отправителей в переписке.
 >
-> **🟡 1 МИГРАЦИЯ PRISMA (авто через `migrate deploy`, аддитивная). 🟢 НОВЫХ ENV НЕТ.** Новых seed/patch/backfill/cron/LLM-taskType/метрик нет (детекция `isGroup` и авто-контакты идут штатным синком/ингестом). Docker rebuild backend+frontend.
+> **🟡 2 МИГРАЦИИ PRISMA (авто через `migrate deploy`, аддитивные). 🟢 НОВЫХ ENV НЕТ.** Новых seed/patch/backfill/cron/LLM-taskType/метрик нет (детекция `isGroup`, `title`, авто-контакты, группировка диалогов идут штатным синком/read-слоем). Docker rebuild backend+frontend.
 
-- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260624160000_chatbox_chat_is_group` — `ALTER TABLE "ChatboxChat" ADD COLUMN "isGroup" BOOLEAN NOT NULL DEFAULT false` (производный флаг группового чата — `true`, если в чате >1 различного CLIENT-отправителя). Аддитивная (ADD COLUMN, без DROP), без потери данных, backfill не нужен — детекция проставит `isGroup` при следующем синке (`syncMessages`). **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §ChatboxChat.
-- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`chatbox`: `syncMessages` выставляет `isGroup` при >1 различного CLIENT `senderExternalId`; `ChatboxCustomersService.autoLinkChannelClients` из `syncChannelClients` — channel-client → `Entity{type=person}` + `EntityLink(works_at)` к аккаунту-Customer + `ChatboxChannelClient.linkedContactEntityId`, идемпотентно; `getChat` отдаёт `isGroup`+`participants[]`, `listChats` — `isGroup`, `listMessages` резолвит `senderName` из зеркал `ChatboxChannelClient`/`ChatboxMember`). Frontend (бейдж «Группа» в списке и шапке диалога `/chats`; список участников в шапке детальной; резолвленные имена отправителей в переписке).
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`):
+  - `20260624160000_chatbox_chat_is_group` — `ALTER TABLE "ChatboxChat" ADD COLUMN "isGroup" BOOLEAN NOT NULL DEFAULT false` (производный флаг группового чата — `true`, если в чате >1 различного CLIENT-отправителя). Аддитивная, backfill не нужен — детекция проставит `isGroup` при следующем синке (`syncMessages`).
+  - `20260624170000_chatbox_chat_title` — `ALTER TABLE "ChatboxChat" ADD COLUMN "title" TEXT` + бэкофилл `UPDATE "ChatboxChat" SET "title" = raw->'client'->>'name' WHERE raw->'client'->>'name' IS NOT NULL` (имя диалога из ChatBox: название группы / имя человека). Аддитивная, бэкофилл вшит в миграцию (идемпотентен), новый синк проставляет `title` в `upsertChat`.
+  - Обе **в STEPS не регистрируются** (миграции схемы). Соответствует `data-model.md` §ChatboxChat.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`chatbox`: `syncMessages` выставляет `isGroup`; `upsertChat` пишет `title` из `raw.client.name`; `ChatboxCustomersService.autoLinkChannelClients` из `syncChannelClients` — channel-client → `Entity{type=person}` + `EntityLink(works_at)` к аккаунту-Customer + `ChatboxChannelClient.linkedContactEntityId`, идемпотентно; **`listChats` группирует диалоги по `(channelExternalId, COALESCE(customerExternalId, clientExternalId, externalId))` через `$queryRaw`** — один диалог на (клиент+канал), `getChat`/`listMessages` склеивают сессии и сообщения sibling-чатов; `listMessages` резолвит `senderName` из зеркал `ChatboxMember`/`ChatboxChannelClient`/`ChatboxCustomer`; счётчик `memory-summary.blocks` = `ideaBlock.count(canonical)`). Frontend (бейдж канала Telegram/MAX + «Группа»/«Личный» в списке и шапке; `title` вместо UUID; имена отправителей с ролью в переписке; «Карточки памяти» → `/ideas`; журнал синка отдельной страницей `/chats/integrations/chatbox/sync-log` с «новых чатов/сообщений»; в «Команде» убран legacy-фильтр клиентов).
 - **Шаг 12 — Smoke** (после выката):
-  - Миграция применилась: `\d "ChatboxChat"` содержит колонку `isGroup` (default false).
-  - После синка чат с >1 CLIENT-отправителем имеет `isGroup=true`; `GET /api/v1/chatbox/chats/:id` отдаёт `participants[]` с именами/ролями; `GET /api/v1/chatbox/chats/:id/messages` отдаёт `senderName`.
-  - Фронт: бейдж «Группа» в списке/шапке, список участников в детальной, имена отправителей в переписке.
+  - Миграции применились: `\d "ChatboxChat"` содержит колонки `isGroup` (default false) и `title`.
+  - После синка: чат с >1 CLIENT-отправителем `isGroup=true`; `title` = имя из ChatBox; несколько ChatBox-чатов одного `(customer+channel)` схлопнуты в один диалог в `GET /api/v1/chatbox/chats`; `GET .../chats/:id` отдаёт `participants[]`+`sessions[]` (склеенные), `.../messages` — `senderName`.
+  - Фронт: бейдж канала и «Группа»/«Личный», `title` вместо UUID, имена отправителей в переписке; «Карточки памяти» открывают `/ideas` (не `/cards`); журнал на отдельной странице показывает «новых чатов/сообщений»; «Команда» без фильтра «Клиенты».
   - Go-forward: у channel-client'ов после `chats`-синка проставлен `linkedContactEntityId`, контакт виден как `Entity{person}` со связью `works_at` к Customer.
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
@@ -4925,7 +4928,7 @@ docker compose up -d --force-recreate postgres
 
 ### B.6 — Бутстрап первого супер-админа
 
-**Интерактивно (рекомендуется)** — вводишь только email и пароль, скрипт сам хеширует (bcrypt 12) и ставит `role='admin'` + `isSuperAdmin=true`:
+**Интерактивно (рекомендуется)** — вводишь только email и пароль, скрипт сам хеширует (**argon2id**, с 2026-06-29; прежние bcrypt-хэши остаются валидны через fallback в `PasswordService`) и ставит `role='admin'` + `isSuperAdmin=true`:
 ```bash
 docker compose exec backend bun run scripts/set-admin-password.ts <email> '<пароль>' --super
 # нет юзера → создаст; есть с role=admin → обновит пароль (+ isSuperAdmin при --super)

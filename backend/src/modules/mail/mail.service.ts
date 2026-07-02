@@ -7,6 +7,7 @@ import { TypedConfigService } from '../../common/config/index';
 import {
   INVITE_DIRECTOR_TIMEOUT_TEMPLATE,
   INVITE_GITHUB_STYLE_TEMPLATE,
+  INVITE_NOTIFICATION_TEMPLATE,
   INVITE_REMINDER_TEMPLATE,
   INVITE_WITH_CREDENTIALS_TEMPLATE,
   MEETING_INVITE_TEMPLATE,
@@ -35,6 +36,15 @@ interface CompiledTemplates {
     name: string;
     inviterName: string;
     orgName: string;
+    magicLinkUrl: string;
+    telegramDeepLink: string;
+    ttlDays: number;
+  }>;
+  inviteNotification: HandlebarsTemplateDelegate<{
+    name: string;
+    inviterName: string;
+    orgName: string;
+    loginUrl: string;
     magicLinkUrl: string;
     telegramDeepLink: string;
     ttlDays: number;
@@ -189,6 +199,33 @@ export class MailService implements OnModuleInit {
     });
   }
 
+  async sendInviteNotification(input: {
+    to: string;
+    name: string;
+    inviterName: string;
+    orgName: string;
+    loginUrl: string;
+    magicLinkUrl: string;
+    telegramDeepLink: string;
+    ttlDays: number;
+  }): Promise<SendResult> {
+    const text = this.templates.inviteNotification({
+      name: input.name,
+      inviterName: input.inviterName,
+      orgName: input.orgName,
+      loginUrl: input.loginUrl,
+      magicLinkUrl: input.magicLinkUrl,
+      telegramDeepLink: input.telegramDeepLink,
+      ttlDays: input.ttlDays,
+    });
+    return this.send({
+      to: input.to,
+      subject: `${input.inviterName} приглашает вас в «${input.orgName}»`,
+      text,
+      template: 'invite-notification',
+    });
+  }
+
   async sendInviteReminder(input: {
     to: string;
     name: string;
@@ -339,6 +376,15 @@ export class MailService implements OnModuleInit {
         telegramDeepLink: string;
         ttlDays: number;
       }>(INVITE_GITHUB_STYLE_TEMPLATE, { noEscape: true }),
+      inviteNotification: Handlebars.compile<{
+        name: string;
+        inviterName: string;
+        orgName: string;
+        loginUrl: string;
+        magicLinkUrl: string;
+        telegramDeepLink: string;
+        ttlDays: number;
+      }>(INVITE_NOTIFICATION_TEMPLATE, { noEscape: true }),
       inviteReminder: Handlebars.compile<{
         name: string;
         inviterName: string;

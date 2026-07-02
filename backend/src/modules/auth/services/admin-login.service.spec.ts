@@ -1,11 +1,19 @@
 import bcrypt from 'bcrypt';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import { NotAuthorizedError } from '../../../common/errors/domain-errors';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import { PasswordService } from '../../accounts/password.service';
 
 import { AdminLoginService } from './admin-login.service';
 import type { JwtService } from './jwt.service';
+
+function makePasswords(): PasswordService {
+  return new PasswordService({
+    argon: { memoryKb: 1024, iterations: 2, parallelism: 1 },
+  } as unknown as TypedConfigService);
+}
 
 function makePrisma(usersByEmail: Array<{
   id: string;
@@ -24,6 +32,7 @@ function makePrisma(usersByEmail: Array<{
             (!wantEmail || u.email.toLowerCase() === wantEmail),
         );
       }),
+      update: vi.fn(async () => ({})),
     },
   } as unknown as PrismaService;
 }
@@ -46,7 +55,7 @@ describe('AdminLoginService.login', () => {
       },
     ]);
     const jwt = makeJwt();
-    const svc = new AdminLoginService(prisma, jwt);
+    const svc = new AdminLoginService(prisma, jwt, makePasswords());
 
     const result = await svc.login('admin@z.app', 'correct-pw');
     expect(result.user.id).toBe('u-admin');
@@ -68,7 +77,7 @@ describe('AdminLoginService.login', () => {
         passwordHash,
       },
     ]);
-    const svc = new AdminLoginService(prisma, makeJwt());
+    const svc = new AdminLoginService(prisma, makeJwt(), makePasswords());
 
     await expect(svc.login('admin@z.app', 'wrong-pw')).rejects.toBeInstanceOf(
       NotAuthorizedError,
@@ -84,7 +93,7 @@ describe('AdminLoginService.login', () => {
         passwordHash: await bcrypt.hash('correct-pw', 4),
       },
     ]);
-    const svc = new AdminLoginService(prisma, makeJwt());
+    const svc = new AdminLoginService(prisma, makeJwt(), makePasswords());
 
     await expect(svc.login('admin@z.app', 'correct-pw')).rejects.toBeInstanceOf(
       NotAuthorizedError,
@@ -101,7 +110,7 @@ describe('AdminLoginService.login', () => {
         passwordHash,
       },
     ]);
-    const svc = new AdminLoginService(prisma, makeJwt());
+    const svc = new AdminLoginService(prisma, makeJwt(), makePasswords());
 
     const result = await svc.login('ADMIN@z.app', 'correct-pw');
     expect(result.user.id).toBe('u-admin');
@@ -116,7 +125,7 @@ describe('AdminLoginService.login', () => {
         passwordHash: null,
       },
     ]);
-    const svc = new AdminLoginService(prisma, makeJwt());
+    const svc = new AdminLoginService(prisma, makeJwt(), makePasswords());
 
     await expect(svc.login('admin@z.app', 'any-pw')).rejects.toBeInstanceOf(
       NotAuthorizedError,
@@ -124,7 +133,7 @@ describe('AdminLoginService.login', () => {
   });
 
   it('пустой пароль/email → NotAuthorizedError', async () => {
-    const svc = new AdminLoginService(makePrisma([]), makeJwt());
+    const svc = new AdminLoginService(makePrisma([]), makeJwt(), makePasswords());
     await expect(svc.login('', 'pw')).rejects.toBeInstanceOf(NotAuthorizedError);
     await expect(svc.login('a@b.c', '')).rejects.toBeInstanceOf(NotAuthorizedError);
   });

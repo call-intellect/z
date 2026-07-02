@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
+import { CryptoModule } from '../../common/crypto/crypto.module';
+
 import { AdminAuditInterceptor } from './admin.audit.interceptor';
 import { AdminAiModule } from './ai/ai.module';
 import { AdminAiModelsController } from './ai-models/ai-models.controller';
@@ -20,6 +22,8 @@ import { OrgAdminMemoryAccessController } from './controllers/org-admin-memory-a
 import { AdminCronsModule } from './crons/admin-crons.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { AdminEconomicsController } from './economics/admin-economics.controller';
+import { AdminEmbeddingProvidersController } from './economics/admin-embedding-providers.controller';
+import { AdminEmbeddingProvidersService } from './economics/admin-embedding-providers.service';
 import { AdminLlmModelsController } from './economics/admin-llm-models.controller';
 import { AdminLlmModelsService } from './economics/admin-llm-models.service';
 import { AdminLlmProvidersController } from './economics/admin-llm-providers.controller';
@@ -85,6 +89,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     PlatformAdminModule,
     AdminSkillTraitConceptsModule,
     OnboardingModule,
+    CryptoModule,
   ],
   controllers: [
     AdminDemoController,
@@ -108,6 +113,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     OrgAdminMemoryAccessController,
     AdminLlmProvidersController,
     AdminLlmModelsController,
+    AdminEmbeddingProvidersController,
     AdminEconomicsController,
     OrgEconomicsController,
     AdminTelegramBotController,
@@ -133,6 +139,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     OrgAdminKnowledgeService,
     AdminLlmProvidersService,
     AdminLlmModelsService,
+    AdminEmbeddingProvidersService,
     UnitEconomicsService,
     CurrencyRateService,
     DailyCostAggregatorCron,

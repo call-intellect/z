@@ -7,6 +7,7 @@ import {
   Inject,
   Param,
   Post,
+  Put,
   Query,
   UseGuards,
   UseInterceptors,
@@ -29,6 +30,8 @@ import {
   type ListAiModelsQueryDto,
   MetricsQuerySchema,
   type MetricsQueryDto,
+  PutChainSchema,
+  type PutChainDto,
   SwitchPrimarySchema,
   type SwitchPrimaryDto,
 } from './dto/ai-models.dto';
@@ -82,6 +85,16 @@ export class AdminAiModelsController {
   ) {
     this.assertUser(user);
     return this.svc.removeProvider(taskType, providerId, user.id);
+  }
+
+  @Put('ai-models/:taskType/chain')
+  async putChain(
+    @Param('taskType') taskType: string,
+    @Body(new ZodValidationPipe(PutChainSchema)) dto: PutChainDto,
+    @CurrentUser() user: CurrentUserPayload | null | undefined,
+  ) {
+    this.assertUser(user);
+    return this.svc.putChain(taskType, dto, user.id);
   }
 
   @Get('ai-models/:taskType/history')

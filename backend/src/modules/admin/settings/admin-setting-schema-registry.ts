@@ -148,6 +148,15 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['llm.cacheSmokeEnabled', z.boolean()],
   ['llm.cacheHitRatioWarnThreshold', UNIT_INTERVAL],
+  // Ф6 llm-providers-models-routing-admin (2026-07-02, Б11) — дефолт-цепочка
+  // провайдеров для taskType без явного маршрута (primary→secondary→tertiary).
+  [
+    'llm.router.defaultChain',
+    z
+      .array(z.object({ provider: z.string(), model: z.string().nullable().optional() }))
+      .min(1)
+      .max(5),
+  ],
 
   ['embeddings.provider', z.string().trim().min(1)],
   ['embeddings.model', z.string().trim().min(1)],

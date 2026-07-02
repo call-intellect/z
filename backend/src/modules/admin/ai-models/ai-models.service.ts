@@ -1,4 +1,12 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import {
   Prisma,
   type LlmRouteTier,
@@ -9,12 +17,15 @@ import {
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ALL_LLM_TASK_TYPES, LlmRouterService } from '../../ai/services/llm-router.service';
+import { CurrencyRateService } from '../economics/currency-rate.service';
 
+import { PROVIDER_NAMES } from './dto/ai-models.dto';
 import type {
   AddProviderDto,
   CreateExperimentDto,
   MetricsQueryDto,
   ProviderName,
+  PutChainDto,
   SwitchPrimaryDto,
   TierValue,
 } from './dto/ai-models.dto';
@@ -88,6 +99,8 @@ export interface TaskTypeMetricsView {
       costUsd: number;
     }
   >;
+  /** Ф6 (2026-07-02): текущий курс USD→RUB из CurrencyRateService (ЦБ РФ), null если недоступен. */
+  usdRubRate: number | null;
 }
 
 @Injectable()
@@ -98,6 +111,9 @@ export class AdminAiModelsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(CurrencyRateService)
+    private readonly currencyRate?: CurrencyRateService,
   ) {}
 
   async list(filters: { group?: string; search?: string }): Promise<TaskTypeRouteView[]> {
@@ -312,6 +328,91 @@ export class AdminAiModelsService {
     return { ok: true };
   }
 
+  /**
+   * Ф6 (2026-07-02): единый write-API цепочки маршрута — заменяет все
+   * tier-строки taskType одним запросом. providerName валидируется против
+   * union(активный реестр LlmProvider, legacy-7); модель — мягко (warning).
+   */
+  async putChain(
+    taskType: string,
+    dto: PutChainDto,
+    userId: string,
+  ): Promise<{ ok: true; warnings: string[] }> {
+    this.assertKnownTaskType(taskType);
+    const before = await this.detail(taskType);
+
+    const dbProviders = await this.prisma.llmProvider.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    const knownProviders = new Set<string>([...dbProviders.map((p) => p.name), ...PROVIDER_NAMES]);
+
+    for (const entry of dto.entries) {
+      if (!knownProviders.has(entry.providerName)) {
+        throw new UnprocessableEntityException({
+          ok: false,
+          error: {
+            code: 'route_provider_unknown',
+            message: `providerName="${entry.providerName}" не найден ни в реестре LlmProvider, ни в legacy-списке`,
+          },
+        });
+      }
+    }
+
+    const usedProviderIds = dbProviders
+      .filter((p) => dto.entries.some((e) => e.providerName === p.name))
+      .map((p) => p.id);
+    const dbModels =
+      usedProviderIds.length > 0
+        ? await this.prisma.llmModel.findMany({
+            where: { isActive: true, providerId: { in: usedProviderIds } },
+            select: { modelKey: true },
+          })
+        : [];
+    const knownModels = new Set(dbModels.map((m) => m.modelKey));
+    const warnings: string[] = [];
+    for (const entry of dto.entries) {
+      if (entry.model && !knownModels.has(entry.model)) {
+        warnings.push(`model_not_in_catalog: ${entry.providerName}/${entry.model}`);
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.llmTaskRoute.deleteMany({
+        where: { tenantId: null, taskType, tier: { not: null } },
+      });
+      await tx.llmTaskRoute.createMany({
+        data: dto.entries.map((e) => ({
+          tenantId: null,
+          taskType,
+          tier: e.tier,
+          priority: e.priority,
+          providerName: e.providerName,
+          model: e.model ?? null,
+          isActive: dto.isActive,
+          editedByAdmin: true,
+          ...(dto.pinnedVersionNote !== undefined
+            ? { pinnedVersionNote: dto.pinnedVersionNote }
+            : {}),
+        })),
+      });
+    });
+
+    const after = await this.detail(taskType);
+    await this.writeAuditLog({
+      taskType,
+      tier: dto.entries[0]?.tier ?? 'primary',
+      changeType: 'chain_replaced',
+      before,
+      after,
+      userId,
+      reason: dto.reason,
+    });
+    this.metrics.incAdminAiModelsRouteChange({ taskType, changeType: 'chain_replaced' });
+    await this.router.refreshCache();
+    return { ok: true, warnings };
+  }
+
   async history(taskType: string, limit = 50): Promise<LlmTaskRouteChange[]> {
     this.assertKnownTaskType(taskType);
     return this.prisma.llmTaskRouteChange.findMany({
@@ -391,6 +492,7 @@ export class AdminAiModelsService {
       perTier.primary.costUsd + perTier.secondary.costUsd + perTier.tertiary.costUsd;
     const fallbackCalls = perTier.secondary.calls + perTier.tertiary.calls;
     const fallbackRate = totalCalls > 0 ? fallbackCalls / totalCalls : 0;
+    const usdRubRate = (await this.currencyRate?.getCurrentUsdRubRate().catch(() => null)) ?? null;
 
     return {
       period,
@@ -403,6 +505,7 @@ export class AdminAiModelsService {
         fallbackRate,
       },
       perTier,
+      usdRubRate,
     };
   }
 

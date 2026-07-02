@@ -18,6 +18,7 @@ function build() {
     switchPrimary: vi.fn(async () => ({ ok: true as const })),
     addProvider: vi.fn(async () => ({ ok: true as const })),
     removeProvider: vi.fn(async () => ({ ok: true as const })),
+    putChain: vi.fn(async () => ({ ok: true as const, warnings: [] })),
     history: vi.fn(async () => []),
     metrics_: vi.fn(async () => ({ period: '7d' })),
     createExperiment: vi.fn(async () => ({ id: 'e-1' })),
@@ -56,6 +57,36 @@ describe('AdminAiModelsController', () => {
     const { ctrl, svc } = build();
     await ctrl.removeProvider('summary', 'r-1', sampleUser);
     expect(svc.removeProvider).toHaveBeenCalledWith('summary', 'r-1', 'u-1');
+  });
+
+  it('PUT /ai-models/:taskType/chain — пробрасывает user.id в сервис', async () => {
+    const { ctrl, svc } = build();
+    const dto = {
+      entries: [{ tier: 'primary' as const, providerName: 'deepseek', priority: 0 }],
+      isActive: true,
+      reason: 'тест',
+    };
+    await ctrl.putChain('summary', dto, sampleUser);
+    expect(svc.putChain).toHaveBeenCalledWith('summary', dto, 'u-1');
+  });
+
+  it('PUT /ai-models/:taskType/chain без user — бросает BadRequestException', async () => {
+    const { ctrl } = build();
+    await expect(
+      ctrl.putChain(
+        'summary',
+        {
+          entries: [{ tier: 'primary', providerName: 'deepseek', priority: 0 }],
+          isActive: true,
+          reason: 'тест',
+        },
+        null,
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: expect.objectContaining({ code: 'no_user_context' }),
+      }),
+    });
   });
 
   it('GET /ai-models/:taskType/history — возвращает { items: [] }', async () => {

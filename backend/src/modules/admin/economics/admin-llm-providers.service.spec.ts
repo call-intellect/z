@@ -42,14 +42,17 @@ describe('AdminLlmProvidersService', () => {
   const create = vi.fn();
   const update = vi.fn();
   const llmModelFindMany = vi.fn();
+  const llmTaskRouteFindFirst = vi.fn();
   const encrypt = vi.fn(() => 'gcm:v1:mocked');
   const isEncrypted = vi.fn((v: string) => v.startsWith('gcm:v1:'));
   const invalidate = vi.fn();
   const resolveByName = vi.fn();
+  const getDynamic = vi.fn();
 
   const prisma = {
     llmProvider: { findMany, findUnique, create, update },
     llmModel: { findMany: llmModelFindMany },
+    llmTaskRoute: { findFirst: llmTaskRouteFindFirst },
   } as unknown as ConstructorParameters<typeof AdminLlmProvidersService>[0];
   const crypto = { encrypt, isEncrypted } as unknown as ConstructorParameters<
     typeof AdminLlmProvidersService
@@ -57,6 +60,9 @@ describe('AdminLlmProvidersService', () => {
   const providerInfo = { invalidate, resolveByName } as unknown as ConstructorParameters<
     typeof AdminLlmProvidersService
   >[2];
+  const cfg = { getDynamic } as unknown as ConstructorParameters<
+    typeof AdminLlmProvidersService
+  >[3];
 
   let svc: AdminLlmProvidersService;
 
@@ -64,6 +70,8 @@ describe('AdminLlmProvidersService', () => {
     vi.clearAllMocks();
     encrypt.mockReturnValue('gcm:v1:mocked');
     llmModelFindMany.mockResolvedValue([]);
+    llmTaskRouteFindFirst.mockResolvedValue(null);
+    getDynamic.mockResolvedValue([]);
     svc = new AdminLlmProvidersService(prisma, crypto, providerInfo);
   });
 
@@ -188,8 +196,9 @@ describe('AdminLlmProvidersService', () => {
     });
   });
 
-  it('softDelete soft-удаляет и инвалидирует providerInfo-кэш', async () => {
+  it('softDelete soft-удаляет и инвалидирует providerInfo-кэш (нет ссылок в маршрутах)', async () => {
     findUnique.mockResolvedValueOnce(fakeProvider());
+    llmTaskRouteFindFirst.mockResolvedValueOnce(null);
     update.mockResolvedValueOnce(fakeProvider({ deletedAt: FIXED_DATE, isActive: false }));
 
     const res = await svc.softDelete('p1');
@@ -202,6 +211,58 @@ describe('AdminLlmProvidersService', () => {
       }),
     );
     expect(invalidate).toHaveBeenCalled();
+  });
+
+  describe('provider_in_use_by_routes гард (Ф6)', () => {
+    it('softDelete провайдера с активным маршрутом → ConflictException, llmProvider.update НЕ вызван', async () => {
+      findUnique.mockResolvedValueOnce(fakeProvider());
+      llmTaskRouteFindFirst.mockResolvedValueOnce({ taskType: 'summary' });
+
+      let err: unknown;
+      try {
+        await svc.softDelete('p1');
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getResponse()).toMatchObject({
+        error: { code: 'provider_in_use_by_routes' },
+      });
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('update({isActive:false}) провайдера в llm.router.defaultChain → ConflictException', async () => {
+      const svcWithCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfg);
+      findUnique.mockResolvedValueOnce(fakeProvider());
+      llmTaskRouteFindFirst.mockResolvedValueOnce(null);
+      getDynamic.mockResolvedValueOnce([
+        { provider: 'deepseek' },
+        { provider: 'openai-via-proxy' },
+      ]);
+
+      let err: unknown;
+      try {
+        await svcWithCfg.update('p1', { isActive: false });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getResponse()).toMatchObject({
+        error: { code: 'provider_in_use_by_routes' },
+      });
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('update({isActive:false}) провайдера вне маршрутов и defaultChain — проходит', async () => {
+      const svcWithCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfg);
+      findUnique.mockResolvedValueOnce(fakeProvider());
+      llmTaskRouteFindFirst.mockResolvedValueOnce(null);
+      getDynamic.mockResolvedValueOnce([{ provider: 'openai-via-proxy' }]);
+      update.mockResolvedValueOnce(fakeProvider({ isActive: false }));
+
+      const res = await svcWithCfg.update('p1', { isActive: false });
+      expect(res.isActive).toBe(false);
+    });
   });
 
   describe('discoverModels', () => {

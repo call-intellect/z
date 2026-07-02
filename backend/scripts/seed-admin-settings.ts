@@ -916,6 +916,16 @@ function buildSettings(): SettingSeed[] {
       'low',
       'Порог доли cache-хитов по DeepSeek (0..1): ниже — WARN в логи (возможно taskType ушёл на некэширующий провайдер)',
     ],
+    [
+      'llm.router.defaultChain',
+      [
+        { provider: 'deepseek', model: null },
+        { provider: 'openai-via-proxy', model: null },
+        { provider: 'kie', model: 'gemini-3.1-pro' },
+      ],
+      'high',
+      'Дефолт-цепочка провайдеров для taskType без явного маршрута (primary→secondary→tertiary). Раньше — хардкод DEFAULT_FALLBACK_CHAIN в коде.',
+    ],
   ];
   for (const [key, value, severity, description] of llm) {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });

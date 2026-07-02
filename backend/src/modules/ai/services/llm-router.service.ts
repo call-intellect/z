@@ -1,10 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  Optional,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type { DataClass, LlmRouteTier, LlmTaskRoute } from '@prisma/client';
@@ -273,11 +267,6 @@ export type LlmTaskType =
   // (точная / ситуационный аналог / общий принцип) для retrieval по
   // аналогии. Отдельный route, primary — deepseek-v4-pro.
   | 'dialog-multi-query-clone'
-  // SBA α-7 wave 2 — Specialist 3.1 ProcessTemplate detector.
-  // 'process-template-extract' — батч IdeaBlock'ов
-  //   (signalType=process_step|methodology_step) → массив кандидатов
-  //   ProcessTemplate (name + summary + steps).
-  | 'process-template-extract'
   // SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router.
   // 'axis-classify' — классификация IdeaBlock'а по 4 осям (who/functional/
   //   contextual/temporal). Дешёвый, частый — primary Ollama qwen3.5:9b.
@@ -1033,9 +1022,7 @@ const DATA_CLASS_RANK: Record<DataClass, number> = {
  * Оставлено для legacy-вызовов вне knowledge-core (chat retrieval вне
  * specialist flow, summary v2). Новый код должен дёргать DataClassPolicyService.
  */
-export function maxDataClass(
-  classes: Array<DataClass | null | undefined>,
-): DataClass {
+export function maxDataClass(classes: Array<DataClass | null | undefined>): DataClass {
   let best: DataClass = 'internal';
   for (const c of classes) {
     if (!c) continue;
@@ -1341,9 +1328,7 @@ export class LlmRouterService implements OnModuleInit {
     try {
       await this.refreshCache();
     } catch (err) {
-      this.logger.warn(
-        `refreshCacheTick: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.logger.warn(`refreshCacheTick: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -1405,18 +1390,20 @@ export class LlmRouterService implements OnModuleInit {
     // Не критично если запрос упадёт (например, prod без новой колонки) —
     // просто A/B не включится. Best-effort.
     try {
-      const candidates = await (this.prisma as unknown as {
-        promptCandidate?: {
-          findMany: (args: unknown) => Promise<
-            Array<{
-              promptKey: string;
-              tenantId: string | null;
-              promptText: string;
-              abTrafficShare: number | null;
-            }>
-          >;
-        };
-      }).promptCandidate?.findMany({
+      const candidates = await (
+        this.prisma as unknown as {
+          promptCandidate?: {
+            findMany: (args: unknown) => Promise<
+              Array<{
+                promptKey: string;
+                tenantId: string | null;
+                promptText: string;
+                abTrafficShare: number | null;
+              }>
+            >;
+          };
+        }
+      ).promptCandidate?.findMany({
         where: { status: 'testing' },
         select: {
           promptKey: true,
@@ -1537,7 +1524,7 @@ export class LlmRouterService implements OnModuleInit {
       (r) => r.taskType === params.taskType && r.tenantId === null && r.isActive,
     );
     const effectiveDataClass = this.resolveEffectiveDataClass(route, params.dataClass);
-    const { providers, experimentGroup: baseExperimentGroup } = this.chooseProviders(
+    const { providers, experimentGroup: baseExperimentGroup } = await this.chooseProviders(
       route,
       params,
     );
@@ -1625,9 +1612,10 @@ export class LlmRouterService implements OnModuleInit {
         entry.tier ?? (i === 0 ? 'primary' : i === 1 ? 'secondary' : 'tertiary');
       // Причина срабатывания fallback'а: null для первого (primary) вызова,
       // иначе '<source-tier>_<кодError>'. Используется в аналитике admin'а.
-      const fallbackReason: string | null = i === 0
-        ? null
-        : `${lastFailTier ?? 'primary'}_${classifyError(errors[errors.length - 1]?.message ?? 'error')}`;
+      const fallbackReason: string | null =
+        i === 0
+          ? null
+          : `${lastFailTier ?? 'primary'}_${classifyError(errors[errors.length - 1]?.message ?? 'error')}`;
       try {
         // audit С30 (2026-05-29): hard-timeout. Если провайдер «висит»
         // дольше 30 секунд — мы не должны блокировать весь fallback-цикл.
@@ -1644,8 +1632,7 @@ export class LlmRouterService implements OnModuleInit {
         const providerTimeoutMs = this.isRegistryActive()
           ? (await this.providerInfo!.resolveByName(entry.provider))?.info.timeoutMs
           : undefined;
-        const effectiveTimeoutMs =
-          params.timeoutMs ?? providerTimeoutMs ?? this.dispatchTimeoutMs;
+        const effectiveTimeoutMs = params.timeoutMs ?? providerTimeoutMs ?? this.dispatchTimeoutMs;
         const out = await Promise.race([
           this.dispatch(entry, effectiveParams),
           new Promise<never>((_resolve, reject) =>
@@ -1712,10 +1699,7 @@ export class LlmRouterService implements OnModuleInit {
           fallbackReason,
           // Z-Admin Фаза 7: превью промпта (system+user) и ответа для drill-down.
           // Truncate до 8KB на стороне AiUsageLogService.
-          requestPreview: this.buildRequestPreview(
-            effectiveSystemPrompt,
-            params.userMessage,
-          ),
+          requestPreview: this.buildRequestPreview(effectiveSystemPrompt, params.userMessage),
           responsePreview: out.text,
         });
 
@@ -1764,9 +1748,7 @@ export class LlmRouterService implements OnModuleInit {
           durationMs: Date.now() - overallStartedAt,
           tier: effectiveTier,
           providerUsed: out.provider,
-          ...(out.toolCalls && out.toolCalls.length > 0
-            ? { toolCalls: out.toolCalls }
-            : {}),
+          ...(out.toolCalls && out.toolCalls.length > 0 ? { toolCalls: out.toolCalls } : {}),
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1811,10 +1793,7 @@ export class LlmRouterService implements OnModuleInit {
             experimentGroup,
             tier: effectiveTier,
             fallbackReason,
-            requestPreview: this.buildRequestPreview(
-              effectiveSystemPrompt,
-              params.userMessage,
-            ),
+            requestPreview: this.buildRequestPreview(effectiveSystemPrompt, params.userMessage),
             responsePreview: null,
           });
         }
@@ -1872,38 +1851,31 @@ export class LlmRouterService implements OnModuleInit {
   ): DataClass {
     const fromCaller: DataClass = callerClass ?? 'internal';
     const fromRoute: DataClass = route?.requiredDataClass ?? 'internal';
-    return DATA_CLASS_RANK[fromCaller] >= DATA_CLASS_RANK[fromRoute]
-      ? fromCaller
-      : fromRoute;
+    return DATA_CLASS_RANK[fromCaller] >= DATA_CLASS_RANK[fromRoute] ? fromCaller : fromRoute;
   }
 
   /**
    * Решает, какую цепочку провайдеров использовать с учётом A/B-эксперимента.
    * Возвращает providers и (опционально) метку группы для AiUsageLog.
    */
-  private chooseProviders(
+  private async chooseProviders(
     route: LlmTaskRoute | undefined,
     params: LlmCallParams,
-  ): { providers: ProviderEntry[]; experimentGroup: 'A' | 'B' | null } {
+  ): Promise<{ providers: ProviderEntry[]; experimentGroup: 'A' | 'B' | null }> {
     if (route?.experiment) {
       const exp = route.experiment as ExperimentConfig;
       const now = Date.now();
       const startedAt = exp.startedAt ? Date.parse(exp.startedAt) : Number.NaN;
       const endsAt = exp.endsAt ? Date.parse(exp.endsAt) : Number.NaN;
       const inWindow =
-        Number.isFinite(startedAt) &&
-        Number.isFinite(endsAt) &&
-        now >= startedAt &&
-        now < endsAt;
+        Number.isFinite(startedAt) && Number.isFinite(endsAt) && now >= startedAt && now < endsAt;
       if (exp.enabled === true && inWindow && exp.modelA && exp.modelB) {
         const splitPercent = typeof exp.splitPercent === 'number' ? exp.splitPercent : 50;
         const pickA = Math.random() * 100 < splitPercent;
         const pick = pickA ? exp.modelA : exp.modelB;
         const entry = parseProviderModelString(pick);
         if (entry) {
-          this.logger.debug(
-            `experiment ${params.taskType}: group=${pickA ? 'A' : 'B'} → ${pick}`,
-          );
+          this.logger.debug(`experiment ${params.taskType}: group=${pickA ? 'A' : 'B'} → ${pick}`);
           return { providers: [entry], experimentGroup: pickA ? 'A' : 'B' };
         }
       }
@@ -1912,7 +1884,53 @@ export class LlmRouterService implements OnModuleInit {
     if (cached && cached.length > 0) {
       return { providers: cached, experimentGroup: null };
     }
-    return { providers: DEFAULT_FALLBACK_CHAIN, experimentGroup: null };
+    return { providers: await this.resolveDefaultChain(), experimentGroup: null };
+  }
+
+  /**
+   * Ф6 (2026-07-02, Б11): дефолт-цепочка резолвится из крутилки
+   * `llm.router.defaultChain` (AdminSetting), code-fallback — `DEFAULT_FALLBACK_CHAIN`.
+   */
+  private async resolveDefaultChain(): Promise<ProviderEntry[]> {
+    if (!this.cfg) return DEFAULT_FALLBACK_CHAIN;
+    const codeFallback = DEFAULT_FALLBACK_CHAIN.map((e) => ({
+      provider: e.provider,
+      model: e.model ?? null,
+    }));
+    try {
+      const raw = await this.cfg.getDynamic<Array<{ provider: string; model?: string | null }>>(
+        'llm.router.defaultChain',
+        undefined,
+        codeFallback,
+      );
+      if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_FALLBACK_CHAIN;
+      const tiers: LlmRouteTier[] = ['primary', 'secondary', 'tertiary'];
+      const parsed: ProviderEntry[] = [];
+      for (let i = 0; i < raw.length; i++) {
+        const item = raw[i];
+        if (
+          !item ||
+          typeof item.provider !== 'string' ||
+          !(ALL_PROVIDERS as string[]).includes(item.provider)
+        ) {
+          this.logger.warn(
+            `llm.router.defaultChain: невалидная запись #${i} — использую code-fallback`,
+          );
+          return DEFAULT_FALLBACK_CHAIN;
+        }
+        parsed.push({
+          provider: item.provider as LlmProviderName,
+          ...(item.model ? { model: item.model } : {}),
+          tier: tiers[i] ?? 'tertiary',
+        });
+      }
+      return parsed;
+    } catch (err) {
+      this.logger.warn(
+        `llm.router.defaultChain: getDynamic сбой (${err instanceof Error ? err.message : String(err)}) — code-fallback`,
+      );
+      return DEFAULT_FALLBACK_CHAIN;
+    }
   }
 
   /**
@@ -1950,10 +1968,7 @@ export class LlmRouterService implements OnModuleInit {
     return fallback;
   }
 
-  private async dispatch(
-    entry: ProviderEntry,
-    params: LlmCallParams,
-  ): Promise<LlmCompleteOutput> {
+  private async dispatch(entry: ProviderEntry, params: LlmCallParams): Promise<LlmCompleteOutput> {
     // SBA α-10 wave 3 — Feature-flag USE_PROTOCOL_ADAPTER_REGISTRY.
     // false (default, production safety) → legacy switch ниже.
     // true → LlmProtocolAdapterRegistry резолвит protocolKind из LlmProvider/ENV.
@@ -1971,18 +1986,15 @@ export class LlmRouterService implements OnModuleInit {
     // дефолт-модель провайдера из БД (Ф5, defaultModelKey) → дефолт
     // легаси-сервиса (ниже, если ни один из трёх не задан — input.model не
     // передаётся вовсе).
-    const effectiveModel = params.model ?? entry.model ?? resolved?.info.defaultModelKey ?? undefined;
+    const effectiveModel =
+      params.model ?? entry.model ?? resolved?.info.defaultModelKey ?? undefined;
     const input: LlmCompleteInput = {
       system: { text: params.systemPrompt, cacheControl: 'ephemeral' },
       user: params.userMessage,
       ...(params.maxTokens !== undefined ? { maxTokens: params.maxTokens } : {}),
       ...(effectiveModel !== undefined ? { model: effectiveModel } : {}),
-      ...(params.responseFormat !== undefined
-        ? { responseFormat: params.responseFormat }
-        : {}),
-      ...(params.reasoningEffort !== undefined
-        ? { reasoningEffort: params.reasoningEffort }
-        : {}),
+      ...(params.responseFormat !== undefined ? { responseFormat: params.responseFormat } : {}),
+      ...(params.reasoningEffort !== undefined ? { reasoningEffort: params.reasoningEffort } : {}),
       // ТЗ 2026-05-25: function-calling. Если воркер передал tools — пробрасываем
       // напрямую в провайдера. DeepSeek/OpenAI добавят `tool_choice='auto'`
       // автоматически (см. DeepSeekService.buildParams / OpenAiProxyService).
@@ -2039,10 +2051,7 @@ export class LlmRouterService implements OnModuleInit {
             provider,
             model,
             effectiveFrom: { lte: new Date(now) },
-            OR: [
-              { effectiveTo: null },
-              { effectiveTo: { gt: new Date(now) } },
-            ],
+            OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date(now) } }],
           },
           orderBy: { effectiveFrom: 'desc' },
         });
@@ -2102,14 +2111,7 @@ export class LlmRouterService implements OnModuleInit {
 
   private providerNameToUsageProvider(
     p: LlmProviderName,
-  ):
-    | 'anthropic'
-    | 'minimax'
-    | 'openai-via-proxy'
-    | 'deepseek'
-    | 'ollama'
-    | 'kie'
-    | 'grsai' {
+  ): 'anthropic' | 'minimax' | 'openai-via-proxy' | 'deepseek' | 'ollama' | 'kie' | 'grsai' {
     return p;
   }
 
@@ -2166,9 +2168,7 @@ function parseProviders(raw: unknown): ProviderEntry[] {
       if (typeof providerRaw === 'string' && (ALL_PROVIDERS as string[]).includes(providerRaw)) {
         result.push({
           provider: providerRaw as LlmProviderName,
-          ...(typeof modelRaw === 'string' && modelRaw.length > 0
-            ? { model: modelRaw }
-            : {}),
+          ...(typeof modelRaw === 'string' && modelRaw.length > 0 ? { model: modelRaw } : {}),
         });
       }
     }

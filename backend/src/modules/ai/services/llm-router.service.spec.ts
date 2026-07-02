@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -35,6 +36,7 @@ interface BuildOpts {
   openai?: ReturnType<typeof vi.fn>;
   deepseek?: ReturnType<typeof vi.fn>;
   ollama?: ReturnType<typeof vi.fn>;
+  cfg?: { getDynamic: ReturnType<typeof vi.fn> };
 }
 
 function build(opts: BuildOpts) {
@@ -106,6 +108,7 @@ function build(opts: BuildOpts) {
     grsai,
     usage,
     metrics,
+    opts.cfg as unknown as TypedConfigService | undefined,
   );
   return {
     router,
@@ -262,6 +265,26 @@ describe('LlmRouterService', () => {
     });
     expect(ctx.deepseek.complete).toHaveBeenCalledOnce();
     expect(out.modelUsed).toBe('deepseek:deepseek-v4-flash');
+  });
+
+  it('Ф6: нет route + llm.router.defaultChain задан через AdminSetting → используется он, не DEFAULT_FALLBACK_CHAIN', async () => {
+    const getDynamic = vi.fn(async () => [{ provider: 'ollama' }]);
+    const ctx = build({ routes: [], cfg: { getDynamic } });
+    await ctx.router.refreshCache();
+
+    const out = await ctx.router.call({
+      ...baseParams,
+      taskType: 'tasks' as LlmTaskType,
+    });
+
+    expect(getDynamic).toHaveBeenCalledWith(
+      'llm.router.defaultChain',
+      undefined,
+      expect.any(Array),
+    );
+    expect(ctx.ollama.complete).toHaveBeenCalledOnce();
+    expect(ctx.deepseek.complete).not.toHaveBeenCalled();
+    expect(out.modelUsed).toBe('ollama:qwen3:30b-a3b-instruct-2507');
   });
 
   it('isActive=false → route игнорируется, используется дефолт', async () => {

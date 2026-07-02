@@ -244,7 +244,7 @@ export const PutChainSchema = z.object({
 - Acceptance: unit — discover при моке `{data:[{id:'m1'},{id:'m2'}]}`, где `m1` уже есть в LlmModel, возвращает `m1.alreadyInCatalog=true` и `m2.alreadyInCatalog=false`; `anthropic-messages` → 400 `discovery_not_supported`; сетевой сбой → `{ok:false}`; dispatch-тест: маршрут без модели у провайдера с `defaultModelKey='x'` вызывает адаптер с model='x'.
 - Закрывает: R9, R10.
 
-### Ф6 — Единый write-API маршрутов + чистка реестра taskType + дефолт-цепочка `[ ]`
+### Ф6 — Единый write-API маршрутов + чистка реестра taskType + дефолт-цепочка `[x]`
 **Ценность:** как супер-админ, назначаю цепочку «сервис → провайдер → модель» одним запросом с валидацией по реестру.
 - Входит: `PUT /api/v1/admin/ai-models/:taskType/chain` (контракт выше) в `AdminAiModelsController/Service`; валидация providerName по реестру (Б7) + `provider_in_use_by_routes`-гард в DELETE/deactivate провайдера; удаление `LlmRoutesController`+`llm-routes.service.ts`+DTO+модуля из `admin.module.ts`; фикс `ALL_LLM_TASK_TYPES` (+`chat-summary`, −дубль `process-template-extract` в union) + guard-тест двунаправленной полноты (union ⊆ массив и массив ⊆ union — по образцу `bullmq-jobid-rule.spec.ts`-стиля проверок); `llm.router.defaultChain` (registry+seed+чтение в `chooseProviders` через `getDynamic`, code-fallback `DEFAULT_FALLBACK_CHAIN`); `metrics` + `usdRubRate` из `CurrencyRateService`.
 - НЕ входит: фронт; org-overrides.

@@ -4,9 +4,11 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, type LlmProvider } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { CryptoService } from '../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ProviderInfoResolver } from '../../ai/services/protocol-adapter/provider-info.resolver';
@@ -21,6 +23,9 @@ export class AdminLlmProvidersService {
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(ProviderInfoResolver)
     private readonly providerInfo: ProviderInfoResolver,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
 
   async list(args: { includeInactive: boolean }) {
@@ -71,7 +76,10 @@ export class AdminLlmProvidersService {
   }
 
   async update(id: string, dto: UpdateLlmProviderDto) {
-    await this.getRow(id);
+    const existing = await this.getRow(id);
+    if (dto.isActive === false) {
+      await this.assertProviderNotInUse(existing.name);
+    }
     const row = await this.prisma.llmProvider.update({
       where: { id },
       data: {
@@ -100,7 +108,8 @@ export class AdminLlmProvidersService {
   }
 
   async softDelete(id: string) {
-    await this.getRow(id);
+    const row = await this.getRow(id);
+    await this.assertProviderNotInUse(row.name);
     await this.prisma.llmProvider.update({
       where: { id },
       data: { deletedAt: new Date(), isActive: false },
@@ -142,6 +151,42 @@ export class AdminLlmProvidersService {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { ok: false as const, error: message };
+    }
+  }
+
+  /**
+   * Ф6 (2026-07-02): гард 409 `provider_in_use_by_routes` — запрещает
+   * деактивацию/удаление провайдера, который используется в активном
+   * маршруте `LlmTaskRoute` или входит в дефолт-цепочку `llm.router.defaultChain`.
+   */
+  private async assertProviderNotInUse(providerName: string): Promise<void> {
+    const activeRoute = await this.prisma.llmTaskRoute.findFirst({
+      where: { tenantId: null, providerName, isActive: true, tier: { not: null } },
+      select: { taskType: true },
+    });
+    if (activeRoute) {
+      throw new ConflictException({
+        ok: false,
+        error: {
+          code: 'provider_in_use_by_routes',
+          message: `Провайдер "${providerName}" используется в активном маршруте taskType="${activeRoute.taskType}" — сначала уберите его из маршрутизации`,
+        },
+      });
+    }
+    const defaultChainRaw = await this.cfg
+      ?.getDynamic<Array<{ provider: string }>>('llm.router.defaultChain', undefined, [])
+      .catch(() => []);
+    if (
+      Array.isArray(defaultChainRaw) &&
+      defaultChainRaw.some((e) => e?.provider === providerName)
+    ) {
+      throw new ConflictException({
+        ok: false,
+        error: {
+          code: 'provider_in_use_by_routes',
+          message: `Провайдер "${providerName}" входит в дефолт-цепочку (llm.router.defaultChain) — сначала уберите его оттуда`,
+        },
+      });
     }
   }
 

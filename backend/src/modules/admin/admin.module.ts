@@ -41,8 +41,6 @@ import { AdminIncidentsModule } from './incidents/admin-incidents.module';
 import { IntegrationKeysAdminController } from './integration-keys.controller';
 import { IntegrationsAdminModule } from './integrations/integrations-admin.module';
 import { LlmPreferenceDatasetController } from './llm-preference-dataset/llm-preference-dataset.controller';
-import { LlmRoutesController } from './llm-routes/llm-routes.controller';
-import { LlmRoutesService } from './llm-routes/llm-routes.service';
 import { AdminMediaModule } from './media/admin-media.module';
 import { MeetingsAdminController } from './meetings-admin.controller';
 import { AdminPlansModule } from './plans/plans.module';
@@ -97,7 +95,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     MeetingsAdminController,
     AiUsageAdminController,
     RecordingsAdminController,
-    LlmRoutesController,
     AdminAiModelsController,
     AdminPromptTemplatesController,
     AdminPromptExperimentsController,
@@ -123,7 +120,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
   providers: [
     AdminAuditInterceptor,
     SuperAdminAuditInterceptor,
-    LlmRoutesService,
     AdminAiModelsService,
     AdminPromptTemplatesService,
     PromptTemplatesPreviewService,

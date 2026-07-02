@@ -60,3 +60,24 @@ export const MetricsQuerySchema = z.object({
   period: z.enum(['24h', '7d', '30d']).optional().default('7d'),
 });
 export type MetricsQueryDto = z.infer<typeof MetricsQuerySchema>;
+
+export const PutChainSchema = z.object({
+  entries: z
+    .array(
+      z.object({
+        tier: z.enum(TIER_VALUES),
+        providerName: z
+          .string()
+          .regex(/^[a-z0-9-]+$/)
+          .max(60),
+        model: z.string().max(120).nullable().optional(),
+        priority: z.number().int().min(0).default(0),
+      }),
+    )
+    .min(1)
+    .max(10),
+  isActive: z.boolean().default(true),
+  pinnedVersionNote: z.string().max(2000).nullable().optional(),
+  reason: z.string().min(3).max(500),
+});
+export type PutChainDto = z.infer<typeof PutChainSchema>;

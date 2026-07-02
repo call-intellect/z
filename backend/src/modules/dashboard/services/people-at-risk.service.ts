@@ -5,18 +5,14 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { type PeopleAtRiskItem, type PeopleAtRiskResponse } from '../dto/people-at-risk.dto';
 
-import { CommitmentReliabilityService } from './commitment-reliability.service';
-
 const CACHE_TTL_SECONDS = 5 * 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RED_MOOD_WINDOW_DAYS = 30;
-const RELIABILITY_WINDOW_DAYS = 14;
 
 const RISK_REASON_RU: Record<string, string> = {
   sentiment_dip: 'Настроение падает — стоит спросить, как дела',
   reply_latency_rise: 'Реже отвечает в чатах — возможно, перегружен',
   missed_checkins: 'Пропускает чек-ины — предложите поддержку',
-  broken_promises: 'Не успевает по обещаниям — помогите с приоритетами',
   workload_overload: 'Признаки перегрузки — обсудите нагрузку',
   meeting_noshows: 'Пропускает встречи — уточните, что мешает',
   conflict_mentions: 'Упоминания напряжения — стоит поговорить 1:1',
@@ -25,8 +21,6 @@ const RISK_REASON_RU: Record<string, string> = {
 const SEVERITY_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 };
 
 export interface PeopleAtRiskThresholds {
-  overduePenaltyPerItem: number;
-  overduePenaltyCap: number;
   redMoodShareThreshold: number;
   redMoodPenalty: number;
   riskThreshold: number;
@@ -34,14 +28,11 @@ export interface PeopleAtRiskThresholds {
 
 export interface PulseScoreInput {
   engagementScore: number | null;
-  overdue14d: number;
   redShare30d: number;
 }
 
 export interface TopReasonInput {
   riskFlagsJson: unknown;
-  overdue14d: number;
-  penOverdue: number;
   penMood: number;
 }
 
@@ -72,13 +63,6 @@ export function parseRiskFlags(raw: unknown): RiskFlagParsed[] {
   return result;
 }
 
-export function computeOverduePenalty(
-  overdue14d: number,
-  thresholds: Pick<PeopleAtRiskThresholds, 'overduePenaltyPerItem' | 'overduePenaltyCap'>,
-): number {
-  return Math.min(thresholds.overduePenaltyCap, overdue14d * thresholds.overduePenaltyPerItem);
-}
-
 export function computeMoodPenalty(
   redShare30d: number,
   thresholds: Pick<PeopleAtRiskThresholds, 'redMoodShareThreshold' | 'redMoodPenalty'>,
@@ -91,9 +75,8 @@ export function computePulseScore(
   thresholds: PeopleAtRiskThresholds,
 ): number {
   const base = input.engagementScore == null ? 50 : Math.round(Number(input.engagementScore) * 100);
-  const penOverdue = computeOverduePenalty(input.overdue14d, thresholds);
   const penMood = computeMoodPenalty(input.redShare30d, thresholds);
-  return Math.floor(clamp(0, 100, base - penOverdue - penMood));
+  return Math.floor(clamp(0, 100, base - penMood));
 }
 
 export function computeTopReason(input: TopReasonInput): string {
@@ -104,9 +87,6 @@ export function computeTopReason(input: TopReasonInput): string {
   if (top) {
     const reason = RISK_REASON_RU[top.type];
     if (reason) return reason;
-  }
-  if (input.penOverdue > 0) {
-    return `${input.overdue14d} просроченных обещаний — помогите расставить приоритеты`;
   }
   if (input.penMood > 0) {
     return 'Настроение проседает — стоит спросить, как дела';
@@ -131,8 +111,6 @@ export class PeopleAtRiskService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    @Inject(CommitmentReliabilityService)
-    private readonly reliability: CommitmentReliabilityService,
   ) {}
 
   async getAtRisk(args: {
@@ -198,21 +176,14 @@ export class PeopleAtRiskService {
 
     const scored: PeopleAtRiskItem[] = [];
     for (const person of employees) {
-      const overdue14d = await this.computeOverdue14d(args.tenantId, person.id, now);
       const redShare30d = redShareByPerson.get(person.id) ?? 0;
       const engagementScore =
         person.engagementScore == null ? null : Number(person.engagementScore);
 
-      const pulseScore = computePulseScore(
-        { engagementScore, overdue14d, redShare30d },
-        thresholds,
-      );
-      const penOverdue = computeOverduePenalty(overdue14d, thresholds);
+      const pulseScore = computePulseScore({ engagementScore, redShare30d }, thresholds);
       const penMood = computeMoodPenalty(redShare30d, thresholds);
       const topReason = computeTopReason({
         riskFlagsJson: person.riskFlagsJson,
-        overdue14d,
-        penOverdue,
         penMood,
       });
 
@@ -243,22 +214,12 @@ export class PeopleAtRiskService {
   }
 
   private async readThresholds(): Promise<PeopleAtRiskThresholds> {
-    const [
-      overduePenaltyPerItem,
-      overduePenaltyCap,
-      redMoodShareThreshold,
-      redMoodPenalty,
-      riskThreshold,
-    ] = await Promise.all([
-      this.cfg.getDynamic<number>('peopleAtRisk.overduePenaltyPerItem', undefined, 8),
-      this.cfg.getDynamic<number>('peopleAtRisk.overduePenaltyCap', undefined, 30),
+    const [redMoodShareThreshold, redMoodPenalty, riskThreshold] = await Promise.all([
       this.cfg.getDynamic<number>('peopleAtRisk.redMoodShareThreshold', undefined, 0.34),
       this.cfg.getDynamic<number>('peopleAtRisk.redMoodPenalty', undefined, 15),
       this.cfg.getDynamic<number>('peopleAtRisk.riskThreshold', undefined, 60),
     ]);
     return {
-      overduePenaltyPerItem,
-      overduePenaltyCap,
       redMoodShareThreshold,
       redMoodPenalty,
       riskThreshold,
@@ -312,19 +273,6 @@ export class PeopleAtRiskService {
       result.set(personId, acc.answered === 0 ? 0 : acc.red / acc.answered);
     }
     return result;
-  }
-
-  private async computeOverdue14d(tenantId: string, personId: string, now: Date): Promise<number> {
-    const dto = await this.reliability.computeReliability(
-      {
-        tenantId,
-        scope: 'person',
-        scopeId: personId,
-        windowDays: RELIABILITY_WINDOW_DAYS,
-      },
-      now,
-    );
-    return dto.overdue;
   }
 
   private async tryReadCache(key: string): Promise<PeopleAtRiskResponse | null> {

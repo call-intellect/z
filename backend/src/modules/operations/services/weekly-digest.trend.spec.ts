@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { mapWeeklyDigestRowsToTrend } from './weekly-digest.service';
 
 describe('mapWeeklyDigestRowsToTrend', () => {
-  it('переворачивает DESC→old→new; blockers=sum(count), hangingDecisions=length', () => {
+  it('переворачивает DESC→old→new; blockers=sum(count)', () => {
     const rowsDesc = [
       {
         weekStart: '2026-05-25',
@@ -15,11 +15,6 @@ describe('mapWeeklyDigestRowsToTrend', () => {
             { text: 'нет ресурсов', count: 5 },
             { text: 'ждём клиента', count: 2 },
           ],
-          hangingDecisions: [
-            { decisionId: 'd1', statement: 's1', ageDays: 10 },
-            { decisionId: 'd2', statement: 's2', ageDays: 3 },
-            { decisionId: 'd3', statement: 's3', ageDays: 1 },
-          ],
           goals: { completed: 6, failed: 1 },
         },
       },
@@ -30,7 +25,6 @@ describe('mapWeeklyDigestRowsToTrend', () => {
           greenShare: 0.4,
           redShare: 0.3,
           topBlockers: [{ text: 'блок', count: 4 }],
-          hangingDecisions: [{ decisionId: 'd4', statement: 's4', ageDays: 7 }],
           goals: { completed: 3, failed: 2 },
         },
       },
@@ -41,7 +35,6 @@ describe('mapWeeklyDigestRowsToTrend', () => {
           greenShare: 0.2,
           redShare: 0.5,
           topBlockers: [],
-          hangingDecisions: [],
           goals: { completed: 0, failed: 4 },
         },
       },
@@ -60,7 +53,6 @@ describe('mapWeeklyDigestRowsToTrend', () => {
       goalsCompleted: 0,
       goalsFailed: 4,
       blockers: 0,
-      hangingDecisions: 0,
     });
 
     expect(trend[2]).toEqual({
@@ -71,11 +63,9 @@ describe('mapWeeklyDigestRowsToTrend', () => {
       goalsCompleted: 6,
       goalsFailed: 1,
       blockers: 7,
-      hangingDecisions: 3,
     });
 
     expect(trend[1]!.blockers).toBe(4);
-    expect(trend[1]!.hangingDecisions).toBe(1);
     expect(trend[1]!.goalsCompleted).toBe(3);
     expect(trend[1]!.goalsFailed).toBe(2);
   });
@@ -99,11 +89,9 @@ describe('mapWeeklyDigestRowsToTrend', () => {
       goalsCompleted: 0,
       goalsFailed: 0,
       blockers: 0,
-      hangingDecisions: 0,
     });
     expect(trend[1]!.weekStart).toBe('2026-05-18');
     expect(trend[1]!.blockers).toBe(0);
-    expect(trend[1]!.hangingDecisions).toBe(0);
   });
 
   it('topBlockers с битым count → 0 в сумме (Number||0)', () => {

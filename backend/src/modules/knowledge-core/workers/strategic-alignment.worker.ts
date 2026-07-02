@@ -260,9 +260,22 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
       select: { score: true },
     });
 
+    const alertDeltaThreshold =
+      (await this.cfg?.getDynamic<number>(
+        'goals.alignmentAlertDelta',
+        undefined,
+        ALERT_DELTA_THRESHOLD,
+      )) ?? ALERT_DELTA_THRESHOLD;
+    const alertScoreThreshold =
+      (await this.cfg?.getDynamic<number>(
+        'goals.alignmentAlertScore',
+        undefined,
+        ALERT_SCORE_THRESHOLD,
+      )) ?? ALERT_SCORE_THRESHOLD;
+
     const delta = prev ? parsed.score - prev.score : null;
     const alertPending =
-      delta !== null && delta <= ALERT_DELTA_THRESHOLD && parsed.score <= ALERT_SCORE_THRESHOLD;
+      delta !== null && delta <= alertDeltaThreshold && parsed.score <= alertScoreThreshold;
 
     const snapshot = await this.prisma.$transaction(async (tx) => {
       const created = await tx.goalAlignmentSnapshot.create({
@@ -335,6 +348,9 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
     }>
   > {
     if (args.themeIds.length === 0) return [];
+    const maxBlocks =
+      (await this.cfg?.getDynamic<number>('goals.alignmentMaxBlocks', undefined, MAX_BLOCKS)) ??
+      MAX_BLOCKS;
     const rows = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId: args.tenantId,
@@ -343,7 +359,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
         themes: { some: { themeId: { in: args.themeIds } } },
       },
       orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
-      take: MAX_BLOCKS,
+      take: maxBlocks,
       select: {
         signalType: true,
         criticalQuestion: true,

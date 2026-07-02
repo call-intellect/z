@@ -3,9 +3,11 @@ import {
   withConfidenceCalibration,
   withDecisionDiscriminator,
 } from '../../ai/services/prompts/common';
+import type { MeetingSkeleton } from '../services/meeting-skeleton.service';
+import { renderMeetingSkeleton } from '../services/meeting-skeleton.service';
 import type { Segment } from '../services/segment-builder.service';
 
-import { renderRuleForBlockIngest } from './task-decision-examples';
+import { renderSignalTypeRegistry } from './signal-type-registry';
 
 export const SIGNAL_TYPE_VALUES = [
   'fact',
@@ -418,6 +420,21 @@ const SYSTEM_PROMPT = withAsrNote(
 ПЛОХО: signalType=decision «Не создавать задачу по жалобе на плеер» (шум в реестре решений) ИЛИ signalType=action_item.
 ХОРОШО: не извлекать как decision/action_item; максимум signalType=idea/fact низкой уверенности, либо пропустить. Индивидуальный отказ завести задачу мимоходом — не выбор команды.
 
+# Трение в команде (team_friction) — часто пропускают, размечай явно
+team_friction — это межличностное или межотдельное напряжение: спор о том, кто ведёт клиента или чья это зона ответственности; претензия одного отдела к другому; перекладывание вины друг на друга; открытое несогласие или пикировка на встрече. Это НЕ обычная рабочая дискуссия и НЕ жалоба на инструмент или процесс (жалоба на стык функций без личной претензии — process_friction; недовольство инструментом — pain/blocker). Ключевой признак — конфликт, претензия или обвинение между людьми/отделами, а не нейтральное распределение работы.
+
+ПРИМЕР 10 (трение — спор об ответственности). Реплика: «Опять поддержка не передала клиента вовремя, из-за них потеряли неделю.»
+ПЛОХО: пропустить ИЛИ signalType=fact «Задержка передачи клиента».
+ХОРОШО: signalType=team_friction; name «Трение: поддержка и продажи — кто вовремя ведёт клиента»; trustedAnswer «Продажи винят поддержку в несвоевременной передаче клиента, из-за задержки потеряли неделю». Есть претензия одного отдела к другому — это трение, а не просто факт.
+
+ПРИМЕР 11 (трение — претензия отдела к отделу). Реплика: «Сколько можно, разработка саботирует наши сроки, мы из-за них горим перед клиентом.»
+ПЛОХО: signalType=risk «Срыв сроков» ИЛИ signalType=blocker.
+ХОРОШО: signalType=team_friction; name «Трение: продажи и разработка — срыв сроков и взаимные претензии»; trustedAnswer «Продажи обвиняют разработку в срыве сроков, из-за этого не успевают перед клиентом». Открытое обвинение отдела в адрес отдела — это трение.
+
+ПРИМЕР 12 (анти-ложняк — нейтральная координация, НЕ трение). Реплика: «Давайте обсудим, кто возьмёт задачу по онбордингу нового клиента.»
+ПЛОХО: signalType=team_friction (нет конфликта и претензии, только распределение работы).
+ХОРОШО: не помечать трением; максимум signalType=plan_item/idea или пропустить, если это проброс. Спокойное распределение задач без спора и обвинений — НЕ team_friction.
+
 # Граница «идея ↔ решение» (частая ошибка — соблюдай строго)
 Идею от решения отличает РОВНО ОДИН признак: состоялась ли ФИКСАЦИЯ выбора в этом окне.
 - Предложение/намерение без фиксации («давайте», «предлагаю», «может быть», «стоит ли», «хорошо бы», «а что если») → signalType=idea (или suggestion). Это ещё НЕ решение.
@@ -430,8 +447,8 @@ const SYSTEM_PROMPT = withAsrNote(
 - Запрос/просьба клиента сделать функцию → idea/feature_request (это спрос, не наш выбор), даже если звучит уверенно.
 - Личное обязательство («я к пятнице сделаю») → commitment, не decision и не idea.
 
-# Граница «задача ↔ решение» (соблюдай строго)
-${renderRuleForBlockIngest()}
+# Справочник типов сигналов (когда какой ставить)
+${renderSignalTypeRegistry()}
 
 # Перед тем как вернуть ответ — самопроверка
 Пройди по списку; если хоть один пункт нарушен — исправь, не выдавай как есть:
@@ -457,6 +474,10 @@ interface BuildArgs {
   meetingType?: string | undefined;
   participants?: string[] | undefined;
   segments: Segment[];
+  windowIndex?: number | undefined;
+  totalWindows?: number | undefined;
+  gleaningExclude?: { name: string; signalType: string }[] | undefined;
+  skeleton?: MeetingSkeleton | undefined;
 }
 
 function formatDateRu(iso: string): string | null {
@@ -488,9 +509,33 @@ export function buildBlockIngestPrompt(args: BuildArgs): {
   if (args.participants && args.participants.length > 0) {
     contextLines.push(`- Участники: ${args.participants.join(', ')}`);
   }
+  if (
+    args.totalWindows != null &&
+    args.totalWindows > 1 &&
+    args.windowIndex != null
+  ) {
+    contextLines.push(
+      `- Это фрагмент ${args.windowIndex + 1} из ${args.totalWindows} подряд идущих кусков одного разговора.`,
+    );
+  }
   const header =
     contextLines.length > 0 ? `Контекст эпизода:\n${contextLines.join('\n')}\n\n` : '';
 
-  const user = `${header}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
+  const skeletonRendered = args.skeleton
+    ? renderMeetingSkeleton(args.skeleton).trim()
+    : '';
+  const mapSection =
+    skeletonRendered.length > 0
+      ? `# Карта встречи (справочный контекст)\nЭто справочная карта всего разговора для понимания «он/это/проект». Истина — сегменты ниже; если карта противоречит сегментам, верь сегментам.\n${skeletonRendered}\n\n`
+      : '';
+
+  const excludeSection =
+    args.gleaningExclude && args.gleaningExclude.length > 0
+      ? `Уже найдено в этом окне (НЕ повторяй, верни ТОЛЬКО дополнительно пропущенное):\n${args.gleaningExclude
+          .map((b) => `- ${b.name} — ${b.signalType}`)
+          .join('\n')}\n\n`
+      : '';
+
+  const user = `${header}${mapSection}${excludeSection}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
   return { system: SYSTEM_PROMPT, user };
 }

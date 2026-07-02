@@ -53,11 +53,7 @@ export function buildGoalVectorRows(
     .sort((a, b) => b.netScore - a.netScore);
 }
 
-type ContributionSignalKind =
-  | 'idea'
-  | 'commitment_kept'
-  | 'commitment_broken'
-  | 'issue_closed';
+type ContributionSignalKind = 'idea' | 'issue_closed' | 'goal_work';
 
 interface ContributionSignal {
   kind: ContributionSignalKind;
@@ -67,8 +63,7 @@ interface ContributionSignal {
 
 const SIGNAL_REASON_LABELS: Record<string, string> = {
   'issue_closed:pro': 'закрытые задачи',
-  'commitment_kept:pro': 'сдержанные обязательства',
-  'commitment_broken:contra': 'сорванные обязательства',
+  'goal_work:pro': 'работа по цели',
   'idea:pro': 'идеи за',
   'idea:contra': 'идеи против',
 };
@@ -86,10 +81,7 @@ function extractContributionSignals(signalsJson: unknown): ContributionSignal[] 
     const direction = (raw as { direction?: unknown }).direction;
     const refId = (raw as { refId?: unknown }).refId;
     if (
-      (kind === 'idea' ||
-        kind === 'commitment_kept' ||
-        kind === 'commitment_broken' ||
-        kind === 'issue_closed') &&
+      (kind === 'idea' || kind === 'issue_closed' || kind === 'goal_work') &&
       (direction === 'pro' || direction === 'contra')
     ) {
       result.push({ kind, direction, refId: typeof refId === 'string' ? refId : '' });

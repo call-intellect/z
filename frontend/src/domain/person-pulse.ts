@@ -45,11 +45,6 @@ export interface PersonPulse {
   moodTrend30d: PersonPulseMoodPoint[];
   checkInsTotal30d: number;
   checkInsExpectedDays: number;
-  promisesReliabilityPercent: number;
-  promisesDelta14d: number | null;
-  promisesKept14d: number;
-  promisesBroken14d: number;
-  promisesOverdue14d: number;
   riskFlags: PersonPulseRiskFlag[];
   riskFlagsGeneratedAt: string | null;
 }

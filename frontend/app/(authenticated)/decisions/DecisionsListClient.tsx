@@ -323,6 +323,9 @@ function DecisionsListContent({
                         <div className="flex items-center gap-2 text-sm font-medium">
                           <StatusBadge status={d.status} />
                           <TrustBadge tier={d.trustTier} size="sm" />
+                          {d.reversibility === "type-1" ? (
+                            <IrreversibleBadge />
+                          ) : null}
                           <span className="truncate">{d.statement}</span>
                         </div>
                         <div className="mt-1 text-xs text-fg-tertiary">
@@ -377,6 +380,9 @@ function DecisionsListContent({
                 <div className="flex items-center gap-2 text-xs text-fg-secondary">
                   <StatusBadge status={detail.status} />
                   <TrustBadge tier={detail.trustTier} size="sm" />
+                  {detail.reversibility === "type-1" ? (
+                    <IrreversibleBadge />
+                  ) : null}
                   {detail.decidedAt ? (
                     <span>
                       Принято {detail.decidedAt.toLocaleDateString("ru-RU")}
@@ -629,6 +635,14 @@ function DecisionsListContent({
       </div>
       {confirmDialog}
     </div>
+  );
+}
+
+function IrreversibleBadge() {
+  return (
+    <span className="rounded bg-bg-muted px-2 py-0.5 text-xs text-fg-secondary">
+      необратимое
+    </span>
   );
 }
 

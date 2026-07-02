@@ -185,25 +185,6 @@ export class BurnoutRiskDetectorCron {
       });
     }
 
-    const brokenCount = await this.prisma.ideaBlock.count({
-      where: {
-        tenantId: person.tenantId,
-        signalType: 'commitment',
-        commitmentRecipientPersonId: person.id,
-        commitmentStatus: 'missed',
-        commitmentDueDate: { gte: since28, lte: now },
-      },
-    });
-    if (brokenCount >= 3) {
-      flags.push({
-        type: 'broken_promises',
-        severity: brokenCount >= 6 ? 'high' : 'medium',
-        baseline: 1,
-        current: brokenCount,
-        explanation: `Не выполнено ${brokenCount} обещаний за 4 недели.`,
-      });
-    }
-
     if (person.entityId) {
       const conflictCount = await this.prisma.entityLink.count({
         where: {
@@ -346,7 +327,6 @@ export interface RiskFlag {
     | 'sentiment_dip'
     | 'reply_latency_rise'
     | 'missed_checkins'
-    | 'broken_promises'
     | 'workload_overload'
     | 'meeting_noshows'
     | 'conflict_mentions';

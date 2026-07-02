@@ -1,13 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { DataClass } from '@prisma/client';
 import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import {
   BLOCK_INGEST_JSON_SCHEMA,
   ENTITY_TYPE_VALUES,
@@ -19,6 +21,8 @@ import {
   buildBlockIngestPrompt,
 } from '../prompts/block-ingest.prompt';
 
+import type { MeetingSkeleton } from './meeting-skeleton.service';
+import { MeetingSkeletonService } from './meeting-skeleton.service';
 import type { Segment } from './segment-builder.service';
 
 /**
@@ -360,6 +364,11 @@ export class BlockExtractionService {
   constructor(
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(MeetingSkeletonService)
+    private readonly skeletonService: MeetingSkeletonService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   /**
@@ -404,8 +413,43 @@ export class BlockExtractionService {
     let failedWindows = 0;
     const minConfidence = this.cfg.extraction.typedEntityMinConfidence;
 
-    for (let i = 0; i < args.segments.length; i += windowSize) {
-      const slice = args.segments.slice(i, i + windowSize);
+    const overlap = Math.min(
+      Math.max(0, this.cfg.knowledgeCore.blockIngestWindowOverlapSegments),
+      windowSize - 1,
+    );
+    const step = Math.max(1, windowSize - overlap);
+    const totalWindows =
+      args.segments.length <= windowSize
+        ? 1
+        : Math.ceil((args.segments.length - windowSize) / step) + 1;
+
+    const skeleton =
+      this.cfg.knowledgeCore.skeletonPassEnabled &&
+      this.cfg.knowledgeCore.headerMapEnabled &&
+      args.segments.length > this.cfg.knowledgeCore.skeletonMinSegments
+        ? await this.skeletonService.buildSkeleton({
+            tenantId: args.tenantId,
+            rawEventId: args.rawEventId,
+            segments: args.segments,
+            meetingTitle: args.meetingTitle,
+            meetingType: args.meetingType,
+            dataClass: args.dataClass,
+          })
+        : null;
+    const headerSkeleton = this.cfg.knowledgeCore.headerMapEnabled
+      ? skeleton
+      : null;
+
+    const seen = new Map<string, number>();
+    const dedupKeys = new Set<string>();
+    let overlapDedupCount = 0;
+    let prevSliceEnd = -1;
+    let windowIdx = 0;
+    for (let i = 0; i < args.segments.length; i += step) {
+      const sliceEnd = Math.min(i + windowSize, args.segments.length);
+      if (i > 0 && sliceEnd <= prevSliceEnd) break;
+      prevSliceEnd = sliceEnd;
+      const slice = args.segments.slice(i, sliceEnd);
       const win = await this.processWindow({
         tenantId: args.tenantId,
         rawEventId: args.rawEventId,
@@ -413,38 +457,91 @@ export class BlockExtractionService {
         meetingDateIso: args.meetingDateIso,
         meetingType: args.meetingType,
         participants: args.participants,
-        windowIndex: Math.floor(i / windowSize),
+        windowIndex: windowIdx,
+        totalWindows,
         segments: slice,
         dataClass: args.dataClass,
+        skeleton: headerSkeleton,
       });
+      windowIdx += 1;
       if (win.failed) failedWindows += 1;
-      const baseOffset = inOrder.length;
-      inOrder.push(...win.blocks);
+
+      const localToGlobal: number[] = [];
+      for (const block of win.blocks) {
+        const key = this.blockKey(block);
+        const existing = seen.get(key);
+        if (existing != null) {
+          localToGlobal.push(existing);
+          overlapDedupCount += 1;
+          continue;
+        }
+        const gi = inOrder.length;
+        inOrder.push(block);
+        seen.set(key, gi);
+        localToGlobal.push(gi);
+      }
+
+      const remap = <T extends { sourceBlockIndex: number | null }>(
+        entity: T,
+      ): T | null => {
+        if (entity.sourceBlockIndex == null) return entity;
+        const gi = localToGlobal[entity.sourceBlockIndex];
+        if (gi == null) return null;
+        return { ...entity, sourceBlockIndex: gi };
+      };
+      const keep = (key: string): boolean => {
+        if (dedupKeys.has(key)) return false;
+        dedupKeys.add(key);
+        return true;
+      };
+
       for (const p of win.typed.processes) {
         if (p.confidence < minConfidence) continue;
-        typed.processes.push(this.shiftIdx(p, baseOffset));
+        const r = remap(p);
+        if (r == null) continue;
+        if (!keep(`process|${r.sourceBlockIndex}|${r.name}`)) continue;
+        typed.processes.push(r);
       }
       for (const d of win.typed.decisions) {
         if (d.confidence < minConfidence) continue;
-        typed.decisions.push(this.shiftIdx(d, baseOffset));
+        const r = remap(d);
+        if (r == null) continue;
+        if (!keep(`decision|${r.sourceBlockIndex}|${r.text}`)) continue;
+        typed.decisions.push(r);
       }
-      for (const r of win.typed.regulations) {
-        if (r.confidence < minConfidence) continue;
-        typed.regulations.push(this.shiftIdx(r, baseOffset));
+      for (const reg of win.typed.regulations) {
+        if (reg.confidence < minConfidence) continue;
+        const r = remap(reg);
+        if (r == null) continue;
+        if (!keep(`regulation|${r.sourceBlockIndex}|${r.name}`)) continue;
+        typed.regulations.push(r);
       }
-      for (const p of win.typed.policies) {
-        if (p.confidence < minConfidence) continue;
-        typed.policies.push(this.shiftIdx(p, baseOffset));
+      for (const pol of win.typed.policies) {
+        if (pol.confidence < minConfidence) continue;
+        const r = remap(pol);
+        if (r == null) continue;
+        if (!keep(`policy|${r.sourceBlockIndex}|${r.name}`)) continue;
+        typed.policies.push(r);
       }
       for (const m of win.typed.metrics) {
         if (m.confidence < minConfidence) continue;
-        typed.metrics.push(this.shiftIdx(m, baseOffset));
+        const r = remap(m);
+        if (r == null) continue;
+        if (!keep(`metric|${r.sourceBlockIndex}|${r.name}`)) continue;
+        typed.metrics.push(r);
       }
       for (const t of win.typed.tools) {
         if (t.confidence < minConfidence) continue;
-        typed.tools.push(this.shiftIdx(t, baseOffset));
+        const r = remap(t);
+        if (r == null) continue;
+        if (!keep(`tool|${r.sourceBlockIndex}|${r.name}`)) continue;
+        typed.tools.push(r);
       }
     }
+    this.metrics?.incBlockOverlapDedup({
+      tenantTop: tenantTopOf(args.tenantId),
+      count: overlapDedupCount,
+    });
     const sorted = [...inOrder].sort(
       (a, b) => a.evidenceStartMs - b.evidenceStartMs,
     );
@@ -461,44 +558,50 @@ export class BlockExtractionService {
     meetingType?: string | undefined;
     participants?: string[] | undefined;
     windowIndex: number;
+    totalWindows?: number | undefined;
     segments: Segment[];
     dataClass?: DataClass;
+    skeleton?: MeetingSkeleton | null;
   }): Promise<ExtractedWindow> {
-    const { system, user } = buildBlockIngestPrompt({
-      meetingTitle: args.meetingTitle,
-      meetingDateIso: args.meetingDateIso,
-      meetingType: args.meetingType,
-      participants: args.participants,
-      segments: args.segments,
-    });
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть транскрипт-сегменты + meetingTitle
-    // в маркеры данных + INJECTION_GUARD_NOTE в system. Источник = 'transcript'.
-    // Sanitize по транскрипту не делаем — естественная речь даёт много
-    // false positives на regex'ах вроде «забудь предыдущие шаги».
-    const guardOn = this.isPromptInjectionGuardEnabled();
-    const guardedSystem = guardOn ? withInjectionGuard(system) : system;
-    const guardedUser = guardOn ? wrapUserData(user) : user;
+    const callWindow = async (
+      gleaningExclude?: { name: string; signalType: string }[],
+    ): Promise<ExtractedWindow | null> => {
+      const { system, user } = buildBlockIngestPrompt({
+        meetingTitle: args.meetingTitle,
+        meetingDateIso: args.meetingDateIso,
+        meetingType: args.meetingType,
+        participants: args.participants,
+        segments: args.segments,
+        windowIndex: args.windowIndex,
+        totalWindows: args.totalWindows,
+        gleaningExclude,
+        skeleton: args.skeleton ?? undefined,
+      });
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      const guardedSystem = guardOn ? withInjectionGuard(system) : system;
+      const guardedUser = guardOn ? wrapUserData(user) : user;
+      const out = await this.llm.call({
+        taskType: 'block-ingest',
+        tenantId: args.tenantId,
+        systemPrompt: guardedSystem,
+        userMessage: guardedUser,
+        responseFormat: {
+          type: 'json_schema',
+          name: 'IdeaBlocks',
+          strict: true,
+          schema: BLOCK_INGEST_JSON_SCHEMA,
+        },
+        sourceRef: { type: 'raw-event', id: args.rawEventId },
+        dataClass: args.dataClass,
+      });
+      return this.parseAndValidate(out.text);
+    };
 
+    let result: ExtractedWindow | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const out = await this.llm.call({
-          taskType: 'block-ingest',
-          tenantId: args.tenantId,
-          systemPrompt: guardedSystem,
-          userMessage: guardedUser,
-          responseFormat: {
-            type: 'json_schema',
-            name: 'IdeaBlocks',
-            strict: true,
-            schema: BLOCK_INGEST_JSON_SCHEMA,
-          },
-          sourceRef: { type: 'raw-event', id: args.rawEventId },
-          dataClass: args.dataClass,
-        });
-        const parsed = this.parseAndValidate(out.text);
-        if (parsed) {
-          return parsed;
-        }
+        result = await callWindow();
+        if (result) break;
         this.logger.warn(
           { rawEventId: args.rawEventId, windowIndex: args.windowIndex, attempt },
           'block-ingest: invalid JSON по схеме, повтор',
@@ -515,11 +618,68 @@ export class BlockExtractionService {
         );
       }
     }
-    this.logger.warn(
-      { rawEventId: args.rawEventId, windowIndex: args.windowIndex },
-      'block-ingest: окно не извлеклось после 2 попыток — пропуск',
-    );
-    return { blocks: [], typed: this.emptyTyped(), failed: true };
+    if (!result) {
+      this.logger.warn(
+        { rawEventId: args.rawEventId, windowIndex: args.windowIndex },
+        'block-ingest: окно не извлеклось после 2 попыток — пропуск',
+      );
+      return { blocks: [], typed: this.emptyTyped(), failed: true };
+    }
+
+    const gleaningRounds = this.cfg.knowledgeCore.blockIngestGleaningRounds;
+    const gleaningMinSegments =
+      this.cfg.knowledgeCore.blockIngestGleaningMinSegments;
+    if (gleaningRounds > 0 && args.segments.length >= gleaningMinSegments) {
+      const keyToIndex = new Map<string, number>();
+      result.blocks.forEach((b, idx) => keyToIndex.set(this.blockKey(b), idx));
+      const exclude = result.blocks.map((b) => ({
+        name: b.name,
+        signalType: b.signalType,
+      }));
+      let roundsRun = 0;
+      let blocksAdded = 0;
+      for (let round = 0; round < gleaningRounds; round++) {
+        try {
+          const extra = await callWindow(exclude);
+          if (!extra) break;
+          roundsRun += 1;
+          let added = 0;
+          const localToWindow: number[] = [];
+          for (const block of extra.blocks) {
+            const key = this.blockKey(block);
+            const existing = keyToIndex.get(key);
+            if (existing != null) {
+              localToWindow.push(existing);
+              continue;
+            }
+            const wi = result.blocks.length;
+            result.blocks.push(block);
+            keyToIndex.set(key, wi);
+            localToWindow.push(wi);
+            exclude.push({ name: block.name, signalType: block.signalType });
+            added += 1;
+          }
+          this.appendTyped(result.typed, extra.typed, localToWindow);
+          blocksAdded += added;
+          if (added === 0) break;
+        } catch (err) {
+          this.logger.warn(
+            {
+              rawEventId: args.rawEventId,
+              windowIndex: args.windowIndex,
+              round,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'block-ingest: gleaning-раунд упал — продолжаем с найденным',
+          );
+          break;
+        }
+      }
+      const tenantTop = tenantTopOf(args.tenantId);
+      this.metrics?.incBlockGleaningRounds({ tenantTop, rounds: roundsRun });
+      this.metrics?.incBlockGleaningBlocks({ tenantTop, count: blocksAdded });
+    }
+    return result;
   }
 
   /**
@@ -662,11 +822,52 @@ export class BlockExtractionService {
     };
   }
 
-  private shiftIdx<T extends { sourceBlockIndex: number | null }>(
-    entity: T,
-    offset: number,
-  ): T {
-    if (entity.sourceBlockIndex == null) return entity;
-    return { ...entity, sourceBlockIndex: entity.sourceBlockIndex + offset };
+  private normQuote(value: string): string {
+    return value.trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  private blockKey(block: ExtractedBlock): string {
+    const quote = this.normQuote(block.evidenceQuote);
+    const tail = quote.length > 0 ? quote : `@${block.evidenceStartMs}`;
+    return `${block.signalType}|${tail}`;
+  }
+
+  private appendTyped(
+    target: ExtractedTypedEntities,
+    source: ExtractedTypedEntities,
+    localToWindow: number[],
+  ): void {
+    const remap = <T extends { sourceBlockIndex: number | null }>(
+      entity: T,
+    ): T | null => {
+      if (entity.sourceBlockIndex == null) return entity;
+      const wi = localToWindow[entity.sourceBlockIndex];
+      if (wi == null) return null;
+      return { ...entity, sourceBlockIndex: wi };
+    };
+    for (const p of source.processes) {
+      const r = remap(p);
+      if (r) target.processes.push(r);
+    }
+    for (const d of source.decisions) {
+      const r = remap(d);
+      if (r) target.decisions.push(r);
+    }
+    for (const reg of source.regulations) {
+      const r = remap(reg);
+      if (r) target.regulations.push(r);
+    }
+    for (const pol of source.policies) {
+      const r = remap(pol);
+      if (r) target.policies.push(r);
+    }
+    for (const m of source.metrics) {
+      const r = remap(m);
+      if (r) target.metrics.push(r);
+    }
+    for (const t of source.tools) {
+      const r = remap(t);
+      if (r) target.tools.push(r);
+    }
   }
 }

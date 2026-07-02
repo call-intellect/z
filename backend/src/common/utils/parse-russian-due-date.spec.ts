@@ -73,6 +73,20 @@ describe('parseRussianDueDate', () => {
     );
   });
 
+  it('якорит относительный срок к переданной дате-источнику, а не к «сегодня»', () => {
+    const PAST_ANCHOR = new Date('2024-01-01T00:00:00Z');
+    expect(iso(parseRussianDueDate('во вторник', PAST_ANCHOR))).toBe(
+      '2024-01-02T00:00:00.000Z',
+    );
+    expect(iso(parseRussianDueDate('через неделю', PAST_ANCHOR))).toBe(
+      '2024-01-08T00:00:00.000Z',
+    );
+    const past = parseRussianDueDate('через неделю', PAST_ANCHOR);
+    expect(past).not.toBeNull();
+    expect(past!.getUTCFullYear()).toBe(2024);
+    expect(past!.getTime()).toBeLessThan(Date.now());
+  });
+
   it('невалидный/непонятный ввод → null', () => {
     expect(parseRussianDueDate('', NOW)).toBeNull();
     expect(parseRussianDueDate('   ', NOW)).toBeNull();

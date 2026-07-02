@@ -39,7 +39,7 @@ export class GoalAlignmentLowCron {
     private readonly probe?: ProbeService,
   ) {}
 
-  @Cron('0 6 * * 1')
+  @Cron('0 6 * * 1', { timeZone: 'Europe/Moscow' })
   async runScheduled(): Promise<void> {
     const enabled = await this.cfg.getDynamic<boolean>(
       'tracker.goalAlignmentLowEnabled',
@@ -67,11 +67,32 @@ export class GoalAlignmentLowCron {
     emitted: number;
     dedupSkipped: number;
   }> {
+    const periodDays = await this.cfg.getDynamic<number>(
+      'tracker.goalAlignmentLowPeriodDays',
+      undefined,
+      DEFAULT_PERIOD_DAYS,
+    );
+    const minIssues = await this.cfg.getDynamic<number>(
+      'tracker.goalAlignmentLowMinIssues',
+      undefined,
+      DEFAULT_MIN_ISSUES,
+    );
+    const lowRatio = await this.cfg.getDynamic<number>(
+      'tracker.goalAlignmentLowLowRatio',
+      undefined,
+      DEFAULT_LOW_RATIO,
+    );
+    const dedupTtlSeconds = await this.cfg.getDynamic<number>(
+      'tracker.goalAlignmentLowDedupTtlSec',
+      undefined,
+      DEFAULT_DEDUP_TTL_SECONDS,
+    );
+
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null },
       select: { id: true },
     });
-    const periodStart = new Date(Date.now() - GoalAlignmentLowCron.PERIOD_DAYS * 24 * 3600 * 1000);
+    const periodStart = new Date(Date.now() - periodDays * 24 * 3600 * 1000);
     const todayKey = this.todayKey();
 
     let scannedUsers = 0;
@@ -107,6 +128,8 @@ export class GoalAlignmentLowCron {
             tenantId: org.id,
             userId: m.userId,
             periodStart,
+            minIssues,
+            lowRatio,
           });
         } catch (err) {
           this.logger.warn(
@@ -121,7 +144,7 @@ export class GoalAlignmentLowCron {
         }
         if (!candidate) continue;
 
-        const dedupOk = await this.dedupAcquire(m.userId, todayKey);
+        const dedupOk = await this.dedupAcquire(m.userId, todayKey, dedupTtlSeconds);
         if (!dedupOk) {
           dedupSkipped += 1;
           continue;
@@ -131,6 +154,7 @@ export class GoalAlignmentLowCron {
           tenantId: org.id,
           candidate,
           ownerCandidates,
+          periodDays,
         });
         if (sent) {
           this.metrics.incProbeGoalAlignmentLowEmitted({
@@ -153,6 +177,8 @@ export class GoalAlignmentLowCron {
     tenantId: string;
     userId: string;
     periodStart: Date;
+    minIssues: number;
+    lowRatio: number;
   }): Promise<CandidateUser | null> {
     const baseWhere = {
       tenantId: args.tenantId,
@@ -166,9 +192,9 @@ export class GoalAlignmentLowCron {
         where: { ...baseWhere, goalId: null },
       }),
     ]);
-    if (totalIssues < GoalAlignmentLowCron.MIN_ISSUES) return null;
+    if (totalIssues < args.minIssues) return null;
     const ratio = withoutGoalCount / totalIssues;
-    if (ratio < GoalAlignmentLowCron.LOW_RATIO) return null;
+    if (ratio < args.lowRatio) return null;
     return {
       userId: args.userId,
       totalIssues,
@@ -177,10 +203,10 @@ export class GoalAlignmentLowCron {
     };
   }
 
-  private async dedupAcquire(userId: string, dayKey: string): Promise<boolean> {
+  private async dedupAcquire(userId: string, dayKey: string, ttlSeconds: number): Promise<boolean> {
     const key = `goal_alignment_low:${userId}:${dayKey}`;
     try {
-      const res = await this.redis.client.set(key, '1', 'EX', DEFAULT_DEDUP_TTL_SECONDS, 'NX');
+      const res = await this.redis.client.set(key, '1', 'EX', ttlSeconds, 'NX');
       return res !== null;
     } catch (err) {
       this.logger.warn(
@@ -222,6 +248,7 @@ export class GoalAlignmentLowCron {
     tenantId: string;
     candidate: CandidateUser;
     ownerCandidates: string[];
+    periodDays: number;
   }): Promise<boolean> {
     if (!this.probe) {
       this.logger.debug(
@@ -240,7 +267,7 @@ export class GoalAlignmentLowCron {
         reason: 'goal_alignment_low',
         payload: {
           message:
-            `За последние ${GoalAlignmentLowCron.PERIOD_DAYS} дн. ` +
+            `За последние ${args.periodDays} дн. ` +
             `${args.candidate.withoutGoalCount} из ${args.candidate.totalIssues} ` +
             'задач созданы без связи с целью.',
           kind: 'goal_alignment_low',
@@ -248,7 +275,7 @@ export class GoalAlignmentLowCron {
           totalIssues: args.candidate.totalIssues,
           withoutGoalCount: args.candidate.withoutGoalCount,
           ratio: Number(args.candidate.ratio.toFixed(3)),
-          period: `${GoalAlignmentLowCron.PERIOD_DAYS}d`,
+          period: `${args.periodDays}d`,
           actionUrl: `/tracker/me/inbox?filter=no_goal`,
         },
         recipientCandidates: recipients,

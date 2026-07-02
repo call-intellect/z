@@ -515,13 +515,21 @@ export class QueryPlanExtractorService {
       }
 
       const isList = plan.queryClass === 'list';
-      const personHints = isList
-        ? [...plan.filters.personHints, ...plan.filters.entityHints]
-        : [];
+      const isFactOrTopic =
+        plan.queryClass === 'fact' || plan.queryClass === 'topic';
+      const personHints = [
+        ...plan.filters.personHints,
+        ...plan.filters.entityHints,
+      ];
 
       const { personIds, clarification } = isList
         ? await this.resolvePersonHintsWithClarify(tenantId, personHints, entityIds)
-        : { personIds: [] as string[], clarification: null };
+        : isFactOrTopic
+          ? {
+              personIds: await this.resolvePersonHints(tenantId, personHints),
+              clarification: null,
+            }
+          : { personIds: [] as string[], clarification: null };
 
       if (clarification) {
         return { filters: null, clarification };

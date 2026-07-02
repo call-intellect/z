@@ -561,6 +561,7 @@ export type GoalTreeRenderNode = {
   id: string;
   name: string;
   progressStatus: GoalProgressStatus;
+  cachedAlignment: number | null;
   keyResults?: Array<{
     id: string;
     name: string;
@@ -577,6 +578,7 @@ export function buildTree(goals: readonly GoalDomain[]): GoalTreeRenderNode[] {
       id: g.id,
       name: g.name,
       progressStatus: g.progressStatus,
+      cachedAlignment: g.cachedAlignment,
       children: [],
     });
   }

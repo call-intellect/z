@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 
@@ -36,7 +37,11 @@ function makeService(stubs: PrismaStubs = {}): {
     client: { get: redisGet, set: redisSet },
   } as unknown as RedisService;
 
-  const svc = new StrategicAlignmentIssuesService(prisma, redis);
+  const cfg = {
+    getDynamic: vi.fn(async (_k: string, _e: unknown, fallback: unknown) => fallback),
+  } as unknown as TypedConfigService;
+
+  const svc = new StrategicAlignmentIssuesService(prisma, redis, cfg);
   return { svc, prisma, redis, goalFindFirst, issueCount, issueFindMany, redisGet, redisSet };
 }
 

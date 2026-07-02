@@ -11,6 +11,7 @@ import { type Entity } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { CORE_QUEUE_NAMES, type EntityResolverJobData } from '../../core-queue/queues';
@@ -21,30 +22,6 @@ import { EntityMergeService } from '../services/entity-merge.service';
 import { EntityResolutionService } from '../services/entity-resolution.service';
 import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
 
-/**
- * Entity-resolver worker (`core.entity-resolver` consumer).
- *
- * Шаги на job `{ entityId }`:
- *   1. findUnique Entity. Если null → skip.
- *   2. Идемпотентность: entity.mergedIntoId !== null → skip (уже объединена).
- *   3. KNN cosine top-5 кандидатов того же tenantId/type, embedding IS NOT NULL,
- *      mergedIntoId IS NULL, sim > ENTITY_MERGE_THRESHOLD.
- *   4. Если кандидатов нет — return.
- *   5. Для каждого (по убыванию similarity) — judgeMerge с контекстом блоков.
- *      На первый verdict='merge' — Prisma-транзакция:
- *        - Защита: target.mergedIntoId === null, entity.mergedIntoId === null (race).
- *        - Защита: canonicalId реально присутствует в списке кандидатов.
- *        - entity.mergedIntoId = target.id, updatedAt=now.
- *        - target.mentionsCount += entity.mentionsCount.
- *        - target.aliases = union(target.aliases, [entity.canonicalName, ...entity.aliases]).
- *        - Перенос IdeaBlockEntity entityId=entity.id → entityId=target.id;
- *          composite PK (blockId, entityId) — pre-check целевой пары, при
- *          конфликте delete дубля-источника, иначе update (Б1: без catch P2002 в tx).
- *
- * Concurrency=1: cron + on-event могут пересекаться, но операция merge меняет
- * глобальное состояние. Обрабатываем серийно, чтобы не было race условий
- * между двумя параллельными jobs для одной пары Entity.
- */
 @Injectable()
 export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EntityResolverWorker.name);
@@ -66,6 +43,9 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(EventEmitter2)
     private readonly eventEmitter?: EventEmitter2,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -109,10 +89,11 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.gate.checkOrThrow(entity.tenantId, 'entity-resolver');
 
+    const mergeThreshold = this.cfg.knowledgeCore.entityMergeThreshold;
     const candidates = await this.merger.findCandidates({
       tenantId: entity.tenantId,
       entityId: entity.id,
-      threshold: this.cfg.knowledgeCore.entityMergeThreshold,
+      threshold: mergeThreshold,
     });
     if (candidates.length === 0) {
       this.logger.debug({ entityId }, 'entity-resolver: кандидатов нет');
@@ -140,6 +121,7 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         continue;
       }
       // verdict='merge'
+      this.metrics?.observeEntityMergeConfidenceGap(c.similarity - mergeThreshold);
       try {
         await this.applyMerge({
           entity,
@@ -185,84 +167,11 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       throw new Error(`entity-resolver: targetId == entityId (${entity.id}) — abort`);
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      const fresh = await tx.entity.findUnique({
-        where: { id_tenantId: { id: entity.id, tenantId: entity.tenantId } },
-      });
-      if (!fresh) throw new Error(`entity ${entity.id} not found in tx`);
-      if (fresh.mergedIntoId !== null) {
-        throw new Error(`entity ${entity.id} уже merged_into=${fresh.mergedIntoId} — abort`);
-      }
-      const target = await tx.entity.findUnique({
-        where: { id_tenantId: { id: targetId, tenantId: entity.tenantId } },
-      });
-      if (!target) {
-        throw new Error(`target ${targetId} не найден — abort`);
-      }
-      if (target.mergedIntoId !== null) {
-        throw new Error(`target ${targetId} сам merged_into=${target.mergedIntoId} — abort (race)`);
-      }
-      if (target.tenantId !== fresh.tenantId) {
-        throw new Error(
-          `target.tenantId=${target.tenantId} != entity.tenantId=${fresh.tenantId} — abort`,
-        );
-      }
-      if (target.type !== fresh.type) {
-        throw new Error(`target.type=${target.type} != entity.type=${fresh.type} — abort`);
-      }
-
-      await tx.entity.update({
-        where: { id_tenantId: { id: fresh.id, tenantId: fresh.tenantId } },
-        data: { mergedIntoId: targetId },
-      });
-
-      const newAliases = Array.from(
-        new Set([...target.aliases, fresh.canonicalName, ...fresh.aliases]),
-      ).filter((a) => a !== target.canonicalName);
-      await tx.entity.update({
-        where: { id_tenantId: { id: targetId, tenantId: fresh.tenantId } },
-        data: {
-          mentionsCount: { increment: fresh.mentionsCount },
-          aliases: newAliases,
-        },
-      });
-
-      const mentions = await tx.ideaBlockEntity.findMany({
-        where: { entityId: fresh.id },
-      });
-      for (const m of mentions) {
-        const conflicting = await tx.ideaBlockEntity.findUnique({
-          where: {
-            blockId_entityId_tenantId: {
-              blockId: m.blockId,
-              entityId: targetId,
-              tenantId: fresh.tenantId,
-            },
-          },
-        });
-        if (conflicting) {
-          await tx.ideaBlockEntity.delete({
-            where: {
-              blockId_entityId_tenantId: {
-                blockId: m.blockId,
-                entityId: fresh.id,
-                tenantId: fresh.tenantId,
-              },
-            },
-          });
-          continue;
-        }
-        await tx.ideaBlockEntity.update({
-          where: {
-            blockId_entityId_tenantId: {
-              blockId: m.blockId,
-              entityId: fresh.id,
-              tenantId: fresh.tenantId,
-            },
-          },
-          data: { entityId: targetId },
-        });
-      }
+    await this.merger.mergeEntities({
+      tenantId: entity.tenantId,
+      fromEntityId: entity.id,
+      intoEntityId: targetId,
+      actor: { source: 'auto-resolver', explanation: args.explanation },
     });
 
     this.logger.debug(

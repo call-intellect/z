@@ -21,6 +21,7 @@ function decision(over: Partial<DecisionListItem> = {}): DecisionListItem {
     affectsEntityIds: [],
     confidence: null,
     trustTier: "human",
+    reversibility: null,
     updatedAt: new Date("2026-06-11T10:00:00Z"),
     createdAt: new Date("2026-05-01T08:00:00Z"),
     ...over,

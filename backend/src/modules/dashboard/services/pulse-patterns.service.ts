@@ -11,7 +11,6 @@ import type {
   PulsePatternGoalDepartmentDto,
   PulsePatternGoalVectorDto,
   PulsePatternGoalVectorItemDto,
-  PulsePatternIrreversibleDecisionsDto,
   PulsePatternKnowledgeVelocityDto,
   PulsePatternLowRoiMeetingDto,
   PulsePatternRecurringTopicDto,
@@ -44,7 +43,6 @@ export class PulsePatternsService {
   private static readonly GOAL_TOP = 5;
   private static readonly GOAL_CONTRIBUTORS_TOP = 3;
   private static readonly RESPONDERS_TOP = 5;
-  private static readonly DECISIONS_TOP = 10;
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
@@ -63,7 +61,6 @@ export class PulsePatternsService {
       bottlenecks,
       goalVector,
       knowledgeVelocity,
-      irreversibleDecisions,
     ] = await Promise.all([
       this.getBusFactor(args.tenantId, now),
       this.getRecurringTopics(args.tenantId, now),
@@ -71,7 +68,6 @@ export class PulsePatternsService {
       this.getBottlenecks(args.tenantId, now),
       this.getGoalVector(args.tenantId, periodDays, now),
       this.getKnowledgeVelocity(args.tenantId),
-      this.getIrreversibleDecisions(args.tenantId, periodStart),
     ]);
 
     return {
@@ -83,7 +79,6 @@ export class PulsePatternsService {
       bottlenecks,
       goalVector,
       knowledgeVelocity,
-      irreversibleDecisions,
     };
   }
 
@@ -540,45 +535,6 @@ export class PulsePatternsService {
       ),
     };
   }
-
-  private async getIrreversibleDecisions(
-    tenantId: string,
-    periodStart: Date,
-  ): Promise<PulsePatternIrreversibleDecisionsDto> {
-    const decisions = await this.prisma.decision.findMany({
-      where: {
-        tenantId,
-        deletedAt: null,
-        reversibility: 'type-1',
-        createdAt: { gte: periodStart },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: PulsePatternsService.DECISIONS_TOP,
-      select: {
-        id: true,
-        statement: true,
-        text: true,
-        alternatives: true,
-        decidedAt: true,
-        createdAt: true,
-      },
-    });
-
-    let alertCount = 0;
-    const out = decisions.map((d) => {
-      const hasAlternatives = hasNonEmptyAlternatives(d.alternatives);
-      if (!hasAlternatives) alertCount++;
-      const raw = d.statement ?? d.text ?? '';
-      return {
-        decisionId: d.id,
-        statement: raw.length > 280 ? `${raw.slice(0, 279)}…` : raw,
-        decidedAt: (d.decidedAt ?? d.createdAt).toISOString(),
-        hasAlternatives,
-      };
-    });
-
-    return { decisions: out, alertCount };
-  }
 }
 
 function parseTopExperts(json: Prisma.JsonValue): string[] {
@@ -614,18 +570,6 @@ function parseTopResponders(
     if (name) out.push({ personName: name, resolvedCount: resolved });
   }
   return out;
-}
-
-function hasNonEmptyAlternatives(json: Prisma.JsonValue | null): boolean {
-  if (!json) return false;
-  if (Array.isArray(json)) return json.length > 0;
-  if (typeof json === 'object') {
-    const arr =
-      (json as { items?: unknown; alternatives?: unknown }).items ??
-      (json as { alternatives?: unknown }).alternatives;
-    if (Array.isArray(arr)) return arr.length > 0;
-  }
-  return false;
 }
 
 function severityToNumber(severity: string): number {

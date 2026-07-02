@@ -400,7 +400,7 @@ describe('EntityResolutionService — Entity↔Person линковка тёзо�
       expect(personUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'p-1' },
-          data: { entityId: 'e-1' },
+          data: { entityId: 'e-1', entityTenantId: 't1' },
         }),
       );
     });
@@ -483,7 +483,7 @@ describe('EntityResolutionService — Entity↔Person линковка тёзо�
       expect(personUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'p-1' },
-          data: { entityId: 'e-1' },
+          data: { entityId: 'e-1', entityTenantId: 't1' },
         }),
       );
     });
@@ -874,5 +874,75 @@ describe('EntityResolutionService.findOrCreateCustomerEntity (unit)', () => {
     expect(customerFindUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { entityId: 'ent-x' } }),
     );
+  });
+});
+
+describe('EntityResolutionService.resolvePersonByEmbedding — Ф1 FROM persons (integration)', () => {
+  it('возвращает Person-кандидата по эмбеддингу (raw SQL FROM persons не падает 42P01)', async (testCtx) => {
+    if (skipIfNoDb(testCtx)) return;
+    const f = ctx.fixture!;
+    const prisma = await getPrismaClient();
+    const tenant = f.orgAId;
+
+    const entId = `${PREFIX}-emb-person-ent`;
+    const personId = `${PREFIX}-emb-person`;
+    const vec = new Array<number>(1536).fill(0.1);
+    const vecLiteral = `[${vec.join(',')}]`;
+
+    await prisma.entity.create({
+      data: {
+        id: entId,
+        tenantId: tenant,
+        type: 'person',
+        canonicalName: `${PREFIX}-Эмбеддинг Персона`,
+        aliases: [],
+        mentionsCount: 1,
+      },
+    });
+    await prisma.$executeRawUnsafe(
+      'UPDATE "Entity" SET embedding = $1::vector WHERE id = $2 AND "tenantId" = $3',
+      vecLiteral,
+      entId,
+      tenant,
+    );
+    await prisma.person.create({
+      data: {
+        id: personId,
+        tenantId: tenant,
+        name: `${PREFIX}-Эмбеддинг Персона`,
+        email: `${PREFIX}-emb-person@test.local`,
+        entityId: entId,
+        entityTenantId: tenant,
+      },
+    });
+
+    const embed = {
+      embedEntityNames: vi.fn(async (names: string[]) =>
+        names.map(() => vec.slice()),
+      ),
+      embedQuery: vi.fn(async () => vec.slice()),
+    } as unknown as KnowledgeEmbeddingService;
+    const svc = new EntityResolutionService(prisma as unknown as PrismaService, embed);
+
+    const rows = await (
+      svc as unknown as {
+        resolvePersonByEmbedding: (
+          t: string,
+          n: string,
+        ) => Promise<Array<{ id: string; score: number }>>;
+      }
+    ).resolvePersonByEmbedding(tenant, `${PREFIX}-Эмбеддинг Персона`);
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.some((r) => r.id === personId)).toBe(true);
+    const hit = rows.find((r) => r.id === personId);
+    expect(hit!.score).toBeGreaterThanOrEqual(0.9);
+
+    await prisma.person
+      .delete({ where: { id: personId } })
+      .catch(() => undefined);
+    await prisma.entity
+      .delete({ where: { id_tenantId: { id: entId, tenantId: tenant } } })
+      .catch(() => undefined);
   });
 });

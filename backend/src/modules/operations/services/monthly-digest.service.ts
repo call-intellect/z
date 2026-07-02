@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
@@ -34,8 +35,14 @@ import {
 } from '../prompts/monthly-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
+import { OperationsDashboardService } from './operations-dashboard.service';
 import { monthBounds, shiftPeriod } from './value-recap.service';
 import { WeeklyPerPersonService } from './weekly-per-person.service';
+import {
+  collectWindowSignals,
+  computeTeamFrictionClamp,
+  type WindowSignals,
+} from './window-signals';
 
 function formatDateUtc(d: Date): string {
   const y = d.getUTCFullYear();
@@ -68,7 +75,6 @@ function emptyMetrics(): MonthlyDigestMetricsDto {
     goalsCompleted: 0,
     goalsFailed: 0,
     topBlockers: [],
-    reliabilityPercent: null,
     tasksDone: 0,
     tasksPlanned: 0,
     tasksNotDone: 0,
@@ -194,6 +200,9 @@ export class MonthlyDigestService {
     private readonly metrics: BusinessMetricsService,
     @Inject(WeeklyPerPersonService)
     private readonly perPerson: WeeklyPerPersonService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(OperationsDashboardService)
+    private readonly opsDashboard: OperationsDashboardService,
   ) {}
 
   async getStored(args: {
@@ -256,16 +265,60 @@ export class MonthlyDigestService {
     });
     const pkg = built.pkg;
 
+    let windowSignals: WindowSignals = {
+      risksByCause: [],
+      ideaClusters: [],
+      teamFrictions: [],
+      blockers: [],
+    };
+    try {
+      windowSignals = await collectWindowSignals({
+        prisma: this.prisma,
+        opsDashboard: this.opsDashboard,
+        tenantId: args.tenantId,
+        from: fromStr,
+        to: toStr,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          periodYm: args.periodYm,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'monthly-digest: сбор сигналов окна упал — пустые плитки',
+      );
+    }
+
     const weekStarts = mondaysInMonth(args.periodYm);
     const weekTrend = buildMonthWeekTrend(pkg.weeks, weekStarts);
-    const signals = computeMonthVerdictSignals(pkg);
+    const frictionMinConfidence = await this.cfg.getDynamic<number>(
+      'operations.digest.team_friction_min_confidence',
+      undefined,
+      0.7,
+    );
+    const frictionRepeatCount = await this.cfg.getDynamic<number>(
+      'operations.digest.team_friction_repeat_count',
+      undefined,
+      2,
+    );
+    const frictionClamp = computeTeamFrictionClamp(
+      windowSignals.teamFrictions,
+      frictionMinConfidence,
+      frictionRepeatCount,
+    );
+    const signals = {
+      ...computeMonthVerdictSignals(pkg),
+      teamFrictionWarn: frictionClamp.warn,
+      teamFrictionRisk: frictionClamp.risk,
+    };
 
     let bodyMarkdown: string;
     let llmTaskRouteId: string | null;
     let verdictObj: MonthlyDigestVerdictDto | null;
     let letterArr: MonthlyDigestLetterSectionDto[] | null;
     let goalMonthObj: MonthlyDigestGoalAlignmentMonthDto | null;
-    let decisions: Array<{ title: string; why: string }> | null;
+    let ownerForks: Array<{ title: string; why: string }> | null;
     let nextFocus: Array<{ title: string; why: string }> | null;
     let risksSummary: string | null;
     let ideasSummary: string | null;
@@ -307,7 +360,7 @@ export class MonthlyDigestService {
       };
       verdictObj = verdict;
       letterArr = validated.letter;
-      decisions = validated.decisions;
+      ownerForks = validated.ownerForks;
       nextFocus = validated.nextFocus;
       risksSummary = validated.risksSummary;
       ideasSummary = validated.ideasSummary;
@@ -328,7 +381,7 @@ export class MonthlyDigestService {
       verdictObj = null;
       letterArr = null;
       goalMonthObj = null;
-      decisions = null;
+      ownerForks = null;
       nextFocus = null;
       risksSummary = null;
       ideasSummary = null;
@@ -350,14 +403,17 @@ export class MonthlyDigestService {
       goalsCompleted: built.weeklyMetrics.reduce((s, m) => s + m.goalsCompleted, 0),
       goalsFailed: built.weeklyMetrics.reduce((s, m) => s + m.goalsFailed, 0),
       topBlockers: mergeBlockers(built.weeklyMetrics),
-      reliabilityPercent: pkg.team.reliabilityPercent,
       tasksDone: pkg.team.tasksDone,
       tasksPlanned: pkg.team.tasksPlanned,
       tasksNotDone: pkg.team.tasksNotDone,
-      ...(decisions ? { decisions } : {}),
+      ...(ownerForks ? { ownerForks } : {}),
       ...(nextFocus ? { nextFocus } : {}),
       risksSummary,
       ideasSummary,
+      risksByCause: windowSignals.risksByCause,
+      ideaClusters: windowSignals.ideaClusters,
+      teamFrictions: windowSignals.teamFrictions,
+      blockers: windowSignals.blockers,
     };
 
     const sourcesToStore: MonthlyDigestSourcesDto = {
@@ -476,11 +532,9 @@ export class MonthlyDigestService {
     }
 
     let team: MonthCompanyPackage['team'] = {
-      reliabilityPercent: null,
       tasksDone: 0,
       tasksPlanned: 0,
       tasksNotDone: 0,
-      topRisk: [],
     };
     try {
       const pp = await this.perPerson.compute(
@@ -497,25 +551,15 @@ export class MonthlyDigestService {
       let tasksDone = 0;
       let tasksPlanned = 0;
       let tasksNotDone = 0;
-      let kept = 0;
-      let denom = 0;
       for (const r of pp.rows) {
         tasksDone += r.tasksDone;
         tasksPlanned += r.tasksPlanned;
         tasksNotDone += r.tasksNotDone;
-        kept += r.promisesKept;
-        denom += r.promisesKept + r.promisesBroken + r.promisesOverdue;
       }
       team = {
-        reliabilityPercent: denom > 0 ? Math.round((kept / denom) * 100) : null,
         tasksDone,
         tasksPlanned,
         tasksNotDone,
-        topRisk: pp.topRisk.slice(0, 3).map((r) => ({
-          personName: r.personName,
-          broken: r.promisesBroken,
-          overdue: r.promisesOverdue,
-        })),
       };
     } catch (err) {
       this.logger.warn(

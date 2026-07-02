@@ -19,7 +19,7 @@ import {
   SPECIALISTS_COMBINED_MAX_TOKENS,
   SPECIALISTS_COMBINED_TASK_TYPE,
   SPECIALISTS_COMBINED_TOOL_NAME,
-  SUBMIT_ALL_8_ENTITIES_TOOL,
+  SUBMIT_ALL_ENTITIES_TOOL,
 } from './specialists-combined.prompt';
 
 describe('specialists-combined — константы и tool schema', () => {
@@ -27,14 +27,14 @@ describe('specialists-combined — константы и tool schema', () => {
     expect(SPECIALISTS_COMBINED_TASK_TYPE).toBe(
       'knowledge-specialists-combined',
     );
-    expect(SPECIALISTS_COMBINED_TOOL_NAME).toBe('submit_all_8_entities');
+    expect(SPECIALISTS_COMBINED_TOOL_NAME).toBe('submit_all_entities');
     expect(SPECIALISTS_COMBINED_MAX_TOKENS).toBe(32_000);
   });
 
-  it('tool schema содержит 8 обязательных массивов и совпадает с эталоном эксперимента', () => {
-    expect(SUBMIT_ALL_8_ENTITIES_TOOL.name).toBe(SPECIALISTS_COMBINED_TOOL_NAME);
-    expect(SUBMIT_ALL_8_ENTITIES_TOOL.input_schema.type).toBe('object');
-    expect(SUBMIT_ALL_8_ENTITIES_TOOL.input_schema.required).toEqual([
+  it('tool schema содержит 9 обязательных массивов и совпадает с эталоном эксперимента', () => {
+    expect(SUBMIT_ALL_ENTITIES_TOOL.name).toBe(SPECIALISTS_COMBINED_TOOL_NAME);
+    expect(SUBMIT_ALL_ENTITIES_TOOL.input_schema.type).toBe('object');
+    expect(SUBMIT_ALL_ENTITIES_TOOL.input_schema.required).toEqual([
       'decisions',
       'ideas',
       'insights',
@@ -43,22 +43,25 @@ describe('specialists-combined — константы и tool schema', () => {
       'knowledge_categories',
       'skill_traits',
       'helpfulness_traits',
+      'tasks',
     ]);
-    expect(SUBMIT_ALL_8_ENTITIES_TOOL.input_schema.additionalProperties).toBe(
+    expect(SUBMIT_ALL_ENTITIES_TOOL.input_schema.additionalProperties).toBe(
       false,
     );
   });
 });
 
 describe('specialists-combined — system prompt snapshot', () => {
-  it('system prompt стабилен (8 типов + маршрутизация + жёсткие требования)', () => {
+  it('system prompt стабилен (9 типов + маршрутизация + жёсткие требования)', () => {
     const prompt = buildSpecialistsCombinedSystemPrompt();
     expect(prompt).toMatchSnapshot('system');
     // дополнительные структурные проверки (быстро падают, если правка сломала
     // главное условие извлечения):
-    expect(prompt).toContain('submit_all_8_entities');
+    expect(prompt).toContain('submit_all_entities');
     expect(prompt).toContain('decisions[]');
     expect(prompt).toContain('helpfulness_traits[]');
+    expect(prompt).toContain('tasks[]');
+    expect(prompt).toContain('ГРУППИРОВКА');
     expect(prompt).toContain('на чистом русском');
   });
 });
@@ -120,7 +123,7 @@ describe('specialists-combined — user message', () => {
     expect(user).toContain('«Demo / Sales»');
     expect(user).toContain('(1 шт)');
     expect(user).toContain('[BLOCK:blk_001]');
-    expect(user).toContain('submit_all_8_entities');
+    expect(user).toContain('submit_all_entities');
   });
 });
 
@@ -228,5 +231,36 @@ describe('specialists-combined — zod schema валидирует минима�
       __unexpected: true,
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it('tasks отсутствует → success, default []', () => {
+    const parsed = SpecialistsCombinedOutputSchema.safeParse({
+      decisions: [],
+      ideas: [],
+      insights: [],
+      experiments: [],
+      regulations: [],
+      knowledge_categories: [],
+      skill_traits: [],
+      helpfulness_traits: [],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.tasks).toEqual([]);
+  });
+
+  it('одна валидная task (sourceBlockId + title) → success', () => {
+    const parsed = SpecialistsCombinedOutputSchema.safeParse({
+      decisions: [],
+      ideas: [],
+      insights: [],
+      experiments: [],
+      regulations: [],
+      knowledge_categories: [],
+      skill_traits: [],
+      helpfulness_traits: [],
+      tasks: [{ sourceBlockId: 'blk_1', title: 'Сделать отчёт к пятнице' }],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.tasks).toHaveLength(1);
   });
 });

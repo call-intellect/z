@@ -24,6 +24,8 @@ import {
 
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { canonicalizeEntityId } from './entity-companion.helpers';
+import { EntityResolutionService } from './entity-resolution.service';
 import { Specialist32ProbeService } from './specialist-3-2-probe.service';
 
 @Injectable()
@@ -46,6 +48,8 @@ export class Specialist32Service {
     private readonly metrics: BusinessMetricsService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embeddings: KnowledgeEmbeddingService,
+    @Inject(EntityResolutionService)
+    private readonly entities: EntityResolutionService,
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
@@ -76,7 +80,7 @@ export class Specialist32Service {
         },
       });
       if (!person || person.deletedAt) {
-        this.logger.debug(
+        this.logger.log(
           { personId: args.personId },
           'specialist-3-2: Person не найден или удалён — skip',
         );
@@ -100,6 +104,11 @@ export class Specialist32Service {
         );
         return;
       }
+
+      this.logger.log(
+        { tenantId: args.tenantId, personId: person.id, entityId: person.entityId },
+        '[PIPE] clone-rebuild',
+      );
 
       const blocks = await this.loadBlocksForPerson({
         tenantId: args.tenantId,
@@ -222,7 +231,28 @@ export class Specialist32Service {
         return;
       }
 
-      if (triageDecision === 'auto') {
+      const profileMinConfidence = this.cfg
+        ? await this.cfg.getDynamic<number>('knowledgeClone.profileMinConfidence', undefined, 0.55)
+        : 0.55;
+      const materializedViaFloor =
+        triageDecision !== 'auto' &&
+        triageDecision !== 'deep' &&
+        profileConfidence >= profileMinConfidence;
+      const shouldMaterialize = triageDecision === 'auto' || materializedViaFloor;
+
+      if (shouldMaterialize) {
+        if (materializedViaFloor) {
+          this.logger.debug(
+            {
+              personId: person.id,
+              triageDecision,
+              profileConfidence,
+              profileMinConfidence,
+              reason: 'materialized_provisional',
+            },
+            'specialist-3-2: материализация профиля по мягкому порогу (без auto-триажа)',
+          );
+        }
         try {
           await this.prisma.person.update({
             where: { id: person.id },
@@ -236,7 +266,7 @@ export class Specialist32Service {
           this.metrics.observeKnowledgeCloneProfileSizeKb(estimateProfileSizeKb(serialized));
           this.metrics.incCoreSpecialistCards({
             type: Specialist32Service.METRIC_TYPE,
-            status: 'canonical',
+            status: materializedViaFloor ? 'canonical_provisional' : 'canonical',
           });
           await this.rebuildCategoryEmbeddings({
             tenantId: args.tenantId,
@@ -382,20 +412,36 @@ export class Specialist32Service {
     personId: string;
     entityId: string | null;
   }): Promise<KnowledgeCloneExtractBlockInput[]> {
-    if (!args.entityId) {
-      this.logger.debug(
+    let entityId = args.entityId;
+    if (!entityId) {
+      this.logger.warn(
         { personId: args.personId },
-        'specialist-3-2.loadBlocksForPerson: Person.entityId не заполнен — нечего извлекать',
+        'specialist-3-2.loadBlocksForPerson: Person.entityId не заполнен',
       );
-      return [];
+      this.metrics.incKnowledgeClonePersonNoEntity({ tenant: args.tenantId });
+      const resolvedEntityId = await this.entities.resolveSubjectEntityId(args.tenantId, {
+        authorPersonId: args.personId,
+        authorEmail: null,
+        speakerParticipantId: null,
+        speakerName: null,
+        authorUserId: null,
+      });
+      if (!resolvedEntityId) return [];
+      await this.prisma.person.update({
+        where: { id: args.personId },
+        data: { entityId: resolvedEntityId, entityTenantId: args.tenantId },
+      });
+      entityId = resolvedEntityId;
     }
 
     const lookbackMs = this.cfg.knowledgeClone.lookbackMonths * 30 * 24 * 60 * 60 * 1000;
     const since = new Date(Date.now() - lookbackMs);
 
+    const canonicalEntityId = await canonicalizeEntityId(this.prisma, args.tenantId, entityId);
+
     const mentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
-        entityId: args.entityId,
+        entityId: canonicalEntityId,
         role: { in: ['subject', 'mentioned'] },
         block: {
           tenantId: args.tenantId,
@@ -420,7 +466,11 @@ export class Specialist32Service {
           select: { entityId: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { confidence: 'desc' },
+        { evidenceCount: 'desc' },
+        { createdAt: 'desc' },
+      ],
       take: 60,
     });
 
@@ -687,7 +737,10 @@ function computeProfileConfidence(profile: KnowledgeProfileDraft): number {
     0.05,
     profile.categories.reduce((acc, c) => acc + Math.log2(1 + c.observationCount), 0) / 200,
   );
-  return Math.min(1, avg + obsBoost);
+  const wellObservedFraction =
+    profile.categories.filter((c) => c.observationCount >= 3).length / count;
+  const wellObservedBoost = 0.03 * wellObservedFraction;
+  return Math.min(1, avg + obsBoost + wellObservedBoost);
 }
 
 function estimateProfileSizeKb(profile: SerializedKnowledgeProfile): number {

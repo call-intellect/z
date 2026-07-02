@@ -260,7 +260,7 @@ export default function RedesignPreviewPage() {
 
         <div className="mt-5">
           <ModernTable<Person>
-            title="Кто держит слово"
+            title="План-факт по людям"
             titleIcon={<Users size={16} />}
             titleGrad={GRAD.blue}
             columns={PEOPLE_COLUMNS}

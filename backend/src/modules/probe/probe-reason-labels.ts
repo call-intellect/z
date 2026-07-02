@@ -3,12 +3,6 @@ export const PROBE_REASON_LABEL_DEFAULT = 'требуется уточнение
 export const PROBE_REASON_FALLBACK_DEFAULT = 'Можете уточнить, пожалуйста?';
 
 export const PROBE_REASON_LABEL: Record<string, string> = {
-  'decision.competing_versions': 'по решению есть конкурирующие версии',
-  'decision.missing_decider': 'у решения нет ответственного за принятие',
-  'decision.no_deadline_critical': 'у важного решения нет срока',
-  'decision.overdue': 'решение просрочено',
-  'decision.outcome_unknown': 'неизвестен итог решения',
-  'decision.confirm_status': 'нужно подтвердить статус решения',
   'temporal.fact_stale_contradiction': 'факт устарел / расхождение',
   'temporal.fact_stale_contradiction.escalated': 'давнее расхождение в фактах',
   'experiment.result_without_lesson': 'у эксперимента есть результат, но нет вывода',
@@ -44,8 +38,6 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
   'helpfulness.unrecognized_high_contributor': 'активный помощник остаётся незамеченным',
   'helpfulness.mentor_emerging': 'появляется наставник',
   'helpfulness.question_chain_unanswered': 'цепочка вопросов осталась без ответа',
-  'commitment.followup': 'нужно уточнить по обещанию',
-  'commitment.silence_escalation': 'по обещанию давно нет ответа',
   'consistency_violation.R1': 'обнаружено расхождение в данных',
   'consistency_violation.R2': 'обнаружено расхождение в данных',
   'consistency_violation.R3': 'обнаружено расхождение в данных',
@@ -60,18 +52,13 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
   'task.poorly_specified': 'задача сформулирована нечётко',
   'task.false_positive': 'возможно, это не задача',
   'task.completion_detail_missing': 'не хватает деталей о выполнении',
+  'task.method_capture': 'как именно решалась задача',
   'companyprofile.missing_mission': 'Миссия компании не задана',
   'companyprofile.missing_vision': 'Видение компании не задано',
   'companyprofile.missing_strategy': 'Стратегия компании не задана',
 };
 
 export const PROBE_REASON_FALLBACK: Record<string, string> = {
-  'decision.competing_versions': 'По этому решению есть несколько версий — какая актуальная?',
-  'decision.missing_decider': 'Кто отвечает за это решение?',
-  'decision.no_deadline_critical': 'К какому сроку нужно принять это решение?',
-  'decision.overdue': 'Это решение должно было исполниться. На каком оно сейчас этапе?',
-  'decision.outcome_unknown': 'Чем в итоге закончилось это решение?',
-  'decision.confirm_status': 'Какой сейчас статус у этого решения?',
   'temporal.fact_stale_contradiction': 'Здесь есть расхождение в данных. Какой вариант верный?',
   'temporal.fact_stale_contradiction.escalated':
     'Это расхождение давно не разрешено. Какой вариант актуальный?',
@@ -103,8 +90,6 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'idea.status_unclear': 'Эта идея давно обсуждается. К чему в итоге пришли?',
   'process_template.step_without_owner': 'Кто отвечает за этот шаг процесса?',
   'helpfulness.question_chain_unanswered': 'Этот вопрос так и остался без ответа. Подскажете?',
-  'commitment.followup': 'Как продвигается то, что вы обещали?',
-  'commitment.silence_escalation': 'По вашему обещанию давно нет новостей. Как с ним сейчас?',
   'attribution.unresolved_at_ingest':
     'К какому отделу, проекту или клиенту это относится?',
   'task.assignee_unresolved': 'Для кого эта задача — кому её поручить?',
@@ -132,6 +117,8 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'consistency_violation.R5': 'Здесь есть расхождение в данных. Какой вариант верный?',
   'consistency_violation.R6': 'Здесь есть расхождение в данных. Какой вариант верный?',
   'task.completion_detail_missing': 'Что конкретно вы сделали с этой задачей?',
+  'task.method_capture':
+    'Расскажи, пожалуйста, пошагово, как ты решал эту задачу? Можно текстом, а удобнее — наговори голосом.',
   'companyprofile.missing_mission':
     'Какая у компании миссия? Кора набросала черновик из ваших решений — проверьте и поправьте.',
   'companyprofile.missing_vision':

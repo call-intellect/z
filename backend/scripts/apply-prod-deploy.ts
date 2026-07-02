@@ -73,6 +73,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-llm-task-routes-month-company.ts',
     hint: 'маршрут operations-monthly-digest (Месяц компании Ф6)',
   },
+  {
+    phase: 'seed-llm-core',
+    script: 'scripts/patch-daily-digest-route-deepseek-pro-gpt-kie.ts',
+    hint: 'маршрут operations-daily-digest → deepseek-v4-pro → gpt-5.4-mini → kie/gemini-3.1-pro (День компании v2 Ф5); уважает админ-правки, идемпотентно',
+  },
 
   { phase: 'seed-base', script: 'scripts/seed-entitlements.ts' },
   { phase: 'seed-base', script: 'scripts/seed-retention-policies.ts' },
@@ -86,6 +91,11 @@ const STEPS: Step[] = [
     hint: '6 ключей billing.* для tier_standard',
   },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-week-month-v2.ts',
+    hint: 'operations.weekly_digest.raw_char_budget (Неделя v2 Ф1)',
+  },
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-report-archive.ts',
@@ -105,6 +115,11 @@ const STEPS: Step[] = [
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-goals-pulse.ts',
     hint: 'goals.pulse.{enabled,deliver_to_telegram} (Goals OKR v2 Фаза 4)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-goals-knobs.ts',
+    hint: 'goals.* + tracker.goalAlignmentLow* пороги/лимиты (Ф9 крутилки goals-engine)',
   },
   {
     phase: 'seed-base',
@@ -140,6 +155,11 @@ const STEPS: Step[] = [
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-router-fallback.ts',
     hint: 'router.{fallbackNegativeTtlSeconds,llmFallbackEnabled(OFF),fallbackCacheTtlSeconds} — крутилки фолбэка роутера специалистов (config-knobs-to-admin-settings)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-kie-timeout.ts',
+    hint: 'ai.kie.timeoutMs=180000 — таймаут вызова провайдера KIE, вынесен из захардкоженных 60_000 (chat-v2-dataclass-routing-fallback Б3)',
   },
   {
     phase: 'seed-base',
@@ -199,7 +219,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-execution-agents.ts',
-    hint: 'goals.author_coverage_min + reliability.min_denominator + probe.* (Ф3.D) + blocker_synthesis.* + decision.stale_days + operations.{blocker_synthesis,decision_controller,promise_cascade}.enabled (TZ-1 Ф3.A/B/C агенты исполнения)',
+    hint: 'probe.* (Ф3.D) + blocker_synthesis.* + operations.blocker_synthesis.enabled (TZ-1 Ф3.A/B/C агенты исполнения)',
   },
   {
     phase: 'seed-base',
@@ -270,6 +290,11 @@ const STEPS: Step[] = [
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-clone-regulations.ts',
     hint: '4 крутилки clone.regulations.* (retrieval top_n/min_similarity, snapshot max_items, scope include_org) — клон знает регламенты должности (Способ C)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-clone-coverage.ts',
+    hint: 'knowledgeClone.profileMinConfidence (0.55) — мягкий порог материализации профиля-клона (F-7): provisional/light ≥ порога сохраняются, deep остаётся на ручной курации',
   },
   {
     phase: 'seed-base',
@@ -369,7 +394,6 @@ const STEPS: Step[] = [
     'compile-org-document',
     'conflict-arbiter',
     'clone-method',
-    'day-signal',
     'edinyy-pomoshnik',
     'chat',
   ].map<Step>((sub) => ({
@@ -605,12 +629,20 @@ const STEPS: Step[] = [
     hint: 'interview → defaultClosedGroupKind=personal (Ф8 knowledge-access)',
     skipBootstrap: true,
   },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-remove-phantom-admin-settings.ts',
+    args: ['--apply'],
+    hint: 'Удаляет осиротевшие AdminSetting-строки под 39 phantom-ключами (нет читателя, unregistered). Идемпотентно (повтор → 0). History сохранён.',
+    skipBootstrap: true,
+  },
 
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-idea-quality.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-meeting-linked-ids.ts', hint: 'IntakeIssue.meetingId → Issue.linkedMeetingIds backfill (intake-issue-linked-meeting-ids-fix, только meeting:-формат externalId)', skipBootstrap: true },
+  { phase: 'backfill', script: 'scripts/backfill-day-report.ts', skipBootstrap: true, hint: 'сборка дневных отчётов из block-ingest за 30 дней (4 сущности)' },
   {
     phase: 'backfill',
     script: 'scripts/backfill-decision-linked-task-count.ts',
@@ -686,6 +718,13 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-knowledge-clone-after-router-fix.ts',
     hint: 'enqueue KnowledgeProfile rebuild для employee с expertise/experience/competence блоками (after router fix Фаза 0.5)',
     skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-knowledge-clone-person-entity.ts',
+    args: ['--apply'],
+    skipBootstrap: true,
+    hint: 'C1-#4 — Person.entityId/entityTenantId lazy-резолв через EntityResolutionService (оба поля композитного FK); идемпотентно (entityId set → skip)',
   },
   {
     phase: 'backfill',
@@ -830,6 +869,27 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-message-contentstripped.ts',
     hint: 'plaintext в Message.contentStripped для GIN-поиска (единый чат Ф4a); decrypt(content)→stripToPlain. Идемпотентно (contentStripped=null фильтр)',
     skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-regulation-scope-normalize.ts',
+    args: ['--apply'],
+    hint: 'regulation/instruction/policy/process: scope=role:<сырое имя> → role:<cuid> по созданным ролям (Фаза 7б); идемпотентно (cuid-хвост = no-op, неразрешимое остаётся сырьём)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-entity-tenant-companions.ts',
+    skipBootstrap: true,
+    args: ['--apply'],
+    hint: 'Пакет A: заполнить entityTenantId/mergedIntoTenantId-компаньоны (idempotent)',
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-reconcile-merged-entity-refs.ts',
+    skipBootstrap: true,
+    args: ['--apply'],
+    hint: 'Пакет A: перепривязать осиротевшие ссылки на уже-слитые сущности к канону (idempotent)',
   },
 ];
 

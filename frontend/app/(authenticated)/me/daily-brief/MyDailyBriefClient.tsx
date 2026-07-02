@@ -42,34 +42,11 @@ function BriefItemRow({ item }: { item: BriefItemDomain }) {
 }
 
 function DailyBriefView({ brief }: { brief: DailyBriefDomain }) {
-  const {
-    promiseKeeping,
-    onDeckToday,
-    atRiskItems,
-    knowsWho,
-    insightCoOccurrence,
-    hint,
-  } = brief;
+  const { onDeckToday, atRiskItems, knowsWho, insightCoOccurrence, hint } =
+    brief;
 
   return (
     <div className="space-y-4">
-      {}
-      {promiseKeeping.total > 0 ? (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <UserCheck size={18} className="text-accent" aria-hidden />
-              Держишь слово {promiseKeeping.kept} из {promiseKeeping.total}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 text-sm text-fg-secondary">
-            {promiseKeeping.atRisk > 0
-              ? `${promiseKeeping.atRisk} под угрозой — стоит перенести срок или закрыть.`
-              : "Все обещания на сегодня в графике."}
-          </CardContent>
-        </Card>
-      ) : null}
-
       {}
       {atRiskItems.length > 0 ? (
         <Card>

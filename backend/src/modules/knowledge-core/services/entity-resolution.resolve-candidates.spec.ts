@@ -35,6 +35,13 @@ function makeService(stubs: Stubs): {
     },
     entity: {
       findMany: vi.fn(async () => stubs.entityCanon),
+      findUnique: vi.fn(
+        async (args: { where: { id_tenantId: { id: string } } }) => {
+          const id = args.where.id_tenantId.id;
+          const row = stubs.entityCanon.find((e) => e.id === id);
+          return row ? { mergedIntoId: row.mergedIntoId } : { mergedIntoId: null };
+        },
+      ),
     },
     $queryRawUnsafe: vi.fn(async (sql: string, ...params: unknown[]) => {
       queryCalls.push({ sql, params });

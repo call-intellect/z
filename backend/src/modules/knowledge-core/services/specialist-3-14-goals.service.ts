@@ -40,11 +40,21 @@ import {
 } from '../prompts/goal-hierarchy-link.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { wouldCreateCycle } from './goal-cycle-guard.util';
 import { GoalTaskLinkerService } from './goal-task-linker.service';
 import { GoalThemeLinkerService } from './goal-theme-linker.service';
 
 /** Метрика-тип для core_specialist_*. */
 const METRIC_TYPE = 'goal';
+
+function isManualParentOverride(mo: unknown): boolean {
+  return (
+    !!mo &&
+    typeof mo === 'object' &&
+    !Array.isArray(mo) &&
+    (mo as Record<string, unknown>).parentGoalId === true
+  );
+}
 
 const VALID_HORIZONS: ReadonlySet<string> = new Set([
   'strategic',
@@ -238,7 +248,7 @@ export class Specialist314GoalsService {
             targetId: alreadyFromBlock.id,
           });
         }
-        this.logger.debug(
+        this.logger.log(
           { blockId: block.id, goalId: alreadyFromBlock.id },
           'specialist-3-14: цель из этого блока уже есть — skip (source-block guard)',
         );
@@ -437,6 +447,10 @@ export class Specialist314GoalsService {
         }
       }
 
+      this.logger.log(
+        { blockId: block.id, tenantId: block.tenantId, created: 1 },
+        '[PIPE] goals',
+      );
       this.logger.log(
         {
           blockId: block.id,
@@ -640,6 +654,17 @@ export class Specialist314GoalsService {
     const queryText = args.queryText.trim().slice(0, 2_000);
     if (!queryText) return [];
 
+    const knnTopKRaw =
+      (await this.cfg?.getDynamic<number>(
+        'goals.knnTopK',
+        undefined,
+        Specialist314GoalsService.KNN_TOP_K,
+      )) ?? Specialist314GoalsService.KNN_TOP_K;
+    const knnTopK =
+      Number.isInteger(knnTopKRaw) && knnTopKRaw > 0
+        ? knnTopKRaw
+        : Specialist314GoalsService.KNN_TOP_K;
+
     // 1. Семантический путь — embed запроса + pgvector KNN.
     let embedding: number[] | null;
     try {
@@ -667,7 +692,7 @@ export class Specialist314GoalsService {
               AND "promotionState" <> 'dismissed'
               AND "validUntil" IS NULL
             ORDER BY "embedding" <=> $2::vector
-            LIMIT ${Specialist314GoalsService.KNN_TOP_K}`,
+            LIMIT ${knnTopK}`,
           args.tenantId,
           vec,
         );
@@ -716,7 +741,7 @@ export class Specialist314GoalsService {
         horizon: true,
         promotionState: true,
       },
-      take: Specialist314GoalsService.KNN_TOP_K,
+      take: knnTopK,
     });
     return rows.map((r) => ({
       id: r.id,
@@ -903,6 +928,52 @@ export class Specialist314GoalsService {
       reasoning: verdict.reasoning,
       confidence: verdict.confidence,
     };
+  }
+
+  async rebuildParentForGoal(args: {
+    tenantId: string;
+    goalId: string;
+    minConfidence: number;
+  }): Promise<{ reparented: boolean; reason: string }> {
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: args.goalId, tenantId: args.tenantId },
+      select: { id: true, parentGoalId: true, manualOverride: true },
+    });
+    if (!goal) return { reparented: false, reason: 'not_found' };
+    if (isManualParentOverride(goal.manualOverride)) {
+      return { reparented: false, reason: 'manual_override' };
+    }
+    const suggestion = await this.suggestParentForGoal({
+      tenantId: args.tenantId,
+      goalId: args.goalId,
+    });
+    if (suggestion.verdict !== 'child_of' || !suggestion.suggestedParentGoalId) {
+      return { reparented: false, reason: 'no_child_of' };
+    }
+    if (suggestion.suggestedParentGoalId === goal.parentGoalId) {
+      return { reparented: false, reason: 'unchanged' };
+    }
+    if (
+      suggestion.confidence === null ||
+      suggestion.confidence < args.minConfidence
+    ) {
+      return { reparented: false, reason: 'low_confidence' };
+    }
+    if (
+      await wouldCreateCycle(
+        this.prisma,
+        args.tenantId,
+        args.goalId,
+        suggestion.suggestedParentGoalId,
+      )
+    ) {
+      return { reparented: false, reason: 'cycle' };
+    }
+    await this.prisma.goal.update({
+      where: { id: args.goalId },
+      data: { parentGoalId: suggestion.suggestedParentGoalId },
+    });
+    return { reparented: true, reason: 'reparented' };
   }
 
   private async collectGoalAndDescendants(

@@ -26,17 +26,13 @@ export interface DailyBriefApi {
   id: string | null;
   dateLocal: string;
   myTasks: BriefItemApi[];
-  myPromises: BriefItemApi[];
   myBlockers: BriefItemApi[];
-  promisedToMe: BriefItemApi[];
   hint: string;
   knowsWho: BriefKnowsWhoApi | null;
   insightCoOccurrence?: BriefInsightCoOccurrenceApi | null;
   counts: {
     tasks: number;
-    promises: number;
     blockers: number;
-    promisedToMe: number;
   };
   deliveredAt: string | null;
   openedAt: string | null;

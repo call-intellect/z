@@ -1,7 +1,10 @@
 import type { Issue } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { ProbeService } from '../../probe/probe.service';
 import type { CreateIssueDto } from '../dto/issues/create-issue.dto';
 import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
@@ -9,6 +12,7 @@ import type { ActivityRecorderService } from './activity-recorder.service';
 import type { HolidayService } from './holiday.service';
 import { IssuesService } from './issues.service';
 import type { ProjectsService } from './projects.service';
+import type { TaskDedupService } from './task-dedup.service';
 import type { TrackerEmitterService } from './tracker-emitter.service';
 import type { TrackerEventsService } from './tracker-events.service';
 import type { WebhookDispatcher } from './webhook-dispatcher.service';
@@ -1335,5 +1339,526 @@ describe('IssuesService.addAssignee — viaRouting метрика', () => {
 
     expect(assigneeCreate).toHaveBeenCalledTimes(1);
     expect(incRoutingSuggestionAccepted).not.toHaveBeenCalled();
+  });
+});
+
+describe('IssuesService.computeMethodCaptureComplexity', () => {
+  it('значимая задача → ≥ 0.5', () => {
+    const c = IssuesService.computeMethodCaptureComplexity({
+      descriptionLength: 400,
+      activityCount: 10,
+      lifetimeDays: 10,
+      priority: 'high',
+    });
+    expect(c).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('тривиальная задача → < 0.5', () => {
+    const c = IssuesService.computeMethodCaptureComplexity({
+      descriptionLength: 10,
+      activityCount: 1,
+      lifetimeDays: 0,
+      priority: 'none',
+    });
+    expect(c).toBeLessThan(0.5);
+  });
+});
+
+describe('IssuesService.maybeRaiseMethodCaptureProbe', () => {
+  const TENANT = 'org_1';
+
+  function buildService(opts: {
+    issue: Record<string, unknown> | null;
+    activityCount?: number;
+    enabled?: boolean;
+    probeSuggest?: ReturnType<typeof vi.fn>;
+  }): {
+    service: IssuesService;
+    probeSuggest: ReturnType<typeof vi.fn>;
+  } {
+    const probeSuggest =
+      opts.probeSuggest ?? vi.fn().mockResolvedValue({ ok: true, probeEventId: 'pe1' });
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue(opts.issue) },
+      issueActivity: {
+        count: vi.fn().mockResolvedValue(opts.activityCount ?? 0),
+      },
+    } as unknown as PrismaService;
+
+    const probe = { suggest: probeSuggest } as unknown as ProbeService;
+    const cfg = {
+      getDynamic: vi.fn(async (key: string, _env?: string, def?: unknown) => {
+        if (key === 'tracker.methodCaptureEnabled') return opts.enabled ?? true;
+        return def;
+      }),
+    } as unknown as TypedConfigService;
+
+    const service = new IssuesService(
+      prisma,
+      {} as unknown as ActivityRecorderService,
+      {} as unknown as ProjectsService,
+      {} as unknown as TrackerEventsService,
+      {} as unknown as WebhookDispatcher,
+      {} as unknown as TrackerEmitterService,
+      undefined, // embedQueue
+      undefined, // inferFieldsSvc
+      undefined, // goalSuggestSvc
+      undefined, // holiday
+      undefined, // boards
+      undefined, // metrics
+      undefined, // taskDedup
+      probe,
+      cfg,
+    );
+
+    return { service, probeSuggest };
+  }
+
+  const significantIssue = {
+    id: 'i1',
+    title: 'Сложная задача',
+    descriptionStripped: 'x'.repeat(400),
+    description: null,
+    priority: 'high',
+    createdAt: new Date('2026-06-01T00:00:00Z'),
+    completedAt: new Date('2026-06-11T00:00:00Z'),
+    assignees: [{ userId: 'u_assignee' }],
+  };
+
+  it('значимая задача с assignee → probe.suggest с reason task.method_capture', async () => {
+    const { service, probeSuggest } = buildService({
+      issue: significantIssue,
+      activityCount: 10,
+    });
+    await (
+      service as unknown as {
+        maybeRaiseMethodCaptureProbe: (a: {
+          issueId: string;
+          tenantId: string;
+        }) => Promise<void>;
+      }
+    ).maybeRaiseMethodCaptureProbe({ issueId: 'i1', tenantId: TENANT });
+
+    expect(probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.method_capture',
+        emittedByService: 'task-method-capture',
+        recipientCandidates: ['u_assignee'],
+        payload: expect.objectContaining({
+          contextCardId: 'i1',
+          contextCardKind: 'issue',
+          suggestedQuestion: expect.stringContaining('как ты её решал'),
+        }),
+      }),
+    );
+    const arg = probeSuggest.mock.calls[0]![0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(arg.payload.suggestedQuestion).toContain('голос');
+    expect(arg.payload).not.toHaveProperty('suggestedActions');
+  });
+
+  it('тривиальная задача → probe.suggest НЕ вызван', async () => {
+    const { service, probeSuggest } = buildService({
+      issue: {
+        ...significantIssue,
+        descriptionStripped: 'короткое',
+        priority: 'none',
+        createdAt: new Date('2026-06-11T00:00:00Z'),
+        completedAt: new Date('2026-06-11T00:00:00Z'),
+      },
+      activityCount: 1,
+    });
+    await (
+      service as unknown as {
+        maybeRaiseMethodCaptureProbe: (a: {
+          issueId: string;
+          tenantId: string;
+        }) => Promise<void>;
+      }
+    ).maybeRaiseMethodCaptureProbe({ issueId: 'i1', tenantId: TENANT });
+
+    expect(probeSuggest).not.toHaveBeenCalled();
+  });
+
+  it('нет assignee → probe.suggest НЕ вызван', async () => {
+    const { service, probeSuggest } = buildService({
+      issue: { ...significantIssue, assignees: [] },
+      activityCount: 10,
+    });
+    await (
+      service as unknown as {
+        maybeRaiseMethodCaptureProbe: (a: {
+          issueId: string;
+          tenantId: string;
+        }) => Promise<void>;
+      }
+    ).maybeRaiseMethodCaptureProbe({ issueId: 'i1', tenantId: TENANT });
+
+    expect(probeSuggest).not.toHaveBeenCalled();
+  });
+
+  it('methodCaptureEnabled=false → probe.suggest НЕ вызван', async () => {
+    const { service, probeSuggest } = buildService({
+      issue: significantIssue,
+      activityCount: 10,
+      enabled: false,
+    });
+    await (
+      service as unknown as {
+        maybeRaiseMethodCaptureProbe: (a: {
+          issueId: string;
+          tenantId: string;
+        }) => Promise<void>;
+      }
+    ).maybeRaiseMethodCaptureProbe({ issueId: 'i1', tenantId: TENANT });
+
+    expect(probeSuggest).not.toHaveBeenCalled();
+  });
+});
+
+describe('IssuesService.update — method-capture хук на переходе в Готово', () => {
+  const EXISTING: Partial<Issue> = {
+    id: 'i1',
+    tenantId: 'org_1',
+    projectId: 'p1',
+    stateId: 's_old',
+    boardId: null,
+    completedAt: null,
+  };
+
+  function buildUpdateService(existing: Partial<Issue>): IssuesService {
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue(existing) },
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          issue: { update: vi.fn().mockResolvedValue(existing) },
+          issueState: {
+            findUnique: vi.fn().mockResolvedValue({ category: 'completed' }),
+          },
+        }),
+    } as unknown as PrismaService;
+    const activity = {
+      record: vi.fn().mockResolvedValue('act_1'),
+    } as unknown as ActivityRecorderService;
+    const events = {
+      publishIssueUpdated: vi.fn(),
+      publishActivity: vi.fn(),
+    } as unknown as TrackerEventsService;
+    const webhooks = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WebhookDispatcher;
+    return new IssuesService(
+      prisma,
+      activity,
+      {} as unknown as ProjectsService,
+      events,
+      webhooks,
+      {} as unknown as TrackerEmitterService,
+    );
+  }
+
+  function wire(
+    service: IssuesService,
+    stateCategory: string,
+  ): ReturnType<typeof vi.spyOn> {
+    vi.spyOn(
+      service as unknown as { requireStateInProject: () => Promise<void> },
+      'requireStateInProject',
+    ).mockResolvedValue(undefined);
+    vi.spyOn(
+      service as unknown as { emitStateChangeIfNeeded: () => Promise<void> },
+      'emitStateChangeIfNeeded',
+    ).mockResolvedValue(undefined);
+    vi.spyOn(
+      service as unknown as { assemble: () => Promise<unknown> },
+      'assemble',
+    ).mockResolvedValue({ id: 'i1', stateCategory });
+    return vi
+      .spyOn(
+        service as unknown as {
+          maybeRaiseMethodCaptureProbe: () => Promise<void>;
+        },
+        'maybeRaiseMethodCaptureProbe',
+      )
+      .mockResolvedValue(undefined);
+  }
+
+  it('PATCH stateId → completed-статус (минуя transitionState) → хук вызван', async () => {
+    const service = buildUpdateService(EXISTING);
+    const hookSpy = wire(service, 'completed');
+    await service.update(
+      'i1',
+      { stateId: 's_done' } as unknown as UpdateIssueDto,
+      'org_1',
+      'u1',
+    );
+    expect(hookSpy).toHaveBeenCalledWith({ issueId: 'i1', tenantId: 'org_1' });
+  });
+
+  it('PATCH stateId → НЕ-completed статус → хук НЕ вызван', async () => {
+    const service = buildUpdateService(EXISTING);
+    const hookSpy = wire(service, 'started');
+    await service.update(
+      'i1',
+      { stateId: 's_started' } as unknown as UpdateIssueDto,
+      'org_1',
+      'u1',
+    );
+    expect(hookSpy).not.toHaveBeenCalled();
+  });
+
+  it('уже завершённая задача (completedAt стоит) → хук НЕ вызван', async () => {
+    const service = buildUpdateService({
+      ...EXISTING,
+      completedAt: new Date('2026-06-01T00:00:00Z'),
+    });
+    const hookSpy = wire(service, 'completed');
+    await service.update(
+      'i1',
+      { stateId: 's_done' } as unknown as UpdateIssueDto,
+      'org_1',
+      'u1',
+    );
+    expect(hookSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('IssuesService.create — дедуп-гейт (TZ task-dedup WP-J)', () => {
+  const baseIssue = {
+    id: 'i1',
+    tenantId: 'org_1',
+    projectId: 'p1',
+    identifier: 'KORA-1',
+    sequenceId: 1,
+    title: 'Позвонить клиенту',
+    description: null,
+    descriptionHtml: null,
+    descriptionStripped: null,
+    priority: 'none',
+    stateId: null,
+    parentId: null,
+    estimatePoints: null,
+    sortOrder: 0,
+    startDate: null,
+    dueDate: null,
+    completedAt: null,
+    cycleId: null,
+    goalId: null,
+    boardId: null,
+    meetingId: null,
+    linkedMeetingIds: [],
+    sourceBlockIds: [],
+    confidence: null,
+    createdManually: true,
+    externalSource: 'assistant',
+    externalId: null,
+    entityId: null,
+    createdById: 'u1',
+    createdAt: new Date('2026-06-15T00:00:00Z'),
+    updatedAt: new Date('2026-06-15T00:00:00Z'),
+    archivedAt: null,
+    deletedAt: null,
+  } as unknown as Issue;
+
+  function buildService(opts: { withoutDedup?: boolean } = {}): {
+    service: IssuesService;
+    dedupEvaluate: ReturnType<typeof vi.fn>;
+    relationCreate: ReturnType<typeof vi.fn>;
+    incTaskDedupSuggested: ReturnType<typeof vi.fn>;
+  } {
+    const dedupEvaluate = vi.fn();
+    const relationCreate = vi.fn().mockResolvedValue({ id: 'rel_1' });
+    const incTaskDedupSuggested = vi.fn();
+
+    const issueCreate = vi.fn().mockImplementation(async ({ data }) => ({
+      ...baseIssue,
+      ...data,
+    }));
+    const issueAggregate = vi.fn().mockResolvedValue({ _max: { sequenceId: 0 } });
+    const issueFindFirst = vi.fn().mockImplementation(async () => ({
+      ...baseIssue,
+      assignees: [],
+      labels: [],
+    }));
+
+    const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          issue: { aggregate: issueAggregate, create: issueCreate },
+          issueAssignee: { createMany: vi.fn() },
+          issueLabel: { createMany: vi.fn() },
+          label: { findMany: vi.fn().mockResolvedValue([]) },
+          issueState: { findUnique: vi.fn().mockResolvedValue(null) },
+        }),
+      issue: { findFirst: issueFindFirst },
+      issueRelation: { create: relationCreate },
+    } as unknown as PrismaService;
+
+    const activity = {
+      record: vi.fn().mockResolvedValue('act_1'),
+    } as unknown as ActivityRecorderService;
+    const projects = {
+      requireProject: vi.fn().mockResolvedValue({
+        id: 'p1',
+        tenantId: 'org_1',
+        identifier: 'KORA',
+        defaultStateId: null,
+      }),
+    } as unknown as ProjectsService;
+    const events = {
+      publishIssueCreated: vi.fn(),
+    } as unknown as TrackerEventsService;
+    const webhooks = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WebhookDispatcher;
+    const emitter = {
+      emitIssueCreated: vi.fn(),
+    } as unknown as TrackerEmitterService;
+    const metrics = {
+      incTaskDedupSuggested,
+    } as unknown as BusinessMetricsService;
+    const taskDedup = opts.withoutDedup
+      ? undefined
+      : ({ evaluate: dedupEvaluate } as unknown as TaskDedupService);
+
+    const service = new IssuesService(
+      prisma,
+      activity,
+      projects,
+      events,
+      webhooks,
+      emitter,
+      undefined, // embedQueue
+      undefined, // inferFieldsSvc
+      undefined, // goalSuggestSvc
+      undefined, // holiday
+      undefined, // boards
+      metrics,
+      taskDedup,
+    );
+
+    return { service, dedupEvaluate, relationCreate, incTaskDedupSuggested };
+  }
+
+  const dto: CreateIssueDto = {
+    title: 'Позвонить клиенту',
+    descriptionStripped: 'до пятницы',
+    priority: 'none',
+    sortOrder: 0,
+    assigneeUserIds: [],
+    labelIds: [],
+    externalSource: 'assistant',
+  } as unknown as CreateIssueDto;
+
+  it("verdict='same' → задача создаётся + связь duplicates на matchedIssueId + метрика, без авто-merge", async () => {
+    const { service, dedupEvaluate, relationCreate, incTaskDedupSuggested } =
+      buildService();
+    dedupEvaluate.mockResolvedValue({
+      verdict: 'same',
+      matchedIssueId: 'i_existing',
+      similarity: 0.92,
+      confidence: 0.8,
+      rationale: 'тот же звонок',
+    });
+
+    const res = await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(dedupEvaluate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'org_1',
+        title: 'Позвонить клиенту',
+        description: 'до пятницы',
+      }),
+    );
+    expect(res.id).toBe('i1');
+    expect(relationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceIssueId: 'i1',
+          targetIssueId: 'i_existing',
+          relationType: 'duplicates',
+          createdById: 'u1',
+        }),
+      }),
+    );
+    expect(incTaskDedupSuggested).toHaveBeenCalledTimes(1);
+  });
+
+  it("verdict='different' → задача создаётся обычно, без связи duplicates и без метрики", async () => {
+    const { service, dedupEvaluate, relationCreate, incTaskDedupSuggested } =
+      buildService();
+    dedupEvaluate.mockResolvedValue({
+      verdict: 'different',
+      matchedIssueId: null,
+      similarity: 0.5,
+      confidence: null,
+      rationale: null,
+    });
+
+    const res = await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(res.id).toBe('i1');
+    expect(relationCreate).not.toHaveBeenCalled();
+    expect(incTaskDedupSuggested).not.toHaveBeenCalled();
+  });
+
+  it("verdict='nil' → задача создаётся обычно, без связи duplicates", async () => {
+    const { service, dedupEvaluate, relationCreate, incTaskDedupSuggested } =
+      buildService();
+    dedupEvaluate.mockResolvedValue({
+      verdict: 'nil',
+      matchedIssueId: null,
+      similarity: null,
+      confidence: null,
+      rationale: null,
+    });
+
+    const res = await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(res.id).toBe('i1');
+    expect(relationCreate).not.toHaveBeenCalled();
+    expect(incTaskDedupSuggested).not.toHaveBeenCalled();
+  });
+
+  it('skipDedup=true → evaluate НЕ вызывается, задача создаётся', async () => {
+    const { service, dedupEvaluate, relationCreate } = buildService();
+
+    const res = await service.create(
+      'p1',
+      { ...dto, skipDedup: true } as unknown as CreateIssueDto,
+      'org_1',
+      'u1',
+    );
+
+    expect(res.id).toBe('i1');
+    expect(dedupEvaluate).not.toHaveBeenCalled();
+    expect(relationCreate).not.toHaveBeenCalled();
+  });
+
+  it('TaskDedupService не инжектится (kill-switch на уровне DI) → задача создаётся без гейта', async () => {
+    const { service, relationCreate } = buildService({ withoutDedup: true });
+
+    const res = await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(res.id).toBe('i1');
+    expect(relationCreate).not.toHaveBeenCalled();
+  });
+
+  it("verdict='same' но matchedIssueId == созданная задача → self-ссылку не заводим", async () => {
+    const { service, dedupEvaluate, relationCreate, incTaskDedupSuggested } =
+      buildService();
+    dedupEvaluate.mockResolvedValue({
+      verdict: 'same',
+      matchedIssueId: 'i1',
+      similarity: 0.99,
+      confidence: 0.9,
+      rationale: 'self',
+    });
+
+    await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(relationCreate).not.toHaveBeenCalled();
+    expect(incTaskDedupSuggested).not.toHaveBeenCalled();
   });
 });

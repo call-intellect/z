@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -109,7 +110,11 @@ describe('GoalKrProgressService.runForAllOrgs — resilience', () => {
       incGoalKrAutoprogress: vi.fn(),
     } as unknown as BusinessMetricsService;
 
-    const svc = new GoalKrProgressService(prisma, metrics);
+    const cfg = {
+      getDynamic: vi.fn(async (_k: string, _e: unknown, fallback: unknown) => fallback),
+    } as unknown as TypedConfigService;
+
+    const svc = new GoalKrProgressService(prisma, metrics, cfg);
     const summary = await svc.runForAllOrgs();
 
     expect(summary.orgsScanned).toBe(2);

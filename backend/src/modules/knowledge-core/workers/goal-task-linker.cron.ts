@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { GoalTaskLinkerService } from '../services/goal-task-linker.service';
@@ -17,9 +18,10 @@ export class GoalTaskLinkerCron {
     @Inject(GoalTaskLinkerService)
     private readonly linker: GoalTaskLinkerService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @Cron(CronExpression.EVERY_30_MINUTES, { timeZone: 'Europe/Moscow' })
   async sweep(): Promise<void> {
     try {
       const summary = await this.scanAllOrgs();
@@ -38,6 +40,17 @@ export class GoalTaskLinkerCron {
     scannedOrgs: number;
     linkedGoals: number;
   }> {
+    const perOrgLimit = await this.cfg.getDynamic<number>(
+      'goals.linkerPerOrgLimit',
+      undefined,
+      GoalTaskLinkerCron.GOALS_PER_ORG_LIMIT,
+    );
+    const lookbackDays = await this.cfg.getDynamic<number>(
+      'goals.taskLinkerLookbackDays',
+      undefined,
+      GoalTaskLinkerCron.LOOKBACK_DAYS,
+    );
+
     const orgs = await this.prisma.org.findMany({
       where: {
         deletedAt: null,
@@ -51,7 +64,7 @@ export class GoalTaskLinkerCron {
     let scannedOrgs = 0;
     let linkedGoals = 0;
 
-    const since = new Date(Date.now() - GoalTaskLinkerCron.LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+    const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
 
     for (const org of orgs) {
       try {
@@ -70,7 +83,7 @@ export class GoalTaskLinkerCron {
         },
         select: { id: true },
         orderBy: { createdAt: 'desc' },
-        take: GoalTaskLinkerCron.GOALS_PER_ORG_LIMIT,
+        take: perOrgLimit,
       });
 
       for (const goal of goals) {

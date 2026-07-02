@@ -100,11 +100,6 @@ export class ProactiveMessageCraftService {
     const facts = input.facts;
     const name = typeof facts.name === 'string' ? String(facts.name).slice(0, 80) : 'элемент';
     switch (input.ruleType) {
-      case 'decision_no_owner':
-        return {
-          title: 'Решение без ответственного',
-          body: `Решение «${name}» висит без owner'а уже несколько дней. Назначишь ответственного?`,
-        };
       case 'insight_no_mitigation':
         return {
           title: 'Сигнал без плана действий',

@@ -23,12 +23,12 @@ async function main(args: RunArgs): Promise<void> {
   const preCheck = createPrismaClient();
   try {
     const pending = await preCheck.ideaBlock.count({
-      where: { signalType: 'commitment', commitmentStatus: null },
+      where: { signalType: 'commitment', commitmentDueDate: null },
     });
     if (pending === 0) {
       // eslint-disable-next-line no-console
       console.log(
-        'backfill-commitment-due-dates: нет commitment-блоков без статуса — обновление не требуется, данные актуальны.',
+        'backfill-commitment-due-dates: нет commitment-блоков без срока — обновление не требуется, данные актуальны.',
       );
       return;
     }
@@ -60,7 +60,7 @@ async function main(args: RunArgs): Promise<void> {
       const blocks = await prisma.ideaBlock.findMany({
         where: {
           signalType: 'commitment',
-          commitmentStatus: null,
+          commitmentDueDate: null,
         },
         select: { id: true, tenantId: true, createdAt: true },
         orderBy: { id: 'asc' },
@@ -81,7 +81,6 @@ async function main(args: RunArgs): Promise<void> {
             await prisma.ideaBlock.update({
               where: { id: block.id },
               data: {
-                commitmentStatus: 'open',
                 commitmentDueDate: target,
               },
             });

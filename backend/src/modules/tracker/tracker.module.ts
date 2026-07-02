@@ -49,6 +49,7 @@ import { CyclesService } from './services/cycles.service';
 import { HolidayService } from './services/holiday.service';
 import { ImportService } from './services/import.service';
 import { IntakeAutoTriageQueueService } from './services/intake-auto-triage-queue.service';
+import { IntakeIssueSimilarService } from './services/intake-issue-similar.service';
 import { IntakeService } from './services/intake.service';
 import { IntegrationsStatusService } from './services/integrations-status.service';
 import { IssueActivityDigestService } from './services/issue-activity-digest.service';
@@ -62,7 +63,6 @@ import { IssueTemplatesService } from './services/issue-templates.service';
 import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { MeTasksService } from './services/me-tasks.service';
-import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
 import { MorningTasksDigestService } from './services/morning-tasks-digest.service';
 import { MyMentionsService } from './services/my-mentions.service';
 import { OverviewService } from './services/overview.service';
@@ -80,6 +80,7 @@ import { SprintHintsService } from './services/sprint-hints.service';
 import { SprintsService } from './services/sprints.service';
 import { StatesService } from './services/states.service';
 import { TaskDedupService } from './services/task-dedup.service';
+import { TaskDraftMaterializerService } from './services/task-draft-materializer.service';
 import { TrackerEmitterService } from './services/tracker-emitter.service';
 import { TrackerEventsService } from './services/tracker-events.service';
 import { WebhookDispatcher } from './services/webhook-dispatcher.service';
@@ -157,6 +158,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // (intake + прямой create). Зависит от @Global Ai/Embeddings/AdminSettings/
     // KnowledgeCore (Llm/Embedding/Calibration). Только suggest, авто-merge нет.
     TaskDedupService,
+    TaskDraftMaterializerService,
     CyclesService,
     IntakeService,
     CommentsService,
@@ -191,9 +193,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     RecurrenceMaterializeCron,
     IssueInferFieldsService,
     IssueGoalSuggestService,
-    MeetingExtractActionsService,
     IntakeAutoTriageQueueService,
     IntakeAutoTriageWorker,
+    IntakeIssueSimilarService,
     ImportService,
     ImportTrackerWorker,
     TrelloImportStrategy,
@@ -212,11 +214,11 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IssuesService,
     AssigneeResolverService,
     TaskDedupService,
+    TaskDraftMaterializerService,
     ActivityRecorderService,
     TrackerEventsService,
     TrackerEmitterService,
     TrackerGateway,
-    MeetingExtractActionsService,
     IntakeService,
     CommentsService,
     ProgressUpdatesService,
@@ -226,6 +228,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     SprintAnalystService,
     SkillRoutingService,
     MorningTasksDigestService,
+    IntakeIssueSimilarService,
     // TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler (operations)
     // переиспользует findSimilarByVector для семантического матча
     // сигнал-блок «сделал X» → открытая Issue (кандидат на закрытие).

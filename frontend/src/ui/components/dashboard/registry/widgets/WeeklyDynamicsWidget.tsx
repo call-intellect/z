@@ -77,7 +77,6 @@ export const WeeklyDynamicsWidget: FC<{ rhythm: Rhythm }> = () => {
   const execData = trend.map((p) => ({
     weekStart: formatRuShort(p.weekStart),
     goalsCompleted: p.goalsCompleted,
-    hangingDecisions: p.hangingDecisions,
   }));
   const blockersData = trend.map((p) => ({
     weekStart: formatRuShort(p.weekStart),
@@ -114,11 +113,6 @@ export const WeeklyDynamicsWidget: FC<{ rhythm: Rhythm }> = () => {
             xKey="weekStart"
             series={[
               { key: "goalsCompleted", color: CHART.mint, label: "Закрытые цели" },
-              {
-                key: "hangingDecisions",
-                color: CHART.red,
-                label: "Висящие решения",
-              },
             ]}
             height={240}
           />

@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '../../common/config/index';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CurationModule } from '../curation/curation.module';
+import { DashboardModule } from '../dashboard/dashboard.module';
 import { S3Service } from '../recordings/s3.service';
 import { TablesModule } from '../tables/tables.module';
 import { TrackerModule } from '../tracker/tracker.module';
@@ -34,6 +35,7 @@ import { GoalTaskLinkerService } from './services/goal-task-linker.service';
 import { GoalThemeLinkerService } from './services/goal-theme-linker.service';
 import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
 import { GraphMaterializationService } from './services/graph-materialization.service';
+import { MeetingSkeletonService } from './services/meeting-skeleton.service';
 import { MeetingTitleService } from './services/meeting-title.service';
 import { OwnerResolverService } from './services/owner-resolver.service';
 import { PersonaLayerValidationService } from './services/persona-layer-validation.service';
@@ -54,7 +56,6 @@ import { Specialist314GoalsService } from './services/specialist-3-14-goals.serv
 import { Specialist32Service } from './services/specialist-3-2-knowledge-clone.service';
 import { Specialist32ProbeService } from './services/specialist-3-2-probe.service';
 import { Specialist33Service } from './services/specialist-3-3-decisions.service';
-import { Specialist33ProbeService } from './services/specialist-3-3-probe.service';
 import { Specialist34ProbeService } from './services/specialist-3-4-probe.service';
 import { Specialist35Service } from './services/specialist-3-5-insights.service';
 import { Specialist35ProbeService } from './services/specialist-3-5-probe.service';
@@ -82,12 +83,13 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
 
 @Global()
 @Module({
-  imports: [ConfigModule, PrismaModule, CurationModule, TablesModule, TrackerModule],
+  imports: [ConfigModule, PrismaModule, CurationModule, TablesModule, TrackerModule, DashboardModule],
   providers: [
     RoleClonePersonaVersioningHandler,
     S3Service,
     SegmentBuilderService,
     BlockExtractionService,
+    MeetingSkeletonService,
     KnowledgeEmbeddingService,
     ChunkContextService,
     RoleRegulationRetrievalService,
@@ -119,7 +121,6 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     Specialist32Service,
     Specialist32ProbeService,
     Specialist33Service,
-    Specialist33ProbeService,
     Specialist35Service,
     Specialist35ProbeService,
     Specialist39ExperimentsService,
@@ -162,6 +163,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
   exports: [
     SegmentBuilderService,
     BlockExtractionService,
+    MeetingSkeletonService,
     KnowledgeEmbeddingService,
     ChunkContextService,
     RoleRegulationRetrievalService,
@@ -192,7 +194,6 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     Specialist32Service,
     Specialist32ProbeService,
     Specialist33Service,
-    Specialist33ProbeService,
     Specialist35Service,
     Specialist35ProbeService,
     Specialist39ExperimentsService,

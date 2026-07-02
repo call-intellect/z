@@ -25,7 +25,7 @@ covers: реестр всех страниц Next.js App Router
 Меню `frontend/src/ui/components/app-shell/Sidebar.tsx` разделено на 6 смысловых слоёв (раньше было 3 плоских группы Компания/Оперативка/Настройки):
 
 1. **Каждый день** — `/dashboard`, `/meetings`, `/dump`, `/cards`, `/projects`, `/chat`, **`/structure` («Команда»)**, плюс `/intake` (для owner/admin) с живым бейджом. *(2026-06-04: «Команда» поднята сюда верхним пунктом; раньше `/structure` жил в «Справочнике».)*
-2. **Моё пространство** — `/me`, `/me/contributions`, `/me/social-contribution`, `/me/promises`, `/feedback`.
+2. **Моё пространство** — `/me`, `/me/contributions`, `/me/social-contribution`, `/feedback`. *(2026-07-01: пункт `/me/promises` «Мои обещания» убран — снос соц-слоя обещаний, ТЗ commitment-social-layer-cleanup.)*
 3. **Память компании** — `/ideas`, `/regulations`, `/decisions`, `/insights`, `/entities`, `/themes`. Items фильтруются `useMemoryAccess()`.
 4. **Управление** *(только owner/admin/coo)* — `/dashboard/operations`, `/dashboard/operations/daily`, `/dashboard/operations/weekly`, `/goals`.
 5. **Справочник** *(collapsible, default свёрнут, storageKey `sidebar.reference.open`)* — `/company`, `/departments`, `/domains`, `/maturity`, `/documents`, `/roles`, `/clones`, `/customers`, `/vendors`, `/events`, `/experiments`, `/brand-voice`. Внутри — вложенная подгруппа «Будет в следующей фазе» с γ-пунктами (`/processes`, `/policies`, `/metrics`). *(2026-06-04: `/structure` отсюда убран — стал «Команда» в группе «Каждый день».)* *(2026-06-23: пункт «Клиенты» (`/customers`) добавлен рядом с «Поставщики».)*
@@ -262,7 +262,7 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 
 **С 2026-06-02 (зонтик main-screen-umbrella, Поток Б):** структура «sticky Hero + 4 pill-таба».
 
-- **Sticky Hero** (top-0 z-20): 3 KPI (Настроение / Обещания / Висящие решения) с MiniSparkline + AI-сводка (центр) + TopRiskCard (Топ-1 риск из pulse.irreversibleDecisions). Header не sticky (избегаем конфликта с Hero).
+- **Sticky Hero** (top-0 z-20): 2 KPI (Настроение / Обещания) с MiniSparkline + AI-сводка (центр) + TopRiskCard (Топ-1 риск из прочих pulse-паттернов). Header не sticky (избегаем конфликта с Hero). _(KPI «Висящие решения» и `pulse.irreversibleDecisions` сняты 2026-06-30.)_
 - **Узкая sticky-полоса** под Hero: StructureSummaryWidget слева + Pill «💬 Спросите Кору» справа (dispatchEvent `assistant-sidebar:open-ask`).
 - **`<IntroWizardWidget />`** между Hero и Tabs — 4 состояния по `Org.setupCompletedAt` + 6-шаговый прогресс + кнопка «Отложить на неделю» (localStorage `dashboard.onboardingDeferredUntil`).
 - **`<DashboardTabs />`** — 4 pill-таба: Обзор / Команда / Знания / Цели и встречи. Persistence per-user (`useDashboardTab(user.id)`).
@@ -270,7 +270,7 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
   - Overview — Дайджест недели (3 DigestCard с темами/сигналами/решениями).
   - Team — TeamHealthGrid + BusFactor + ActivityFeed (probe_question) + `PeopleAtRiskWidget` (пока скрыт, ожидает backend `/dashboard/people-at-risk`).
   - Knowledge — RecurringTopics + Bottleneck + WhatLearned + SignalCounters + ActiveThemes + HotEntities + OpenQuestions + InsightsTop + KnowledgeVelocityKpi.
-  - Goals — GoalVector + LowRoi + IrreversibleDecisionsAlert (полный список) + StrategicAlignment + QualityScore.
+  - Goals — GoalVector + LowRoi + StrategicAlignment + QualityScore. _(IrreversibleDecisionsAlert снят — чистка оперативно-контрольного хвоста решений 2026-06-30; обратимость теперь тихий бейдж на карточке решения.)_
 - **Матрица 6 состояний** (см. [docs/reference/dashboards-registry.md](../../docs/reference/dashboards-registry.md) §4.5-4.6):
   - Если `isOwnOrg && status==='DEMO' && (owner|admin) && data?.isEmpty` — `MainEmptyState` замещает Hero+Tabs целиком (правило 3) с CTA «Оплатить» + опц. «Вернуться в демо» + встроенным онбордингом (setupProgress).
   - Если `currentOrgRole==='demo_observer'` — TopRiskCard CTA становятся `<button onClick={showPaywallModal}>` с tooltip, открывая PaywallModal.
@@ -303,17 +303,19 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 **Источник:** [`plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md), [`plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md).
 
+> **Соц-слой обещаний (β-8.2: «Мои обещания», секция обещаний на карточке человека, KPI «Открытые обещания») снят 2026-07-01** — ТЗ commitment-social-layer-cleanup. Осталась только память факта обещания (срок + автор/адресат). Строки ниже помечены соответственно.
+
 | Путь | Что показывает | Фаза |
 |---|---|---|
-| `/dashboard/operations` (расширена) | Существующая панель + новый виджет `TeamTemperatureWidget` (зелёный/жёлтый/красный по 7 дням) + виджет «Открытые обещания» + (β-8.3) `CauseCategoryMapWidget` (8 горизонтальных столбиков по `Insight.causeCategory`) + `MaturityWidget` (SVG-кольцо score зрелости + weakest/top FunctionalDomain) + блок «Вчерашний отчёт» (превью `DailyOperationsDigest`). `OperationsDashboardClient` обновлён под новые поля overview (`insightsByCauseCategory`, `maturity`). | β-8.1 + β-8.2 + β-8.3 |
+| `/dashboard/operations` (расширена) | Существующая панель + новый виджет `TeamTemperatureWidget` (зелёный/жёлтый/красный по 7 дням) + ~~виджет «Открытые обещания»~~ _(снят 2026-07-01)_ + (β-8.3) `CauseCategoryMapWidget` (8 горизонтальных столбиков по `Insight.causeCategory`) + `MaturityWidget` (SVG-кольцо score зрелости + weakest/top FunctionalDomain) + блок «Вчерашний отчёт» (превью `DailyOperationsDigest`). `OperationsDashboardClient` обновлён под новые поля overview (`insightsByCauseCategory`, `maturity`). | β-8.1 + β-8.2 + β-8.3 |
 | `/dashboard/operations/weekly?weekStart=YYYY-MM-DD` | `WeeklyDigestClient` — рендер `WeeklyOperationsDigest` с навигацией по неделям. Доступ — `coo`/`owner`/`admin`. | β-8.1 |
 | `/dashboard/operations/daily?date=YYYY-MM-DD` | **β-8.3** — `DailyDigestClient`: date-picker + markdown-рендер `DailyOperationsDigest` + секции метрик и провенанса. Доступ — `coo`/`owner`/`admin`. Пункт «Ежедневный отчёт» в группе «Операции» sidebar. | β-8.3 |
-| `/me/promises` | `MyPromisesClient` — таблица обещаний сотрудника + фильтр (open/asked/all) + действия (Сделано / Не сделано / Отменить) | β-8.2 |
-| `/persons/[id]` (расширена) | Секция «Обещания» в `PersonDetailClient.tsx` (через `PersonCommitmentsSection`): исходящие («что обещал») + входящие («что обещали ему»). Видна `owner`/`admin`/`coo`/`super_admin`. Запрос идёт по `entityId` (бэк сам резолвит `Person.id` через `Person.entityId`). | β-8.2 |
+| ~~`/me/promises`~~ **СНЯТА 2026-07-01** | ~~`MyPromisesClient` — таблица обещаний + действия~~ — страница, `MyPromisesController` и эндпоинты `/me/promises*` удалены (ТЗ commitment-social-layer-cleanup, Ф5). Кабинет «Я» 5→4 вкладки. | β-8.2 (снято) |
+| ~~`/persons/[id]` секция «Обещания»~~ **СНЯТА 2026-07-01** | ~~Секция «Обещания» в `PersonDetailClient.tsx` (`PersonCommitmentsSection`)~~ — удалена вместе с эндпоинтом `personal-relations/commitments` (ТЗ commitment-social-layer-cleanup, Ф5). Карточка `PromisesCard`/`PromiseStat` на `/persons/[id]/pulse` тоже снята. | β-8.2 (снято) |
 
 **Навигация (`Sidebar.tsx`):**
 - Группа «Операции»: «Панель операций» (как было) + «Недельная сводка» (новое).
-- Группа «Я»: «Мои обещания» (новое, иконка `CheckCircle2`).
+- ~~Группа «Я»: «Мои обещания» (иконка `CheckCircle2`)~~ — **снято** (ТЗ commitment-social-layer-cleanup, 2026-07-01).
 
 **Frontend-роль:** `CurrentOrgRole` расширена значением `'coo'` (`frontend/src/api/types/accounts.ts` + `frontend/src/domain/account.ts`).
 
@@ -450,7 +452,7 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - `/meetings/[id]/speakers` — экран подписи говорящих (сотрудник/внешний/исключить/слить); `STATUS_VIEW` для статуса `awaiting_speakers`.
 
 **Изменённые экраны:**
-- `/dashboard` (главная директора): первый экран сжат до ≤7 величин (ValueStrip + чат/настроение/обещания/висящие решения + вердикт компаса + AI-сводка + Top-1 риск), гейт `dashboard.main_rework.enabled`; новые виджеты `ValueStripWidget`/`WhatWeLearnedWidget`/`GoalVectorVerdictWidget`/`IdeasTopWidget`/`ChatUsageWidget`.
+- `/dashboard` (главная директора): первый экран сжат до ≤6 величин (ValueStrip + чат/настроение/обещания + вердикт компаса + AI-сводка + Top-1 риск; KPI «висящие решения» снят 2026-06-30), гейт `dashboard.main_rework.enabled`; новые виджеты `ValueStripWidget`/`WhatWeLearnedWidget`/`GoalVectorVerdictWidget`/`IdeasTopWidget`/`ChatUsageWidget`.
 - `/dashboard/operations` (COO): += `TeamCapacityWidget`/`ChronicBlockersWidget`, гейт `operations.dashboard_rework.enabled`.
 - `/me` (5→9 виджетов): `MemoryHelpedMeWidget`/`MyWeeklyPlanFactWidget`/`MyIdeasFateWidget`/`RecognitionInboxWidget`; кнопки 👍/👎 на ответах чата (chat-v2 feedback); гейт `me.daily_value_widgets.enabled`.
 - `/documents`: мультизагрузка + форма привязки + `ImportDocumentsDialog` (ZIP/Notion/Confluence) + `SuggestionBanner` (accept/edit AI-подсказки) + ссылка на документ-источник в citations чата.
@@ -555,6 +557,8 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - **2026-06-20 (яркий FAB-помощник + единый колокольчик уведомлений + пикер собеседника):** разведены две поверхности — внизу справа **один яркий FAB** (`ConciergeFloatingButton`) открывает чат-помощника в 1 клик (фокус сразу в поле ввода); наверху **колокольчик** (`PendingActionsBell`) — единственный кликабельный центр уведомлений, сводит три группы (pending + proactive + срочный feed) под одним счётчиком (каждое уведомление кликабельно через `actionUrl`, человекочитаемый заголовок, без сырых `latin_snake`). `AssistantSidebar` **удалён**; пузырь Поддержки разведён в нижний левый угол. В панели чата — слим-вкладки **«Помощник компании | Клоны ролей»** (`ConciergeClonesTab`: `clonesApi.askRole`, citations, refused); ≤4 клонов по confidence + ссылка «Все клоны». Мобайл: FAB поднят над таб-баром, колокольчик доступен в мобильной шапке. Чистые мапперы `frontend/src/domain/assistant-signals.ts` (`PROACTIVE_RULE_LABEL`/`PROACTIVE_RULE_ROUTE`/`FEED_TYPE_ROUTE`), хук `useAssistantSignals` (см. [[frontend-contexts-hooks]]). Фронт-only (бэкенд не тронут). Отменяет «единый плавающий помощник = `AssistantSidebar`» из 2026-06-06 (см. [[frontend-contexts-hooks]]). Источник: [plans/tz/2026-06-20-assistant-fab-notifications-and-clone-picker.md](../../plans/tz/2026-06-20-assistant-fab-notifications-and-clone-picker.md) (Ф1–Ф4).
 
 - **2026-06-20 (провенанс «Откуда это» на поверхностях — снипеты/подсветка/плеер):** сниппет цитаты-источника (`ProvenancePreviewSnippet`) рисуется прямо на карточках списков решений/регламентов/задач из денорм-`previewQuote` (без on-demand резолва). На странице документа — **подсветка/прокрутка к цитате** по deep-link `/documents/<id>?q=<цитата>` (B4, вариант «б»; page-aware `?page=N` остаётся vNext). В дровере «Откуда это» (`ProvenanceDrawer`) — **плеер голосового** сообщения (Telegram/MAX) через presigned `GET /api/v1/provenance/voice-note/:rawEventId/audio`. Chatbox-источник ведёт на конкретное сообщение `/chats/<chatId>?m=<msg>`. Источник: [plans/tz/2026-06-20-provenance-probe-followups.md](../../plans/tz/2026-06-20-provenance-probe-followups.md) (A1 / B1 / B3 / B4).
+
+- **2026-07-01 (снос соц-слоя обещаний, ТЗ commitment-social-layer-cleanup, Ф5):** удалены страница `/me/promises` (`MyPromisesClient`) — кабинет «Я» 5→4 вкладки, секция «Обещания» на `/persons/[id]` (`PersonCommitmentsSection`/`CommitmentsList`), карточка `PromisesCard`/`PromiseStat` на `/persons/[id]/pulse`, величина «надёжность обещаний» `commitmentsKept` в `ValueStripWidget`, виджет «Перегруз ответственностью» `PromiseOverloadWidget` и KPI «Открытые обещания» на `/dashboard/operations`. Виджет `WeeklyPerPersonWidget` переименован «Кто держит слово» → «План-факт недели по людям» (агрегат план-факта по автору обещания — остался). Кора больше не считает «надёжность» и не показывает соц-надзор над обещаниями; обещание остаётся фактом памяти (срок + автор/адресат). Источник: [plans/tz/2026-06-29-commitment-social-layer-cleanup.md](../../plans/tz/2026-06-29-commitment-social-layer-cleanup.md).
 
 ## «Что Кора выучила» — самообучение probe (2026-06-23, автономизация Блок D)
 

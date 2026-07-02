@@ -18,6 +18,17 @@ export interface CheckInBlockerItemApi {
   ownerHint?: string;
 }
 
+export interface CheckInNotDoneItemApi {
+  text: string;
+  sourcePlanText?: string;
+  verdictConfidence?: number;
+}
+
+export interface CheckInIdeaItemApi {
+  text: string;
+  sourceBlockId?: string;
+}
+
 export interface DailyCheckInApi {
   id: string;
   tenantId: string;
@@ -36,6 +47,9 @@ export interface DailyCheckInApi {
   plans: CheckInPlanItemApi[];
   dones: CheckInDoneItemApi[];
   blockers: CheckInBlockerItemApi[];
+  notDone: CheckInNotDoneItemApi[];
+  ideas: CheckInIdeaItemApi[];
+  reportCompleteness: "draft" | "full" | null;
   notificationId: string | null;
   parseConfidence: number | null;
   curatorReview: boolean;

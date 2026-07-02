@@ -64,6 +64,8 @@ KnowledgeCloneRebuildWorker (consumer core.knowledge-clone-rebuild)
 
 Дополнительно: `KnowledgeCloneRebuildCron` (раз в 6 ч, `cfg.knowledgeClone.rebuildCron`) проходит всех employee-Person'ов со свежей активностью за неделю и enqueue rebuild для тех, чей `lastProfileBuildAt > 6 ч назад`.
 
+> **Пакет E (F-7 покрытие клонов, 2026-07-02, коммит `bd951e1b`):** гейт сохранения профиля ослаблен — профиль материализуется при `auto`-триггере ИЛИ (`non-deep` && `profileConfidence >= knowledgeClone.profileMinConfidence`, крутилка = 0.55). Раньше «слабые» профили молча не сохранялись и покрытие клонов проседало. `loadBlocksForPerson` `orderBy` предпочитает высокосигнальные блоки; `computeProfileConfidence` += obs-boost.
+
 ## Probe-events
 
 | Reason | Trigger | Recipient |

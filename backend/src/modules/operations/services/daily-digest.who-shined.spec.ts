@@ -9,18 +9,9 @@ const IN_WINDOW = new Date('2026-05-24T08:00:00.000Z');
 function buildSvc(overrides: {
   recognitions?: unknown[];
   helpfulness?: unknown[];
-  keptCommits?: unknown[];
   persons?: unknown[];
 }) {
-  const ideaBlockFindMany = vi
-    .fn()
-    .mockImplementation((arg: { where?: Record<string, unknown> }) => {
-      const where = arg?.where ?? {};
-      if (where.commitmentStatus === 'fulfilled') {
-        return Promise.resolve(overrides.keptCommits ?? []);
-      }
-      return Promise.resolve([]);
-    });
+  const ideaBlockFindMany = vi.fn().mockResolvedValue([]);
 
   const storedRow = {
     id: 'dd1',
@@ -74,6 +65,8 @@ function buildSvc(overrides: {
     pendingActions as never,
     customerRisk as never,
     blockerSynthesis as never,
+    {} as never,
+    {} as never,
     {} as never,
   );
   return { svc, prisma };
@@ -129,26 +122,6 @@ describe('DailyDigestService.whoShined (R6)', () => {
     expect(row.reason).toBe('helpful_acts');
     expect(row.personName).toBe('Мария');
     expect(row.detail).toBe('помог 3 раза');
-  });
-
-  it('commitments_kept: атрибуция по commitmentAuthorPersonId (не получателю)', async () => {
-    const { svc } = buildSvc({
-      keptCommits: [
-        {
-          id: 'b1',
-          name: 'выкатить релиз',
-          commitmentAuthorPersonId: 'p3',
-        },
-      ],
-      persons: [{ id: 'p3', name: 'Пётр', userId: 'u3' }],
-    });
-    const dto = await svc.getStored({ tenantId: TENANT, dateLocal: DATE });
-    expect(dto!.whoShined).toHaveLength(1);
-    const row = dto!.whoShined[0]!;
-    expect(row.personId).toBe('p3');
-    expect(row.reason).toBe('commitments_kept');
-    expect(row.detail).toContain('сдержал обещание');
-    expect(row.detail).toContain('выкатить релиз');
   });
 
   it('Person без userId / без имени → запись пропускается (не «Без имени»)', async () => {

@@ -29,6 +29,7 @@ import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   goalsApi,
   type CreateKeyResultRequest,
+  type GoalIssueProgressSnapshotApi,
   type UpdateKeyResultRequest,
 } from "@/api/goals.api";
 import { themesApi } from "@/api/themes.api";
@@ -106,6 +107,14 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       const api = await goalsApi.get(orgId, id);
       return goalDetailFromApi(api);
     },
+    { revalidateOnFocus: false },
+  );
+
+  const { data: issueProgress } = useSWR(
+    currentOrgId && data
+      ? (["goal-issue-progress", currentOrgId, data.id] as const)
+      : null,
+    ([, orgId, id]) => goalsApi.issueAlignmentSnapshot(orgId, id),
     { revalidateOnFocus: false },
   );
 
@@ -550,6 +559,14 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
               </div>
             )}
           </div>
+
+          {}
+          <div className="mt-6 rounded-xl border border-border-subtle bg-bg-elevated p-4">
+            <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
+              Прогресс по задачам
+            </h2>
+            <IssueProgressSection snapshot={issueProgress ?? null} />
+          </div>
         </section>
 
         {}
@@ -672,6 +689,64 @@ function SuggestedByKoraBadge() {
       <Sparkles size={11} />
       Предложено Корой
     </span>
+  );
+}
+
+function IssueProgressSection({
+  snapshot,
+}: {
+  snapshot: GoalIssueProgressSnapshotApi | null;
+}) {
+  if (!snapshot || snapshot.totalLinkedIssues === 0) {
+    return (
+      <p className="text-sm text-fg-tertiary">
+        К этой цели пока не привязаны задачи.
+      </p>
+    );
+  }
+
+  return (
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+      <IssueProgressStat
+        label="Привязано задач"
+        value={String(snapshot.totalLinkedIssues)}
+      />
+      <IssueProgressStat
+        label="Выполнено"
+        value={String(snapshot.completedIssues)}
+      />
+      <IssueProgressStat
+        label="Заблокировано"
+        value={String(snapshot.blockedIssues)}
+      />
+      {snapshot.timeProgressPct !== null && (
+        <IssueProgressStat
+          label="Прошло времени"
+          value={`${Math.round(snapshot.timeProgressPct)}%`}
+        />
+      )}
+      <IssueProgressStat
+        label="Согласованность по задачам"
+        value={String(snapshot.alignmentScore)}
+      />
+    </dl>
+  );
+}
+
+function IssueProgressStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-card p-2.5">
+      <dt className="text-[11px] text-fg-tertiary">{label}</dt>
+      <dd className="mt-0.5 text-base font-semibold tabular-nums text-fg-primary">
+        {value}
+      </dd>
+    </div>
   );
 }
 

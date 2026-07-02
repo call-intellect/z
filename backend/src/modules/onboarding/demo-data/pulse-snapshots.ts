@@ -132,88 +132,6 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
     ids.pulseSnapshotIds.recurringTopics.push(snap.id);
   }
 
-  const networkNodes = [
-    {
-      personKey: 'morozov',
-      name: 'Алексей Морозов',
-      role: 'donor',
-      inDegree: 1,
-      outDegree: 4,
-      balance: -3,
-    },
-    {
-      personKey: 'volkova',
-      name: 'Марина Волкова',
-      role: 'accumulator',
-      inDegree: 5,
-      outDegree: 1,
-      balance: 4,
-    },
-    {
-      personKey: 'kozlov',
-      name: 'Дмитрий Козлов',
-      role: 'accumulator',
-      inDegree: 6,
-      outDegree: 2,
-      balance: 4,
-    },
-    {
-      personKey: 'sokolova',
-      name: 'Екатерина Соколова',
-      role: 'balanced',
-      inDegree: 3,
-      outDegree: 3,
-      balance: 0,
-    },
-    {
-      personKey: 'petrova',
-      name: 'Анна Петрова',
-      role: 'balanced',
-      inDegree: 2,
-      outDegree: 2,
-      balance: 0,
-    },
-  ];
-
-  const networkEdges = [
-    { fromKey: 'morozov', toKey: 'kozlov', count: 2 },
-    { fromKey: 'morozov', toKey: 'volkova', count: 1 },
-    { fromKey: 'morozov', toKey: 'sokolova', count: 1 },
-    { fromKey: 'sokolova', toKey: 'volkova', count: 2 },
-    { fromKey: 'sokolova', toKey: 'kozlov', count: 1 },
-    { fromKey: 'petrova', toKey: 'kozlov', count: 2 },
-    { fromKey: 'petrova', toKey: 'volkova', count: 1 },
-    { fromKey: 'volkova', toKey: 'kozlov', count: 1 },
-  ];
-
-  {
-    const snap = await prisma.promiseNetworkSnapshot.create({
-      data: {
-        tenantId,
-        graphJson: {
-          nodes: networkNodes.map((n) => ({
-            personId: req(ids.persons[n.personKey], `person:${n.personKey}`),
-            name: n.name,
-            role: n.role,
-            inDegree: n.inDegree,
-            outDegree: n.outDegree,
-            balance: n.balance,
-          })),
-          edges: networkEdges.map((e) => ({
-            fromPersonId: req(ids.persons[e.fromKey], `person:${e.fromKey}`),
-            toPersonId: req(ids.persons[e.toKey], `person:${e.toKey}`),
-            count: e.count,
-          })),
-          periodStart: daysAgo(30).toISOString(),
-          periodEnd: daysAgo(0).toISOString(),
-        } as unknown as Prisma.InputJsonValue,
-        totalCommitments: networkEdges.reduce((s, e) => s + e.count, 0),
-        snapshotAt: daysAgo(1),
-      },
-    });
-    ids.pulseSnapshotIds.promiseNetwork = snap.id;
-  }
-
   const personKeys = ['morozov', 'volkova', 'kozlov', 'sokolova', 'petrova'] as const;
   const goalKeys = ['goal_arr', 'goal_v2', 'goal_mobile', 'goal_nps'] as const;
   const weekOffsets = [21, 14, 7, 0] as const;
@@ -501,7 +419,6 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
   console.log(
     `[demo/pulse-snapshots] Создано: ${ids.pulseSnapshotIds.knowledgeRisks.length} KnowledgeRisk, ` +
       `${ids.pulseSnapshotIds.recurringTopics.length} RecurringTopic, ` +
-      `${ids.pulseSnapshotIds.promiseNetwork ? 1 : 0} PromiseNetwork, ` +
       `${ids.pulseSnapshotIds.personGoalContributions.length} PersonGoalContribution, ` +
       `1 KnowledgeVelocity, ` +
       `${ids.pulseSnapshotIds.personEngagements.length} PersonEngagement, ` +

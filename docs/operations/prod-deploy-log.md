@@ -85,6 +85,374 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-02 — Унификация phantom-ключей admin-крутилок FE↔backend (ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-07-02-admin-knob-fe-backend-key-unification.md`. FE-крутилки писали `AdminSetting.key`, которых бэк не читает (39 phantom). Устранено: 31 rename в camelCase (KnowledgeCore/Embeddings), удалены 4 нефункциональные cron-крутилки + мёртвая `betaOps.commitmentFollowupLocalHour`, страница «Фиксатор чек-инов» переведена с `daySignals.*` на реальные `dayReport.*`/`daily-checkin.*`. Guard-тест `admin-setting-fe-keys.guard.spec.ts` (FE⊆реестр) + идемпотентный patch чистки осиротевших строк. Коммиты `17ab941f`/`bba52379`/`d5e3b2b8`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ.** Только backend-правка реестра (`export registeredSettingKeys()`) + 1 patch-скрипт чистки. **Docker rebuild backend+frontend обязателен** (FE начинает писать/читать корректные ключи; backend несёт guard-тест + patch).
+
+- **Шаг 1 — ENV: новых нет.** Крутилки не добавлялись — только переименованы FE-ключи под существующие ключи реестра. Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаг 6 — One-off patch (идемпотентный, УЖЕ в STEPS `phase:'patch'` `args:['--apply']` `skipBootstrap:true`):** `docker compose exec backend bun run scripts/patch-remove-phantom-admin-settings.ts` (dry-run — покажет список) → `--apply` (удалит). Удаляет осиротевшие `AdminSetting`-строки под 39 phantom-ключами (`key ∉ registeredSettingKeys()` И `key ∈ known-phantom` — чужое не трогает). `AdminSettingHistory` сохраняется как аудит. Доезжает агрегатором `apply-prod-deploy.ts --mode update`. Идемпотентен (повтор → 0). На dev-БД вычистил 4 реальные строки (`daySignals.*` ×3 + `betaOps.commitmentFollowupLocalHour`, `updatedBy=system` — следы кликов по phantom-крутилкам); на проде удалит те же, если по phantom-крутилкам кликали «Сохранить».
+- **Шаги 4/5/7/8/9/10 (Prisma/postgres-init/seed/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась; новых сидов/HNSW/backfill/migrate/setup нет.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката): в `/admin/ai/knowledge-core` крутилки пишут camelCase-ключи (`knowledge.themeCosineThreshold` и т.д.) — сменить значение → `GET /api/v1/admin/settings/knowledge.themeCosineThreshold` вернул новое; в `/admin/checkin-signals` («Фиксатор чек-инов») крутилки `dayReport.enabled`/`dayReport.completenessQualityThreshold`/`daily-checkin.*` (нет `daySignals.*`); в `/admin/ai/models` нет крутилки «Час напоминания о коммитментах»; на KnowledgeCore нет cron-крутилок (theme/idea/insight/persona clusterer). Backend-тест `bunx vitest run src/modules/admin/settings/admin-setting-fe-keys.guard.spec.ts` зелёный.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — Пакет A: целостность Person↔Entity (ветка work/2026-06-29)
+
+> Фаза 6 Пакета A: лечение прод-данных после «тихих» авто-мержей (прод: `Person.entityTenantId` = 11/11 NULL + уже-схлопнутые клоны). Извлечён общий переиспользуемый блок репойнта ссылок `migrateEntityRefs` из `mergeEntities` (behavior-preserving, тот же порядок шагов), добавлен `reconcileEntityRefs(tenantId)` — лечит осиротевшие ссылки на уже-слитые (`mergedIntoId != null`) сущности через тот же путь миграции (без дрейфа). Два идемпотентных backfill-скрипта.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ. 🟢 2 НОВЫХ BACKFILL (оба в STEPS `phase:'backfill'`, `skipBootstrap`, `--apply`).** Docker rebuild backend.
+
+- **Шаги 1/4/5/6/7/9/10 (ENV/Prisma/postgres-init/patch/seed/migrate/setup) — НЕ затронуты.** Только backfill + behavior-preserving рефактор сервиса.
+- **Шаг 8 — Backfill (2 новых, идемпотентные, зарегистрированы в STEPS `phase:'backfill'`, `skipBootstrap`, порядок важен — companions ПЕРВЫМ):**
+  - `docker compose exec backend bun run scripts/backfill-entity-tenant-companions.ts --apply` — заполняет nullable-компаньоны: `persons.entityTenantId := tenantId` (где `entityId IS NOT NULL AND entityTenantId IS NULL`), `"Entity".mergedIntoTenantId := tenantId` и `"IdeaBlock".mergedIntoTenantId := tenantId` (где `mergedIntoId IS NOT NULL AND *TenantId IS NULL`). 3 идемпотентных raw UPDATE. Прогон без `--apply` = dry-run (counts).
+  - `docker compose exec backend bun run scripts/backfill-reconcile-merged-entity-refs.ts --apply` — по всем тенантам находит сущности с `mergedIntoId != null`, резолвит канон (`canonicalizeEntityId`) и перепривязывает осиротевшие ссылки (IdeaBlockEntity/EntityLink/SourceEntity/ThemeEntity/Card/Person) на канон через тот же `migrateEntityRefs`. Идемпотентен (2-й прогон → все циклы миграции пустые no-op). Прогон без `--apply` = dry-run (счёт слитых сущностей per org); опц. `--tenant=<id>`.
+  - Оба доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `EntityMergeService` += `migrateEntityRefs` (private) + `reconcileEntityRefs` (public); `mergeEntities` вызывает `migrateEntityRefs`, затем как раньше уплощение цепочки + обновление `into` (mentionsCount/aliases) + `markEntityMerged`.
+- **Откат:** backfill только заполняет NULL-компаньоны и перепривязывает битые ссылки — данные лечатся, откат не требуется; рефактор сервиса — `git revert` (поведение идентично).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — Пакет E: покрытие клонов F-7 (материализация профиля на мягком пороге) (ветка work/2026-06-29)
+
+> Гейт сохранения профиля клона ослаблен: материализация теперь при `auto`-триггере ИЛИ (`non-deep` && `profileConfidence >= knowledgeClone.profileMinConfidence`=0.55) — раньше «слабые» профили молча не сохранялись и покрытие клонов проседало. `loadBlocksForPerson` `orderBy` предпочитает высокосигнальные блоки; `computeProfileConfidence` += obs-boost.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (1 новая крутилка `knowledgeClone.profileMinConfidence`, не флаг). **🟢 1 НОВЫЙ СИД** (`seed-admin-setting-clone-coverage.ts`, в STEPS `phase:'seed-base'`). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** 1 крутилка `knowledgeClone.profileMinConfidence`=`0.55` (мягкий порог материализации профиля для `non-deep`) — чистый AdminSetting (`getDynamic`, code-fallback 0.55, работает до сида — Ship-On). Новый флаг НЕ вводился (крутилка). Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась; новых HNSW/GIN/patch-/backfill-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (НОВЫЙ, идемпотентный, зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-setting-clone-coverage.ts` — новый ключ `knowledgeClone.profileMinConfidence`=`0.55` (section `knowledge`, severity `low`). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: гейт материализации профиля (`auto || (non-deep && profileConfidence >= knowledgeClone.profileMinConfidence)`); `loadBlocksForPerson` `orderBy` предпочитает высокосигнальные блоки; `computeProfileConfidence` obs-boost.
+- **Шаг 12 — Smoke** (после выката):
+  - крутилка `knowledgeClone.profileMinConfidence` (0.55) видна в админке (настройки, section `knowledge`); `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-clone-coverage.ts` (created=1 при первом прогоне, потом no-op).
+  - **пост-выкат — верификация покрытия (Ф3 rebuild):** триггернуть `knowledge-clone-rebuild.cron` на тенанте «Стрела» (или дождаться крон-прогона) и сверить рост числа `Person.knowledgeProfile` (материализованных профилей) — ослабленный гейт должен увеличить покрытие клонов.
+- **Откат:** крутилка admin-editable (порог можно поднять обратно в админке); логика гейта — `git revert`. Рискованного переключателя нет (Ship-On).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — Пакет B: H3 ассистент — structural fallback для fact/topic + честное сообщение (ветка work/2026-06-29)
+
+> H3: `structural`-агрегация теперь работает для `fact`/`topic` (не только `list`); `query-plan-extractor` резолвит `personIds` для `fact`/`topic`; chat-v2 включает `forceStructuralFallback` в `bothWays` (а не только на `isStructuralClass`); честный фолбэк «По {Михаил/компании X} ничего не нашлось» вместо тихого молчания. Новый counter `z_structural_fallback_used_total`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ. 🟢 SEED/PATCH/BACKFILL НЕТ.** Только новый счётчик (in-memory prom-client) + логика роутинга. Docker rebuild backend.
+
+- **Шаги 1/4/5/6/7/8/9/10 — НЕ затронуты.** Ни ENV, ни схемы, ни seed/patch/backfill/migrate/setup.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката): `/metrics` содержит `z_structural_fallback_used_total` (может быть 0/absent на старте): `docker compose exec backend sh -c 'curl -s localhost:3000/metrics | grep z_structural_fallback_used_total'`.
+- **Откат:** аддитивно (счётчик + логика фолбэка, Ship-On); `git revert`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — Пакет D: надёжность и наблюдаемость (F-9 raw_event_stuck, F-8 combined repair-retry, Ф3 scale monitoring) (ветка work/2026-06-29)
+
+> F-9: gauge `raw_event_stuck_gauge{tenant,source_type}` (сколько RawEvent застряли в `processingStatus=received` дольше окна `staleMinutes` — snapshot тем же `CoreMetricsSnapshotCron` каждые 5 мин, `.reset()` в начале снапшота чтобы разгруженные бэклоги падали в absent, не в stale-nonzero). F-8: repair-retry в `specialists-combined` — если LLM-ответ не распарсился, ОДИН повторный LLM-вызов с repair-промптом (bounded, `timeoutMs` крутилка, очередь concurrency=1); если repair тоже не распарсился → счётчик `combined_parse_failed_total{tenant,source_type}` в воркере (раньше = тихая финализация job = потеря данных). Ф3 (наблюдение): гистограмма `entity_merge_confidence_gap` (gap `similarity - threshold` на verdict=merge в `entity-resolver`).
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (1 новая крутилка `knowledge.specialistsCombinedRepairTimeoutMs`, не флаг). **🟢 SEED УЖЕ ЗАРЕГИСТРИРОВАН** (`seed-admin-setting-worker-knobs.ts`, +1 ключ, в STEPS `phase` существующая). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** 1 новая крутилка `knowledge.specialistsCombinedRepairTimeoutMs`=`60000` (таймаут мс repair-вызова LLM; очередь concurrency=1 → ограничивает блокировку) — чистый AdminSetting (`getDynamic`, code-fallback 60000, работает до сида — Ship-On). Новый флаг НЕ вводился (крутилка). Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась; новых HNSW/GIN/patch-/backfill-/migrate-/setup-скриптов нет. Только новые метрики (in-memory prom-client), repair-логика сервиса и снапшот-крон.
+- **Шаг 7 — Seed (идемпотентный, УЖЕ зарегистрирован в STEPS, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-setting-worker-knobs.ts` — +1 ключ `knowledge.specialistsCombinedRepairTimeoutMs`=`60000` (section `workers`, severity `low`). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `BusinessMetricsService` += gauge `raw_event_stuck_gauge` + counter `combined_parse_failed_total` + histogram `entity_merge_confidence_gap` (+ сеттеры/reset/inc/observe); `CoreMetricsSnapshotCron` += `snapshotRawEventStuck` (groupBy по `sourceType`, окно `knowledge.rawEventRecoveryStaleMinutes`); `SpecialistsCombinedService` += `repairJsonAndRetry` (ОДИН bounded repair-вызов); `SpecialistsCombinedWorker` += `incCombinedParseFailed` перед финализацией на исчерпанном parse-fail; `EntityResolverWorker` += `observeEntityMergeConfidenceGap` на verdict=merge.
+- **Шаг 12 — Smoke** (после выката):
+  - `/metrics` содержит `raw_event_stuck_gauge` и `combined_parse_failed_total` и `entity_merge_confidence_gap` (могут быть 0/absent на старте — наблюдение): `docker compose exec backend sh -c 'curl -s localhost:3000/metrics | grep -E "raw_event_stuck_gauge|combined_parse_failed_total|entity_merge_confidence_gap"'`.
+  - крутилка `knowledge.specialistsCombinedRepairTimeoutMs` (60000) видна в админке (настройки, section `workers`); `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-worker-knobs.ts` (created=1 при первом прогоне, потом no-op).
+- **Откат:** метрики/repair/снапшот аддитивны (рискованного переключателя нет, Ship-On); крутилка admin-editable; логика — `git revert`. Repair-вызов bounded (maxAttempts=2, timeout) — при инциденте на LLM его достаточно опустить крутилкой в 1000мс, не выкат.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — Пакет C, F-4 (block-part): порог склейки IdeaBlock → крутилка + дефолт 0.92→0.85 + унификация ключа (ветка work/2026-06-29)
+
+> Порог косинусной склейки схожих IdeaBlock (distill) выведен в динамическую крутилку и опущен 0.92→0.85 (агрессивнее дедуп; ниже порога спорные решает арбитр-LLM). `block-distill.worker.ts` больше не читает статический `this.cfg.knowledgeCore.distillMergeThreshold`, а резолвит `await this.cfg.getDynamic<number>('knowledge.distillMergeThreshold', 'DISTILL_MERGE_THRESHOLD', 0.85)` (admin→ENV→code-fallback). Унифицировано ТРИ написания ключа в одно каноническое `knowledge.distillMergeThreshold` (совпадает с registry + typed-config); FE-страница `knowledge-core` перешла с фантомного ключа `knowledge.distill.merge_threshold` на канонический.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ** (существующая `DISTILL_MERGE_THRESHOLD`, дефолт 0.92→0.85). **🟢 НОВЫХ ФЛАГОВ НЕТ** (крутилка, не флаг). **🟢 SEED УЖЕ СУЩЕСТВУЕТ** (`seed-admin-settings.ts`, ключ `knowledge.distillMergeThreshold`=0.85, в STEPS `phase:'seed-base'`). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Существующая `DISTILL_MERGE_THRESHOLD` — дефолт `0.92`→`0.85` (ENV-fallback крутилки; code-fallback `getDynamic` тоже 0.85 → согласовано). Задавать в прод-`.env` не обязательно — есть AdminSetting `knowledge.distillMergeThreshold` (сид Шага 7) + code-fallback 0.85. Новый флаг НЕ вводился (крутилка). Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась; новых HNSW/GIN/patch-/backfill-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (идемпотентный, УЖЕ зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-settings.ts` — ключ `knowledge.distillMergeThreshold`=`0.85` (envFloat-fallback уже 0.85; уточнено описание). Защита admin-edited (`updatedBy !== 'system'`) — если владелец уже переопределил порог вручную, сид его не перезаписывает. Повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`BlockDistillWorker.process` резолвит порог через `getDynamic` перед `merger.knnCandidates`; ENV-дефолт 0.85). Frontend (страница `admin/ai/knowledge-core` таб «Distill» — ключ `knowledge.distillMergeThreshold`, дефолт 0.85).
+- **Шаг 12 — Smoke** (после выката):
+  - крутилка `knowledge.distillMergeThreshold` (0.85) видна в админке (`/admin/ai/knowledge-core`, таб Distill) и совпадает по ключу с сохранением (сохранение больше не пишет фантомный `knowledge.distill.merge_threshold`).
+  - `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-settings.ts` (ключ = 0.85 при первом прогоне, потом no-op / metadata-only).
+- **Откат:** крутилка admin-editable; порог/ключ — `git revert` (поведение при 0.92 восстановится сменой значения в админке или ENV). Рискованного переключателя нет (Ship-On).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — Пакет C, F-4 (mat-part): персист-embedding + KNN «похожие pending» + порог дедупа задач при материализации (IntakeIssue) (ветка work/2026-06-29)
+
+> Инфраструктура семантического дедупа задач при материализации (Part A). У `IntakeIssue` появились persist-поля `embedding vector(1536)` + `embeddingHash` (зеркало `Issue`), HNSW-индекс (cosine) на них, KNN-сервис `IntakeIssueSimilarService.findSimilarByVector` (ищет похожие `status='pending'` карточки того же tenant, threshold по дистанции, over-fetch ×2), и крутилка `tracker.intakeDedupThreshold`=0.15 (косинусная ДИСТАНЦИЯ; строже сиблинга `SimilarIssuesService` 0.18 для link-on-match precision, ~сходство 0.85). Part B (интеграция сервиса в specialist knowledge-core для дедупа на записи) — отдельным пушем.
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260702000000_intake_issue_embedding` (2 ADD COLUMN, без DROP). 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (крутилка, не флаг). 🟢 1 НОВЫЙ HNSW-индекс (postgres-init, идемпотентно). 🟢 SEED УЖЕ СУЩЕСТВУЕТ (`seed-admin-settings.ts`, ключ `tracker.intakeDedupThreshold`=0.15, в STEPS `phase:'seed-base'`). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** Порог — крутилка AdminSetting `tracker.intakeDedupThreshold` (сид Шага 7) + code-fallback 0.15 в сервисе. Новый флаг НЕ вводился. Реестр флагов — `docs/operations/feature-flags.md` — не меняется.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260702000000_intake_issue_embedding` — `ALTER TABLE "IntakeIssue" ADD COLUMN "embedding" vector(1536), ADD COLUMN "embeddingHash" TEXT`. Аддитивная (2 nullable-колонки, без DROP/ALTER существующих), безопасна, backfill НЕ нужен (вектор считается на лету при материализации). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Отразить в `data-model.md` §«IntakeIssue».
+- **Шаг 5 — Postgres-init (идемпотентно, `IF NOT EXISTS`, применяется на каждом `up -d` через `apply-prod-deploy --with-schema`):** новый HNSW-индекс `IntakeIssue_embedding_hnsw_cosine_idx` — `CREATE INDEX ... ON "IntakeIssue" USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL` (KNN cosine для дедупа входящих карточек; guard по наличию колонки). Повтор = no-op.
+- **Шаги 6/8/9/10 (patch/backfill/migrate/setup) — НЕ затронуты.** Новых patch-/backfill-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (идемпотентный, УЖЕ зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-settings.ts` — новый ключ `tracker.intakeDedupThreshold`=`0.15` (косинусная ДИСТАНЦИЯ дедупа задач при материализации, section `tracker`, severity `medium`, диапазон 0–1). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: новый `IntakeIssueSimilarService` (провайдер+экспорт `TrackerModule`); registry-строка `tracker.intakeDedupThreshold` (UNIT_INTERVAL). FE не затронут (Part A).
+- **Шаг 12 — Smoke** (после выката):
+  - колонки: `docker compose exec backend sh -c 'psql "$DATABASE_URL" -c "\d \"IntakeIssue\""'` — присутствуют `embedding` (vector) + `embeddingHash` (text).
+  - индекс: `docker compose exec backend sh -c 'psql "$DATABASE_URL" -c "\di \"IntakeIssue_embedding_hnsw_cosine_idx\""'` — HNSW-индекс существует.
+  - крутилка `tracker.intakeDedupThreshold` (0.15) видна в админке (настройки, section `tracker`); `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-settings.ts` (ключ = 0.15 при первом прогоне, потом no-op).
+- **Откат:** колонки/индекс аддитивны (безвредны, backfill не было); крутилка admin-editable; сервис — `git revert` (в проде ещё не вызывается до Part B). Рискованного переключателя нет (Ship-On).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-01 — День компании v2: письмо COO + полный вход с атрибуцией + виджеты + маршрут DeepSeek Pro→GPT→KIE (day-company-report-v2, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-30-day-company-report-v2.md` (Ф1–Ф8). **Надстройка над реализованным «День компании»** (переиспользует `DailyOperationsDigest`/`DailyDigestService`/крон/героя, НЕ новый пайплайн/модель/агент). Переписан промпт письма под эталон COO (12 секций проза+cites, имена людей/клиентов прямо, петля со вчера, «взгляд COO» = `reflection`, сущность «решения» удалена); `buildDayPackage` наполнен 6 слоями входа (`employeeVoice`/`rawConversations`/`signals`/`conflicts`/`reporting`/`yesterdayOpenSignals`) с атрибуцией «кто сказал»; усилена разметка `team_friction` в block-ingest; маршрут дайджеста переведён на DeepSeek Pro→GPT→KIE со снятым `maxTokens`; крон сдвинут 06:00→07:00 МСК; виджеты day-only перегруппированы (блокеры / риски-по-причине / идеи-кластерами / конфликты). Новый сервис `PersonRefResolverService` (единый резолв `userId`/`externalId`→Person).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260701053438_idx_evidence_author_day` (составной индекс, без DROP). 🟢 1 ОПЦИОНАЛЬНАЯ ENV-fallback (`COO_DAILY_DIGEST_RAW_CHAR_BUDGET`, не обязательна — есть code-fallback + AdminSetting). 🟢 НОВЫХ ФЛАГОВ НЕТ** (kill-switch `operations.daily_digest.enabled` переиспользован; `operations.daily_digest.raw_char_budget` — крутилка). 🟢 1 PATCH + 1 SEED (оба в STEPS). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: опциональная 1.** `COO_DAILY_DIGEST_RAW_CHAR_BUDGET` — ENV-fallback крутилки страховочной обрезки сырья Битрикс/чатбокс. **Не обязательна:** есть code-fallback `40000` и AdminSetting `operations.daily_digest.raw_char_budget` (сид Шага 7). Задавать в прод-`.env` только если нужно переопределить бюджет до сида. Новый флаг НЕ вводился — kill-switch `operations.daily_digest.enabled` переиспользован. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260701053438_idx_evidence_author_day` — `CREATE INDEX` составного индекса `IdeaBlockEvidence(tenantId, authorPersonId, sourceTimestamp)` (быстрая выборка «голос сотрудника за день», без полного скана). Аддитивная (только индекс, без DROP/ALTER колонок), безопасна, backfill НЕ нужен. Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«IdeaBlockEvidence».
+- **Шаги 5/9/10 (postgres-init/migrate/setup) — НЕ затронуты.** Новых HNSW/GIN/partial/extension и migrate-/setup-скриптов нет.
+- **Шаг 6 — One-off patch (идемпотентный, зарегистрирован в STEPS `phase:'seed-llm-core'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/patch-daily-digest-route-deepseek-pro-gpt-kie.ts` — переводит маршрут taskType `operations-daily-digest` на primary `deepseek-v4-pro` → fallback `openai-via-proxy/gpt-5.4-mini` → fallback `kie/gemini-3.1-pro` и снимает жёсткий `maxTokens` (большой контекст под полный объём входа). Admin-editable (защита admin-edited); повтор = no-op.
+- **Шаг 7 — Seed (идемпотентный, зарегистрирован в STEPS, доезжает агрегатором `--mode update`):** `scripts/seed-admin-setting-daily-digest.ts` — новый ключ `operations.daily_digest.raw_char_budget`=`40000` (страховочная обрезка сырья Битрикс/чатбокс при переполнении контекста; крутилка AdminSetting, code-fallback 40000, ENV-fallback `COO_DAILY_DIGEST_RAW_CHAR_BUDGET`). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаг 8 — Backfill — НЕ затронут.** Новый индекс без backfill; исторические данные подберутся при выборке.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`PersonRefResolverService` — единый резолв `userId`/`externalId`→Person; `DailyDigestService.buildDayPackage` наполнен 6 слоями входа с атрибуцией; `getTeamFrictions` += параметр `since`; промпт v2 `day-company-v2` — 12 секций, имена, петля, взгляд COO, без «решений», строгая JSON-схема; усилена разметка `team_friction` в block-ingest; `OperationsDailyDigestCron` `@Cron('0 3 * * *')`→`@Cron('0 7 * * *', Europe/Moscow)` = 07:00 МСК). Frontend (виджеты day-only: `DayBlockers` + `DaySignalsGrid` — блокеры / риски-по-причине / идеи-кластерами / конфликты в «Коммуникация и люди»; убран плоский дубль идей; Week/Month НЕ тронуты).
+- **Шаг 12 — Smoke** (после выката):
+  - маршрут дайджеста: `operations-daily-digest` резолвится в `deepseek-v4-pro` (fallback GPT→KIE) — `docker compose exec backend sh -c 'bunx prisma db execute --stdin <<<"SELECT \"primaryModel\" FROM \"LlmTaskRoute\" WHERE \"taskType\"='"'"'operations-daily-digest'"'"';"'` или diag; `maxTokens` снят.
+  - крон 07:00 МСК: `docker compose exec backend grep -rn "0 7 \* \* \*" dist/modules/operations` (крон `operations-daily-digest` на 07:00 Europe/Moscow); в логах backend строка регистрации крона стоит на 07:00 МСК.
+  - индекс: `docker compose exec backend sh -c 'psql "$DATABASE_URL" -c "\di+ \"IdeaBlockEvidence_tenantId_authorPersonId_sourceTimestamp_idx\""'` — составной индекс существует.
+  - крутилка `operations.daily_digest.raw_char_budget` (40000) видна в админке (`/admin` настройки).
+  - на `/dashboard` (owner) после прогона `POST /api/v1/dashboard/operations/daily-digest/generate` — письмо COO с именами (12 секций), без секции «Решения»; виджеты: блокеры отдельно, риски сгруппированы по причине, идеи одним виджетом кластерами, блок конфликтов в «Коммуникация и люди».
+- **Откат:** индекс аддитивен (можно `DROP INDEX` — безвреден); маршрут/крутилка admin-editable; крон-сдвиг — `git revert`. Рискованного переключателя нет (Ship-On).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-01 — Неделя/Месяц компании v2: паритет с «Днём компании» (письмо COO 12 секций + сигналы за окно в metricsJson + развилки месяца) — week-month-company-v2, ветка work/2026-06-29
+
+> ТЗ `plans/tz/2026-07-01-week-month-company-v2.md` (Ф1–Ф8, коммиты `f363df0f`/`0191c211`/`675ee57c`/`f493b127`/`a7443e1b`/`b7de394e`/`ac680c2d`/`1386e514`). **Надстройка над реализованными «Неделя компании» / «Месяц компании»** (переиспользует `WeeklyOperationsDigest`/`MonthlyOperationsDigest`/`WeeklyDigestService`/`MonthlyDigestService`/кроны/героев, НЕ новый пайплайн/модель/агент). Письма недели/месяца переписаны в живой COO-голос v2 (12 секций проза+cites `intro..reflection`, имена людей/клиентов прямо, петля с прошлым периодом, «взгляд операционного директора» = `reflection`); недельный синтез читает ПОЛНЫЕ дневные письма (`letterJson` дневных снапшотов), а не только вердикты. Сигналы за окно периода (риски-по-причине / кластеры-идей / трения / блокеры) снапшочены в `metricsJson` через `collectWindowSignals` (не live-top). Поле `decisions` месяца переименовано в `ownerForks` сквозняком (блок «Что решить собственнику» → «Развилки месяца»). Ось «Команда» в вердикте краснеет от повторяющихся трений за окно.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (все новые данные в существующем JSON-поле `metricsJson` недельного/месячного дайджеста). **🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (kill-switch недели/месяца существуют). **🟢 3 НОВЫЕ КРУТИЛКИ AdminSetting + 1 НОВЫЙ СИД** (`seed-admin-setting-week-month-v2.ts`, в STEPS `phase:'seed-base'`). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** 3 крутилки — чистый AdminSetting (`getDynamic`/`resolveSync`, code-fallback, работают до сида — Ship-On): `operations.weekly_digest.raw_char_budget`=`60000` (бюджет символов дневных писем во входе недельного промпта), `operations.digest.team_friction_min_confidence`=`0.7`, `operations.digest.team_friction_repeat_count`=`2` (порог оси «Команда»). Новых флагов нет (kill-switch недели/месяца существуют). Реестр — `docs/operations/feature-flags.md` — не меняется.
+- **Шаг 4 — Схема БД: N/A.** Миграций нет — новые данные в существующем JSON-поле `metricsJson` недельного/месячного дайджеста (`risksByCause`/`ideaClusters`/`teamFrictions`/`blockers`; месяц: `decisions`→`ownerForks`). Backfill не нужен: старые дайджесты покажут пустые плитки до перегенерации (empty-state) — допустимо.
+- **Шаги 5/6/8/9/10 (postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Новых HNSW/GIN/partial/extension и patch-/backfill-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (идемпотентный, зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-setting-week-month-v2.ts` — 3 ключа (`operations.weekly_digest.raw_char_budget`=`60000`, `operations.digest.team_friction_min_confidence`=`0.7`, `operations.digest.team_friction_repeat_count`=`2`). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend: промпты `week-company-v2`/`month-company-v2` (12 COO-секций, имена, петля, взгляд COO; недельный вход = полные дневные `letterJson`; месяц `decisions`→`ownerForks`); `collectWindowSignals` снапшотит риски-по-причине/кластеры-идей/трения/блокеры за окно в `metricsJson` недели/месяца; `getTeamFrictions` += `to`, `getBlockers` += `window`; clamp оси «Команда» по трениям (`computeTeamFrictionClamp`, week+month). Frontend: `WeekBlockers`/`WeekSignalsGrid` + `MonthBlockers`/`MonthSignalsGrid` из дайджеста; «Развилки месяца» (`MonthForks`/`ownerForks`); canvas скрыт для owner на неделе/месяце; month-only виджеты (`month-recap`/`achievements`/`weekly-dynamics`/`maturity`/`bus-factor`) в `MonthCompanyHero`. ⚠️ Промпты недели/месяца изменены → prompt-cache недельного/месячного дайджеста инвалидируется один раз (норма).
+- **Шаг 12 — Smoke** (после выката):
+  - на `/dashboard` таб «Неделя» и на `/month` для owner — письмо COO-голосом с именами разворачивается (12 секций).
+  - под письмом плитки блокеры / риски-по-причине / идеи-кластеры / трения за период; навигация в прошлый период показывает его снимок (не «топ сейчас»); под геройем нет старой сетки-дубля.
+  - блок «Развилки месяца» вместо «Что решить»; при трениях в окне ось «Команда» в вердикте не зелёная.
+  - крутилки `operations.weekly_digest.raw_char_budget` / `operations.digest.team_friction_min_confidence` / `operations.digest.team_friction_repeat_count` видны в админке (`/admin` настройки).
+  - `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-week-month-v2.ts` (created=3 при первом прогоне, потом no-op).
+- **Откат:** данные аддитивны в JSON (рискованного переключателя нет, Ship-On); крутилки admin-editable; промпты/виджеты — `git revert`. Старые дайджесты до перегенерации показывают empty-state плиток — безвредно.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-01 — Движок целей: консолидация (Москва-кроны, ручные цели, пересборка иерархии, каскад, вектор без обещаний, один вердикт, крутилки) — goals-engine-consolidation, ветка work/2026-06-29
+
+> ТЗ `plans/tz/2026-06-29-goals-engine-consolidation.md` (Ф1–Ф9, коммиты `a3105ad2`..`35703d4f`). Навели порядок в движке целей: все goal/ops-кроны на Москву (продюсер движения цели сдвинут ДО сборки компаса — чинит «компас показывает вчера»); ручные цели ведутся как AI (темы по KNN-эмбеддингу); запущена спящая суточная пересборка иерархии + каскад статуса; вектор людей отвязан от снятых обещаний (idea/issue_closed/goal_work); один вердикт движения в UI; промпт извлечения строже; 21 крутилка целей/трекера → AdminSetting.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (схема не менялась — embedding/themes/cascadeMissed/HNSW уже есть). **🟢 НОВЫХ ENV НЕТ.** **🟢 1 НОВЫЙ kill-switch** (`goals.hierarchyRebuild.enabled`, тип A ВКЛ). **🟢 1 НОВЫЙ СИД** (`seed-admin-setting-goals-knobs.ts`, в STEPS `phase:'seed-base'`). **Сменены расписания 9 кронов + 1 новый cron.** Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** 21 крутилка целей/трекера — чистый AdminSetting (`getDynamic`/`resolveSync`, code-fallback = текущее значение, работают до сида — Ship-On). Снята мёртвая `goals.author_coverage_min` (Ф2, удаляется вместе с кодом — мёртвая строка в БД безвредна). 1 новый kill-switch `goals.hierarchyRebuild.enabled` (тип A ВКЛ, действий владельца не требует). Реестр — `docs/operations/feature-flags.md`.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема целей не менялась.
+- **Шаг 7 — Seed (идемпотентные, доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):**
+  - `scripts/seed-admin-setting-goals-knobs.ts` (НОВЫЙ, `phase:'seed-base'`, зарегистрирован в STEPS) — 21 крутилка целей/трекера (kr-окна, alignment-пороги, KNN top-k, лимиты линкеров, окна misalignment, vector-капы, goal-alignment-low пороги, 2 KNN-крутилки тем). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+  - `scripts/seed-admin-setting-execution-agents.ts` (УЖЕ в STEPS) — из набора **убрана** `goals.author_coverage_min` (вектор отвязан от обещаний). Повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новый `GoalHierarchyRebuildCron`; `GoalCascadeHandler` оживляет каскад; goal-vector без commitment-сигналов; goal-theme-linker с embedding-fallback; 21 крутилка). Frontend (сняты 2 alignment-виджета, «Прогресс по задачам» на карточке цели, один вердикт в списке/дереве).
+- **Шаг 12 — Smoke** (после выката):
+  - **Набор/расписание cron изменены:** продюсер движения `knowledge-core/workers/strategic-alignment.cron` теперь `0 2` Europe/Moscow (02:00 МСК, ДО компаса 06:00); новый `GoalHierarchyRebuildCron` `0 3` Europe/Moscow (03:00 МСК) виден в логах/зарегистрирован в `ai/workers.module.ts`; все goal-кроны пиннят `timeZone:'Europe/Moscow'`.
+  - goal-vector сигналы в `signalsJson` без `commitment_kept`/`commitment_broken` (enum `{idea,issue_closed,goal_work}`); `/metrics` без `commitment_author_coverage_ratio`.
+  - крутилки целей/трекера видны в админке (`/admin` настройки), `goals.hierarchyRebuild.enabled` среди них.
+  - Карточка цели `/goals/:id` показывает блок «Прогресс по задачам»; список/дерево целей — один вердикт движения (нет дублирующего статус-бейджа); на дашборде нет осиротевших alignment-виджетов.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-01 — Lazy Person↔Entity линковка клона + авторство блоков без таймкодов (clone-entity-link-and-authorship, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-30-clone-entity-link-and-authorship.md` (Ф1+Ф2, коммиты `3d535343`+`4b098e55`). Две независимые корректностные правки сборки клонов: (Ф1/C1-#4) `loadBlocksForPerson` при `Person.entityId=null` больше НЕ молчит — `warn` + counter + lazy-резолв через `EntityResolutionService.resolveSubjectEntityId` + запись ОБОИХ полей композитного FK (`entityId`+`entityTenantId`); (Ф2/C1-#3) у источников без таймкодов (`startMs=0`, `seg=null`) узкий single-author fallback в `attributeSubject` (`via='author_fallback'`).
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV/ФЛАГОВ/AdminSetting НЕТ. 🟢 1 BACKFILL (идемпотентный, в STEPS).** Docker rebuild backend.
+
+- **Шаги 1/4/5/6/9/10 (ENV/Prisma/postgres-init/patch/migrate/setup) — НЕ затронуты.** Поля композитного FK `Person.entityId`/`entityTenantId` уже существуют (схемной миграции нет); новый counter `knowledge_clone_person_no_entity_total` — runtime-метрика, не схема.
+- **Шаг 7 — Seed — НЕ затронут.** Новых сидов/крутилок нет.
+- **Шаг 8 — Backfill (идемпотентный, зарегистрирован в STEPS `phase:'backfill'`, флаг `--apply`):** `docker compose exec backend bun run scripts/backfill-knowledge-clone-person-entity.ts --apply` — по всем тенантам `Person` где `entityId IS NULL` → `resolveSubjectEntityId({authorPersonId})` → запись `entityId`+`entityTenantId` (оба поля FK вместе). Идемпотентен (после линковки `entityId` set → выборка пустеет; повтор = 0 кандидатов). Доезжает агрегатором `apply-prod-deploy.ts --mode update`. Прогон без `--apply` = dry-run (counts + sample). Проверено на dev-БД: 9 кандидатов → linked=9/errors=0, повтор = 0.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `loadBlocksForPerson` lazy-резолв + counter; `attributeSubject` single-author fallback (`via='author_fallback'`). Frontend не затронут.
+- **Шаг 12 — Smoke** (после выката):
+  - `/metrics` содержит `knowledge_clone_person_no_entity_total{tenant}` (растёт, если на вход rebuild пришёл `Person` без линковки) и `kc_subject_attribution_total{via}` с новым значением `via="author_fallback"`.
+  - после backfill: `psql` — нет `Person` где `entityId IS NOT NULL AND entityTenantId IS NULL` (битый композитный FK не образуется — оба поля пишутся вместе).
+- **Откат:** корректностные фиксы (Ship-On), рискованного переключателя нет; откат — `git revert 4b098e55 3d535343`. Backfill необратим по смыслу (линковка Entity), но безвреден.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-01 — Снос соц-слоя обещаний: убран весь надзор, оставлена память факта (commitment-social-layer-cleanup, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-29-commitment-social-layer-cleanup.md` (Ф1–Ф6, коммиты Ф1-Ф6 + добивки). Удалён ВЕСЬ надзорный соц-слой обещаний (follow-up / каскад срыва / сеть-перегруз / надёжность / «Мои обещания» / секции писем), СОХРАНЕНА память факта обещания (срок + атрибуция автора/адресата). Кора больше не напоминает/не эскалирует по обещаниям и не считает «надёжность»; обещание = пассивный факт памяти. Снесено: cron'ы `promise-cascade.cron` + `PromiseNetworkAnalyzerCron`, event-handler `CommitmentResponseHandler`, сервисы `PromiseNetworkService`/`CommitmentReliabilityService`/`commitments.service` (resolveSelfPerson вынесен в `SelfPersonResolverService`), маршрут роутера `commitment_status`, метрика `promise_cascade_alert_total` + 5 метрик β-8.2, эндпоинты `open-commitments`/`/me/promises*`/`personal-relations/commitments`, страница `/me/promises` + виджеты `PromiseOverloadWidget`/`PromisesCard`, величина `commitmentsKept` в ValueStrip, секции обещаний в дайджестах/брифе. Виджет `WeeklyPerPersonWidget` переименован «Кто держит слово» → «План-факт недели по людям» (агрегат план-факта по автору остался).
+>
+> **🟢 1 МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260701000000_drop_commitment_social_layer` — DROP 3 колонок `IdeaBlock` + 2 индекса + DROP таблицы `promise_network_snapshots`. 🟢 1 ENV УДАЛЕНА (`COMMITMENT_MAX_RETRIES`).** Снятые сиды/маршруты доезжают агрегатором `--mode update`. Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: удалена 1.** `COMMITMENT_MAX_RETRIES` убрана из `env.schema.ts` (крутилка follow-up-петли). Если задана в прод-`.env` — можно удалить строку (лишняя ENV не ломает запуск; `EnvSchema` её больше не валидирует, прямого `process.env` нет). Новых ENV нет. **Снятые** AdminSetting-крутилки `operations.promise_cascade.enabled` + `reliability.min_denominator` удаляются вместе с кодом (мёртвая строка в БД безвредна) — отдельной prod-операции не требуют. **Остаются** `knowledge.commitmentAuthorAttributionEnabled` + `blocker_synthesis.impact.commitment` + `COMMITMENT_FALLBACK_DUE_WORKDAYS` (граница факта).
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260701000000_drop_commitment_social_layer` — `ALTER TABLE "IdeaBlock" DROP COLUMN "commitmentStatus"` + `DROP COLUMN "commitmentAskedAt"` + `DROP COLUMN "commitmentEscalatedAt"` + DROP 2 индексов по `commitmentStatus` + `DROP TABLE "promise_network_snapshots"`. ⚠️ **Destructive (DROP COLUMN/TABLE)**, но колонки/таблица больше не читаются кодом (весь надзор удалён); потери значимых данных нет (производные статусы надзора + снапшоты сети). **Остаются** `commitmentDueDate`/`commitmentAuthorPersonId`/`commitmentRecipientPersonId` + relations + индексы по автору. Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«SBA β-8.2».
+- **Шаги 5/6/9/10 (postgres-init/patch/migrate/setup) — НЕ затронуты.** Новых индексов/patch-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (идемпотентные, доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):**
+  - `scripts/seed-admin-setting-execution-agents.ts` (УЖЕ в STEPS) — из набора ключей **убраны** `operations.promise_cascade.enabled` + `reliability.min_denominator` (каскад/надёжность сняты). Повтор = no-op; ранее засеянные мёртвые строки безвредны (удалить вручную можно позднее).
+  - `scripts/seed-llm-task-routes-beta-8-2.ts` (УЖЕ в STEPS, шаблон `seed-llm-task-routes-${sub}.ts`) — **убран** маршрут taskType `commitment-extract-status` (надзор за статусом обещания снят). Маршрут `commitment-extract-dates` (срок) — **остаётся**.
+- **Шаг 8 — Backfill (идемпотентный, в STEPS `phase:'backfill'`):** `scripts/backfill-commitment-due-dates.ts` **переписан** — фильтр `commitmentDueDate: null` (без обращения к снятому `commitmentStatus`), достаёт срок и пишет `commitmentDueDate`. Остаётся в STEPS; прогон без аргумента = dry-run. ⚠️ Если у тебя был старый билд скрипта в кэше — пересборка backend подтянет новый.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (снесены `promise-cascade.cron`/`PromiseNetworkAnalyzerCron`/`CommitmentResponseHandler`/`PromiseNetworkService`/`CommitmentReliabilityService`/`commitments.service`, маршрут роутера `commitment_status`, метрики, эндпоинты `open-commitments`/`/me/promises*`/`personal-relations/commitments`; `SelfPersonResolverService` выделен; 4 dashboard-агента `goal-vector`/`forecaster`/`hr-recommender`/`engagement-scorer` перестали читать `commitmentStatus`). Frontend (снесены страница `/me/promises`, секция «Обещания» на `/persons/[id]`, `PromisesCard`/`PromiseStat` на pulse, `PromiseOverloadWidget`, `commitmentsKept` в ValueStrip; `WeeklyPerPersonWidget` переименован).
+- **Шаг 12 — Smoke** (после выката):
+  - **набор cron уменьшен** — `docker compose exec backend grep -rL "promise-cascade" dist` (нет каскада), `grep -rL "PromiseNetworkAnalyzer" dist` / `grep -rL "promise-network-analyzer" dist` (нет сети), `grep -rL "commitment-followup" dist` (followup уже был снесён). В логах backend нет «проход завершён» от promise-cascade/promise-network.
+  - Swagger `/api/docs` **НЕ** содержит `GET /api/v1/dashboard/operations/promise-network`, `GET /api/v1/dashboard/operations/open-commitments`, `GET/POST/PATCH /api/v1/me/promises*`, `GET /api/v1/personal-relations/commitments`.
+  - `/metrics` **без** `promise_cascade_alert_total` и 5 метрик «Хранитель обещаний» (`incCommitments*`/`commitments_open_total`).
+  - `psql \d "IdeaBlock"` **НЕ** содержит `commitmentStatus`/`commitmentAskedAt`/`commitmentEscalatedAt` (есть `commitmentDueDate`/`commitmentAuthorPersonId`/`commitmentRecipientPersonId`); `psql \dt` **без** `promise_network_snapshots`.
+  - На фронте: вкладки кабинета «Я» = 4 (нет «Мои обещания»); на доске «Аналитика» нет «Перегруз ответственностью»; виджет план-факта называется «План-факт недели по людям».
+- **Откат:** миграция дроп-only (без обратной seed) — откат схемы требует ручного `ADD COLUMN`/`CREATE TABLE` (на практике не нужен; данные были производные).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-30 — Единый движок задач, заход B: combo эмитит tasks[] → материализатор + снос старых движков задач (task-extraction-pipeline-unification + extraction-layer-rewrite Ф7/Ф11в-г, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-29-task-extraction-pipeline-unification.md` (Ф1/Ф2/Ф4, вариант А) + `plans/tz/2026-06-30-extraction-layer-rewrite.md` (Ф7, Ф11в/г), коммиты `6816cacd`..`fa55ddf2`. Реализует то, что заход A отложил: общий разборщик `specialists-combined` (combo) достаёт задачи/обещания тем же проходом, что граф, из уже разобранных canonical-блоков встречи И чата → отдаёт черновики в новый `TaskDraftMaterializerService` → IntakeIssue. Подзадачи многошагового поручения собираются в чек-лист одной карточки. После этого старые движки задач выведены: per-block извлекающий спайн `specialist-3-15-tasks.worker` (спайн-СЕРВИС жив — `runClarifySweep`) и `MeetingExtractActionsService`. **combo — единственный движок задач всех каналов; фолбэка нет (принято владельцем ВР8); откат — рубильник `knowledge.specialistsCombinedEnabled`.**
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260630030000_add_intake_issue_checklist_json` (1 nullable-колонка `IntakeIssue.checklistJson JSONB`). 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ SEED НЕТ** (дедуп использует существующий `taskDedup.enabled`). Docker rebuild backend.
+>
+> **⚠️⚠️ ГЕЙТ ВЫКАТА (build-then-delete, point 5 / ВР8):** коммиты сноса `a7434d72` (Ф11в) и `fa55ddf2` (Ф11г) удаляют старые движки задач. **Перед тем как полагаться ТОЛЬКО на combo — сделай разовую проверку глазами в проде, что combo создаёт задачи** (встреча + чат → IntakeIssue во «Входящих»). A/B недоступно (ВР8); страховка = рубильник combo + метрики + эта проверка. Хочешь строгое стейджирование — выкати combo-эмиссию (HEAD до `a7434d72`) первой, убедись, затем сносовые коммиты. Откат сноса — `git revert a7434d72 fa55ddf2`; откат combo — рубильник.
+
+- **Шаг 1 — ENV: новых нет.**
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260630030000_add_intake_issue_checklist_json` — `ALTER TABLE "IntakeIssue" ADD COLUMN "checklistJson" JSONB` (AI-подзадачи до промоута: форма `[{title?, items:[{text}]}]`; материализуются в `IssueChecklist` при accept — `intake-auto-triage.worker` + `intake.service`). Аддитивная nullable, без backfill (историческую переписку не доразбираем — суточный проход идёт вперёд). Повтор deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«IntakeIssue».
+- **Шаги 5/6/7/8/9/10 (postgres-init/patch/seed/backfill/migrate/setup) — НЕ затронуты.** Новых индексов/скриптов/сидов нет.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: combo эмитит `tasks[]` (tool `submit_all_8_entities`→`submit_all_entities`, +правило «обещание=задача»/группировка подзадач); новый `TaskDraftMaterializerService` (tracker); материализация чек-листа в обоих accept-местах intake; снесён извлекающий спайн `specialist-3-15-tasks.worker` + роут `action_item→TASKS` (TASKS убран из `SPECIALIST`/`PRIORITY` → fallback тоже не достанет; спайн-СЕРВИС жив для `runClarifySweep`); снесён `MeetingExtractActionsService` + его caller в `analyze.worker`. Frontend не затронут. ⚠️ Combo-промпт изменён → prompt-cache combo инвалидируется один раз (норма).
+- **Шаг 12 — Smoke** (после выката):
+  - combo создаёт задачи: на встрече с поручением И на чате с «я сделаю X к пятнице» → IntakeIssue во «Входящих» (`/intake`); многошаговое поручение одного автора → 1 карточка с чек-листом «0 из N» после принятия.
+  - `docker compose exec backend grep -rL "specialist-3-15-tasks.worker" dist` (извлекающий спайн-ВОРКЕР снесён); `grep -rl "task-clarify-sweep" dist` (clarify-cron ЖИВ); в `analyze.worker` нет вызова meeting-extract.
+  - `/metrics` содержит `task_draft_materialized_total{channel,status}`; **retired:** `ai_meeting_actions_extracted_total` исчезла (движок выведен; если есть Grafana-панель на неё — опустеет).
+  - `psql \d "IntakeIssue"` содержит `checklistJson`.
+- ⚠️ **Гейт сноса (повтор):** выкат коммитов `a7434d72`/`fa55ddf2` — только после разовой проверки, что combo даёт задачи (см. шапку). Residual: недостижимый `processBlock` в спайн-сервисе — follow-up trim (см. `04_не-сделано`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-30 — Переписывание извлекающего слоя, заход A: combo основной + сшивка нити + реестр 57 типов + хроносверка (extraction-layer-rewrite, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-30-extraction-layer-rewrite.md` (Ф1–Ф10 + Ф12a, коммиты `41736929`..`c8fef016`). Объединённый разборщик `specialists-combined` стал основным путём разбора (не A/B): рубильник переведён в AdminSetting + `zBool`-фикс; combo канало-агностичен (chat/chatbox/Bitrix), воспроизводит 4 побочки (rebuild профиля/навыков, гигиена решений, ProcessTemplate через раздельный process-detector); few-shot реестр всех 57 типов; нахлёст окон + позиция + gleaning; скелет-карта `meeting-skeleton`; привязка регламентов в combo (scope роли + владелец); хроносверка фактов/решений; граф-детектор конфликтов. **Снос старых движков (Ф11) и combo-tasks[] (заход B) ОТЛОЖЕНЫ в пост-прод** — см. `second-brain/04_не-сделано/README.md`. **Вариант A:** движок `block-ingest` НЕ менялся (остаётся `deepseek-v4-pro`; Opus отменён владельцем).
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (enum `SignalType` не трогали, скелет in-memory, scope-колонки регламентов уже были). **🟢 НОВЫХ ENV НЕТ** (рубильник `SPECIALISTS_COMBINED_ENABLED` стал `zBool` — секции в `.env` не добавлялись; все новые крутилки — AdminSetting). 🟢 10 новых AdminSetting-крутилок + маршрут `meeting-skeleton`. 🟢 1 BACKFILL (идемпотентный, в STEPS). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** `SPECIALISTS_COMBINED_ENABLED` переведён `z.coerce.boolean`→`zBool` (баг `'false'→true` исправлен — теперь `.env=false` честно выключает); сам флаг + `SPECIALISTS_COMBINED_DELAY_MS` + крутилки нарезки `BLOCK_INGEST_*` переведены на `resolveSync` (admin→ENV→code, envFallbackKey сохранён — паритет с текущим прод-ENV). ⚠️ **Прод-значение `SPECIALISTS_COMBINED_ENABLED` в `.env` было легаси `false`** — после `zBool`-фикса это РЕАЛЬНО выключило бы combo, **но дефолт ON в AdminSetting `knowledge.specialists_combined_enabled` перебивает** при условии, что сид Шага 7 применился. ⚠️ **Сид Шага 7 ОБЯЗАН примениться, иначе combo выключится.** 10 новых AdminSetting-крутилок (см. Шаг 7), все code-fallback с разумным дефолтом (работают до сида — Ship-On). Реестр — `docs/operations/feature-flags.md` (3 kill-switch тип A: `knowledge.specialists_combined_enabled`/`skeleton_pass_enabled`/`header_map_enabled` + 7 knob'ов).
+- **Шаги 4/5/6/9/10 (Prisma/postgres-init/patch/migrate/setup) — НЕ затронуты.** Новых моделей/колонок/индексов/HNSW/patch-/migrate-/setup-скриптов нет.
+- **Шаг 7 — Seed (идемпотентные, доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):**
+  - `scripts/seed-admin-settings.ts` (УЖЕ в STEPS) — выравнивание `blockIngestMaxTokensPerSegment` 1500→2000 (паритет с ENV) + новые крутилки: `knowledge.specialists_combined_enabled`=true (kill-switch ON), `knowledge.specialistsCombinedDelayMs`=90000, `knowledge.blockIngestWindowOverlapSegments`=1, `knowledge.blockIngestGleaningRounds`=1, `knowledge.blockIngestGleaningMinSegments`=2, `knowledge.skeleton_pass_enabled`=true (kill-switch ON), `knowledge.header_map_enabled`=true (kill-switch ON), `knowledge.skeletonMinSegments`=6 (защита admin-edited; повтор = no-op). ⚠️ Без этого сида combo при легаси `.env=false` выключится.
+  - `scripts/seed-admin-setting-knowledge-graph.ts` (УЖЕ в STEPS) — пороги граф-детектора конфликтов: `knowledge.conflict_min_confidence`=0.6, `knowledge.conflict_graph_confidence`=0.65.
+  - `scripts/seed-llm-task-routes-knowledge-core.ts` — маршрут нового taskType `meeting-skeleton` (дешёвая цепочка `deepseek-v4-flash`→`gpt-5.4-nano`→`kie/gemini-3.1-pro`, **НЕ anthropic**). Доезжает через шаблон STEPS `seed-llm-task-routes-${sub}.ts` (`sub='knowledge-core'`, phase `seed-llm-routes`) — новый prod-скрипт НЕ появился, отдельной строки не требует.
+- **Шаг 8 — Backfill (идемпотентный, зарегистрирован в STEPS `phase:'backfill'`, флаг `--apply`):** `docker compose exec backend bun run scripts/backfill-regulation-scope-normalize.ts --apply` — нормализация `scope` регламентов/инструкций/политик/процессов: `role:<сырое имя>` → `role:<cuid>` по созданным ролям (Ф7б; combo теперь пишет scope сразу). Идемпотентен (cuid-хвост = no-op, неразрешимое остаётся сырьём). Доезжает агрегатором `apply-prod-deploy.ts --mode update`. Прогон без аргумента = dry-run (counts).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: combo стал основным путём (канало-агностичен + 4 побочки + scope регламентов), few-shot реестр 57 типов в `block-ingest`, `MeetingSkeletonService`, нахлёст/gleaning в `extractFull`, `process-detector` снова в раздельном dispatch (`PROCESS_DETECTOR` убран из `COMBINED_COVERED`), хроносверка `sourceTimestamp` во вход `FactSupersedeService`/`supersedeDetect`, граф-детектор конфликтов «автор↔стороны». Frontend не затронут.
+  - **⚠️ In-flight combined-джобы (осознанная транзиентная деградация выката):** payload `SpecialistsCombinedJobData` сменил форму (`{meetingId}` → `{tenantId, sourceType, externalId, meetingId?}`); старые джобы в Redis с задержкой `specialistsCombinedDelayMs`≈90с на момент рестарта новый воркер пропустит (нет `tenantId`). Re-enqueue произойдёт сам на следующем canonical-блоке источника. На раннем пилоте (~4 юзера) пренебрежимо; при желании слить очередь `core.specialists-combined` до рестарта.
+- **Шаг 12 — Smoke** (после выката):
+  - `docker compose exec backend sh -c 'bunx prisma db execute ...'` или diag: маршрут `meeting-skeleton` есть в `LlmTaskRoute` (primary deepseek-v4-flash); маршрут `block-ingest` БЕЗ изменений (deepseek-v4-pro primary, Opus НЕ добавлен).
+  - combo отрабатывает на **чате** (chatbox-RawEvent → сущности извлекаются, не только встречи).
+  - `docker compose exec backend grep -rl "PROCESS_DETECTOR" dist` — process-detector снова диспатчится раздельно (НЕ в `COMBINED_COVERED`).
+  - `/metrics` содержит новые: `kc_meeting_skeleton_total{outcome}`, `kc_block_gleaning_rounds_total`, `kc_block_gleaning_blocks_total`, `kc_block_overlap_dedup_total`, `task_dedup_suggested_total`, `regulation_scope_role_unresolved_total`, `regulation_owner_hint_unresolved_total`, `personal_relation_builder_runs_total` с label `source` (graph/regex).
+  - ⚠️ **EXPLAIN/прогон `fact-supersede`** (новый LATERAL по `IdeaBlockEvidence` после хроносверки Ф8) на реальных данных — исключить деградацию плана (строка в `04_не-сделано`).
+  - крутилки видны в админке (`/admin/knowledge`): `knowledge.specialists_combined_enabled`, `knowledge.skeleton_pass_enabled`, `knowledge.header_map_enabled` и 7 knob'ов.
+  - **Миграций нет** — `psql \dt`/schema без изменений.
+- ⚠️ **Пост-прод (НЕ в этом выкате):** разовая проверка combo/граф глазами (Ф10) → затем сносы Ф11(а) раздельных специалистов и Ф11(б) regex-крона конфликтов; combo-tasks[] (заход B). Все — в `second-brain/04_не-сделано/README.md`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-30 — Чистка оперативно-контрольного хвоста решений: снят надзор за внедрением (decisions-operational-cleanup, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-29-decisions-operational-cleanup.md` (Ф1–Ф8). Решение остаётся **пассивной памятью** (что решили), оперконтроль — на задачах. Сняты: контролёр внедрения решений (`DecisionImplementationService`/`Cron` `@Cron('0 6 * * *')`), эндпоинты `GET /dashboard/operations/decisions/throughput` + `/decisions/stalled`, метрики `decision_*`, крутилки `decision.stale_days` + `operations.decision_controller.enabled`, value-recap «доведение решений %», KPI «висящие решения» (`HangingDecisionsService`), pulse-алерт `getIrreversibleDecisions`/`IrreversibleDecisionsAlert`, forecast `hanging_decisions`, риск-логика решений в ленте, решения из оперативных отчётов (дайджесты + «День/Неделя/Месяц компании»), фронт `DecisionThroughputWidget`/`DecisionsWidget`/`IrreversibleDecisionsAlert`. **Осталось (память+исполнение):** сущность `Decision`, раздел/карточка/граф, извлечение `decisionsExtracted`, `DecisionTaskLink` + авто-задача (`impliesAction`/`actionExtractedAt`/`linkedTaskCount`), `decision-hygiene-scorer` + `reversibility`/`reversibilityAt`, monthly «что решить собственнику», секция решений в отчёте встречи. Новое: тихий бейдж «необратимое» (`reversibility==='type-1'`) на карточке решения (Ф7).
+>
+> **🟢 1 МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260630020000_drop_decision_implementation_fields` — DROP 2 колонок. 🟢 НОВЫХ ENV НЕТ.** Снятые флаг `operations.decision_controller.enabled` + крутилка `decision.stale_days` удаляются вместе с кодом — отдельной prod-операции не требуют (мёртвая AdminSetting-строка в БД безвредна, удалить вручную можно позднее). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** **Снят** флаг `operations.decision_controller.enabled` (был kill-switch ON) — строка убрана из `docs/operations/feature-flags.md`. Крутилка `decision.stale_days` снята из реестра. Действий владельца не требуется.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260630020000_drop_decision_implementation_fields` — `ALTER TABLE "decisions" DROP COLUMN "implementationStatus"` + `DROP COLUMN "implementationCheckedAt"` (надзор за внедрением снят; `linkedTaskCount` и `impliesAction`/`actionExtractedAt` **остаются** — ось исполнения жива). ⚠️ **Destructive (DROP COLUMN)**, но колонки больше не читаются кодом (контролёр внедрения удалён); потери значимых данных нет (это производные статусы надзора). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«Decision».
+- **Шаги 5/6/7/8/9/10 (postgres-init/patch/seed/backfill/migrate/setup) — НЕ затронуты.** Новых индексов/скриптов нет; снятые сиды крутилок надзора отдельной операции не требуют.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (сняты `DecisionImplementationService`/`Cron`, эндпоинты `decisions/throughput`+`stalled`, метрики `decision_*`, `HangingDecisionsService`/KPI, `getIrreversibleDecisions`-pulse, forecast `hanging_decisions`, риск-вклад решений в ленту, решения в оперативных дайджестах). Frontend (сняты `DecisionThroughputWidget`/`DecisionsWidget`/`IrreversibleDecisionsAlert`; добавлен тихий бейдж «необратимое» на карточке решения).
+- **Шаг 12 — Smoke** (после выката): `psql \d "decisions"` **НЕ** содержит `implementationStatus`/`implementationCheckedAt` (есть `linkedTaskCount`/`impliesAction`/`actionExtractedAt`); Swagger `/api/docs` **НЕ** содержит `GET /dashboard/operations/decisions/throughput` и `/decisions/stalled`; `/metrics` **без** `decision_stalled_total`/`decision_throughput_percent`; нет `@Cron('decision-implementation')` в логах; на дашборде нет виджетов «Доведение решений»/`IrreversibleDecisionsAlert`; раздел решений, граф, карточка (с тихим бейджом «необратимое») и авто-задача из actionable-решения (`DecisionTaskLink`) работают как прежде.
+- **Откат:** миграция дроп-only (без обратной seed) — откат схемы требует ручного `ADD COLUMN` (на практике не нужен, колонки мёртвые).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-29 — Пересмотр уточняющих вопросов Коры: снос инспекторов решений/обещаний + задачная петля (kora-clarify-questions-overhaul, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-29-kora-clarify-questions-overhaul.md` (6 фаз). Кора задаёт меньше шумных вопросов и спрашивает того, кто может ответить. Ф1 — снос probe-инспектора РЕШЕНИЙ (`specialist-3-3-probe.service.ts` + cron 05:00 UTC + поводы `decision.*` + `maybeApplyDecisionProbeAnswer`; извлечение решений и память остаются). Ф2 — снос probe-инспектора ОБЕЩАНИЙ (`commitment-followup.cron.ts` + `specialist-3-9-promise-keeper.service.ts` + `commitment-response.handler.ts` + флаги `betaOps.commitmentFollowup*`; _остальной соц-слой обещаний снесён позже — см. блок «2026-07-01 — Снос соц-слоя обещаний»_). Ф3 — адресат probe задачи = постановщик (автор реплики). Ф4 — probe про срок на извлечении + новый `TaskClarifySweepCron`. Ф5 — новый probe `task.method_capture` «расскажи, как решал» при закрытии значимой задачи. Ф6 — ответ помечается `signalTypeHint:'reasoning'`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ** (все крутилки — чистые AdminSetting). 🟢 СИД `seed-admin-setting-tracker.ts` **расширен** (новые ключи `tracker.taskClarifySweep.*` / `tracker.methodCapture*`; уже в STEPS — новый prod-скрипт НЕ появился). 🟢 5 новых kill-switch/крутилок. **Снятые** флаги обещаний (`betaOps.commitmentFollowup*`) удаляются вместе с кодом — отдельной prod-операции не требуют. Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Крутилки `tracker.taskClarifySweep.{enabled,hourMsk,minAgeHours}` + `tracker.methodCaptureEnabled` + `tracker.methodCaptureMinComplexity` + `tracker.methodCapturePriorityHint` — чистые AdminSetting (`getDynamic`/`resolveSync` с code-fallback, работают до сида — Ship-On). Все kill-switch — тип A (ВКЛ, действий владельца не требуют). Реестр — `docs/operations/feature-flags.md` (2 новые строки `tracker.taskClarifySweep.enabled` / `tracker.methodCaptureEnabled`). Removed-флагов decision/commitment в реестре не было.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Новых моделей/колонок/индексов/patch-скриптов нет.
+- **Шаг 7 — Seed (идемпотентный, сид УЖЕ в STEPS `phase:'seed-base'`):** `seed-admin-setting-tracker.ts` **дополнен** ключами `tracker.taskClarifySweep.enabled`=true / `.hourMsk`=10 / `.minAgeHours`=20 + `tracker.methodCaptureEnabled`=true / `.methodCaptureMinComplexity`=0.5 / `.methodCapturePriorityHint`=0.7 (защита admin-edited). Новый prod-скрипт НЕ появился. Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Повтор = no-op.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (снесены `specialist-3-3-probe.service.ts` / `commitment-followup.cron.ts` / `specialist-3-9-promise-keeper.service.ts` / `commitment-response.handler.ts`; поводы `decision.*` + `commitment.followup`/`commitment.silence_escalation` и `maybeApplyDecisionProbeAnswer` удалены; резолвер `resolveSetterRecipient` адресует probe задачи постановщику; probe `task.due_date_missing` на извлечении; новый `TaskClarifySweepCron` `@Cron` hourly МСК → `Specialist315TasksService.runClarifySweep`, зарегистрирован в `src/modules/ai/workers.module.ts`; новый probe-reason `task.method_capture` + хук `IssuesService.transitionState` `maybeRaiseMethodCaptureProbe`; `probe-response.handler.ts` помечает ответ `signalTypeHint:'reasoning'`).
+- **Шаг 12 — Smoke** (после выката): **набор cron изменён** — `docker compose exec backend grep -rl "task-clarify-sweep" dist` (есть `TaskClarifySweepCron`), `grep -rL "commitment-followup" dist` (cron обещаний **снесён**), внутри `specialist-3-3` нет 05:00 UTC-прохода решений; в реестре LLM-вызовов нет уходящих `decision.*`/`commitment.followup` probe; новый probe-reason `task.method_capture` появляется при закрытии значимой задачи; probe `task.assignee_unresolved`/`task.due_date_missing` приходит **постановщику**, а не первому owner Org; крутилки `tracker.taskClarifySweep.enabled` / `tracker.methodCaptureEnabled` видны в админке (`/admin/tracker`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-29 — Дневной план/отчёт из общего анализа графа (checkin-day-report-from-graph, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-29-checkin-day-report-from-graph.md` (8 фаз). План/отчёт сотрудника собираются НЕ отдельным свипом `day-signal-*` (СНЕСЁН), а тонким НЕ-LLM сборщиком `DayReportCollectorService` из разметки `block-ingest` в 4 сущности (сделано/не сделано/помешало/идеи); «не сделано» — через переиспользуемый `ClosureVerifierService` (вынесен из `task-completion.handler`). Новый `DayReportCollectorCron` (05:00 МСК) + переписан `MeetingCheckinListener` (graph-derive). Коммиты `114fc0f4..0ab7090b`.
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260630010000_daily_checkin_report_4_entities` (3 nullable-колонки в `daily_check_ins`). 🟢 НОВЫХ ENV НЕТ.** Крутилки `daySignals.*` → `dayReport.enabled` (kill-switch ON) + `dayReport.completenessQualityThreshold` (0.5); удалён маршрут `seed-llm-task-routes-day-signal.ts` (taskType `day-signal-detect` снят). 🟢 1 BACKFILL (идемпотентный, в STEPS). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Крутилки — чистые AdminSetting (`dayReport.enabled` kill-switch тип A ВКЛ; `dayReport.completenessQualityThreshold` 0.5), читаются через `resolveSync`/`getDynamic` с code-fallback (работают до сида — Ship-On). Реестр — `docs/operations/feature-flags.md` (ключи `daySignals.*` заменены на `dayReport.*`).
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260630010000_daily_checkin_report_4_entities` — `ALTER TABLE "daily_check_ins"` ×3: `ADD COLUMN "notDoneJson" JSONB` (`Array<{text,sourcePlanText?,verdictConfidence?}>`) + `ADD COLUMN "ideasJson" JSONB` (`Array<{text,sourceBlockId?}>`) + `ADD COLUMN "reportCompleteness" VARCHAR(8)` (draft/full, выводится в `toDto`). Аддитивная (3× ADD COLUMN nullable, без DROP), без потери данных, **backfill отчётов** опционален (см. Шаг 8). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«`DailyCheckIn` += 4 сущности отчёта».
+- **Шаг 5 — postgres-init — НЕ затронут.** Новых HNSW/GIN-индексов нет.
+- **Шаг 6 — patch — НЕ затронут.**
+- **Шаг 7 — Seed (идемпотентные, доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):**
+  - `scripts/seed-admin-settings.ts` (УЖЕ в STEPS) — новые крутилки `dayReport.enabled`=true (kill-switch ON) / `dayReport.completenessQualityThreshold`=0.5 (защита admin-edited; повтор = no-op). Прежние ключи `daySignals.*` сняты.
+  - **Удалён маршрут** `seed-llm-task-routes-day-signal.ts` (taskType `day-signal-detect` снесён вместе со слоем) — изъят из STEPS; на проде маршрут просто перестаёт диспатчиться (мёртвой LLM-роуты не остаётся).
+- **Шаг 8 — Backfill (идемпотентный, зарегистрирован в STEPS `phase:'backfill'`):** `docker compose exec backend bun run scripts/backfill-day-report.ts --days 30` — пересборка дневных отчётов за 30 дней из уже построенной разметки `block-ingest` (НЕ-LLM, дёшево; закрывает исторические «не сдал»). Доезжает агрегатором `apply-prod-deploy.ts --mode update`. Повтор = no-op (upsert патч-стиль).
+- **Шаги 9/10 (migrate/setup) — НЕ затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`DayReportCollectorService.collectForDay/assembleAndUpsert`; `ClosureVerifierService` вынесен из `task-completion.handler`; `DayReportCollectorCron` `@Cron('0 5 * * *', Europe/Moscow)` + `CheckinExpectationService.ensureForDay`; переписан `MeetingCheckinListener` на graph-derive; `DailyCheckInService` `upsertFromDaySignal`/`upsertInternal` += `notDone`/`ideas`, `toDto` выводит `reportCompleteness`; метрики `day_report_{collected,block_dropped_no_person,not_done_verify_calls}_total`; снесён слой `day-signal-*`). Frontend (`DailyCheckInApi` += `notDone`/`ideas`/`reportCompleteness`).
+- **Шаг 12 — Smoke** (после выката): `psql \d "daily_check_ins"` содержит `notDoneJson`/`ideasJson`/`reportCompleteness`; новый `@Cron DayReportCollectorCron` (05:00 МСК) виден в логах/зарегистрирован; в маршрутах LLM **нет** `day-signal-detect` (`/api/v1/admin/usage/calls?task=day-signal-detect` пуст); метрики `day_report_*` на `/metrics`; крутилки `dayReport.enabled`/`dayReport.completenessQualityThreshold` в админке. **R0 (ручной, pre-deploy gate):** `docker compose exec backend bun run scripts/diag-day-report-recall.ts --days 14 --limit 50` (read-only) — оценить покрытие/recall `plan_item`/`done_item`; при recall <0.7 — сначала усилить `block-ingest.prompt.ts`, затем доверять дашборду (см. анализ `plans/analysis/2026-06-29-checkin-ingest-rebuild.md` §«Проверка recall (R0 pre-flight)»).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-29 — Помощник «временно недоступен»: DeepSeek-first для всех классов данных + крутилка таймаута KIE (ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-29-chat-v2-dataclass-routing-fallback.md`. `PROVIDER_CAPABILITY` поднял `deepseek`/`openai-via-proxy` `maxDataClass` `internal`→`private` → оба eligible+primary для любого класса данных, цепочка резерва `DeepSeek → OpenAI → KIE` работает для приватных/чувствительных вопросов (раньше для них оставался единственный зависающий `kie` → «Помощник временно недоступен»). Захардкоженный таймаут KIE 60_000 вынесен в крутилку `ai.kie.timeoutMs` (code-fallback 180000). Сиды chat-v2 выровнены на `deepseek-v4-pro`. Коммиты `3f8f23ad`, `1c83fc71`, `f9a9a63d`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (правка значений/крутилка — не feature-flag). 🟢 1 НОВЫЙ СИД (`seed-admin-setting-kie-timeout.ts`, зарегистрирован в STEPS `phase:'seed-base'`). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Таймаут KIE — чистая AdminSetting `ai.kie.timeoutMs` (resolveSync, code-fallback 180000). Прямого `PROVIDER_CAPABILITY` в ENV нет (код-константа, единственный потребитель — фильтр eligibility роутера). `chatV2SynthesisTimeoutMs` code-fallback поднят 90_000→180_000.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Новых моделей/колонок/индексов/patch-скриптов нет.
+- **Шаг 7 — Seed (идемпотентные, доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):**
+  - `scripts/seed-admin-setting-kie-timeout.ts` (НОВЫЙ, `phase:'seed-base'`, зарегистрирован в STEPS) — крутилка `ai.kie.timeoutMs`=180000 (таймаут вызова провайдера KIE, мс). Защита admin-edited; повтор = no-op (created=0).
+  - `scripts/seed-llm-task-routes-knowledge-core.ts` / `seed-llm-task-routes-default.ts` (УЖЕ в STEPS `phase:'seed-llm-*'`) — реконсиляция: primary chat-v2 выровнен на `deepseek-v4-pro` (было `deepseek-v4-flash`) + tertiary `kie/gemini-3.1-pro`. ⚠️ **На проде primary chat-v2=`deepseek-v4-pro` уже держит everyDeploy-патч `scripts/patch-chat-v2-to-pro.ts` (в STEPS `phase:'patch'`) — отдельного действия не требует.** Правка сидов — гигиена fresh-DB + устранение рассинхрона сид↔прод; уважает `editedByAdmin`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`PROVIDER_CAPABILITY` deepseek/openai-via-proxy→`private`; `KieService` читает `this.cfg.ai.kie.timeoutMs`; `typed-config` `ai.kie.timeoutMs` + `chatV2SynthesisTimeoutMs` fallback 180_000; `admin-setting-schema-registry` += `ai.kie.timeoutMs` POSITIVE_INT). Frontend (UI-группа «Провайдер KIE» с полем таймаута в `OrchestratorSettingsClient`).
+- **Шаг 12 — Smoke** (после выката): крутилка `ai.kie.timeoutMs` видна в админ-настройках AI (группа «Провайдер KIE»); chat-v2 на приватный/чувствительный вопрос отвечает (диспатчит DeepSeek первым, не падает в «Помощник временно недоступен»); в реестре `/api/v1/admin/usage/calls?task=chat-v2` первый провайдер — `deepseek`, а не `kie`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-29 — Месяц компании + навигация по датам/архив (ветка feature/month-company-and-report-navigation)
 
 > Две парные фичи. **Месяц компании** — месячный executive-брифинг владельца на `/month` (зеркало «Недели компании»): новая модель `MonthlyOperationsDigest` + `MonthlyDigestService` (свод 4 недель одним LLM-вызовом) + `OperationsMonthlyDigestCron` (1-е число) + `MonthCompanyHero` над canvas. **Навигация/архив** — `available-periods` на 3 ритма + общий `PeriodNavigator` (‹ › + клик-дата + архив-список) + empty-state на героях дня/недели/месяца. Коммиты `9c36a0b6..82e3a893`.
@@ -246,11 +614,11 @@ docker compose run --rm --no-deps backend \
 > **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260627210000` (Decision += impliesAction/actionExtractedAt). 🟢 НОВЫХ ENV НЕТ** (все крутилки — чистые AdminSetting). 1 новый kill-switch `knowledge.rawEventRecoveryEnabled` (ON). 1 новый @Cron `raw-event-recovery` (15 мин). Docker rebuild backend+frontend.
 
 - **Шаг 1 — ENV: новых нет.** Все крутилки — чистые AdminSetting (см. Шаг 7). 1 новый kill-switch `knowledge.rawEventRecoveryEnabled` (тип A, ВКЛ — действий владельца не требует; выкл → cron восстановления RawEvent не реэнкьюит застрявшие события). Реестр — `docs/operations/feature-flags.md`.
-- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260627210000_decision_implies_action` — `ALTER TABLE "decisions" ADD COLUMN "impliesAction" BOOLEAN NOT NULL DEFAULT false` + `ADD COLUMN "actionExtractedAt" TIMESTAMP(3)`. Аддитивная (ADD COLUMN, без DROP), без потери данных, backfill не нужен (дефолт `false`). **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«impliesAction». ⚠️ Старые решения по дефолту `impliesAction=false` → выпадают из дашборд-метрик stalled/throughput до LLM-ре-экстракции (бэкфилл отложен — см. `second-brain/04_не-сделано/README.md`).
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260627210000_decision_implies_action` — `ALTER TABLE "decisions" ADD COLUMN "impliesAction" BOOLEAN NOT NULL DEFAULT false` + `ADD COLUMN "actionExtractedAt" TIMESTAMP(3)`. Аддитивная (ADD COLUMN, без DROP), без потери данных, backfill не нужен (дефолт `false`). **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«impliesAction». Поля живут (ось исполнения: `impliesAction` → авто-задача `DecisionTaskLink`); бэкфилл `impliesAction` для исторических решений отложен (см. `second-brain/04_не-сделано/README.md`).
 - **Шаг 7 — Seed крутилок (идемпотентные, ОБА сида УЖЕ в STEPS, новых сидов НЕТ — расширены существующие):** доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
   - `seed-admin-setting-tracker.ts` (`phase:'seed-base'`) — `tracker.progressFromConversationMinConfidence` (0.6 — порог записи хода выполнения задачи из разговорного блока, анти-fatigue) + `taskClosure.embedMaxAttempts` (3 — ретраев эмбеддера при флапе, корень P7).
   - `seed-admin-setting-worker-knobs.ts` (`phase:'seed-base'`) — `knowledge.rawEventRecoveryEnabled` (kill-switch ON) + `knowledge.rawEventRecoveryStaleMinutes` (30) + `knowledge.rawEventRecoveryMaxAgeHours` (24) + `knowledge.rawEventRecoveryBatchLimit` (200).
-- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core: Ф0 advisory-lock `$queryRaw`→`$executeRaw` в `specialist-3-15-tasks.service`/`issues.service`; Ф1 три класса в `block-ingest`/`decision-extract`/`task-decision-examples`; Ф2 `decision-extract` += `impliesAction`/`actionTitle` + `specialist-3-3-decisions.maybeEnqueueActionableTask` → intake `source='decision'`; Ф3 `task-completion.handler` embed-ретрай + `IssueProgressUpdate` из разговора; Ф4 `decision-implementation.scoring`/`.service` += `impliesAction`; Ф5 `raw-event-recovery.cron` + `strategic-alignment.worker` JSON-ремонт). Frontend (Ф4 `DecisionsWidget`: today→индикатор-утечка «Решения без действия», список+throughput только в week/month).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core: Ф0 advisory-lock `$queryRaw`→`$executeRaw` в `specialist-3-15-tasks.service`/`issues.service`; Ф1 три класса в `block-ingest`/`decision-extract`/`task-decision-examples`; Ф2 `decision-extract` += `impliesAction`/`actionTitle` + `specialist-3-3-decisions.maybeEnqueueActionableTask` → intake `source='decision'`; Ф3 `task-completion.handler` embed-ретрай + `IssueProgressUpdate` из разговора; Ф5 `raw-event-recovery.cron` + `strategic-alignment.worker` JSON-ремонт). _(Ф4 — дашборд-контроль доведения решений `decision-implementation.*` + фронт `DecisionsWidget` throughput — снят, см. актуальный блок выката «чистка оперативно-контрольного хвоста решений».)_
 - **Шаг 12 — Smoke** (после выката):
   - `docker compose logs backend | grep -i "raw-event-recovery"` — новый @Cron тикает (15 мин); при застрявших RawEvent — `реэнкьюй`/`DEAD-LETTER` в логах, метрики `raw_event_recovery_reenqueued_total`/`raw_event_recovery_dead_lettered_total` в `/metrics`.
   - **P0-смоук Ф0:** `diag logs --search "3-15-tasks"` без `Failed to deserialize column of type 'void'` / failed-транзакций; новая загрузка/встреча с поручением → задачи реально появляются в трекере (раньше дельта 0).
@@ -1255,17 +1623,19 @@ docker compose exec backend sh -c "grep -rl regulation-consolidator src/modules/
 
 > Контракт: ветка `feature/coo-orphan-agents-wire`, коммиты `ac56ce2b..b44229ae` (Ф1–Ф8). ТЗ: `plans/tz/2026-06-15-coo-orphan-agents-wire-to-operations-board.md`. second-brain: `01_projects/director-dashboard.md` (§«Доска «Аналитика»»). Реестр флагов — `docs/operations/feature-flags.md` (убрана строка `deliver_to_telegram`).
 >
-> **Зачем для прода:** бэкенд COO почти весь уже считал данные, но часть результатов была «осиротевшей» (код есть, потребителя на экране нет). Этот выкат подключает готовое к доске `/dashboard/operations` (переименована в «Аналитика»): 6 pulse-виджетов, «Доведение решений», «Клиенты под риском», «Знания под риском», «Перегруз ответственностью», оживлены мёртвые сигналы (факторы вовлечённости команд, сеть обещаний), починены 2 заглушки данных (`team-detail.goals`, `team-health.decisions`), дневная сводка COO начинает доставляться в каналы по умолчанию.
+> ⚠️ **ЧАСТИЧНО ОТМЕНЁН (2026-07-01, ТЗ commitment-social-layer-cleanup):** виджет «Перегруз ответственностью» / эндпоинт `GET /dashboard/operations/promise-network` / `PromiseNetworkService` / cron `PromiseNetworkAnalyzerCron` / модель `PromiseNetworkSnapshot` **снесены** в более позднем блоке этого же окна (см. блок «2026-07-01 — Снос соц-слоя обещаний» ниже). Если оба блока выкатываются одним cut'ом — создание promise-network и его дроп взаимно гасятся (этих эндпоинта/виджета/модели в итоге НЕ будет). Остальное из этого блока (pulse-виджеты, клиенты/знания под риском, факторы вовлечённости, доставка дневной сводки) — в силе.
+>
+> **Зачем для прода:** бэкенд COO почти весь уже считал данные, но часть результатов была «осиротевшей» (код есть, потребителя на экране нет). Этот выкат подключает готовое к доске `/dashboard/operations` (переименована в «Аналитика»): 6 pulse-виджетов, «Доведение решений», «Клиенты под риском», «Знания под риском», ~~«Перегруз ответственностью»~~ _(снят 2026-07-01)_, оживлены мёртвые сигналы (факторы вовлечённости команд, ~~сеть обещаний~~ _(снята 2026-07-01)_), починены 2 заглушки данных (`team-detail.goals`, `team-health.decisions`), дневная сводка COO начинает доставляться в каналы по умолчанию.
 >
 > **Миграций БД НЕТ** (все поля/модели уже в схеме). **Seed/patch/backfill на запуск НЕТ.** **Новых OFF-флагов НЕТ** (Ship-On). **1 ENV удалена** (`COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`). **Docker rebuild backend+frontend обязателен.**
 
 - **Шаг 1 — ENV (удалить 1, действий владельца не требует):** `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM` удалена из `env.schema.ts` (Ф8, Ship-On — OFF-дефолт нарушал принцип). Если задана в прод-`.env` — можно удалить строку (лишняя ENV не ломает запуск; `EnvSchema` её больше не валидирует). Оставшаяся в проде AdminSetting `operations.daily_digest.deliver_to_telegram` безвредна (можно удалить вручную позднее). Новых ENV нет. ⚠️ **Стелс-эффект:** после выката дневная сводка COO начнёт доставляться owner/coo во все привязанные каналы по умолчанию (in_app + Telegram/email/MAX по привязкам); контроль — персональной галочкой «Ежедневная сводка компании» в кабинете (Настройки → Уведомления). Kill-switch `operations.daily_digest.enabled` остаётся.
-- **Шаг 4 — Prisma** — **миграций НЕТ** (все поля/модели уже в схеме: `Goal.ownerPersonId`, `Person.primaryDepartmentId`, `Department.healthSummaryJson`, `PromiseNetworkSnapshot`). Регистрировать нечего.
+- **Шаг 4 — Prisma** — **миграций НЕТ** (все поля/модели уже в схеме: `Goal.ownerPersonId`, `Person.primaryDepartmentId`, `Department.healthSummaryJson`; ~~`PromiseNetworkSnapshot`~~ — модель **дропается** блоком 2026-07-01 ниже). Регистрировать нечего.
 - **Seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
-- **Шаг 11 — Docker rebuild** — обязателен (новые эндпоинты `GET /dashboard/operations/promise-network` + `GET /me/notification-preferences`, backend-доводки goals/decisions/team-health/knowledge-at-risk, фронт — новый пункт меню «Аналитика» + риск-виджеты + персональная галочка): `docker compose up -d --build backend frontend`.
+- **Шаг 11 — Docker rebuild** — обязателен (новый эндпоинт `GET /me/notification-preferences`, backend-доводки goals/decisions/team-health/knowledge-at-risk, фронт — новый пункт меню «Аналитика» + риск-виджеты + персональная галочка): `docker compose up -d --build backend frontend`. _(Эндпоинт `GET /dashboard/operations/promise-network` снят блоком 2026-07-01.)_
 - **Шаг 12 — Smoke** (после выката):
-  - (а) Swagger `/api/docs` содержит `GET /api/v1/dashboard/operations/promise-network` и `GET /api/v1/me/notification-preferences`;
-  - (б) доска `/dashboard/operations` достижима из меню под меткой **«Аналитика»** (раздел «Ритмы», после «Сегодня») и рендерит риск-виджеты (клиенты под риском / знания под риском / перегруз ответственностью);
+  - (а) Swagger `/api/docs` содержит `GET /api/v1/me/notification-preferences` _(эндпоинта `promise-network` быть НЕ должно — снят блоком 2026-07-01)_;
+  - (б) доска `/dashboard/operations` достижима из меню под меткой **«Аналитика»** (раздел «Ритмы», после «Сегодня») и рендерит риск-виджеты (клиенты под риском / знания под риском; виджет «перегруз ответственностью» снят блоком 2026-07-01);
   - (в) `GET /api/v1/me/notification-preferences` отдаёт `{ optOutEventTypes, quietHoursStart, quietHoursEnd }` (не 500);
   - (г) тумблер «Ежедневная сводка компании» рендерится в Настройки → Уведомления; снятие шлёт `PATCH /me/notification-preferences` с `operations.daily_digest` в `optOutEventTypes` (push перестаёт приходить, сводка остаётся в кабинете).
 
@@ -1414,7 +1784,7 @@ docker compose exec backend sh -c "grep -rl regulation-consolidator src/modules/
 - **Шаг 11 — Docker rebuild** — обязателен (новые миграции в PrismaClient, новый `@Cron('theme-silence-detector')`, новый sweep-крон очереди решений, новая зависимость `pptxgenjs`, новый taskType, новые контроллеры/эндпоинты): `docker compose up -d --build backend frontend`.
 - **Шаг 12 — Smoke** (после выката):
   - (а) в логах backend поднялся `@Cron('theme-silence-detector')`;
-  - (б) Swagger `/api/docs` содержит новые эндпоинты: `GET /dashboard/operations/checkin-discipline`, `POST /pending-actions/confirm`, `GET /dashboard/operations/value-recap/:id/export?format=pptx`, `POST /meetings/:id/next-steps/to-intake`, `POST /departments/:id/merge`, `GET /dashboard/operations/weekly-per-person/:personId/items` (+ self `GET /me/...`), `GET /feed/cora`, `POST /feed/cora/seen`, `GET /probe/control`, `GET /decisions/stalled`;
+  - (б) Swagger `/api/docs` содержит новые эндпоинты: `GET /dashboard/operations/checkin-discipline`, `POST /pending-actions/confirm`, `GET /dashboard/operations/value-recap/:id/export?format=pptx`, `POST /meetings/:id/next-steps/to-intake`, `POST /departments/:id/merge`, `GET /dashboard/operations/weekly-per-person/:personId/items` (+ self `GET /me/...`), `GET /feed/cora`, `POST /feed/cora/seen`, `GET /probe/control`;
   - (в) taskType `meeting-title` присутствует в реестре: `docker compose exec backend bun run scripts/diag-routes.ts | grep meeting-title` (ожидаемо — DEFAULT-цепочка, отдельного роута нет);
   - (г) PPTX-экспорт «Месяца» отдаёт файл (а не 500): `GET /dashboard/operations/value-recap/:id/export?format=pptx` → `Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`;
   - (д) очередь решений «Требует вас» отдаёт 4 группы; `POST /pending-actions/confirm` резолвит элемент;
@@ -1856,29 +2226,29 @@ docker compose exec backend sh -c "grep -rl regulation-consolidator src/modules/
 
 ---
 
-### TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения: синтез блокеров · контролёр решений · каскад обещаний
+### TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения: синтез блокеров · каскад обещаний
 
 > Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 3.A/B/C). **Зависит от Ф0** (доставка push + бюджет). Ф3.D (фиксы достоверности) — уже выкачена отдельно.
 >
-> **Зачем для прода:** (А) накопительный синтез блокеров (cron 22:00 → статусы new/recurring/resolved + бизнес-удар + мост хроники в инсайт-радар); (Б) контролёр внедрения решений (cron 06:00 → решения без задач/результатов старше N дней → stalled + push ответственному + агрегат «% доведённых»); (В) каскад обещаний (cron 08:00 → просроченное обещание с зависимостью → дневной алерт автору и руководителю). **3 миграции БД** (все аддитивные, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты owner/coo.
+> ⚠️ **ЧАСТИЧНО ОТМЕНЁН (2026-07-01, ТЗ commitment-social-layer-cleanup):** часть (В) **каскад обещаний** (`PromiseCascadeService`/`PromiseCascadeCron` `@Cron('0 8 * * *')`, метрика `promise_cascade_alert_total`, флаг `operations.promise_cascade.enabled`) **снесена** — см. блок «2026-07-01 — Снос соц-слоя обещаний» ниже. Если оба блока выкатываются одним cut'ом — promise-cascade в проде НЕ появится. Часть (А) синтез блокеров (вкл. вес `blocker_synthesis.impact.commitment`) — **в силе**.
+>
+> **Зачем для прода:** (А) накопительный синтез блокеров (cron 22:00 → статусы new/recurring/resolved + бизнес-удар + мост хроники в инсайт-радар); ~~(В) каскад обещаний (cron 08:00 → просроченное обещание с зависимостью → дневной алерт автору и руководителю)~~ _(снят 2026-07-01)_. **3 миграции БД** (все аддитивные, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты owner/coo. _(Ф3.Б — контролёр внедрения решений `cron 06:00` — снят, см. актуальный блок выката «чистка оперативно-контрольного хвоста решений».)_
 
 - **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-execution-agents.ts`, см. Шаг 7; code-fallback есть):
   - `operations.blocker_synthesis.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_BLOCKER_SYNTHESIS_ENABLED`.
-  - `operations.decision_controller.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_DECISION_CONTROLLER_ENABLED`.
-  - `operations.promise_cascade.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_PROMISE_CASCADE_ENABLED`.
-  - `blocker_synthesis.lookback_days` (int, **default 7**), `blocker_synthesis.recurring_days` (int, **default 2**), `blocker_synthesis.impact.{base,customer,deadline,commitment,per_day_open}` (веса бизнес-удара: 1/4/3/2/0.5).
-  - `decision.stale_days` (int, **default 21**) — после скольких дней решение без задач/outcomes → stalled.
+  - ~~`operations.promise_cascade.enabled` (bool, default true, ENV-fallback `OPERATIONS_PROMISE_CASCADE_ENABLED`)~~ — **снят 2026-07-01** (каскад обещаний удалён; ключ убран из `seed-admin-setting-execution-agents.ts`).
+  - `blocker_synthesis.lookback_days` (int, **default 7**), `blocker_synthesis.recurring_days` (int, **default 2**), `blocker_synthesis.impact.{base,customer,deadline,commitment,per_day_open}` (веса бизнес-удара: 1/4/3/2/0.5). _(Вес `commitment` — остаётся: блокер с висящим обещанием весит больше; это граница факта, не соц-надзор.)_
 - **Шаг 4 — Prisma** — **обязательно, авто** (3 миграции, все аддитивные, без потери данных, применяются `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
   - `20260608160000_blocker_synthesis`: `+ table blocker_synthesis` (FK → `Org`/`persons`, unique по (tenantId, clusterKey), индекс по (tenantId, status, lastSeenDateLocal)).
-  - `20260608160100_decision_implementation`: `+ decisions.linkedTaskCount/implementationStatus/implementationCheckedAt` (ADD COLUMN, default/nullable).
+  - `20260608160100_decision_implementation`: `+ decisions.linkedTaskCount` (ADD COLUMN). _(Колонки `implementationStatus`/`implementationCheckedAt` этой миграции дропнуты позже — см. `20260630020000_drop_decision_implementation_fields` в актуальном блоке выката.)_
   - `20260608160200_decision_task_link`: `+ table decision_task_link` (join Decision↔Issue, FK → `decisions`/`Issue` onDelete CASCADE, unique по (decisionId, issueId)).
-- **Шаг 7 — Seed** — **расширен существующий, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-execution-agents.ts` — добавлены ключи Ф3.A/B/C (см. Шаг 1) к ключам Ф3.D. Защищает admin-edited. Также **новый LLM-маршрут** `blocker-synthesis-summary` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-execution-agents.ts`).
+- **Шаг 7 — Seed** — **расширен существующий, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-execution-agents.ts` — добавлены ключи Ф3.A/B/C (см. Шаг 1) к ключам Ф3.D. _(2026-07-01: ключ `operations.promise_cascade.enabled` из этого сида **убран** вместе с каскадом обещаний — см. блок 2026-07-01.)_ Защищает admin-edited. Также **новый LLM-маршрут** `blocker-synthesis-summary` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-execution-agents.ts`).
 - **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `skipBootstrap:true`): `scripts/backfill-decision-linked-task-count.ts` — засевает `DecisionTaskLink` из пересечения `sourceBlockIds` (Decision×Issue) + пересчитывает `Decision.linkedTaskCount`. Идемпотентно (skipDuplicates). Сначала `--dry-run`: `docker compose exec backend bun run scripts/backfill-decision-linked-task-count.ts --dry-run` → затем без флага. Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
-- **Шаг 11 — Docker rebuild** — обязателен (backend: `BlockerSynthesisService`+`BlockerSynthesisCron` `@Cron('0 22 * * *')`, `DecisionImplementationService`+`DecisionImplementationCron` `@Cron('0 6 * * *')`, `PromiseCascadeService`+`PromiseCascadeCron` `@Cron('0 8 * * *')`, 3 новых эндпоинта, новый taskType `blocker-synthesis-summary`, 4 новые метрики; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `BlockerSynthesisService`+`BlockerSynthesisCron` `@Cron('0 22 * * *')`, новый taskType `blocker-synthesis-summary`; frontend без изменений): `docker compose up -d --build backend`. _(`PromiseCascadeService`/`PromiseCascadeCron` `@Cron('0 8 * * *')` снят 2026-07-01 — см. блок «Снос соц-слоя обещаний». Контролёр внедрения решений `DecisionImplementation*`/`@Cron('0 6 * * *')` снят — см. блок «чистка оперативно-контрольного хвоста решений».)_
 - **Шаг 12 — Smoke** (после выката):
-  - Новые cron в логах backend (без ERROR): `blocker-synthesis.cron: проход завершён`, `decision-implementation.cron: проход завершён`, `promise-cascade.cron: проход завершён`.
-  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/blockers/chronic`, `GET /api/v1/dashboard/operations/decisions/throughput`, `GET /api/v1/dashboard/operations/decisions/stalled` (все owner/coo).
-  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'blocker_synthesis_recurring_total|decision_stalled_total|decision_throughput_percent|promise_cascade_alert_total'` — присутствуют.
+  - Новый cron в логах backend (без ERROR): `blocker-synthesis.cron: проход завершён`. _(`promise-cascade.cron` НЕ должно быть — снесён 2026-07-01.)_
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/blockers/chronic` (owner/coo).
+  - Новая метрика: `curl -s localhost:3000/metrics | grep -E 'blocker_synthesis_recurring_total'` — присутствует. _(`promise_cascade_alert_total` быть НЕ должно — снесена 2026-07-01.)_
   - Маршрут LLM: `blocker-synthesis-summary` виден в `/admin/ai-models` (primary deepseek-v4-flash).
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
@@ -3094,10 +3464,10 @@ docker compose run --rm smoke
 - A: backend gaps — viewedUserId в ActivityFeed (разблокировка PersonPulse 9.5) + meeting_activity в Engagement-Scorer.
 - A2: Conflict-Detector extension (CheckInConflictDetectorCron) + Forecaster (новая модель ForecastSnapshot + LLM cron Mon 04:00) + hr_partner роль (+ canViewEmployeeFullCard в RbacService).
 - Волна 5: Sprint Daily/Weekly табы + new endpoints, Архив гипотез `/sprints/archive`, Telegram sprint section, 5 Concierge tools.
-- Волна 6: 5 weekly cron-агентов Mon 05:00 (Bus Factor / Topic Recurrence / Promise Network / Goal Vector / Knowledge Velocity) + 2 event-driven worker'а (Meeting ROI после analyze, Decision Hygiene после specialist-3-3) + единый `GET /api/v1/dashboard/pulse-patterns` endpoint + 7 виджетов на главной.
+- Волна 6: 5 weekly cron-агентов Mon 05:00 (Bus Factor / Topic Recurrence / ~~Promise Network~~ _(снят 2026-07-01)_ / Goal Vector / Knowledge Velocity) + 2 event-driven worker'а (Meeting ROI после analyze, Decision Hygiene после specialist-3-3) + единый `GET /api/v1/dashboard/pulse-patterns` endpoint + 7 виджетов на главной. _(`PromiseNetworkAnalyzerCron` снесён блоком «2026-07-01 — Снос соц-слоя обещаний».)_
 
 **Schema-изменения** (одной prisma:push):
-- +6 новых моделей: `ForecastSnapshot` (4.6), `KnowledgeRiskSnapshot` (6.1), `RecurringTopic` (6.2), `PromiseNetworkSnapshot` (6.5), `PersonGoalContribution` (6.6, unique по tenant+person+goal+week), `KnowledgeVelocitySnapshot` (6.7).
+- +6 новых моделей: `ForecastSnapshot` (4.6), `KnowledgeRiskSnapshot` (6.1), `RecurringTopic` (6.2), ~~`PromiseNetworkSnapshot` (6.5)~~ _(дропается миграцией `20260701000000_drop_commitment_social_layer`, 2026-07-01)_, `PersonGoalContribution` (6.6, unique по tenant+person+goal+week), `KnowledgeVelocitySnapshot` (6.7).
 - +5 новых полей в существующих: `Meeting.roiScore/roiScoreAt` (6.3, Decimal(8,3) — не 4,3 как в ТЗ §4.1, защита от переполнения), `Decision.reversibility/reversibilityAt` (6.8).
 - +1 enum value: `MembershipRole.hr_partner` (4.7).
 - Все nullable/defaulted — без data-loss.
@@ -3138,8 +3508,8 @@ docker compose run --rm smoke
   curl -i -X POST ... /api/v1/concierge/chat \
        -d '{"message":"что с Иваном"}'  # должен вызвать get_person_pulse
 
-  # 6. Cron-агенты зарегистрированы:
-  docker compose logs backend | grep -E 'Forecaster|BusFactorAnalyzer|TopicRecurrence|PromiseNetwork|GoalVectorTracker|KnowledgeVelocity'
+  # 6. Cron-агенты зарегистрированы (PromiseNetwork снесён 2026-07-01 — исключён):
+  docker compose logs backend | grep -E 'Forecaster|BusFactorAnalyzer|TopicRecurrence|GoalVectorTracker|KnowledgeVelocity'
   # Также после Mon 05:00 UTC — увидеть «проход завершён» от каждого.
 
   # 7. Frontend:

@@ -753,19 +753,12 @@ describe('MeTasksService.resolveOpenTaskByName', () => {
 });
 
 describe('MeTasksService.completeTask', () => {
-  it('(а) пустой note + gate ON → probe completion_detail_missing, кандидат НЕ создан, needsDetail', async () => {
+  it('(а) пустой note + gate ON → inline needs_detail, probe НЕ шлётся, кандидат НЕ создан', async () => {
     const h = buildResolveHarness();
     h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
     const res = await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
 
-    expect(h.probeSuggest).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reason: 'task.completion_detail_missing',
-        emittedByService: 'me-tasks-complete',
-        recipientCandidates: [USER],
-        payload: expect.objectContaining({ contextCardId: 'i1', contextCardKind: 'issue' }),
-      }),
-    );
+    expect(h.probeSuggest).not.toHaveBeenCalled();
     expect(h.closureUpsert).not.toHaveBeenCalled();
     expect(res).toEqual({
       candidateId: null,
@@ -819,7 +812,7 @@ describe('MeTasksService.completeTask', () => {
     });
   });
 
-  it('(б2) конкретный note + LLM verdict.done=false → недостаточно, probe + needsDetail', async () => {
+  it('(б2) конкретный note + LLM verdict.done=false → недостаточно, inline needsDetail без probe', async () => {
     const h = buildResolveHarness({
       llmCall: vi.fn(async () => ({
         text: JSON.stringify({
@@ -837,9 +830,7 @@ describe('MeTasksService.completeTask', () => {
       TENANT,
       USER,
     );
-    expect(h.probeSuggest).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'task.completion_detail_missing' }),
-    );
+    expect(h.probeSuggest).not.toHaveBeenCalled();
     expect(h.closureUpsert).not.toHaveBeenCalled();
     expect(res.needsDetail).toBe(true);
     expect(res.candidateId).toBeNull();
@@ -928,6 +919,89 @@ describe('MeTasksService.completeTask', () => {
       h.service.completeTask({ taskName: 'отчёт' }, TENANT, USER),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(h.closureUpsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeTasksService — оба контура помощника идут через дедуп-гейт (TZ task-dedup WP-J)', () => {
+  function build(): {
+    service: MeTasksService;
+    issuesCreate: ReturnType<typeof vi.fn>;
+  } {
+    const issuesCreate = vi.fn(async () => makeIssueResponse({}));
+    const prisma = {
+      issueState: { findUnique: vi.fn(async () => ({ category: 'backlog' })) },
+      issue: {
+        findUnique: vi.fn(async () => ({
+          id: 'issue_1',
+          tenantId: TENANT,
+          identifier: 'INB-1',
+          title: 'Задача',
+          description: null,
+          projectId: INBOX,
+          stateId: 'state_backlog',
+          dueDate: null,
+        })),
+      },
+    } as unknown as PrismaService;
+    const issues = { create: issuesCreate } as unknown as IssuesService;
+    const projects = { ensureInboxProjectId: vi.fn(async () => INBOX) } as unknown as ProjectsService;
+    const resolver = {
+      resolve: vi.fn(async () => ({
+        kind: 'resolved',
+        userId: 'assignee_1',
+        name: 'Айназ',
+        via: 'name',
+      })),
+    } as unknown as AssigneeResolverService;
+    const emitter = {
+      emitIssueAssigneeChanged: vi.fn(),
+    } as unknown as TrackerEmitterService;
+    const skillRouting = {
+      suggestAssignee: vi.fn(async () => []),
+    } as unknown as SkillRoutingService;
+    const metrics = {
+      incRoutingSuggestionAccepted: vi.fn(),
+      incTaskAssigneeClarify: vi.fn(),
+    } as unknown as BusinessMetricsService;
+    const progressUpdates = { create: vi.fn() } as unknown as ProgressUpdatesService;
+    const probe = { suggest: vi.fn(async () => ({ ok: true, probeEventId: 'probe_1' })) } as unknown as ProbeService;
+    const cfg = makeCfg();
+
+    const service = new MeTasksService(
+      prisma,
+      issues,
+      projects,
+      resolver,
+      emitter,
+      skillRouting,
+      metrics,
+      progressUpdates,
+      probe,
+      cfg,
+    );
+    return { service, issuesCreate };
+  }
+
+  it('createSelfTask → issues.create вызван БЕЗ skipDedup (гейт срабатывает)', async () => {
+    const { service, issuesCreate } = build();
+    await service.createSelfTask({ title: 'Позвонить клиенту' }, TENANT, USER);
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    const [, dtoArg] = issuesCreate.mock.calls[0] as [string, Record<string, unknown>, string, string];
+    expect(dtoArg).not.toHaveProperty('skipDedup');
+  });
+
+  it('assignTask → issues.create вызван БЕЗ skipDedup (гейт срабатывает)', async () => {
+    const { service, issuesCreate } = build();
+    await service.assignTask(
+      { title: 'Протестировать бота', assigneeName: 'Айназ', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    const [, dtoArg] = issuesCreate.mock.calls[0] as [string, Record<string, unknown>, string, string];
+    expect(dtoArg).not.toHaveProperty('skipDedup');
   });
 });
 

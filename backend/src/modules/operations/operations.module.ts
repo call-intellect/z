@@ -13,37 +13,33 @@ import { MyCheckInsController } from './controllers/my-check-ins.controller';
 import { MyCustomerRiskController } from './controllers/my-customer-risk.controller';
 import { MyDailyBriefController } from './controllers/my-daily-brief.controller';
 import { MyDailyValueController } from './controllers/my-daily-value.controller';
-import { MyPromisesController } from './controllers/my-promises.controller';
 import { MyWeeklyPerPersonController } from './controllers/my-weekly-per-person.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
 import { PersonalRelationsController } from './controllers/personal-relations.controller';
 import { WeeklyDigestController } from './controllers/weekly-digest.controller';
 import { WeeklyPerPersonController } from './controllers/weekly-per-person.controller';
 import { BlockerSynthesisService } from './services/blocker-synthesis.service';
+import { CheckinExpectationService } from './services/checkin-expectation.service';
 import { CheckinIngestService } from './services/checkin-ingest.service';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
-import { CommitmentResponseHandler } from './services/commitment-response.handler';
-import { CommitmentsService } from './services/commitments.service';
+import { ClosureVerifierService } from './services/closure-verifier.service';
 import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
 import { DailyDigestService } from './services/daily-digest.service';
-import { DaySignalAggregatorService } from './services/day-signal-aggregator.service';
-import { DaySignalDetectorService } from './services/day-signal-detector.service';
-import { DaySignalExtractorService } from './services/day-signal-extractor.service';
-import { DecisionImplementationService } from './services/decision-implementation.service';
+import { DayReportCollectorService } from './services/day-report-collector.service';
+import { GoalCascadeHandler } from './services/goal-cascade.handler';
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
 import { KnowsWhoService } from './services/knows-who.service';
 import { MonthlyDigestService } from './services/monthly-digest.service';
 import { OnboardingRampService } from './services/onboarding-ramp.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
+import { PersonRefResolverService } from './services/person-ref-resolver.service';
 import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
 import { PersonalRelationService } from './services/personal-relation.service';
 import { PortfolioHealthService } from './services/portfolio-health.service';
-import { PromiseCascadeService } from './services/promise-cascade.service';
-import { PromiseNetworkService } from './services/promise-network.service';
-import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
+import { SelfPersonResolverService } from './services/self-person-resolver.service';
 import { TaskCompletionHandler } from './services/task-completion.handler';
 import { TaskReconcileService } from './services/task-reconcile.service';
 import { TeamCapacityService } from './services/team-capacity.service';
@@ -55,11 +51,9 @@ import { ChannelBindingCampaignCron } from './workers/channel-binding-campaign.c
 import { CheckinGraphIngestListener } from './workers/checkin-graph-ingest.listener';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
 import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
-import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
-import { DaySignalAggregatorCron } from './workers/day-signal-aggregator.cron';
-import { DecisionImplementationCron } from './workers/decision-implementation.cron';
+import { DayReportCollectorCron } from './workers/day-report-collector.cron';
 import { ExecMorningPushCron } from './workers/exec-morning-push.cron';
 import { MeetingCheckinListener } from './workers/meeting-checkin.listener';
 import { KnowledgeAtRiskCron } from './workers/knowledge-at-risk.cron';
@@ -70,7 +64,6 @@ import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.c
 import { PersonalDailyBriefCron } from './workers/personal-daily-brief.cron';
 import { CheckInConflictDetectorCron } from './workers/personal-relation-builder.worker';
 import { PortfolioHealthSnapshotCron } from './workers/portfolio-health-snapshot.cron';
-import { PromiseCascadeCron } from './workers/promise-cascade.cron';
 import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer.cron';
 import { TaskReconcileCron } from './workers/task-reconcile.cron';
 import { ValueRecapCron } from './workers/value-recap.cron';
@@ -90,7 +83,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     PersonalRelationsController,
     WeeklyDigestController,
     WeeklyPerPersonController,
-    MyPromisesController,
     DailyDigestController,
     MyCustomerRiskController,
     MyDailyBriefController,
@@ -100,14 +92,15 @@ import { ValueRecapCron } from './workers/value-recap.cron';
   ],
   providers: [
     DailyCheckInService,
-    DaySignalDetectorService,
-    DaySignalExtractorService,
-    DaySignalAggregatorService,
-    DaySignalAggregatorCron,
+    DayReportCollectorService,
+    DayReportCollectorCron,
+    CheckinExpectationService,
+    ClosureVerifierService,
     MeetingCheckinListener,
     OperationsDashboardService,
     PersonalRelationService,
     GoalCascadeService,
+    GoalCascadeHandler,
     CheckinParserService,
     CheckinResponseHandler,
     CheckinIngestService,
@@ -120,20 +113,13 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     OperationsMonthlyDigestCron,
     CheckinSentimentAnalyzerWorker,
     CheckinSentimentBatchCron,
-    CommitmentsService,
-    Specialist39PromiseKeeperService,
-    CommitmentFollowupCron,
-    CommitmentResponseHandler,
+    SelfPersonResolverService,
+    PersonRefResolverService,
     // TZ task-dedup (2026-06-16, Ф2) — петля «разговор → кандидат на закрытие
-    // задачи». Зеркало CommitmentResponseHandler: @OnEvent('task.completion_signalled'),
+    // задачи». @OnEvent('task.completion_signalled'),
     // семантический матч открытой Issue + LLM-верификатор → обратимый
     // TaskClosureCandidate (авто-закрытие запрещено, R13).
     TaskCompletionHandler,
-    // TZ task-dedup (2026-06-16, Ф3) — суточный reconcile петли закрытия:
-    // протухание pending-кандидатов + пересчёт reopen-rate (метрика
-    // task_closure_reopen_rate + WARN-алёрт) + подбор пропущенных событием
-    // матчей (переэмит). Образец — DecisionImplementationCron (per-Org @Cron +
-    // condition-UPDATE, БЕЗ LLM). Kill-switch taskReconcile.enabled (ON).
     TaskReconcileService,
     TaskReconcileCron,
     // SBA β-8.3 — ежедневный отчёт COO.
@@ -150,10 +136,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     ExecMorningPushCron,
     BlockerSynthesisService,
     BlockerSynthesisCron,
-    DecisionImplementationService,
-    DecisionImplementationCron,
-    PromiseCascadeService,
-    PromiseCascadeCron,
     KnowledgeAtRiskService,
     KnowledgeAtRiskCron,
     TeamCapacityService,
@@ -163,10 +145,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     ValueRecapCron,
     PortfolioHealthService,
     PortfolioHealthSnapshotCron,
-    // ТЗ coo-orphan-agents Ф7 — перегруз ответственностью: read-сервис над
-    // последним PromiseNetworkSnapshot (accumulators). Endpoint
-    // /dashboard/operations/promise-network. Снапшот пишет PromiseNetworkAnalyzerCron.
-    PromiseNetworkService,
   ],
   exports: [
     GoalCascadeService,
@@ -176,22 +154,19 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     CheckinParserService,
     WeeklyDigestService,
     MonthlyDigestService,
-    CommitmentsService,
-    Specialist39PromiseKeeperService,
+    SelfPersonResolverService,
+    PersonRefResolverService,
     DailyDigestService,
     CustomerRiskRadarService,
     PersonalDailyBriefService,
     KnowsWhoService,
     BlockerSynthesisService,
-    DecisionImplementationService,
-    PromiseCascadeService,
     KnowledgeAtRiskService,
     TeamCapacityService,
     OnboardingRampService,
     ValueRecapService,
     PortfolioHealthService,
-    // ТЗ coo-orphan-agents Ф7 — экспортируем для тестов / reuse.
-    PromiseNetworkService,
+    DayReportCollectorService,
   ],
 })
 export class OperationsModule {}

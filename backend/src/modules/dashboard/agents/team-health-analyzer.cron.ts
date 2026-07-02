@@ -161,18 +161,12 @@ export class TeamHealthAnalyzerCron {
   }
 
   private formatTeamFacts(team: TeamHealthRowDto): string {
-    const promisesDelta =
-      team.promises.delta === null || team.promises.delta === undefined
-        ? 'нет данных'
-        : `${team.promises.delta > 0 ? '+' : ''}${team.promises.delta}%`;
     return [
       `Команда «${team.departmentName}», размер ${team.size} человек.`,
       ``,
       `Сводка за 14 дней:`,
       `- Sentiment (настроение): индекс ${team.sentiment.value} (-100..+100), тон ${team.sentiment.tone}.`,
-      `- Обещания (надёжность): ${team.promises.value}%, тон ${team.promises.tone}, изменение к прошлым 14 дням: ${promisesDelta}.`,
       `- Конфликты: ${team.conflicts.value} пар, тон ${team.conflicts.tone}.`,
-      `- Решения: ${team.decisions.value} (placeholder, per-dept ещё не считаем).`,
     ].join('\n');
   }
 

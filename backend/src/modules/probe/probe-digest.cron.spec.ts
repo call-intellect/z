@@ -155,7 +155,7 @@ describe('ProbeDigestCron.collectAndSend', () => {
       rowsByCall: [
         [
           makeRow({ id: 'q1', reason: 'idea.status_unclear' }),
-          makeRow({ id: 'n1', reason: 'commitment.followup', priority: 60 }),
+          makeRow({ id: 'n1', reason: 'card.missing_deadline', priority: 60 }),
         ],
       ],
     });

@@ -11,7 +11,6 @@ export class KieService {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly retryDelaysMs = [500, 1000, 2000];
-  private readonly timeoutMs = 60_000;
 
   constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {
     this.apiKey = this.cfg.ai.kie.apiKey;
@@ -183,7 +182,7 @@ export class KieService {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeoutMs),
+      signal: AbortSignal.timeout(this.cfg.ai.kie.timeoutMs),
     });
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');

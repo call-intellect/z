@@ -38,16 +38,12 @@ export interface DailyBriefDto {
   id: string | null;
   dateLocal: string;
   myTasks: DailyBriefItemDto[];
-  myPromises: DailyBriefItemDto[];
   myBlockers: DailyBriefItemDto[];
-  promisedToMe: DailyBriefItemDto[];
   hint: string;
   knowsWho: DailyBriefKnowsWhoDto | null;
   counts: {
     tasks: number;
-    promises: number;
     blockers: number;
-    promisedToMe: number;
   };
   deliveredAt: string | null;
   openedAt: string | null;
@@ -85,9 +81,7 @@ export function toDailyBriefDto(args: {
     id: args.id,
     dateLocal: p.dateLocal,
     myTasks: p.myTasks.map(mapItem),
-    myPromises: p.myPromises.map(mapItem),
     myBlockers: p.myBlockers.map(mapItem),
-    promisedToMe: p.promisedToMe.map(mapItem),
     hint: p.hint,
     knowsWho: mapKnowsWho(p.knowsWho),
     counts: p.counts,
@@ -101,12 +95,10 @@ export function emptyDailyBriefDto(dateLocal: string): DailyBriefDto {
     id: null,
     dateLocal,
     myTasks: [],
-    myPromises: [],
     myBlockers: [],
-    promisedToMe: [],
     hint: '',
     knowsWho: null,
-    counts: { tasks: 0, promises: 0, blockers: 0, promisedToMe: 0 },
+    counts: { tasks: 0, blockers: 0 },
     deliveredAt: null,
     openedAt: null,
   };

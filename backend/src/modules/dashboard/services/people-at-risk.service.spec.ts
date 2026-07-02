@@ -4,20 +4,16 @@ import type { TypedConfigService } from '../../../common/config';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 
-import type { CommitmentReliabilityService } from './commitment-reliability.service';
 import {
   PeopleAtRiskService,
   type PeopleAtRiskThresholds,
   computeMoodPenalty,
-  computeOverduePenalty,
   computePulseScore,
   computeTopReason,
   parseRiskFlags,
 } from './people-at-risk.service';
 
 const DEFAULTS: PeopleAtRiskThresholds = {
-  overduePenaltyPerItem: 8,
-  overduePenaltyCap: 30,
   redMoodShareThreshold: 0.34,
   redMoodPenalty: 15,
   riskThreshold: 60,
@@ -39,9 +35,6 @@ interface CheckInSeed {
 
 function makeCfg(overrides: Partial<PeopleAtRiskThresholds> = {}): TypedConfigService {
   const map: Record<string, number> = {
-    'peopleAtRisk.overduePenaltyPerItem':
-      overrides.overduePenaltyPerItem ?? DEFAULTS.overduePenaltyPerItem,
-    'peopleAtRisk.overduePenaltyCap': overrides.overduePenaltyCap ?? DEFAULTS.overduePenaltyCap,
     'peopleAtRisk.redMoodShareThreshold':
       overrides.redMoodShareThreshold ?? DEFAULTS.redMoodShareThreshold,
     'peopleAtRisk.redMoodPenalty': overrides.redMoodPenalty ?? DEFAULTS.redMoodPenalty,
@@ -60,16 +53,6 @@ function makeRedis(): RedisService {
       set: async () => 'OK',
     },
   } as unknown as RedisService;
-}
-
-function makeReliability(
-  overdueByPerson: Record<string, number> = {},
-): CommitmentReliabilityService {
-  return {
-    computeReliability: async (args: { scopeId?: string }) => ({
-      overdue: overdueByPerson[args.scopeId ?? ''] ?? 0,
-    }),
-  } as unknown as CommitmentReliabilityService;
 }
 
 function makePrisma(opts: {
@@ -113,16 +96,10 @@ function makeService(opts: {
   persons: PersonSeed[];
   departments?: Array<{ id: string; name: string }>;
   checkIns?: CheckInSeed[];
-  overdueByPerson?: Record<string, number>;
   thresholds?: Partial<PeopleAtRiskThresholds>;
   viewerPersonByUserId?: Record<string, string>;
 }): PeopleAtRiskService {
-  return new PeopleAtRiskService(
-    makePrisma(opts),
-    makeRedis(),
-    makeCfg(opts.thresholds),
-    makeReliability(opts.overdueByPerson),
-  );
+  return new PeopleAtRiskService(makePrisma(opts), makeRedis(), makeCfg(opts.thresholds));
 }
 
 const NOW = new Date('2026-06-05T12:00:00.000Z');
@@ -146,13 +123,7 @@ describe('parseRiskFlags (терпимый парсинг)', () => {
   });
 });
 
-describe('computeOverduePenalty / computeMoodPenalty', () => {
-  it('overdue штраф с cap (overdue=10, perItem=8, cap=30 → 30)', () => {
-    expect(computeOverduePenalty(10, DEFAULTS)).toBe(30);
-  });
-  it('overdue ниже cap (overdue=2 → 16)', () => {
-    expect(computeOverduePenalty(2, DEFAULTS)).toBe(16);
-  });
+describe('computeMoodPenalty', () => {
   it('mood: redShare>=threshold → penalty; иначе 0', () => {
     expect(computeMoodPenalty(0.34, DEFAULTS)).toBe(15);
     expect(computeMoodPenalty(0.5, DEFAULTS)).toBe(15);
@@ -162,24 +133,16 @@ describe('computeOverduePenalty / computeMoodPenalty', () => {
 
 describe('computePulseScore', () => {
   it('engagementScore=null → base=50', () => {
-    expect(
-      computePulseScore({ engagementScore: null, overdue14d: 0, redShare30d: 0 }, DEFAULTS),
-    ).toBe(50);
+    expect(computePulseScore({ engagementScore: null, redShare30d: 0 }, DEFAULTS)).toBe(50);
   });
   it('0.30 без штрафов → 30', () => {
-    expect(
-      computePulseScore({ engagementScore: 0.3, overdue14d: 0, redShare30d: 0 }, DEFAULTS),
-    ).toBe(30);
+    expect(computePulseScore({ engagementScore: 0.3, redShare30d: 0 }, DEFAULTS)).toBe(30);
   });
-  it('штрафы вычитаются и зажимаются в 0 (0.30 − 30 − 15 = clamp(-15)→0)', () => {
-    expect(
-      computePulseScore({ engagementScore: 0.3, overdue14d: 10, redShare30d: 0.5 }, DEFAULTS),
-    ).toBe(0);
+  it('штраф настроения зажимается в 0 (0.10 − 15 = clamp(-5)→0)', () => {
+    expect(computePulseScore({ engagementScore: 0.1, redShare30d: 0.5 }, DEFAULTS)).toBe(0);
   });
   it('red-mood штраф применён (0.62 − 15 = 47)', () => {
-    expect(
-      computePulseScore({ engagementScore: 0.62, overdue14d: 0, redShare30d: 0.4 }, DEFAULTS),
-    ).toBe(47);
+    expect(computePulseScore({ engagementScore: 0.62, redShare30d: 0.4 }, DEFAULTS)).toBe(47);
   });
 });
 
@@ -193,28 +156,14 @@ describe('computeTopReason', () => {
             { type: 'workload_overload', severity: 'high' },
           ],
         },
-        overdue14d: 5,
-        penOverdue: 30,
         penMood: 15,
       }),
     ).toBe('Признаки перегрузки — обсудите нагрузку');
-  });
-  it('неизвестный тип флага → падаем дальше по приоритету (на штраф просрочек)', () => {
-    expect(
-      computeTopReason({
-        riskFlagsJson: { flags: [{ type: 'unknown_x', severity: 'high' }] },
-        overdue14d: 3,
-        penOverdue: 24,
-        penMood: 0,
-      }),
-    ).toBe('3 просроченных обещаний — помогите расставить приоритеты');
   });
   it('нет флагов, есть штраф настроения → причина про настроение', () => {
     expect(
       computeTopReason({
         riskFlagsJson: null,
-        overdue14d: 0,
-        penOverdue: 0,
         penMood: 15,
       }),
     ).toBe('Настроение проседает — стоит спросить, как дела');
@@ -223,8 +172,6 @@ describe('computeTopReason', () => {
     expect(
       computeTopReason({
         riskFlagsJson: null,
-        overdue14d: 0,
-        penOverdue: 0,
         penMood: 0,
       }),
     ).toBe('Вовлечённость ниже обычного — повод для короткого 1:1');
@@ -271,19 +218,6 @@ describe('PeopleAtRiskService.getAtRisk', () => {
     expect(res.items[0]!.pulseScore).toBe(50);
   });
 
-  it('overdue штраф с cap: высокий engagement, но 10 просрочек → под риском', async () => {
-    const svc = makeService({
-      persons: [{ id: 'p1', name: 'A', engagementScore: 0.85 }],
-      overdueByPerson: { p1: 10 },
-    });
-    const res = await svc.compute({ tenantId: 't1', limit: 3 }, NOW);
-    expect(res.items).toHaveLength(1);
-    expect(res.items[0]!.pulseScore).toBe(55);
-    expect(res.items[0]!.topReason).toBe(
-      '10 просроченных обещаний — помогите расставить приоритеты',
-    );
-  });
-
   it('red-mood: доля красных >= порога → penMood применён', async () => {
     const svc = makeService({
       persons: [{ id: 'p1', name: 'A', engagementScore: 0.62 }],
@@ -312,7 +246,6 @@ describe('PeopleAtRiskService.getAtRisk', () => {
           },
         },
       ],
-      overdueByPerson: { p1: 5 },
     });
     const res = await svc.compute({ tenantId: 't1', limit: 3 }, NOW);
     expect(res.items[0]!.topReason).toBe('Признаки перегрузки — обсудите нагрузку');

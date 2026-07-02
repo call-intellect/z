@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type IdeaBlock,
@@ -14,12 +16,14 @@ import {
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import { EmbeddingFallbackService } from '../../embeddings/services/embedding-fallback.service';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
 import { LogService } from '../../logging/log.service';
 import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 import { ProbeService } from '../../probe/probe.service';
 import { AssigneeResolverService } from '../../tracker/services/assignee-resolver.service';
 import { IntakeAutoTriageQueueService } from '../../tracker/services/intake-auto-triage-queue.service';
+import { IntakeIssueSimilarService } from '../../tracker/services/intake-issue-similar.service';
 import { TaskDedupService } from '../../tracker/services/task-dedup.service';
 import {
   TASK_EXTRACT_JSON_SCHEMA,
@@ -72,6 +76,12 @@ export class Specialist315TasksService {
     @Optional()
     @Inject(TaskDedupService)
     private readonly taskDedup?: TaskDedupService,
+    @Optional()
+    @Inject(EmbeddingFallbackService)
+    private readonly embeddings?: EmbeddingFallbackService,
+    @Optional()
+    @Inject(IntakeIssueSimilarService)
+    private readonly intakeSimilar?: IntakeIssueSimilarService,
   ) {}
 
   private isPromptInjectionGuardEnabled(): boolean {
@@ -178,6 +188,36 @@ export class Specialist315TasksService {
       }
     }
 
+    const dedupText = buildIntakeDedupText(draft.title, draft.sourceQuote);
+    let dedupVecLiteral: string | null = null;
+    let dedupHash: string | null = null;
+    if (
+      linkSemantics === 'link' &&
+      this.embeddings &&
+      this.intakeSimilar &&
+      dedupText.length > 0
+    ) {
+      try {
+        const vectors = await this.embeddings.embed([dedupText]);
+        const vec = vectors[0];
+        if (vec && vec.length > 0) {
+          dedupVecLiteral = `[${vec.join(',')}]`;
+          dedupHash = sha256Hex(dedupText);
+        }
+      } catch (err) {
+        this.logger.debug(
+          {
+            blockId: block.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-15: KNN-эмбеддинг не построен — деградация до exact-дедупа',
+        );
+      }
+    }
+    const dedupThreshold = this.cfg
+      ? await this.cfg.getDynamic<number>('tracker.intakeDedupThreshold', undefined, 0.15)
+      : 0.15;
+
     let created: CreateOutcome;
     try {
       created = await this.prisma.$transaction(async (tx) => {
@@ -222,6 +262,20 @@ export class Specialist315TasksService {
           if (pendingDup) {
             return { kind: 'dedup_pending', intakeIssueId: pendingDup.id };
           }
+          if (dedupVecLiteral && this.intakeSimilar) {
+            const similar = await this.intakeSimilar.findSimilarByVector({
+              tenantId: block.tenantId,
+              embedding: dedupVecLiteral,
+              threshold: dedupThreshold,
+            });
+            if (similar.length > 0) {
+              return {
+                kind: 'dedup_pending_semantic',
+                intakeIssueId: similar[0]!.intakeIssueId,
+                distance: similar[0]!.distance,
+              };
+            }
+          }
         }
         const issue = await tx.intakeIssue.create({
           data: {
@@ -247,6 +301,15 @@ export class Specialist315TasksService {
           },
           select: { id: true },
         });
+        if (dedupVecLiteral && dedupHash) {
+          await tx.$executeRawUnsafe(
+            'UPDATE "IntakeIssue" SET embedding = $1::vector(1536), "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
+            dedupVecLiteral,
+            dedupHash,
+            issue.id,
+            block.tenantId,
+          );
+        }
         return { kind: 'created', intakeIssueId: issue.id };
       });
     } catch (err) {
@@ -308,6 +371,36 @@ export class Specialist315TasksService {
       return;
     }
 
+    if (created.kind === 'dedup_pending_semantic') {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: Specialist315TasksService.SPECIALIST_NAME,
+        reason: 'dedup_pending_intake_semantic',
+      });
+      this.logger.debug(
+        {
+          blockId: block.id,
+          intakeIssueId: created.intakeIssueId,
+          distance: created.distance,
+        },
+        'specialist-3-15: семантический дубль pending IntakeIssue (KNN) — skip',
+      );
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-15-tasks',
+        action: 'skipped',
+        message: `семантический дубль pending IntakeIssue ${created.intakeIssueId} (KNN) — skip`,
+        orgId: block.tenantId,
+        details: {
+          type: METRIC_TYPE,
+          entityId: created.intakeIssueId,
+          blockId: block.id,
+          source,
+        },
+      });
+      return;
+    }
+
     const intakeIssueId = created.intakeIssueId;
     this.metrics.incCoreSpecialistCards({ type: METRIC_TYPE, status: 'pending' });
     this.logs.write({
@@ -325,30 +418,46 @@ export class Specialist315TasksService {
       },
     });
 
-    if (
-      suggestedAssigneeId == null &&
-      this.cfg?.tracker.assigneeClarifyEnabled &&
-      this.probe
-    ) {
+    if (this.probe && (suggestedAssigneeId == null || dueDate == null)) {
       try {
-        const recipient = await this.resolveProbeRecipient(block.tenantId);
+        const recipient = await this.resolveSetterRecipient(block, draft);
         if (recipient) {
-          await this.probe.suggest({
-            tenantId: block.tenantId,
-            emittedByService: 'specialist-3-15-tasks',
-            reason: 'task.assignee_unresolved',
-            payload: {
-              contextCardId: intakeIssueId,
-              contextCardKind: 'intake_issue',
-              contextCardTitle: draft.title,
-              objectName: draft.title,
-              objectKindRu: 'задача',
-              message: `Из ${channel ?? 'внешнего'}-сообщения извлечена задача «${draft.title}», но не определён исполнитель.`,
-              suggestedQuestion: `Кому поручить задачу «${draft.title}»?`,
-            },
-            recipientCandidates: [recipient],
-            priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
-          });
+          if (suggestedAssigneeId == null && this.cfg?.tracker.assigneeClarifyEnabled) {
+            await this.probe.suggest({
+              tenantId: block.tenantId,
+              emittedByService: 'specialist-3-15-tasks',
+              reason: 'task.assignee_unresolved',
+              payload: {
+                contextCardId: intakeIssueId,
+                contextCardKind: 'intake_issue',
+                contextCardTitle: draft.title,
+                objectName: draft.title,
+                objectKindRu: 'задача',
+                message: `Из ${channel ?? 'внешнего'}-сообщения извлечена задача «${draft.title}», но не определён исполнитель.`,
+                suggestedQuestion: `Кому поручить задачу «${draft.title}»?`,
+              },
+              recipientCandidates: [recipient],
+              priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+            });
+          } else if (dueDate == null && this.cfg?.tracker.dueDateClarifyEnabled) {
+            await this.probe.suggest({
+              tenantId: block.tenantId,
+              emittedByService: 'specialist-3-15-tasks',
+              reason: 'task.due_date_missing',
+              payload: {
+                contextCardId: intakeIssueId,
+                contextCardKind: 'intake_issue',
+                contextCardTitle: draft.title,
+                objectName: draft.title,
+                objectKindRu: 'задача',
+                message: `Из ${channel ?? 'внешнего'}-сообщения извлечена задача «${draft.title}», но не указан срок.`,
+                suggestedQuestion: `К какому сроку нужно сделать «${draft.title}»?`,
+                sourceOccurredAtIso: block.evidence[0]?.sourceTimestamp?.toISOString(),
+              },
+              recipientCandidates: [recipient],
+              priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+            });
+          }
         }
       } catch {
         // best-effort
@@ -544,6 +653,39 @@ export class Specialist315TasksService {
     return '';
   }
 
+  private pickSetterAuthorPersonId(
+    block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
+    draft: TaskDraft,
+  ): string | null {
+    const sourceQuote = (draft.sourceQuote ?? '').trim();
+    if (sourceQuote) {
+      const matched = block.evidence.find(
+        (e) =>
+          !!e.authorPersonId &&
+          !!e.quote &&
+          (e.quote.includes(sourceQuote) || sourceQuote.includes(e.quote)),
+      );
+      if (matched?.authorPersonId) return matched.authorPersonId;
+    }
+    const firstWithAuthor = block.evidence.find((e) => !!e.authorPersonId);
+    return firstWithAuthor?.authorPersonId ?? null;
+  }
+
+  private async resolveSetterRecipient(
+    block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
+    draft: TaskDraft,
+  ): Promise<string | null> {
+    const authorPersonId = this.pickSetterAuthorPersonId(block, draft);
+    if (authorPersonId) {
+      const person = await this.prisma.person.findFirst({
+        where: { tenantId: block.tenantId, id: authorPersonId, userId: { not: null } },
+        select: { userId: true },
+      });
+      if (person?.userId) return person.userId;
+    }
+    return this.resolveProbeRecipient(block.tenantId);
+  }
+
   private async resolveProbeRecipient(tenantId: string): Promise<string | null> {
     const owner = await this.prisma.membership.findFirst({
       where: { orgId: tenantId, role: 'owner' },
@@ -559,12 +701,132 @@ export class Specialist315TasksService {
     });
     return anyMember?.userId ?? null;
   }
+
+  async runClarifySweep(
+    now: Date = new Date(),
+  ): Promise<{ orgsScanned: number; probed: number }> {
+    if (!this.probe || !this.cfg) return { orgsScanned: 0, probed: 0 };
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'tracker.taskClarifySweep.enabled',
+      undefined,
+      true,
+    );
+    if (!enabled) return { orgsScanned: 0, probed: 0 };
+    const minAgeHours = await this.cfg.getDynamic<number>(
+      'tracker.taskClarifySweep.minAgeHours',
+      undefined,
+      20,
+    );
+    const cutoff = new Date(now.getTime() - minAgeHours * 3600_000);
+    const orgs = await this.prisma.org.findMany({
+      where: { deletedAt: null },
+      select: { id: true },
+      take: 5_000,
+    });
+    let probed = 0;
+    for (const org of orgs) {
+      const intakes = await this.prisma.intakeIssue.findMany({
+        where: {
+          tenantId: org.id,
+          status: 'pending',
+          createdAt: { lt: cutoff },
+          OR: [{ suggestedAssigneeId: null }, { suggestedDueDate: null }],
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          extractedTitle: true,
+          extractedDescription: true,
+          suggestedAssigneeId: true,
+          suggestedDueDate: true,
+          sourceBlockIds: true,
+        },
+        take: 200,
+      });
+      for (const intake of intakes) {
+        try {
+          const setter = await this.resolveSetterRecipientFromIntake(intake);
+          const recipient = setter.recipient;
+          if (!recipient) continue;
+          const title = intake.extractedTitle ?? 'задача';
+          const askAssignee = intake.suggestedAssigneeId == null;
+          const res = await this.probe.suggest({
+            tenantId: intake.tenantId,
+            emittedByService: 'specialist-3-15-tasks-sweep',
+            reason: askAssignee ? 'task.assignee_unresolved' : 'task.due_date_missing',
+            payload: {
+              contextCardId: intake.id,
+              contextCardKind: 'intake_issue',
+              contextCardTitle: title,
+              objectName: title,
+              objectKindRu: 'задача',
+              message: askAssignee
+                ? `У задачи «${title}» из недавнего разговора так и не определён исполнитель.`
+                : `У задачи «${title}» из недавнего разговора так и не указан срок.`,
+              suggestedQuestion: askAssignee
+                ? `Кому поручить задачу «${title}»?`
+                : `К какому сроку нужно сделать «${title}»?`,
+              ...(askAssignee
+                ? {}
+                : { sourceOccurredAtIso: setter.sourceOccurredAtIso }),
+            },
+            recipientCandidates: [recipient],
+            priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+          });
+          if (!('dropped' in res)) probed++;
+        } catch {
+          // best-effort: одна задача не валит проход
+        }
+      }
+    }
+    return { orgsScanned: orgs.length, probed };
+  }
+
+  private async resolveSetterRecipientFromIntake(intake: {
+    tenantId: string;
+    extractedDescription: string | null;
+    sourceBlockIds: string[];
+  }): Promise<{ recipient: string | null; sourceOccurredAtIso: string | undefined }> {
+    const blockId = intake.sourceBlockIds[0];
+    if (blockId) {
+      const block = await this.prisma.ideaBlock.findUnique({
+        where: { id_tenantId: { id: blockId, tenantId: intake.tenantId } },
+        include: {
+          evidence: { orderBy: { sourceTimestamp: { sort: 'asc', nulls: 'last' } } },
+        },
+      });
+      if (block) {
+        const draft = { sourceQuote: intake.extractedDescription ?? '' } as TaskDraft;
+        return {
+          recipient: await this.resolveSetterRecipient(block, draft),
+          sourceOccurredAtIso: block.evidence[0]?.sourceTimestamp?.toISOString(),
+        };
+      }
+    }
+    return {
+      recipient: await this.resolveProbeRecipient(intake.tenantId),
+      sourceOccurredAtIso: undefined,
+    };
+  }
 }
 
 type CreateOutcome =
   | { kind: 'linked'; issueId: string }
   | { kind: 'dedup_pending'; intakeIssueId: string }
+  | { kind: 'dedup_pending_semantic'; intakeIssueId: string; distance: number }
   | { kind: 'created'; intakeIssueId: string };
+
+function buildIntakeDedupText(title: string, sourceQuote: string): string {
+  const t = title.trim();
+  const desc = (sourceQuote ?? '').trim();
+  if (t.length === 0 && desc.length === 0) return '';
+  if (desc.length === 0) return t;
+  return `${t}\n\n${desc}`;
+}
+
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
 
 interface RawTaskDraft {
   isTask?: boolean;

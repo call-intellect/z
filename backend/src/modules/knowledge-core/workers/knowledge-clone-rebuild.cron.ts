@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
+import { canonicalizeEntityIds } from '../services/entity-companion.helpers';
 
 @Injectable()
 export class KnowledgeCloneRebuildCron {
@@ -70,9 +71,11 @@ export class KnowledgeCloneRebuildCron {
         .filter((id): id is string => typeof id === 'string');
       if (entityIds.length === 0) continue;
 
+      const canonicalMap = await canonicalizeEntityIds(this.prisma, org.id, entityIds);
+
       const freshMentions = await this.prisma.ideaBlockEntity.findMany({
         where: {
-          entityId: { in: entityIds },
+          entityId: { in: [...new Set(canonicalMap.values())] },
           role: { in: ['subject', 'mentioned'] },
           block: {
             tenantId: org.id,
@@ -85,7 +88,8 @@ export class KnowledgeCloneRebuildCron {
       const freshEntities = new Set(freshMentions.map((m) => m.entityId));
 
       for (const cand of candidates) {
-        if (!cand.entityId || !freshEntities.has(cand.entityId)) continue;
+        const canon = cand.entityId ? canonicalMap.get(cand.entityId) : null;
+        if (!canon || !freshEntities.has(canon)) continue;
         try {
           await this.coreQueue.enqueueRebuildKnowledgeProfile({
             tenantId: org.id,

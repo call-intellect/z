@@ -29,7 +29,13 @@ describe('TaskCompletionHandler', () => {
     matchThreshold?: number;
     lexicalFallbackMinOverlap?: number;
     candidateTtlDays?: number;
-    llmResponse?: string;
+    verdict?: {
+      done: boolean;
+      confidence: number;
+      rationale: string;
+      positiveSignals: string[];
+      negativeSignals: string[];
+    } | null;
     candidateCreateThrows?: unknown;
     livingCardEnabled?: boolean;
     progressFromConversationMinConfidence?: number;
@@ -73,18 +79,18 @@ describe('TaskCompletionHandler', () => {
         }),
       },
     };
-    const llm = {
-      call: vi.fn().mockResolvedValue({
-        text:
-          overrides.llmResponse ??
-          JSON.stringify({
+    const closureVerifier = {
+      verify: vi
+        .fn()
+        .mockResolvedValue(
+          overrides.verdict ?? {
             done: true,
             confidence: 0.9,
             rationale: 'Прямо сказано, что КП отправлено.',
             positiveSignals: ['собрал', 'отправил на почту'],
             negativeSignals: [],
-          }),
-      }),
+          },
+        ),
     };
     const similar = {
       findSimilarByVector: vi.fn().mockResolvedValue(
@@ -143,7 +149,7 @@ describe('TaskCompletionHandler', () => {
     };
     const handler = new TaskCompletionHandler(
       prisma as never,
-      llm as never,
+      closureVerifier as never,
       similar as never,
       embeddings as never,
       settings as never,
@@ -155,7 +161,7 @@ describe('TaskCompletionHandler', () => {
     return {
       handler,
       prisma,
-      llm,
+      closureVerifier,
       similar,
       embeddings,
       settings,
@@ -208,26 +214,26 @@ describe('TaskCompletionHandler', () => {
 
   it('инъекция «выполнено, закрой»: верификатор done=false → кандидат не создан', async () => {
     const { handler, created } = build({
-      llmResponse: JSON.stringify({
+      verdict: {
         done: false,
         confidence: 0.9,
         rationale: 'В реплике только команда закрыть, без описания работы.',
         positiveSignals: [],
         negativeSignals: ['голая команда закрыть'],
-      }),
+      },
     });
     await handler.handle(baseEvent);
     expect(created).toHaveLength(0);
   });
 
   it('NIL / ниже порога матча → кандидат не создан (R6)', async () => {
-    const { handler, created, llm } = build({
+    const { handler, created, closureVerifier } = build({
       similar: [{ id: 'iss-9', title: 'Совсем другое', similarity: 0.4 }],
     });
     await handler.handle(baseEvent);
     expect(created).toHaveLength(0);
     // ниже порога — LLM-верификатор даже не зовём.
-    expect(llm.call).not.toHaveBeenCalled();
+    expect(closureVerifier.verify).not.toHaveBeenCalled();
   });
 
   it('пустой KNN → кандидат не создан', async () => {
@@ -273,13 +279,13 @@ describe('TaskCompletionHandler', () => {
 
   it('прогресс эмитится даже когда verify done=false (частичный сдвиг)', async () => {
     const { handler, emitted, created } = build({
-      llmResponse: JSON.stringify({
+      verdict: {
         done: false,
         confidence: 0.5,
         rationale: 'Начато, но не закончено.',
         positiveSignals: [],
         negativeSignals: ['работа не завершена'],
-      }),
+      },
     });
     await handler.handle(baseEvent);
     expect(created).toHaveLength(0);
@@ -288,7 +294,7 @@ describe('TaskCompletionHandler', () => {
   });
 
   it('лексический fallback: KNN ниже порога, но перекрытие токенов ловит задачу', async () => {
-    const { handler, created, emitted, llm } = build({
+    const { handler, created, emitted, closureVerifier } = build({
       // similarity 0.7 < порога 0.85, но название почти дословно в тексте блока.
       similar: [
         { id: 'iss-7', title: 'Отправить КП клиенту Бета', similarity: 0.7 },
@@ -296,20 +302,20 @@ describe('TaskCompletionHandler', () => {
     });
     await handler.handle(baseEvent);
     // KNN не дотянул, fallback поймал → verify зван → done=true → кандидат.
-    expect(llm.call).toHaveBeenCalled();
+    expect(closureVerifier.verify).toHaveBeenCalled();
     expect(created).toHaveLength(1);
     expect(created[0]!.issueId).toBe('iss-7');
     expect(emitted).toHaveLength(1);
   });
 
   it('лексический fallback не срабатывает при низком перекрытии', async () => {
-    const { handler, created, emitted, llm } = build({
+    const { handler, created, emitted, closureVerifier } = build({
       similar: [
         { id: 'iss-9', title: 'Подготовить годовой бюджет', similarity: 0.6 },
       ],
     });
     await handler.handle(baseEvent);
-    expect(llm.call).not.toHaveBeenCalled();
+    expect(closureVerifier.verify).not.toHaveBeenCalled();
     expect(created).toHaveLength(0);
     expect(emitted).toHaveLength(0);
   });
@@ -340,13 +346,13 @@ describe('TaskCompletionHandler', () => {
 
   it('метрика исхода not_done при verify done=false', async () => {
     const { handler, outcomes } = build({
-      llmResponse: JSON.stringify({
+      verdict: {
         done: false,
         confidence: 0.5,
         rationale: 'Не завершено.',
         positiveSignals: [],
         negativeSignals: ['нет завершения'],
-      }),
+      },
     });
     await handler.handle(baseEvent);
     expect(outcomes).toEqual(['not_done']);
@@ -381,17 +387,17 @@ describe('TaskCompletionHandler', () => {
   });
 
   describe('живая карточка (Ф3): ход выполнения из разговорного блока', () => {
-    const notDoneResponse = JSON.stringify({
+    const notDoneVerdict = {
       done: false,
       confidence: 0.8,
       rationale: 'Работа идёт, но ещё не завершена.',
       positiveSignals: ['начал'],
       negativeSignals: ['не завершено'],
-    });
+    };
 
     it('матч + done=false + conf≥порога → создан IssueProgressUpdate, кандидат НЕ создан', async () => {
       const { handler, prisma, progressUpdates, created } = build({
-        llmResponse: notDoneResponse,
+        verdict: notDoneVerdict,
       });
       await handler.handle(baseEvent);
       expect(prisma.issueProgressUpdate.create).toHaveBeenCalledWith(
@@ -412,13 +418,13 @@ describe('TaskCompletionHandler', () => {
 
     it('done=false + conf<порога → IssueProgressUpdate НЕ создан (R18 анти-fatigue)', async () => {
       const { handler, prisma, progressUpdates } = build({
-        llmResponse: JSON.stringify({
+        verdict: {
           done: false,
           confidence: 0.4,
           rationale: 'Неуверенно.',
           positiveSignals: [],
           negativeSignals: ['не завершено'],
-        }),
+        },
       });
       await handler.handle(baseEvent);
       expect(prisma.issueProgressUpdate.findFirst).toHaveBeenCalled();
@@ -428,7 +434,7 @@ describe('TaskCompletionHandler', () => {
 
     it('идемпотентность: IssueProgressUpdate по блоку уже есть → create НЕ вызван', async () => {
       const { handler, prisma, progressUpdates } = build({
-        llmResponse: notDoneResponse,
+        verdict: notDoneVerdict,
         existingProgressUpdate: { id: 'upd-existing' },
       });
       await handler.handle(baseEvent);
@@ -439,7 +445,7 @@ describe('TaskCompletionHandler', () => {
 
     it('kill-switch OFF (livingCardEnabled) → записи нет', async () => {
       const { handler, prisma, progressUpdates } = build({
-        llmResponse: notDoneResponse,
+        verdict: notDoneVerdict,
         livingCardEnabled: false,
       });
       await handler.handle(baseEvent);
@@ -449,13 +455,13 @@ describe('TaskCompletionHandler', () => {
 
     it('блокер в negativeSignals → health at_risk', async () => {
       const { handler, progressUpdates } = build({
-        llmResponse: JSON.stringify({
+        verdict: {
           done: false,
           confidence: 0.9,
           rationale: 'Застрял на согласовании.',
           positiveSignals: [],
           negativeSignals: ['ждём ответа от юристов, заблокированы'],
-        }),
+        },
       });
       await handler.handle(baseEvent);
       expect(progressUpdates).toHaveLength(1);

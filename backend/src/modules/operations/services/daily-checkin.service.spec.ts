@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
-import { DailyCheckInService } from './daily-checkin.service';
+import { DailyCheckInService, computeReportCompleteness } from './daily-checkin.service';
 
 function makeService() {
   const findUnique = vi.fn();
@@ -236,5 +236,257 @@ describe('DailyCheckInService.upsertFromDaySignal', () => {
       'checkin.created',
       expect.objectContaining({ kind: 'evening', personId: 'p1' }),
     );
+  });
+
+  it('evening: notDone/ideas прокидываются в upsert (create+update содержат notDoneJson/ideasJson)', async () => {
+    const { service, findUnique, upsert } = ctx;
+    findUnique.mockResolvedValueOnce(null);
+
+    await service.upsertFromDaySignal({
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'evening',
+      dateLocal: '2026-06-21',
+      items: [],
+      dones: [{ text: 'D' }],
+      blockers: [],
+      ideas: [{ text: 'Идея 1', sourceBlockId: 'blk-1' }],
+      notDone: [{ text: 'не дожал', sourcePlanText: 'не дожал', verdictConfidence: 0.7 }],
+      rawResponseText: 'raw',
+      parseConfidence: 0.9,
+      source: 'chatbox',
+      now: NOW,
+    });
+
+    const call = upsert.mock.calls[0]![0];
+    expect(call.create).toEqual(
+      expect.objectContaining({
+        notDoneJson: [{ text: 'не дожал', sourcePlanText: 'не дожал', verdictConfidence: 0.7 }],
+        ideasJson: [{ text: 'Идея 1', sourceBlockId: 'blk-1' }],
+      }),
+    );
+    expect(call.update).toEqual(
+      expect.objectContaining({
+        notDoneJson: [{ text: 'не дожал', sourcePlanText: 'не дожал', verdictConfidence: 0.7 }],
+        ideasJson: [{ text: 'Идея 1', sourceBlockId: 'blk-1' }],
+      }),
+    );
+  });
+
+  it('morning не затирает существующий notDone/ideas (сохраняет старые значения)', async () => {
+    const { service, findUnique, upsert } = ctx;
+    findUnique.mockResolvedValueOnce({
+      id: 'ci-1',
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'morning',
+      dateLocal: '2026-06-21',
+      plansJson: [{ text: 'A' }],
+      donesJson: null,
+      blockersJson: null,
+      ideasJson: [{ text: 'старая идея' }],
+      notDoneJson: [{ text: 'старый недодел' }],
+      notificationId: null,
+      rawResponseText: 'raw',
+      parseConfidence: 0.9,
+      curatorReview: false,
+      completedAt: NOW,
+      source: 'bitrix',
+      sourceContributions: [{ source: 'bitrix', at: NOW.toISOString(), rank: 2 }],
+      sentiment: null,
+    });
+
+    await service.upsertFromDaySignal({
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'morning',
+      dateLocal: '2026-06-21',
+      items: [{ text: 'A' }, { text: 'B' }],
+      dones: [],
+      blockers: [],
+      rawResponseText: 'raw-2',
+      parseConfidence: 0.9,
+      source: 'bitrix',
+      now: NOW,
+    });
+
+    const call = upsert.mock.calls[0]![0];
+    expect(call.update).toEqual(
+      expect.objectContaining({
+        notDoneJson: [{ text: 'старый недодел' }],
+        ideasJson: [{ text: 'старая идея' }],
+      }),
+    );
+  });
+});
+
+describe('computeReportCompleteness', () => {
+  const x = [{ text: 't' }];
+
+  it('full: качество ≥ порога и ≥3 непустых частей', () => {
+    expect(
+      computeReportCompleteness(
+        { qualityScore: 0.7, dones: x, notDone: x, blockers: x, ideas: x },
+        0.5,
+      ),
+    ).toBe('full');
+  });
+
+  it('draft: качество ниже порога', () => {
+    expect(
+      computeReportCompleteness(
+        { qualityScore: 0.3, dones: x, notDone: [], blockers: [], ideas: [] },
+        0.5,
+      ),
+    ).toBe('draft');
+  });
+
+  it('draft: qualityScore=null (ещё не проставлен скорером)', () => {
+    expect(
+      computeReportCompleteness(
+        { qualityScore: null, dones: x, notDone: x, blockers: x, ideas: x },
+        0.5,
+      ),
+    ).toBe('draft');
+  });
+
+  it('draft: меньше 3 непустых частей', () => {
+    expect(
+      computeReportCompleteness(
+        { qualityScore: 0.9, dones: x, notDone: x, blockers: [], ideas: [] },
+        0.5,
+      ),
+    ).toBe('draft');
+  });
+});
+
+describe('DailyCheckInService.toDto (reportCompleteness/notDone/ideas)', () => {
+  function eveningRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'ci-1',
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'evening',
+      dateLocal: '2026-06-21',
+      plansJson: null,
+      donesJson: [{ text: 'D' }],
+      blockersJson: [{ text: 'B' }],
+      notDoneJson: [{ text: 'не дожал', sourcePlanText: 'план', verdictConfidence: 0.7 }],
+      ideasJson: [{ text: 'Идея 1', sourceBlockId: 'blk-1' }],
+      qualityScore: 0.7,
+      notificationId: null,
+      parseConfidence: 0.9,
+      curatorReview: false,
+      completedAt: NOW,
+      createdAt: new Date('2026-06-21T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-21T00:00:00.000Z'),
+      source: 'chatbox',
+      sourceContributions: null,
+      sentiment: null,
+      sentimentRationale: null,
+      sentimentVersion: null,
+      sentimentDeterminedAt: null,
+      ...overrides,
+    };
+  }
+
+  it('evening с 4 непустыми частями и качеством ≥ порога → full, notDone/ideas заполнены', async () => {
+    const { service, findUnique } = makeService();
+    findUnique.mockResolvedValueOnce(eveningRow());
+
+    const dto = await service.getMine({
+      tenantId: 't1',
+      personId: 'p1',
+      dateLocal: '2026-06-21',
+      kind: 'evening',
+    });
+
+    expect(dto).not.toBeNull();
+    expect(dto!.reportCompleteness).toBe('full');
+    expect(dto!.notDone).toEqual([
+      { text: 'не дожал', sourcePlanText: 'план', verdictConfidence: 0.7 },
+    ]);
+    expect(dto!.ideas).toEqual([{ text: 'Идея 1', sourceBlockId: 'blk-1' }]);
+  });
+
+  it('morning → reportCompleteness=null', async () => {
+    const { service, findUnique } = makeService();
+    findUnique.mockResolvedValueOnce(
+      eveningRow({ kind: 'morning', notDoneJson: null, ideasJson: null, qualityScore: null }),
+    );
+
+    const dto = await service.getMine({
+      tenantId: 't1',
+      personId: 'p1',
+      dateLocal: '2026-06-21',
+      kind: 'morning',
+    });
+
+    expect(dto!.reportCompleteness).toBeNull();
+    expect(dto!.notDone).toEqual([]);
+    expect(dto!.ideas).toEqual([]);
+  });
+});
+
+describe('DailyCheckInService.ensureExpectationRow (onlyIfMissing — защита заполненной строки)', () => {
+  it('существует заполненная completed-строка → upsert НЕ вызывается, completedAt сохранён', async () => {
+    const { service, findUnique, upsert } = makeService();
+    const completedAt = new Date('2026-06-29T15:00:00.000Z');
+    findUnique.mockResolvedValueOnce({
+      id: 'ci-existing',
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'morning',
+      dateLocal: '2026-06-29',
+      plansJson: [{ text: 'A' }],
+      donesJson: null,
+      blockersJson: null,
+      notDoneJson: null,
+      ideasJson: null,
+      qualityScore: null,
+      notificationId: null,
+      rawResponseText: 'raw',
+      parseConfidence: 0.9,
+      curatorReview: false,
+      completedAt,
+      createdAt: new Date('2026-06-29T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-29T00:00:00.000Z'),
+      source: 'manual',
+      sourceContributions: null,
+      sentiment: null,
+      sentimentRationale: null,
+      sentimentVersion: null,
+      sentimentDeterminedAt: null,
+    });
+
+    const dto = await service.ensureExpectationRow({
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'morning',
+      dateLocal: '2026-06-29',
+    });
+
+    expect(upsert).not.toHaveBeenCalled();
+    expect(dto.id).toBe('ci-existing');
+    expect(dto.completedAt).toBe(completedAt.toISOString());
+  });
+
+  it('строки нет → upsert создаёт ожидание с completedAt=null', async () => {
+    const { service, findUnique, upsert } = makeService();
+    findUnique.mockResolvedValueOnce(null);
+    upsert.mockImplementation((callArgs: any) => rowFromUpsertArgs(callArgs, 'ci-new'));
+
+    const dto = await service.ensureExpectationRow({
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'evening',
+      dateLocal: '2026-06-29',
+    });
+
+    expect(upsert).toHaveBeenCalledTimes(1);
+    const call = upsert.mock.calls[0]![0];
+    expect(call.create.completedAt).toBeNull();
+    expect(call.create.source).toBe('cron_prompted');
+    expect(dto.completedAt).toBeNull();
   });
 });

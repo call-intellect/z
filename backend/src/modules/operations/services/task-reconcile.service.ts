@@ -24,8 +24,7 @@ export interface TaskReconcileTenantResult {
  * TZ task-dedup (2026-06-16, Ф3) — TaskReconcileService.
  *
  * Суточный детерминированный пересчёт состояния петли «разговор → закрытие
- * задачи» (Ф2). Образец — `DecisionImplementationService` (condition-UPDATE без
- * LLM, идемпотентно). БЕЗ новых таблиц.
+ * задачи» (Ф2). Condition-UPDATE без LLM, идемпотентно. БЕЗ новых таблиц.
  *
  * Делает три вещи per-Org:
  *   1. Протухание pending-кандидатов: `TaskClosureCandidate(status='pending',

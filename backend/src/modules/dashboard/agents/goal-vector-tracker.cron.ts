@@ -3,10 +3,8 @@ import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config';
-import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import { resolveOperationsTenantTop } from '../../operations/utils/tenant-top';
 import {
   GOAL_VECTOR_TRACKER_JSON_SCHEMA,
   GOAL_VECTOR_TRACKER_SYSTEM_PROMPT,
@@ -22,17 +20,14 @@ export class GoalVectorTrackerCron {
   private static readonly MAX_ORGS_PER_RUN = 5_000;
   private static readonly MAX_ARTEFACTS_PER_GOAL = 100;
   private static readonly TEXT_TRUNCATE = 280;
-  private static readonly DEFAULT_AUTHOR_COVERAGE_MIN = 0.6;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    @Inject(BusinessMetricsService)
-    private readonly metrics: BusinessMetricsService,
   ) {}
 
-  @Cron('0 5 * * 1')
+  @Cron('0 5 * * 1', { timeZone: 'Europe/Moscow' })
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
@@ -55,10 +50,21 @@ export class GoalVectorTrackerCron {
     const weekStart = computeWeekStart(now);
     const weekEnd = new Date(weekStart.getTime() + GoalVectorTrackerCron.WEEK_MS);
 
+    const maxOrgs = await this.cfg.getDynamic<number>(
+      'goals.vectorMaxOrgsPerRun',
+      undefined,
+      GoalVectorTrackerCron.MAX_ORGS_PER_RUN,
+    );
+    const maxArtefacts = await this.cfg.getDynamic<number>(
+      'goals.vectorMaxArtefactsPerGoal',
+      undefined,
+      GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL,
+    );
+
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null },
       select: { id: true, name: true },
-      take: GoalVectorTrackerCron.MAX_ORGS_PER_RUN,
+      take: maxOrgs,
     });
 
     let orgsProcessed = 0;
@@ -67,22 +73,9 @@ export class GoalVectorTrackerCron {
     let parseErrors = 0;
     let errors = 0;
 
-    const authorCoverageMin = await this.cfg.getDynamic<number>(
-      'goals.author_coverage_min',
-      'GOALS_AUTHOR_COVERAGE_MIN',
-      GoalVectorTrackerCron.DEFAULT_AUTHOR_COVERAGE_MIN,
-    );
-
     for (const org of orgs) {
       orgsProcessed++;
       try {
-        const attribution = await this.resolveAttributionField(
-          org.id,
-          weekStart,
-          weekEnd,
-          authorCoverageMin,
-        );
-
         const goals = await this.prisma.goal.findMany({
           where: {
             tenantId: org.id,
@@ -102,7 +95,7 @@ export class GoalVectorTrackerCron {
               goalDescription: goal.description,
               weekStart,
               weekEnd,
-              attributionField: attribution,
+              maxArtefacts,
             });
             contributionsUpserted += stats.contributionsUpserted;
             parseErrors += stats.parseErrors;
@@ -132,41 +125,6 @@ export class GoalVectorTrackerCron {
     };
   }
 
-  private async resolveAttributionField(
-    tenantId: string,
-    weekStart: Date,
-    weekEnd: Date,
-    authorCoverageMin: number,
-  ): Promise<'author' | 'recipient'> {
-    const baseWhere: Prisma.IdeaBlockWhereInput = {
-      tenantId,
-      signalType: 'commitment',
-      commitmentDueDate: { gte: weekStart, lt: weekEnd },
-      commitmentStatus: { in: ['fulfilled', 'missed'] },
-    };
-
-    const [total, withAuthor] = await Promise.all([
-      this.prisma.ideaBlock.count({ where: baseWhere }),
-      this.prisma.ideaBlock.count({
-        where: { ...baseWhere, commitmentAuthorPersonId: { not: null } },
-      }),
-    ]);
-
-    const coverage = total === 0 ? 1 : withAuthor / total;
-    const tenantTop = resolveOperationsTenantTop(tenantId);
-    this.metrics.setCommitmentAuthorCoverageRatio({ tenantTop, value: coverage });
-
-    const field = chooseAttributionField(coverage, authorCoverageMin);
-    if (field === 'recipient' && total > 0) {
-      this.logger.warn(
-        `goal-vector-tracker org=${tenantId}: покрытие commitmentAuthorPersonId ` +
-          `${(coverage * 100).toFixed(1)}% < порога ${(authorCoverageMin * 100).toFixed(0)}% ` +
-          '— атрибуция commitment откатывается на адресата (recipient) на этот прогон.',
-      );
-    }
-    return field;
-  }
-
   private async processGoal(args: {
     tenantId: string;
     tenantName: string;
@@ -175,7 +133,7 @@ export class GoalVectorTrackerCron {
     goalDescription: string;
     weekStart: Date;
     weekEnd: Date;
-    attributionField: 'author' | 'recipient';
+    maxArtefacts: number;
   }): Promise<{ contributionsUpserted: number; parseErrors: number }> {
     const artefacts = await this.collectArtefacts(args);
     if (artefacts.length === 0) {
@@ -254,7 +212,7 @@ export class GoalVectorTrackerCron {
     tenantId: string;
     weekStart: Date;
     weekEnd: Date;
-    attributionField: 'author' | 'recipient';
+    maxArtefacts: number;
   }): Promise<GoalVectorArtefact[]> {
     const out: GoalVectorArtefact[] = [];
 
@@ -283,7 +241,7 @@ export class GoalVectorTrackerCron {
           },
         },
       },
-      take: GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL,
+      take: args.maxArtefacts,
       orderBy: { createdAt: 'desc' },
     });
     for (const b of ideas) {
@@ -295,38 +253,6 @@ export class GoalVectorTrackerCron {
         kind: 'idea',
         refId: b.id,
         text: truncate(b.name, GoalVectorTrackerCron.TEXT_TRUNCATE),
-      });
-    }
-
-    const useAuthor = args.attributionField === 'author';
-    const commits = await this.prisma.ideaBlock.findMany({
-      where: {
-        tenantId: args.tenantId,
-        signalType: 'commitment',
-        commitmentDueDate: { gte: args.weekStart, lt: args.weekEnd },
-        commitmentStatus: { in: ['fulfilled', 'missed'] },
-      },
-      select: {
-        id: true,
-        name: true,
-        commitmentStatus: true,
-        commitmentAuthorPersonId: true,
-        commitmentAuthor: { select: { id: true, name: true } },
-        commitmentRecipientPersonId: true,
-        commitmentRecipient: { select: { id: true, name: true } },
-      },
-      take: GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL,
-      orderBy: { commitmentDueDate: 'desc' },
-    });
-    for (const c of commits) {
-      const subject = useAuthor ? c.commitmentAuthor : c.commitmentRecipient;
-      if (!subject) continue;
-      out.push({
-        personId: subject.id,
-        personName: subject.name,
-        kind: c.commitmentStatus === 'fulfilled' ? 'commitment_kept' : 'commitment_broken',
-        refId: c.id,
-        text: truncate(c.name, GoalVectorTrackerCron.TEXT_TRUNCATE),
       });
     }
 
@@ -343,7 +269,7 @@ export class GoalVectorTrackerCron {
           select: { userId: true },
         },
       },
-      take: GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL,
+      take: args.maxArtefacts,
       orderBy: { completedAt: 'desc' },
     });
     if (issues.length > 0) {
@@ -378,8 +304,8 @@ export class GoalVectorTrackerCron {
       }
     }
 
-    if (out.length > GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL) {
-      return out.slice(0, GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL);
+    if (out.length > args.maxArtefacts) {
+      return out.slice(0, args.maxArtefacts);
     }
     return out;
   }
@@ -404,10 +330,6 @@ function truncate(text: string, limit: number): string {
 
 function round3(v: number): number {
   return Math.round(v * 1000) / 1000;
-}
-
-export function chooseAttributionField(coverage: number, min: number): 'author' | 'recipient' {
-  return coverage >= min ? 'author' : 'recipient';
 }
 
 function pickAuthor(

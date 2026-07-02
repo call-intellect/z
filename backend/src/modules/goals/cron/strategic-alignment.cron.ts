@@ -23,7 +23,7 @@ export class StrategicAlignmentCron {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
 
-  @Cron('0 6 * * *')
+  @Cron('0 6 * * *', { timeZone: 'Europe/Moscow' })
   async sweep(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();

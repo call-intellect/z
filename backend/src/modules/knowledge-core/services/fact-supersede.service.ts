@@ -243,16 +243,27 @@ export class FactSupersedeService {
       trustedAnswer: string;
       signalType: string;
       validFrom: Date | null;
+      source_timestamp: Date | null;
       similarity: string | number;
     }
     const rows = await this.prisma.$queryRawUnsafe<Row[]>(
       `
       SELECT b.id, b.name, b."criticalQuestion", b."trustedAnswer",
              b."signalType", b."validFrom",
+             ev."sourceTimestamp" AS source_timestamp,
              1 - (b.embedding <=> (
                SELECT embedding FROM "IdeaBlock" WHERE id = $2
              )::vector(1536)) AS similarity
       FROM "IdeaBlock" b
+      LEFT JOIN LATERAL (
+        SELECT e."sourceTimestamp"
+        FROM "IdeaBlockEvidence" e
+        WHERE e."blockId" = b.id
+          AND e."tenantId" = b."tenantId"
+          AND e."sourceTimestamp" IS NOT NULL
+        ORDER BY e."sourceTimestamp" ASC
+        LIMIT 1
+      ) ev ON true
       WHERE b."tenantId" = $1
         AND b."signalType"::text = $3
         AND b.id <> $2
@@ -281,6 +292,7 @@ export class FactSupersedeService {
         trustedAnswer: r.trustedAnswer,
         signalType: r.signalType,
         validFrom: r.validFrom ? r.validFrom.toISOString() : null,
+        sourceTimestamp: r.source_timestamp ? r.source_timestamp.toISOString() : null,
         evidenceQuote: null,
       });
     }
@@ -289,12 +301,19 @@ export class FactSupersedeService {
 
   private async callLlm(args: {
     tenantId: string;
-    newBlock: IdeaBlock & { evidence?: { quote: string }[] };
+    newBlock: IdeaBlock & {
+      evidence?: { quote: string; sourceTimestamp: Date | null }[];
+    };
     candidates: FactSupersedeDetectCandidate[];
   }): Promise<FactSupersedeDetectResponse> {
     const guardOn = this.isPromptInjectionGuardEnabled();
-    const evidenceQuote =
-      args.newBlock.evidence && args.newBlock.evidence[0] ? args.newBlock.evidence[0].quote : null;
+    const firstEvidence =
+      args.newBlock.evidence && args.newBlock.evidence[0] ? args.newBlock.evidence[0] : null;
+    const evidenceQuote = firstEvidence ? firstEvidence.quote : null;
+    const newBlockSourceTimestamp =
+      firstEvidence && firstEvidence.sourceTimestamp
+        ? firstEvidence.sourceTimestamp.toISOString()
+        : null;
     const userPrompt = FACT_SUPERSEDE_DETECT_USER_TEMPLATE({
       newBlock: {
         id: args.newBlock.id,
@@ -303,6 +322,7 @@ export class FactSupersedeService {
         trustedAnswer: args.newBlock.trustedAnswer,
         signalType: args.newBlock.signalType,
         validFrom: args.newBlock.validFrom ? args.newBlock.validFrom.toISOString() : null,
+        sourceTimestamp: newBlockSourceTimestamp,
         evidenceQuote,
       },
       candidates: args.candidates,

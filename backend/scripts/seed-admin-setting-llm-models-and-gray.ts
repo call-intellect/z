@@ -133,15 +133,6 @@ const SEEDS: SettingSeed[] = [
     description:
       'Час дневного COO-дайджеста в UTC (0..23). Читается per-run. По умолчанию 22.',
   },
-  {
-    key: 'betaOps.commitmentFollowupLocalHour',
-    value: 9,
-    category: 'operations',
-    section: 'digest_hours',
-    severity: 'low',
-    description:
-      'Локальный час напоминания о коммитментах (0..23). Читается per-run. По умолчанию 9.',
-  },
 ];
 
 interface Counters {

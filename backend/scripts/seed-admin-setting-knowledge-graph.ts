@@ -71,6 +71,24 @@ const SEEDS: SettingSeed[] = [
       'Базовый порог уверенности (0–1) для обычных смысловых связей графа (развивает/следствие/отвечает/закрывает). По умолчанию 0.6.',
   },
   {
+    key: 'knowledge.conflict_min_confidence',
+    value: 0.6,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Нижний порог уверенности (0–1), при котором граф-детектор конфликтов создаёт ребро conflicted_with между автором friction-блока и другими его участниками. Если рабочая уверенность связи ниже порога — ребро не создаётся. По умолчанию 0.6.',
+  },
+  {
+    key: 'knowledge.conflict_graph_confidence',
+    value: 0.65,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Уверенность (0–1), с которой граф-детектор конфликтов помечает ребро conflicted_with, построенное по friction-блоку (автор ↔ каждый другой участник). По умолчанию 0.65.',
+  },
+  {
     key: 'knowledge.linker_min_canonical',
     value: 2,
     category: 'ai',

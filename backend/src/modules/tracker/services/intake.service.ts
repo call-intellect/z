@@ -24,8 +24,10 @@ import type {
 } from '../dto/intake/triage-intake.dto';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 
+import { ChecklistsService } from './checklists.service';
 import { linkDerivedDecisionsForIssue } from './decision-task-link.util';
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
+import { materializeIntakeChecklist } from './intake-checklist-materialize.util';
 import { IssuesService } from './issues.service';
 import { ProjectsService } from './projects.service';
 import { TaskDedupService } from './task-dedup.service';
@@ -145,6 +147,9 @@ export class IntakeService {
     @Optional()
     @Inject(TaskDedupService)
     private readonly taskDedup?: TaskDedupService,
+    @Optional()
+    @Inject(ChecklistsService)
+    private readonly checklists?: ChecklistsService,
   ) {}
 
   /**
@@ -737,6 +742,25 @@ export class IntakeService {
         createdIssue.id,
         intake.sourceBlockIds,
       );
+      if (this.checklists) {
+        try {
+          await materializeIntakeChecklist(
+            this.checklists,
+            createdIssue.id,
+            intake.checklistJson,
+            tenantId,
+          );
+        } catch (e) {
+          this.logger.warn(
+            {
+              intakeId: id,
+              issueId: createdIssue.id,
+              err: e instanceof Error ? e.message : String(e),
+            },
+            'intake.triage: материализация чек-листа упала (best-effort)',
+          );
+        }
+      }
     } else if (dto.decision === 'snooze' && !dto.snoozedUntil) {
       throw new BadRequestException({
         ok: false,

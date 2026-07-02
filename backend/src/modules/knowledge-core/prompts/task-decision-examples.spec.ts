@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  SELF_ASSIGNMENT_RULE,
   TASK_VS_DECISION_PAIRS,
   renderExamplesForDecisionExtractor,
   renderExamplesForIdeaExtractor,
   renderExamplesForTaskExtractor,
   renderRuleForBlockIngest,
 } from './task-decision-examples';
+import { TASK_EXTRACT_SYSTEM_PROMPT } from './task-extract.prompt';
 
 describe('task-decision-examples — три полюса (идея / задача / решение)', () => {
   it('каждая запись имеет непустые idea, task, decision', () => {
@@ -48,5 +50,17 @@ describe('task-decision-examples — три полюса (идея / задач�
 
   it('регресс: block-ingest правило сохраняет signalType=action_item', () => {
     expect(renderRuleForBlockIngest()).toContain('signalType=action_item');
+  });
+});
+
+describe('SELF_ASSIGNMENT_RULE — само-назначение исполнителя', () => {
+  it('правило содержит директиву само-назначения и опору на «— автор:»', () => {
+    expect(SELF_ASSIGNMENT_RULE).toContain('Само-назначение исполнителя');
+    expect(SELF_ASSIGNMENT_RULE).toContain('— автор:');
+    expect(SELF_ASSIGNMENT_RULE).toContain('assigneeHint');
+  });
+
+  it('task-extract system prompt содержит правило само-назначения', () => {
+    expect(TASK_EXTRACT_SYSTEM_PROMPT).toContain('Само-назначение исполнителя');
   });
 });

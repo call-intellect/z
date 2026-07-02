@@ -23,6 +23,11 @@ import {
 } from '../prompts/entity-merge-arbiter.prompt';
 import { signalTypeLabel } from '../prompts/signal-type-label';
 
+import {
+  canonicalizeEntityId,
+  markEntityMerged,
+} from './entity-companion.helpers';
+
 /**
  * Человеческие ярлыки вида сущности (Прил. A3): подаём арбитру «человек»,
  * «заказчик», а не код `person`/`customer` — методология промптов №3
@@ -276,170 +281,329 @@ export class EntityMergeService {
     }
   }
 
-  /**
-   * Org-Admin Фаза 7: ручное слияние двух Entity (без LLM-арбитра).
-   *
-   * Алгоритм:
-   *   1. Загрузить fromEntity / intoEntity. Проверить tenantId match, оба
-   *      без mergedIntoId, оба того же type (если разные — ошибка).
-   *   2. Транзакция:
-   *      - перенос IdeaBlockEntity entityId=fromEntity.id → intoEntity.id;
-   *        composite PK (blockId, entityId) — pre-check целевой пары, при
-   *        конфликте delete дубля-источника, иначе update (Б1: без catch P2002 в tx).
-   *      - перенос EntityLink (fromEntityId / toEntityId) → intoEntity.id;
-   *        composite unique — pre-check целевого ключа, при конфликте delete,
-   *        иначе update (Б1).
-   *      - intoEntity.mentionsCount += fromEntity.mentionsCount,
-   *        aliases = union(into.aliases, [from.canonicalName, ...from.aliases]),
-   *        updatedAt=now.
-   *      - fromEntity: mergedIntoId=intoEntity.id, updatedAt=now.
-   *   3. Лог + AuditLog (на Фазе 7 пишет caller, не сервис).
-   */
-  async mergeManually(args: {
+  async mergeEntities(args: {
     tenantId: string;
     fromEntityId: string;
     intoEntityId: string;
-    byUserId: string;
+    actor?: { byUserId?: string; source?: string; explanation?: string };
   }): Promise<{ ok: true }> {
     const { tenantId, fromEntityId, intoEntityId } = args;
     if (fromEntityId === intoEntityId) {
-      throw new Error('mergeManually: fromEntityId === intoEntityId');
+      throw new Error('mergeEntities: fromEntityId === intoEntityId');
     }
 
-    const [fromEntity, intoEntity] = await Promise.all([
-      this.prisma.entity.findUnique({ where: { id_tenantId: { id: fromEntityId, tenantId } } }),
-      this.prisma.entity.findUnique({ where: { id_tenantId: { id: intoEntityId, tenantId } } }),
-    ]);
-    if (!fromEntity) throw new Error(`Entity not found: ${fromEntityId}`);
-    if (!intoEntity) throw new Error(`Entity not found: ${intoEntityId}`);
-    if (fromEntity.tenantId !== tenantId || intoEntity.tenantId !== tenantId) {
-      throw new Error('mergeManually: tenantId mismatch');
-    }
-    if (fromEntity.mergedIntoId !== null || intoEntity.mergedIntoId !== null) {
-      throw new Error('mergeManually: одна из сущностей уже мержена');
-    }
-    if (fromEntity.type !== intoEntity.type) {
-      throw new Error('mergeManually: разные type');
-    }
+    let mergedFromType: EntityType | null = null;
 
     await this.prisma.$transaction(async (tx) => {
-      // Перенос IdeaBlockEntity. composite PK (blockId, entityId).
-      const mentions = await tx.ideaBlockEntity.findMany({
-        where: { entityId: fromEntityId },
-      });
-      for (const m of mentions) {
-        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
-        // абортит всю транзакцию (PostgreSQL 25P02), и перенос/слияние ниже
-        // не выполняется. Проверяем целевую пару (blockId, intoEntityId) заранее.
-        const conflicting = await tx.ideaBlockEntity.findUnique({
-          where: {
-            blockId_entityId_tenantId: { blockId: m.blockId, entityId: intoEntityId, tenantId },
-          },
-        });
-        if (conflicting) {
-          // Уже есть пара (blockId, intoEntityId) — просто удаляем from-запись.
-          await tx.ideaBlockEntity.delete({
-            where: {
-              blockId_entityId_tenantId: { blockId: m.blockId, entityId: fromEntityId, tenantId },
-            },
-          });
-        } else {
-          await tx.ideaBlockEntity.update({
-            where: { blockId_entityId_tenantId: { blockId: m.blockId, entityId: fromEntityId, tenantId } },
-            data: { entityId: intoEntityId },
-          });
-        }
+      const [from, into] = await Promise.all([
+        tx.entity.findUnique({ where: { id_tenantId: { id: fromEntityId, tenantId } } }),
+        tx.entity.findUnique({ where: { id_tenantId: { id: intoEntityId, tenantId } } }),
+      ]);
+      if (!from) throw new Error(`mergeEntities: Entity не найдена: ${fromEntityId}`);
+      if (!into) throw new Error(`mergeEntities: Entity не найдена: ${intoEntityId}`);
+      if (from.tenantId !== tenantId || into.tenantId !== tenantId) {
+        throw new Error('mergeEntities: tenantId mismatch');
       }
+      if (from.mergedIntoId !== null || into.mergedIntoId !== null) {
+        throw new Error('mergeEntities: одна из сущностей уже мержена (race)');
+      }
+      if (from.type !== into.type) {
+        throw new Error('mergeEntities: разные type');
+      }
+      mergedFromType = from.type;
 
-      // Перенос EntityLink (входящие).
-      const linksTo = await tx.entityLink.findMany({
-        where: { toEntityId: fromEntityId },
+      await this.migrateEntityRefs(tx, {
+        tenantId,
+        fromEntityId,
+        intoEntityId,
+        intoTenantId: into.tenantId,
       });
-      for (const l of linksTo) {
-        // Б1: pre-check вместо catch(P2002) внутри tx (catch абортил бы
-        // транзакцию — PostgreSQL 25P02). findFirst, а не findUnique:
-        // composite-ключ включает nullable fromType/toType, вход findUnique
-        // их не принимает. id:{not} исключает саму переносимую запись.
-        const conflicting = await tx.entityLink.findFirst({
-          where: {
-            fromEntityId: l.fromEntityId,
-            fromType: l.fromType,
-            toEntityId: intoEntityId,
-            toType: l.toType,
-            relationType: l.relationType,
-            id: { not: l.id },
-          },
-        });
-        if (conflicting) {
-          await tx.entityLink.delete({ where: { id: l.id } });
-        } else {
-          await tx.entityLink.update({
-            where: { id: l.id },
-            data: { toEntityId: intoEntityId },
-          });
-        }
-      }
-      // Перенос EntityLink (исходящие).
-      const linksFrom = await tx.entityLink.findMany({
-        where: { fromEntityId: fromEntityId },
-      });
-      for (const l of linksFrom) {
-        // Б1: pre-check вместо catch(P2002) внутри tx (см. выше). findFirst
-        // из-за nullable fromType/toType в composite-ключе; id:{not} исключает
-        // саму переносимую запись.
-        const conflicting = await tx.entityLink.findFirst({
-          where: {
-            fromEntityId: intoEntityId,
-            fromType: l.fromType,
-            toEntityId: l.toEntityId,
-            toType: l.toType,
-            relationType: l.relationType,
-            id: { not: l.id },
-          },
-        });
-        if (conflicting) {
-          await tx.entityLink.delete({ where: { id: l.id } });
-        } else {
-          await tx.entityLink.update({
-            where: { id: l.id },
-            data: { fromEntityId: intoEntityId },
-          });
-        }
-      }
 
-      // Обновляем intoEntity (mentionsCount, aliases).
+      await tx.entity.updateMany({
+        where: { tenantId, mergedIntoId: fromEntityId },
+        data: { mergedIntoId: intoEntityId, mergedIntoTenantId: into.tenantId },
+      });
+
       const aliasesUnion = Array.from(
         new Set([
-          ...intoEntity.aliases,
-          fromEntity.canonicalName,
-          ...fromEntity.aliases,
+          ...into.aliases,
+          from.canonicalName,
+          ...from.aliases,
         ]),
       );
       await tx.entity.update({
         where: { id_tenantId: { id: intoEntityId, tenantId } },
         data: {
-          mentionsCount: intoEntity.mentionsCount + fromEntity.mentionsCount,
+          mentionsCount: into.mentionsCount + from.mentionsCount,
           aliases: aliasesUnion,
         },
       });
 
-      // fromEntity → merged_into.
-      await tx.entity.update({
-        where: { id_tenantId: { id: fromEntityId, tenantId } },
-        data: { mergedIntoId: intoEntityId },
-      });
+      await markEntityMerged(
+        tx,
+        { id: fromEntityId, tenantId },
+        { id: intoEntityId, tenantId: into.tenantId },
+      );
     });
+
+    const typedSubrecordCount = await this.countTypedSubrecords(tenantId, fromEntityId);
+    if (typedSubrecordCount > 0) {
+      this.logger.warn(
+        { fromEntityId, intoEntityId, type: mergedFromType },
+        'entity-merge: слиты сущности с типизированным сабрекордом — возможен over-merge (вне scope миграции)',
+      );
+    }
 
     this.logger.log(
       {
         tenantId,
         fromEntityId,
         intoEntityId,
-        byUserId: args.byUserId,
+        byUserId: args.actor?.byUserId,
+        source: args.actor?.source,
       },
-      'entity-merge: ручное слияние применено',
+      'entity-merge: слияние применено',
     );
     return { ok: true };
+  }
+
+  async mergeManually(args: {
+    tenantId: string;
+    fromEntityId: string;
+    intoEntityId: string;
+    byUserId: string;
+  }): Promise<{ ok: true }> {
+    return this.mergeEntities({
+      tenantId: args.tenantId,
+      fromEntityId: args.fromEntityId,
+      intoEntityId: args.intoEntityId,
+      actor: { byUserId: args.byUserId },
+    });
+  }
+
+  private async migrateEntityRefs(
+    tx: Prisma.TransactionClient,
+    args: {
+      tenantId: string;
+      fromEntityId: string;
+      intoEntityId: string;
+      intoTenantId: string;
+    },
+  ): Promise<void> {
+    const { tenantId, fromEntityId, intoEntityId, intoTenantId } = args;
+
+    const mentions = await tx.ideaBlockEntity.findMany({
+      where: { entityId: fromEntityId },
+    });
+    for (const m of mentions) {
+      const conflicting = await tx.ideaBlockEntity.findUnique({
+        where: {
+          blockId_entityId_tenantId: { blockId: m.blockId, entityId: intoEntityId, tenantId },
+        },
+      });
+      if (conflicting) {
+        await tx.ideaBlockEntity.delete({
+          where: {
+            blockId_entityId_tenantId: { blockId: m.blockId, entityId: fromEntityId, tenantId },
+          },
+        });
+      } else {
+        await tx.ideaBlockEntity.update({
+          where: { blockId_entityId_tenantId: { blockId: m.blockId, entityId: fromEntityId, tenantId } },
+          data: { entityId: intoEntityId },
+        });
+      }
+    }
+
+    const linksTo = await tx.entityLink.findMany({
+      where: { toEntityId: fromEntityId },
+    });
+    for (const l of linksTo) {
+      const conflicting = await tx.entityLink.findFirst({
+        where: {
+          fromEntityId: l.fromEntityId,
+          fromType: l.fromType,
+          toEntityId: intoEntityId,
+          toType: l.toType,
+          relationType: l.relationType,
+          id: { not: l.id },
+        },
+      });
+      if (conflicting) {
+        await tx.entityLink.delete({ where: { id: l.id } });
+      } else {
+        await tx.entityLink.update({
+          where: { id: l.id },
+          data: { toEntityId: intoEntityId },
+        });
+      }
+    }
+    const linksFrom = await tx.entityLink.findMany({
+      where: { fromEntityId: fromEntityId },
+    });
+    for (const l of linksFrom) {
+      const conflicting = await tx.entityLink.findFirst({
+        where: {
+          fromEntityId: intoEntityId,
+          fromType: l.fromType,
+          toEntityId: l.toEntityId,
+          toType: l.toType,
+          relationType: l.relationType,
+          id: { not: l.id },
+        },
+      });
+      if (conflicting) {
+        await tx.entityLink.delete({ where: { id: l.id } });
+      } else {
+        await tx.entityLink.update({
+          where: { id: l.id },
+          data: { fromEntityId: intoEntityId },
+        });
+      }
+    }
+
+    const sourceRows = await tx.sourceEntity.findMany({
+      where: { entityId: fromEntityId, tenantId },
+    });
+    for (const r of sourceRows) {
+      const conflicting = await tx.sourceEntity.findUnique({
+        where: { rawEventId_entityId: { rawEventId: r.rawEventId, entityId: intoEntityId } },
+      });
+      if (conflicting) {
+        await tx.sourceEntity.update({
+          where: { rawEventId_entityId: { rawEventId: r.rawEventId, entityId: intoEntityId } },
+          data: { mentionsCount: { increment: r.mentionsCount } },
+        });
+        await tx.sourceEntity.delete({
+          where: { rawEventId_entityId: { rawEventId: r.rawEventId, entityId: fromEntityId } },
+        });
+      } else {
+        await tx.sourceEntity.update({
+          where: { rawEventId_entityId: { rawEventId: r.rawEventId, entityId: fromEntityId } },
+          data: { entityId: intoEntityId },
+        });
+      }
+    }
+
+    const themeRows = await tx.themeEntity.findMany({
+      where: { entityId: fromEntityId, tenantId },
+    });
+    for (const r of themeRows) {
+      const conflicting = await tx.themeEntity.findUnique({
+        where: {
+          themeId_entityId_tenantId: { themeId: r.themeId, entityId: intoEntityId, tenantId },
+        },
+      });
+      if (conflicting) {
+        await tx.themeEntity.update({
+          where: {
+            themeId_entityId_tenantId: { themeId: r.themeId, entityId: intoEntityId, tenantId },
+          },
+          data: { mentionsCount: { increment: r.mentionsCount } },
+        });
+        await tx.themeEntity.delete({
+          where: {
+            themeId_entityId_tenantId: { themeId: r.themeId, entityId: fromEntityId, tenantId },
+          },
+        });
+      } else {
+        await tx.themeEntity.update({
+          where: {
+            themeId_entityId_tenantId: { themeId: r.themeId, entityId: fromEntityId, tenantId },
+          },
+          data: { entityId: intoEntityId },
+        });
+      }
+    }
+
+    await tx.card.updateMany({
+      where: { tenantId, entityId: fromEntityId },
+      data: { entityId: intoEntityId, entityTenantId: intoTenantId },
+    });
+    const relatedCards = await tx.card.findMany({
+      where: { tenantId, relatedEntityIds: { has: fromEntityId } },
+      select: { id: true, relatedEntityIds: true },
+    });
+    for (const c of relatedCards) {
+      const next = Array.from(
+        new Set(
+          c.relatedEntityIds.map((id) => (id === fromEntityId ? intoEntityId : id)),
+        ),
+      );
+      await tx.card.update({
+        where: { id: c.id },
+        data: { relatedEntityIds: next },
+      });
+    }
+
+    await tx.person.updateMany({
+      where: { tenantId, entityId: fromEntityId },
+      data: { entityId: intoEntityId, entityTenantId: intoTenantId },
+    });
+  }
+
+  async reconcileEntityRefs(
+    tenantId: string,
+    opts?: { batchLimit?: number },
+  ): Promise<{ scanned: number; reconciled: number }> {
+    const batchLimit = opts?.batchLimit ?? 500;
+    let scanned = 0;
+    let reconciled = 0;
+    let cursorId: string | null = null;
+
+    for (;;) {
+      const batch: Array<{ id: string }> = await this.prisma.entity.findMany({
+        where: {
+          tenantId,
+          mergedIntoId: { not: null },
+          ...(cursorId ? { id: { gt: cursorId } } : {}),
+        },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: batchLimit,
+      });
+      if (batch.length === 0) break;
+
+      for (const f of batch) {
+        scanned++;
+        const canonicalId = await canonicalizeEntityId(this.prisma, tenantId, f.id);
+        if (canonicalId === f.id) continue;
+        await this.prisma.$transaction((tx) =>
+          this.migrateEntityRefs(tx, {
+            tenantId,
+            fromEntityId: f.id,
+            intoEntityId: canonicalId,
+            intoTenantId: tenantId,
+          }),
+        );
+        reconciled++;
+      }
+
+      const last = batch[batch.length - 1];
+      if (!last || batch.length < batchLimit) break;
+      cursorId = last.id;
+    }
+
+    this.logger.log(
+      { tenantId, scanned, reconciled },
+      'entity-merge: reconcileEntityRefs завершён',
+    );
+    return { scanned, reconciled };
+  }
+
+  private async countTypedSubrecords(tenantId: string, entityId: string): Promise<number> {
+    const counts = await Promise.all([
+      this.prisma.vendor.count({ where: { tenantId, entityId } }),
+      this.prisma.customer.count({ where: { tenantId, entityId } }),
+      this.prisma.event.count({ where: { tenantId, entityId } }),
+      this.prisma.goal.count({ where: { tenantId, entityId } }),
+      this.prisma.document.count({ where: { tenantId, entityId } }),
+      this.prisma.market.count({ where: { tenantId, entityId } }),
+      this.prisma.orgUnit.count({ where: { tenantId, entityId } }),
+      this.prisma.role.count({ where: { tenantId, entityId } }),
+      this.prisma.department.count({ where: { tenantId, entityId } }),
+    ]);
+    return counts.reduce((sum, c) => sum + c, 0);
   }
 
   // ─────────────────────────── helpers ─────────────────────────────────────

@@ -223,7 +223,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     if (event.processingStatus !== 'received') {
-      this.logger.debug(
+      this.logger.log(
         { rawEventId, status: event.processingStatus },
         'block-ingest: статус не received — skip (идемпотентность)',
       );
@@ -231,6 +231,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.gate.checkOrThrow(event.tenantId, 'block-ingest');
+
+    this.logger.log({ rawEventId, tenantId: event.tenantId }, '[PIPE] block-ingest START');
 
     try {
       const payload = await this.loadPayload(event);
@@ -261,7 +263,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         isReportEvent,
       );
       const { typed } = extraction;
-      this.logger.debug(
+      this.logger.log(
         {
           rawEventId,
           segments: segments.length,
@@ -412,6 +414,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             sourceProvenance: prov,
           });
           await this.linkProvenance(event.tenantId, 'process', res.id, prov, proc.confidence);
+          await this.attachBlockAuthorToTypedEntity(
+            event.tenantId,
+            'process',
+            res.id,
+            proc.sourceBlockIndex != null
+              ? (indexToBlockId.get(proc.sourceBlockIndex) ?? null)
+              : null,
+          );
           this.metrics.incExtractionEntity({ type: 'process' });
           this.metrics.observeExtractionConfidence({
             type: 'process',
@@ -476,6 +486,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             sourceProvenance: prov,
           });
           await this.linkProvenance(event.tenantId, 'policy', res.id, prov, pol.confidence);
+          await this.attachBlockAuthorToTypedEntity(
+            event.tenantId,
+            'policy',
+            res.id,
+            pol.sourceBlockIndex != null
+              ? (indexToBlockId.get(pol.sourceBlockIndex) ?? null)
+              : null,
+          );
           this.metrics.incExtractionEntity({ type: 'policy' });
           this.metrics.observeExtractionConfidence({
             type: 'policy',
@@ -772,6 +790,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       if (systemFailure) {
         throw new Error(buildIngestFailureMessage(failureKind ?? 'age_unavailable'));
       }
+
+      this.logger.log(
+        { rawEventId, blocks: blockIds.length, sourceType: event.sourceType },
+        '[PIPE] block-ingest DONE',
+      );
 
       await this.prisma.rawEvent.update({
         where: { id: rawEventId },
@@ -1344,7 +1367,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             ...(validFromValue !== null ? { validFrom: validFromValue } : {}),
             ...(isCommitment
               ? {
-                  commitmentStatus: 'open',
                   commitmentDueDate: commitmentDueDate ?? null,
                 }
               : {}),
@@ -1523,8 +1545,18 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     } else {
       const speakerParticipantId = seg?.speakerParticipantId ?? null;
       const speakerName = seg?.speakers?.[0] ?? null;
+      const segAuthors = [
+        ...new Set(
+          args.segments.map((s) => s.authorPersonId).filter((x): x is string => !!x),
+        ),
+      ];
+      const fallbackAuthor =
+        !args.authorPersonId && seg === null && segAuthors.length === 1
+          ? (segAuthors[0] ?? null)
+          : null;
+      const effectiveAuthorPersonId = args.authorPersonId ?? fallbackAuthor;
       subjectEntityId = await this.entities.resolveSubjectEntityId(args.event.tenantId, {
-        authorPersonId: args.authorPersonId ?? null,
+        authorPersonId: effectiveAuthorPersonId,
         authorEmail: args.authorEmail ?? null,
         speakerParticipantId,
         speakerName,
@@ -1533,15 +1565,17 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       via = subjectEntityId
         ? args.authorPersonId
           ? 'personId'
-          : args.authorUserId
-            ? 'userId'
-            : args.authorEmail
-              ? 'email'
-              : speakerParticipantId
-                ? 'participant'
-                : speakerName
-                  ? 'name'
-                  : 'none'
+          : fallbackAuthor
+            ? 'author_fallback'
+            : args.authorUserId
+              ? 'userId'
+              : args.authorEmail
+                ? 'email'
+                : speakerParticipantId
+                  ? 'participant'
+                  : speakerName
+                    ? 'name'
+                    : 'none'
         : 'none';
     }
     this.metrics.incSubjectAttribution({ via });
@@ -1575,6 +1609,63 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       },
       'block-ingest: автор помечен role=subject',
     );
+  }
+
+  private async attachBlockAuthorToTypedEntity(
+    tenantId: string,
+    table: 'process' | 'policy',
+    entityId: string,
+    blockId: string | null,
+  ): Promise<void> {
+    if (!blockId) return;
+    try {
+      const ev = await this.prisma.ideaBlockEvidence.findFirst({
+        where: { blockId, tenantId, authorPersonId: { not: null } },
+        orderBy: { sourceTimestamp: { sort: 'asc', nulls: 'last' } },
+        select: { authorPersonId: true },
+      });
+      const authorPersonId = ev?.authorPersonId ?? null;
+      if (!authorPersonId) return;
+      const person = await this.prisma.person.findFirst({
+        where: { id: authorPersonId, tenantId, deletedAt: null },
+        select: { id: true, entityId: true },
+      });
+      if (!person) return;
+
+      const existing =
+        table === 'process'
+          ? await this.prisma.process.findFirst({
+              where: { id: entityId, tenantId },
+              select: { ownerPersonId: true, personSubjectIds: true },
+            })
+          : await this.prisma.policy.findFirst({
+              where: { id: entityId, tenantId },
+              select: { ownerPersonId: true, personSubjectIds: true },
+            });
+      if (!existing) return;
+
+      const nextSubjects = Array.from(
+        new Set([...existing.personSubjectIds, ...(person.entityId ? [person.entityId] : [])]),
+      );
+      const setOwner = existing.ownerPersonId == null;
+      const subjectsChanged = nextSubjects.length !== existing.personSubjectIds.length;
+      if (!setOwner && !subjectsChanged) return;
+
+      const data: { ownerPersonId?: string; personSubjectIds?: string[] } = {};
+      if (setOwner) data.ownerPersonId = person.id;
+      if (subjectsChanged) data.personSubjectIds = nextSubjects;
+
+      if (table === 'process') {
+        await this.prisma.process.update({ where: { id: entityId }, data });
+      } else {
+        await this.prisma.policy.update({ where: { id: entityId }, data });
+      }
+    } catch (err) {
+      this.logger.warn(
+        { entityId, table, err: err instanceof Error ? err.message : String(err) },
+        `block-ingest: привязка автора к ${table} не удалась — пропускаю`,
+      );
+    }
   }
 
   private async attributeCommitmentAuthor(args: {

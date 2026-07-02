@@ -8,7 +8,7 @@ export const WeeklyPerPersonQuerySchema = z.object({
     .optional(),
   limit: z.coerce.number().int().min(1).max(100).default(5),
   offset: z.coerce.number().int().min(0).default(0),
-  sort: z.enum(['reliability', 'risk']).default('reliability'),
+  sort: z.enum(['risk']).default('risk'),
 });
 export type WeeklyPerPersonQuery = z.infer<typeof WeeklyPerPersonQuerySchema>;
 
@@ -16,12 +16,6 @@ export interface WeeklyPersonRowDto {
   personId: string;
   personName: string;
   departmentName: string | null;
-  promisesGiven: number;
-  promisesKept: number;
-  promisesBroken: number;
-  promisesOverdue: number;
-  promisesNoAnswer: number;
-  reliabilityPercent: number | null;
   tasksDone: number;
   tasksPlanned: number;
   tasksNotDone: number;
@@ -34,7 +28,6 @@ export interface WeeklyPerPersonDto {
   weekEnd: string;
   generatedAt: string;
   total: number;
-  topReliable: WeeklyPersonRowDto[];
   topRisk: WeeklyPersonRowDto[];
   rows: WeeklyPersonRowDto[];
 }
@@ -43,7 +36,6 @@ export interface MyWeeklyPerPersonDto {
   weekStart: string;
   weekEnd: string;
   row: WeeklyPersonRowDto | null;
-  teamAverageReliabilityPercent: number | null;
 }
 
 export const WeeklyPersonItemsQuerySchema = z.object({
@@ -55,16 +47,9 @@ export const WeeklyPersonItemsQuerySchema = z.object({
 });
 export type WeeklyPersonItemsQuery = z.infer<typeof WeeklyPersonItemsQuerySchema>;
 
-export type WeeklyPersonItemKind = 'task' | 'commitment' | 'checkin';
+export type WeeklyPersonItemKind = 'task' | 'checkin';
 
-export type WeeklyPersonItemFactStatus =
-  | 'done'
-  | 'open'
-  | 'overdue'
-  | 'fulfilled'
-  | 'missed'
-  | 'asked'
-  | 'planned';
+export type WeeklyPersonItemFactStatus = 'done' | 'open' | 'overdue' | 'planned';
 
 export interface WeeklyPersonItemDto {
   kind: WeeklyPersonItemKind;

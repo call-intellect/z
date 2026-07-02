@@ -36,13 +36,24 @@ import {
   buildDayCompanyUserMessage,
   buildFallbackDigestMarkdown,
   dayCompanyToBodyMarkdown,
+  type DayCompanyEmployeeVoice,
+  type DayCompanyEmployeeVoiceItem,
   type DayCompanyPackage,
+  type DayCompanyRawConversations,
+  type DayCompanyRawSession,
+  type DayCompanyRawTurn,
+  type DayCompanyReporting,
+  type DayCompanyReportingPerson,
   type DayCompanyResponse,
+  type DayCompanySignals,
+  type DayCompanyYesterdaySignal,
 } from '../prompts/daily-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 import { BlockerSynthesisService } from './blocker-synthesis.service';
 import { CustomerRiskRadarService } from './customer-risk-radar.service';
+import { OperationsDashboardService } from './operations-dashboard.service';
+import { PersonRefResolverService } from './person-ref-resolver.service';
 
 export interface DayVerdictSignals {
   hasNegativeClientSignal: boolean;
@@ -62,7 +73,6 @@ export function mapDailyDigestRowsToTrend(
         greenShare: Number(m.greenShare ?? 0),
         redShare: Number(m.redShare ?? 0),
         blockers: Array.isArray(m.newBlockers) ? m.newBlockers.length : 0,
-        overdueCommitments: Array.isArray(m.overdueCommitments) ? m.overdueCommitments.length : 0,
         goalsCompleted: Number(goals.completed ?? 0),
         goalsFailed: Number(goals.failed ?? 0),
       };
@@ -73,7 +83,6 @@ export function mapDailyDigestRowsToTrend(
 export function computeVerdictSignals(
   metrics: DailyDigestMetricsDto,
   pkg: DayCompanyPackage,
-  staleDaysThreshold: number,
 ): DayVerdictSignals {
   const criticalCustomer = pkg.customersAtRisk.some((c) => c.riskLevel === 'critical');
   const severeInsight = pkg.topInsights.some(
@@ -81,33 +90,9 @@ export function computeVerdictSignals(
   );
   const hasNegativeClientSignal = criticalCustomer || severeInsight;
 
-  const strongBlocker = metrics.newBlockers.some((b) => b.confidence >= 0.8);
-  const overdueAged = countOverdueAged(metrics.overdueCommitments, staleDaysThreshold) >= 1;
-  const executionStrained = strongBlocker || overdueAged;
+  const executionStrained = metrics.newBlockers.some((b) => b.confidence >= 0.8);
 
   return { hasNegativeClientSignal, executionStrained };
-}
-
-function countOverdueAged(
-  overdue: DailyDigestMetricsDto['overdueCommitments'],
-  staleDaysThreshold: number,
-): number {
-  const now = Date.now();
-  let count = 0;
-  for (const c of overdue) {
-    if (!c.dueDate) {
-      count += 1;
-      continue;
-    }
-    const due = new Date(`${c.dueDate}T00:00:00.000Z`).getTime();
-    if (Number.isNaN(due)) {
-      count += 1;
-      continue;
-    }
-    const ageDays = (now - due) / (24 * 60 * 60 * 1000);
-    if (ageDays >= staleDaysThreshold) count += 1;
-  }
-  return count;
 }
 
 export function clampVerdict(
@@ -191,6 +176,10 @@ export class DailyDigestService {
     private readonly blockerSynthesis: BlockerSynthesisService,
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService,
+    @Inject(PersonRefResolverService)
+    private readonly personRefResolver: PersonRefResolverService,
+    @Inject(OperationsDashboardService)
+    private readonly opsDashboard: OperationsDashboardService,
   ) {}
 
   async getStored(args: {
@@ -279,10 +268,6 @@ export class DailyDigestService {
         name: b.name,
         confidence: b.confidence,
       })),
-      overdueCommitments: aggregates.metrics.overdueCommitments.map((c) => ({
-        name: c.name,
-        dueDate: c.dueDate,
-      })),
       goals: {
         completed: aggregates.metrics.goals.completed,
         failed: aggregates.metrics.goals.failed,
@@ -293,22 +278,13 @@ export class DailyDigestService {
         kind: i.kind,
         causeCategory: i.causeCategory,
       })),
-      decisions: aggregates.metrics.decisions.map((d) => ({
-        statement: d.statement,
-        status: d.status,
-      })),
     };
 
     const pkg = await this.buildDayPackage({
       tenantId: args.tenantId,
       dateLocal: args.dateLocal,
     });
-    const staleDays = await this.cfg.getDynamic<number>(
-      'dashboard.stuck.staleDaysThreshold',
-      'DASHBOARD_STUCK_STALE_DAYS',
-      5,
-    );
-    const signals = computeVerdictSignals(aggregates.metrics, pkg, staleDays);
+    const signals = computeVerdictSignals(aggregates.metrics, pkg);
 
     let bodyMarkdown: string;
     let shortSummary: string | null;
@@ -318,12 +294,15 @@ export class DailyDigestService {
     let goalDayObj: DailyDigestGoalAlignmentDayDto | null;
     let risksSummary: string | null;
     let ideasSummary: string | null;
+    const userMessage = buildDayCompanyUserMessage(pkg, aggregates.metrics, args.dateLocal);
+    this.metrics.setCooDailyDigestPackageChars({ tenantTop, value: userMessage.length });
+    this.metrics.setCooDailyDigestConflictsFed({ tenantTop, value: pkg.conflicts.length });
     try {
       const result = await this.llm.call({
         taskType: DAILY_DIGEST_TASK_TYPE,
         tenantId: args.tenantId,
         systemPrompt: DAY_COMPANY_SYSTEM_PROMPT,
-        userMessage: buildDayCompanyUserMessage(pkg, aggregates.metrics, args.dateLocal),
+        userMessage,
         responseFormat: {
           type: 'json_schema',
           name: 'DayCompany',
@@ -331,7 +310,6 @@ export class DailyDigestService {
           strict: true,
         },
         reasoningEffort: 'high',
-        maxTokens: 8_000,
         sourceRef: { type: 'daily-digest', id: `${args.tenantId}:${args.dateLocal}` },
       });
       const validatedData = extractDayCompanyResponse(result);
@@ -350,6 +328,18 @@ export class DailyDigestService {
       bodyMarkdown = dayCompanyToBodyMarkdown(verdict, validatedData.letter);
       shortSummary = verdict.overall.oneLiner;
       llmTaskRouteId = `${DAY_COMPANY_PROMPT_VERSION}+${result.modelUsed}`;
+      this.metrics.incCooDailyDigestModelUsed({ tenantTop, model: result.modelUsed });
+      this.logger.log(
+        {
+          tenantId: args.tenantId,
+          dateLocal: args.dateLocal,
+          packageChars: userMessage.length,
+          conflicts: pkg.conflicts.length,
+          employeeVoice: pkg.employeeVoice.length,
+          model: result.modelUsed,
+        },
+        'daily-digest: пакет v2 собран и отправлен в LLM',
+      );
     } catch (err) {
       this.metrics.incCooDailyDigestFailed({
         tenantTop,
@@ -490,15 +480,7 @@ export class DailyDigestService {
     const dayStart = parseDateLocalToUtc(args.dateLocal);
     const dayEnd = endOfDayUtc(dayStart);
 
-    const [
-      checkIns,
-      redCheckIns,
-      newBlockers,
-      overdueCommitments,
-      goalsChanged,
-      highInsights,
-      decisions,
-    ] = await Promise.all([
+    const [checkIns, redCheckIns, newBlockers, goalsChanged, highInsights] = await Promise.all([
       this.prisma.dailyCheckIn.findMany({
         where: {
           tenantId: args.tenantId,
@@ -535,22 +517,6 @@ export class DailyDigestService {
         orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
         take: 5,
       }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentStatus: { in: ['open', 'asked'] },
-          commitmentDueDate: { lte: dayEnd },
-        },
-        select: {
-          id: true,
-          name: true,
-          commitmentDueDate: true,
-          commitmentRecipientPersonId: true,
-        },
-        orderBy: { commitmentDueDate: 'asc' },
-        take: 5,
-      }),
       this.prisma.goal.findMany({
         where: {
           tenantId: args.tenantId,
@@ -571,16 +537,6 @@ export class DailyDigestService {
           causeCategory: true,
         },
         orderBy: { firstObservedAt: 'desc' },
-        take: 5,
-      }),
-      this.prisma.decision.findMany({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          decidedAt: { gte: dayStart, lte: dayEnd },
-        },
-        select: { id: true, statement: true, text: true, status: true },
-        orderBy: { decidedAt: 'desc' },
         take: 5,
       }),
     ]);
@@ -616,12 +572,6 @@ export class DailyDigestService {
         name: (b.name ?? '').slice(0, 400),
         confidence: Number(b.confidence),
       })),
-      overdueCommitments: overdueCommitments.map((c) => ({
-        blockId: c.id,
-        name: (c.name ?? '').slice(0, 400),
-        dueDate: c.commitmentDueDate ? c.commitmentDueDate.toISOString().slice(0, 10) : null,
-        recipientPersonId: c.commitmentRecipientPersonId,
-      })),
       goals: {
         completed: completedGoals.length,
         failed: failedGoals.length,
@@ -635,20 +585,14 @@ export class DailyDigestService {
         kind: i.kind,
         causeCategory: i.causeCategory,
       })),
-      decisions: decisions.map((d) => ({
-        decisionId: d.id,
-        statement: (d.statement ?? d.text ?? '').slice(0, 400),
-        status: d.status,
-      })),
     };
 
     const sources: DailyDigestSourcesDto = {
       checkInIds: checkIns.map((c) => c.id),
       blockerIds: newBlockers.map((b) => b.id),
-      commitmentIds: overdueCommitments.map((c) => c.id),
+      commitmentIds: [],
       goalIds: goalsChanged.map((g0) => g0.id),
       insightIds: highInsights.map((i) => i.id),
-      decisionIds: decisions.map((d) => d.id),
     };
 
     return { metrics, sources };
@@ -659,6 +603,7 @@ export class DailyDigestService {
     dateLocal: string;
   }): Promise<DayCompanyPackage> {
     const [dayStart, dayEnd] = this.parseDayBoundsMsk(args.dateLocal);
+    const resolver = await this.personRefResolver.create(args.tenantId);
 
     const [meetingRows, ideaRows, insightRows] = await Promise.all([
       this.prisma.meeting.findMany({
@@ -785,6 +730,36 @@ export class DailyDigestService {
       );
     }
 
+    const employeeVoice = await this.collectEmployeeVoice({
+      tenantId: args.tenantId,
+      dayStart,
+      dayEnd,
+      resolver,
+    });
+    const rawConversations = await this.collectRawConversations({
+      tenantId: args.tenantId,
+      dayStart,
+      dayEnd,
+      resolver,
+    });
+    const signals = await this.collectSignals({
+      tenantId: args.tenantId,
+      dayStart,
+      dayEnd,
+    });
+    const conflicts = await this.collectConflicts({
+      tenantId: args.tenantId,
+      dayStart,
+    });
+    const reporting = await this.collectReporting({
+      tenantId: args.tenantId,
+      dateLocal: args.dateLocal,
+    });
+    const yesterdayOpenSignals = await this.collectYesterdayOpenSignals({
+      tenantId: args.tenantId,
+      dateLocal: args.dateLocal,
+    });
+
     return {
       dateLocal: args.dateLocal,
       goalId,
@@ -809,7 +784,491 @@ export class DailyDigestService {
       customersAtRisk,
       compass,
       yesterday,
+      employeeVoice,
+      rawConversations,
+      signals,
+      conflicts,
+      reporting,
+      yesterdayOpenSignals,
     };
+  }
+
+  private async collectEmployeeVoice(args: {
+    tenantId: string;
+    dayStart: Date;
+    dayEnd: Date;
+    resolver: Awaited<ReturnType<PersonRefResolverService['create']>>;
+  }): Promise<DayCompanyEmployeeVoice[]> {
+    try {
+      const rows = await this.prisma.ideaBlockEvidence.findMany({
+        where: {
+          tenantId: args.tenantId,
+          authorPersonId: { not: null },
+          sourceTimestamp: { gte: args.dayStart, lt: args.dayEnd },
+        },
+        select: {
+          authorPersonId: true,
+          sourceTimestamp: true,
+          block: {
+            select: { signalType: true, name: true, trustedAnswer: true },
+          },
+        },
+        take: 500,
+      });
+
+      const byPerson = new Map<
+        string,
+        {
+          ideas: DayCompanyEmployeeVoiceItem[];
+          risks: DayCompanyEmployeeVoiceItem[];
+          other: DayCompanyEmployeeVoiceItem[];
+          seen: Set<string>;
+        }
+      >();
+
+      for (const row of rows) {
+        const personId = row.authorPersonId;
+        if (!personId || !row.block) continue;
+        const signalType = row.block.signalType;
+        const bucket = employeeVoiceBucket(signalType);
+        if (bucket === null) continue;
+        const text = (row.block.trustedAnswer?.trim() || row.block.name).slice(0, 300);
+        if (!text) continue;
+        let entry = byPerson.get(personId);
+        if (!entry) {
+          entry = { ideas: [], risks: [], other: [], seen: new Set() };
+          byPerson.set(personId, entry);
+        }
+        if (entry.seen.has(text)) continue;
+        entry.seen.add(text);
+        entry[bucket].push({ text, signalType });
+      }
+
+      const result: DayCompanyEmployeeVoice[] = [];
+      for (const [personId, entry] of byPerson) {
+        const personName =
+          args.resolver.resolve({ personId, source: 'chat' }).personName ?? 'Сотрудник';
+        result.push({
+          personId,
+          personName,
+          ideas: entry.ideas,
+          risks: entry.risks,
+          other: entry.other,
+        });
+      }
+      result.sort(
+        (a, b) =>
+          b.ideas.length +
+          b.risks.length +
+          b.other.length -
+          (a.ideas.length + a.risks.length + a.other.length),
+      );
+      return result.slice(0, 12);
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: голос сотрудников для пакета упал — пропускаю',
+      );
+      return [];
+    }
+  }
+
+  private async collectRawConversations(args: {
+    tenantId: string;
+    dayStart: Date;
+    dayEnd: Date;
+    resolver: Awaited<ReturnType<PersonRefResolverService['create']>>;
+  }): Promise<DayCompanyRawConversations> {
+    let bitrix: DayCompanyRawSession[] = [];
+    let chatbox: DayCompanyRawSession[] = [];
+
+    try {
+      const rows = await this.prisma.bitrixMessage.findMany({
+        where: {
+          tenantId: args.tenantId,
+          externalCreatedAt: { gte: args.dayStart, lt: args.dayEnd },
+          text: { not: null },
+        },
+        select: {
+          sessionId: true,
+          dialogId: true,
+          authorExternalId: true,
+          authorName: true,
+          externalCreatedAt: true,
+          text: true,
+        },
+        orderBy: { externalCreatedAt: 'asc' },
+        take: 1000,
+      });
+      const bySession = new Map<string, DayCompanyRawTurn[]>();
+      for (const row of rows) {
+        if (!row.text) continue;
+        const ref = args.resolver.resolve({
+          source: 'bitrix',
+          externalId: row.authorExternalId,
+        });
+        const turn: DayCompanyRawTurn = {
+          author: row.authorName ?? 'сотрудник',
+          personId: ref.personId,
+          isClient: false,
+          ts: row.externalCreatedAt.toISOString(),
+          text: row.text.slice(0, 500),
+        };
+        const key = row.sessionId ?? row.dialogId;
+        const turns = bySession.get(key);
+        if (turns) turns.push(turn);
+        else bySession.set(key, [turn]);
+      }
+      bitrix = Array.from(bySession, ([session, turns]) => ({ session, turns }));
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: сырые переписки Битрикс упали — пропускаю',
+      );
+    }
+
+    try {
+      const rows = await this.prisma.chatboxMessage.findMany({
+        where: {
+          tenantId: args.tenantId,
+          externalCreatedAt: { gte: args.dayStart, lt: args.dayEnd },
+          text: { not: null },
+        },
+        select: {
+          sessionId: true,
+          chatId: true,
+          senderType: true,
+          senderExternalId: true,
+          senderName: true,
+          externalCreatedAt: true,
+          text: true,
+        },
+        orderBy: { externalCreatedAt: 'asc' },
+        take: 1000,
+      });
+      const bySession = new Map<string, DayCompanyRawTurn[]>();
+      for (const row of rows) {
+        if (!row.text) continue;
+        if (row.senderType === 'ASSISTANT' || row.senderType === 'QUALITY_CONTROL') continue;
+        const isClient = row.senderType === 'CLIENT';
+        const ref = args.resolver.resolve({
+          source: 'chatbox',
+          externalId: row.senderExternalId,
+          isClient,
+        });
+        const turn: DayCompanyRawTurn = {
+          author: row.senderName ?? (isClient ? 'клиент' : 'сотрудник'),
+          personId: ref.personId,
+          isClient: ref.isClient,
+          ts: row.externalCreatedAt.toISOString(),
+          text: row.text.slice(0, 500),
+        };
+        const key = row.sessionId ?? row.chatId;
+        const turns = bySession.get(key);
+        if (turns) turns.push(turn);
+        else bySession.set(key, [turn]);
+      }
+      chatbox = Array.from(bySession, ([session, turns]) => ({ session, turns }));
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: сырые переписки чатбокса упали — пропускаю',
+      );
+    }
+
+    const budget = await this.cfg.getDynamic<number>(
+      'operations.daily_digest.raw_char_budget',
+      'COO_DAILY_DIGEST_RAW_CHAR_BUDGET',
+      40000,
+    );
+    return trimRawConversations({ bitrix, chatbox }, budget);
+  }
+
+  private async collectSignals(args: {
+    tenantId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }): Promise<DayCompanySignals> {
+    const signals: DayCompanySignals = { blockers: [], risks: [], ideas: [] };
+    try {
+      const blockers = await this.prisma.ideaBlock.findMany({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'blocker',
+          createdAt: { gte: args.dayStart, lt: args.dayEnd },
+        },
+        select: { name: true, confidence: true },
+        orderBy: [{ confidence: 'desc' }],
+        take: 10,
+      });
+      signals.blockers = blockers.map((b) => ({
+        text: b.name.slice(0, 300),
+        confidence: Number(b.confidence),
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: блокеры-сигналы для пакета упали — пропускаю',
+      );
+    }
+
+    try {
+      const risks = await this.prisma.insight.findMany({
+        where: {
+          tenantId: args.tenantId,
+          status: { in: ['active', 'mitigating'] },
+          severity: { in: ['high', 'critical'] },
+        },
+        select: {
+          statement: true,
+          causeCategory: true,
+          dynamicLabel: true,
+          sourceBlockIds: true,
+          frequencyScore: true,
+          status: true,
+          severity: true,
+        },
+        orderBy: [{ severity: 'desc' }, { lastObservedAt: 'desc' }],
+        take: 12,
+      });
+      signals.risks = risks.map((i) => ({
+        text: (i.statement ?? '').slice(0, 300),
+        causeCategory: i.causeCategory,
+        dynamicLabel: i.dynamicLabel,
+        observations: i.sourceBlockIds.length,
+        frequencyScore: Number(i.frequencyScore),
+        status: i.status,
+        severity: i.severity,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: риски-сигналы для пакета упали — пропускаю',
+      );
+    }
+
+    try {
+      const ideas = await this.prisma.idea.findMany({
+        where: {
+          tenantId: args.tenantId,
+          status: { notIn: ['rejected', 'archived'] },
+        },
+        select: {
+          statement: true,
+          supporterCount: true,
+          weight: true,
+          status: true,
+          clusterId: true,
+        },
+        orderBy: [{ weight: 'desc' }],
+        take: 12,
+      });
+      signals.ideas = ideas.map((i) => ({
+        text: (i.statement ?? '').slice(0, 300),
+        supporterCount: i.supporterCount,
+        weight: Number(i.weight),
+        status: i.status,
+        clusterId: i.clusterId,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: идеи-сигналы для пакета упали — пропускаю',
+      );
+    }
+
+    return signals;
+  }
+
+  private async collectConflicts(args: {
+    tenantId: string;
+    dayStart: Date;
+  }): Promise<DayCompanyPackage['conflicts']> {
+    try {
+      const frictions = await this.opsDashboard.getTeamFrictions({
+        tenantId: args.tenantId,
+        since: args.dayStart,
+        limit: 20,
+      });
+      return frictions.items.map((f) => ({
+        fromPersonName: f.fromPersonName,
+        toPersonName: f.toPersonName,
+        confidence: f.confidence,
+        explanation: f.explanation,
+        since: f.observedAt,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: конфликты для пакета упали — пропускаю',
+      );
+      return [];
+    }
+  }
+
+  private async collectReporting(args: {
+    tenantId: string;
+    dateLocal: string;
+  }): Promise<DayCompanyReporting> {
+    const empty: DayCompanyReporting = {
+      planSubmitted: { done: 0, total: 0 },
+      reportSubmitted: { done: 0, total: 0 },
+      perPerson: [],
+      noReport: [],
+      tasksSet: 0,
+      tasksDone: 0,
+      dayPlan: { done: 0, total: 0 },
+    };
+    try {
+      const [checkIns, employees] = await Promise.all([
+        this.prisma.dailyCheckIn.findMany({
+          where: { tenantId: args.tenantId, dateLocal: args.dateLocal },
+          select: {
+            personId: true,
+            kind: true,
+            plansJson: true,
+            donesJson: true,
+            notDoneJson: true,
+            reportCompleteness: true,
+            person: { select: { name: true, relationship: true } },
+          },
+        }),
+        this.prisma.person.findMany({
+          where: { tenantId: args.tenantId, deletedAt: null, relationship: 'employee' },
+          select: { id: true, name: true },
+        }),
+      ]);
+
+      const employeeIds = new Set(employees.map((e) => e.id));
+      const nameById = new Map(employees.map((e) => [e.id, e.name]));
+
+      const perPersonAgg = new Map<
+        string,
+        {
+          personName: string;
+          planSubmitted: boolean;
+          reportSubmitted: boolean;
+          planned: number;
+          done: number;
+          mismatchReason?: string;
+        }
+      >();
+
+      for (const ci of checkIns) {
+        const name = ci.person?.name ?? nameById.get(ci.personId) ?? 'Без имени';
+        let agg = perPersonAgg.get(ci.personId);
+        if (!agg) {
+          agg = {
+            personName: name,
+            planSubmitted: false,
+            reportSubmitted: false,
+            planned: 0,
+            done: 0,
+          };
+          perPersonAgg.set(ci.personId, agg);
+        }
+        const plannedCount = jsonArrayLength(ci.plansJson);
+        const doneCount = jsonArrayLength(ci.donesJson);
+        const notDoneCount = jsonArrayLength(ci.notDoneJson);
+        if (ci.kind === 'morning' && plannedCount > 0) {
+          agg.planSubmitted = true;
+          agg.planned = plannedCount;
+        }
+        if (ci.kind === 'evening' && (doneCount > 0 || notDoneCount > 0)) {
+          agg.reportSubmitted = true;
+          agg.done = doneCount;
+          if (agg.planned > agg.done && notDoneCount > 0) {
+            const firstNotDone = jsonArrayFirstText(ci.notDoneJson);
+            if (firstNotDone) agg.mismatchReason = firstNotDone.slice(0, 200);
+          }
+        }
+      }
+
+      let planDone = 0;
+      let reportDone = 0;
+      let tasksSet = 0;
+      let tasksDone = 0;
+      const perPerson: DayCompanyReportingPerson[] = [];
+      const reportedPersonIds = new Set<string>();
+
+      for (const [personId, agg] of perPersonAgg) {
+        if (employeeIds.has(personId)) {
+          if (agg.planSubmitted) planDone++;
+          if (agg.reportSubmitted) reportDone++;
+          if (agg.reportSubmitted) reportedPersonIds.add(personId);
+        }
+        tasksSet += agg.planned;
+        tasksDone += agg.done;
+        perPerson.push({
+          personName: agg.personName,
+          planSubmitted: agg.planSubmitted,
+          reportSubmitted: agg.reportSubmitted,
+          planned: agg.planned,
+          done: agg.done,
+          ...(agg.mismatchReason ? { mismatchReason: agg.mismatchReason } : {}),
+        });
+      }
+
+      const noReport = employees
+        .filter((e) => !reportedPersonIds.has(e.id))
+        .map((e) => e.name);
+
+      return {
+        planSubmitted: { done: planDone, total: employees.length },
+        reportSubmitted: { done: reportDone, total: employees.length },
+        perPerson,
+        noReport,
+        tasksSet,
+        tasksDone,
+        dayPlan: { done: tasksDone, total: tasksSet },
+      };
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: план↔факт (reporting) для пакета упал — пропускаю',
+      );
+      return empty;
+    }
+  }
+
+  private async collectYesterdayOpenSignals(args: {
+    tenantId: string;
+    dateLocal: string;
+  }): Promise<DayCompanyYesterdaySignal[]> {
+    try {
+      const prev = await this.getStored({
+        tenantId: args.tenantId,
+        dateLocal: previousDateLocal(args.dateLocal),
+      });
+      if (!prev) return [];
+      const out: DayCompanyYesterdaySignal[] = [];
+      const axes = prev.verdict?.axes ?? [];
+      for (const axis of axes) {
+        if (axis.state !== 'ok') {
+          out.push({ text: axis.why, axis: axis.key, state: axis.state });
+        }
+      }
+      const risksSummary = prev.metrics?.risksSummary;
+      if (typeof risksSummary === 'string' && risksSummary.trim()) {
+        out.push({ text: risksSummary, axis: 'overall', state: 'warn' });
+      }
+      return out;
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, err: err instanceof Error ? err.message : String(err) },
+        'daily-digest: вчерашние открытые сигналы для пакета упали — пропускаю',
+      );
+      return [];
+    }
   }
 
   private async buildDailyTrend(
@@ -899,20 +1358,14 @@ export class DailyDigestService {
     chronicBlockers: DailyDigestChronicBlockerDto[];
   }> {
     const [dayStart, dayEnd] = this.parseDayBoundsMsk(args.dateLocal);
-    const now = new Date();
 
     const [
       meetingsToday,
-      decisionsToday,
       criticalSignals,
-      overdueCommits,
-      raisedDecisions,
       highInsights,
       redCheckIns,
-      brokenCommits,
       recognitionsToday,
       helpfulnessToday,
-      keptCommits,
       persons,
     ] = await Promise.all([
       this.prisma.meeting.findMany({
@@ -925,16 +1378,6 @@ export class DailyDigestService {
         take: 30,
         orderBy: { endedAt: 'asc' },
       }),
-      this.prisma.decision.findMany({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          createdAt: { gte: dayStart, lt: dayEnd },
-        },
-        select: { id: true, statement: true, status: true, createdAt: true },
-        take: 30,
-        orderBy: { createdAt: 'asc' },
-      }),
       this.prisma.ideaBlock.findMany({
         where: {
           tenantId: args.tenantId,
@@ -945,28 +1388,6 @@ export class DailyDigestService {
         select: { id: true, name: true, signalType: true, createdAt: true },
         take: 10,
         orderBy: { createdAt: 'asc' },
-      }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentStatus: { in: ['open', 'asked'] },
-          commitmentDueDate: { lt: now },
-        },
-        select: { id: true, name: true, commitmentDueDate: true },
-        take: 10,
-        orderBy: { commitmentDueDate: 'asc' },
-      }),
-      this.prisma.decision.findMany({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          status: { in: ['proposed', 'approved', 'active'] },
-          raisedCount: { gte: 2 },
-        },
-        select: { id: true, statement: true, raisedCount: true },
-        take: 10,
-        orderBy: { raisedCount: 'desc' },
       }),
       this.prisma.insight.findMany({
         where: {
@@ -993,20 +1414,6 @@ export class DailyDigestService {
         },
         take: 10,
       }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentStatus: 'missed',
-          updatedAt: { gte: dayStart, lt: dayEnd },
-        },
-        select: {
-          id: true,
-          name: true,
-          commitmentRecipient: { select: { id: true, name: true } },
-        },
-        take: 10,
-      }),
       this.prisma.recognition.findMany({
         where: {
           tenantId: args.tenantId,
@@ -1026,22 +1433,6 @@ export class DailyDigestService {
         },
         select: { helperUserId: true, helpCount: true },
         orderBy: { helpCount: 'desc' },
-        take: 20,
-      }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentStatus: 'fulfilled',
-          updatedAt: { gte: dayStart, lt: dayEnd },
-          commitmentAuthorPersonId: { not: null },
-        },
-        select: {
-          id: true,
-          name: true,
-          commitmentAuthorPersonId: true,
-        },
-        orderBy: { updatedAt: 'desc' },
         take: 20,
       }),
       this.prisma.person.findMany({
@@ -1069,16 +1460,6 @@ export class DailyDigestService {
         ...(durationMin ? { detail: `${durationMin} мин` } : {}),
       });
     }
-    for (const d of decisionsToday) {
-      eventsToday.push({
-        kind: 'decision',
-        id: d.id,
-        title: (d.statement ?? 'Решение').slice(0, 100),
-        occurredAt: d.createdAt.toISOString(),
-        link: `/decisions/${encodeURIComponent(d.id)}`,
-        detail: d.status,
-      });
-    }
     for (const s of criticalSignals) {
       eventsToday.push({
         kind: 'signal',
@@ -1092,32 +1473,6 @@ export class DailyDigestService {
     eventsToday.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
 
     const urgentItems: DailyDigestUrgentItemDto[] = [];
-    for (const c of overdueCommits) {
-      const daysOverdue = c.commitmentDueDate
-        ? Math.max(
-            1,
-            Math.floor((now.getTime() - c.commitmentDueDate.getTime()) / (24 * 60 * 60 * 1000)),
-          )
-        : 0;
-      urgentItems.push({
-        kind: 'overdue_commitment',
-        id: c.id,
-        title: (c.name ?? '').slice(0, 100),
-        link: `/me/commitments?id=${encodeURIComponent(c.id)}`,
-        badge: `просрочено на ${daysOverdue} ${daysOverdue === 1 ? 'день' : 'дн.'}`,
-        urgency: daysOverdue >= 3 ? 'high' : 'medium',
-      });
-    }
-    for (const d of raisedDecisions) {
-      urgentItems.push({
-        kind: 'raised_decision',
-        id: d.id,
-        title: (d.statement ?? 'Решение').slice(0, 100),
-        link: `/decisions/${encodeURIComponent(d.id)}`,
-        badge: `поднималось ${d.raisedCount} раз`,
-        urgency: d.raisedCount >= 4 ? 'high' : 'medium',
-      });
-    }
     for (const i of highInsights) {
       urgentItems.push({
         kind: 'high_insight',
@@ -1179,37 +1534,6 @@ export class DailyDigestService {
       });
     }
 
-    const keptByAuthor = new Map<string, { count: number; lastName: string }>();
-    for (const c of keptCommits) {
-      const authorId = c.commitmentAuthorPersonId;
-      if (!authorId) continue;
-      const prev = keptByAuthor.get(authorId);
-      if (prev) {
-        prev.count += 1;
-      } else {
-        keptByAuthor.set(authorId, {
-          count: 1,
-          lastName: (c.name ?? '').trim(),
-        });
-      }
-    }
-    for (const [personId, agg] of keptByAuthor) {
-      const name = personById.get(personId);
-      if (!name) continue;
-      if (shinedMap.has(personId)) continue;
-      const detail =
-        agg.count === 1 && agg.lastName
-          ? `сдержал обещание: ${agg.lastName.slice(0, 80)}`
-          : `закрыл ${agg.count} ${pluralizeObeshchanie(agg.count)}`;
-      shinedMap.set(personId, {
-        personId,
-        personName: name,
-        reason: 'commitments_kept',
-        detail,
-        link: `/persons/${encodeURIComponent(personId)}`,
-      });
-    }
-
     const whoShined = Array.from(shinedMap.values()).slice(0, 8);
 
     const struggledMap = new Map<string, DailyDigestPersonStruggledDto>();
@@ -1224,18 +1548,6 @@ export class DailyDigestService {
           link: `/persons/${encodeURIComponent(r.personId)}`,
         });
       }
-    }
-    for (const c of brokenCommits) {
-      if (!c.commitmentRecipient) continue;
-      const pid = c.commitmentRecipient.id;
-      if (struggledMap.has(pid)) continue;
-      struggledMap.set(pid, {
-        personId: pid,
-        personName: c.commitmentRecipient.name ?? 'Без имени',
-        reason: 'broken_commitment',
-        detail: `Не выполнено: ${(c.name ?? '').slice(0, 80)}`,
-        link: `/persons/${encodeURIComponent(pid)}`,
-      });
     }
     const whoStruggled = Array.from(struggledMap.values()).slice(0, 8);
 
@@ -1322,7 +1634,6 @@ function emptyMetrics(): DailyDigestMetricsDto {
     redShare: 0,
     topRedCheckIns: [],
     newBlockers: [],
-    overdueCommitments: [],
     goals: {
       completed: 0,
       failed: 0,
@@ -1331,7 +1642,6 @@ function emptyMetrics(): DailyDigestMetricsDto {
       failedIds: [],
     },
     newHighInsights: [],
-    decisions: [],
   };
 }
 
@@ -1342,7 +1652,6 @@ function emptySources(): DailyDigestSourcesDto {
     commitmentIds: [],
     goalIds: [],
     insightIds: [],
-    decisionIds: [],
   };
 }
 
@@ -1371,10 +1680,6 @@ function pluralizeRaz(n: number): string {
 
 function pluralizeBlagodarnost(n: number): string {
   return pluralRu(n, 'благодарность', 'благодарности', 'благодарностей');
-}
-
-function pluralizeObeshchanie(n: number): string {
-  return pluralRu(n, 'обещание', 'обещания', 'обещаний');
 }
 
 function parseSnapshotSignals(raw: unknown): { pro: string[]; contra: string[] } {
@@ -1420,4 +1725,84 @@ function recognitionTypeRu(type: string): string | null {
     default:
       return null;
   }
+}
+
+const EMPLOYEE_VOICE_IDEA_TYPES = new Set(['idea', 'suggestion', 'hypothesis']);
+const EMPLOYEE_VOICE_RISK_TYPES = new Set([
+  'risk',
+  'pain',
+  'churn_risk',
+  'blocker',
+  'team_friction',
+  'process_friction',
+]);
+const EMPLOYEE_VOICE_SKIP_TYPES = new Set(['fact', 'mood']);
+
+function employeeVoiceBucket(signalType: string): 'ideas' | 'risks' | 'other' | null {
+  if (EMPLOYEE_VOICE_IDEA_TYPES.has(signalType)) return 'ideas';
+  if (EMPLOYEE_VOICE_RISK_TYPES.has(signalType)) return 'risks';
+  if (EMPLOYEE_VOICE_SKIP_TYPES.has(signalType)) return null;
+  return 'other';
+}
+
+function jsonArrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function jsonArrayFirstText(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const first = value[0];
+  if (first && typeof first === 'object' && 'text' in first) {
+    const text = (first as { text?: unknown }).text;
+    if (typeof text === 'string' && text.trim()) return text;
+  }
+  return null;
+}
+
+function trimRawConversations(
+  conversations: DayCompanyRawConversations,
+  budget: number,
+): DayCompanyRawConversations {
+  const total =
+    sumTurnsChars(conversations.bitrix) + sumTurnsChars(conversations.chatbox);
+  if (total <= budget) return conversations;
+
+  const flat: Array<{ channel: 'bitrix' | 'chatbox'; session: string; turn: DayCompanyRawTurn }> =
+    [];
+  for (const s of conversations.bitrix) {
+    for (const t of s.turns) flat.push({ channel: 'bitrix', session: s.session, turn: t });
+  }
+  for (const s of conversations.chatbox) {
+    for (const t of s.turns) flat.push({ channel: 'chatbox', session: s.session, turn: t });
+  }
+  flat.sort((a, b) => a.turn.ts.localeCompare(b.turn.ts));
+
+  let used = flat.reduce((acc, x) => acc + x.turn.text.length, 0);
+  let cut = 0;
+  while (used > budget && cut < flat.length) {
+    used -= flat[cut]!.turn.text.length;
+    cut++;
+  }
+  const kept = flat.slice(cut);
+
+  const rebuild = (channel: 'bitrix' | 'chatbox'): DayCompanyRawSession[] => {
+    const bySession = new Map<string, DayCompanyRawTurn[]>();
+    for (const x of kept) {
+      if (x.channel !== channel) continue;
+      const turns = bySession.get(x.session);
+      if (turns) turns.push(x.turn);
+      else bySession.set(x.session, [x.turn]);
+    }
+    return Array.from(bySession, ([session, turns]) => ({ session, turns }));
+  };
+
+  return { bitrix: rebuild('bitrix'), chatbox: rebuild('chatbox') };
+}
+
+function sumTurnsChars(sessions: DayCompanyRawSession[]): number {
+  let sum = 0;
+  for (const s of sessions) {
+    for (const t of s.turns) sum += t.text.length;
+  }
+  return sum;
 }

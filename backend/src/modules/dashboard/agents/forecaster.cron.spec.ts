@@ -23,12 +23,6 @@ function buildCron(opts: BuildOpts): {
     { sentiment: 'green' },
     { sentiment: 'red' },
   ]);
-  const ideaBlockFindMany = vi.fn(async () => [
-    { commitmentStatus: 'fulfilled', commitmentDueDate: new Date() },
-    { commitmentStatus: 'fulfilled', commitmentDueDate: new Date() },
-    { commitmentStatus: 'missed', commitmentDueDate: new Date() },
-  ]);
-  const decisionCount = vi.fn(async () => 3);
   const engagementSnapshotFindMany = vi.fn(async () => [{ score: 0.7 }, { score: 0.8 }]);
   const snapshotCreate = vi.fn(async () => ({ id: 'snap-1' }));
   const orgFindMany = vi.fn(async () => orgs);
@@ -36,8 +30,6 @@ function buildCron(opts: BuildOpts): {
   const prisma = {
     org: { findMany: orgFindMany },
     dailyCheckIn: { findMany: checkInFindMany },
-    ideaBlock: { findMany: ideaBlockFindMany },
-    decision: { count: decisionCount },
     personEngagementSnapshot: { findMany: engagementSnapshotFindMany },
     forecastSnapshot: { create: snapshotCreate },
   } as unknown as PrismaService;

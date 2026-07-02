@@ -275,31 +275,26 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /**
-   * ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
-   *
-   * Enqueue одного job'а в `core.specialists-combined`. Идемпотентность через
-   * `jobId = specialists_combined_<meetingId>`: повторный enqueue той же
-   * встречи в окне BullMQ не создаст дубль.
-   *
-   * NB: producer сам должен проверить флаг `SPECIALISTS_COMBINED_ENABLED`
-   * перед вызовом. Сам сервис очереди — нейтрален. Прежний cron-producer
-   * (MeetingAnalyzeV2Cron) удалён вместе с v2-стеком (2026-06-10).
-   */
   async enqueueSpecialistsCombined(
-    meetingId: string,
+    descriptor: { tenantId: string; sourceType: string; externalId: string },
     opts?: { delayMs?: number },
   ): Promise<void> {
     const q = this.requireQueue(CORE_QUEUE_NAMES.SPECIALISTS_COMBINED);
-    const jobId = `specialists_combined_${meetingId}`;
-    const payload: SpecialistsCombinedJobData = { meetingId };
+    const { tenantId, sourceType, externalId } = descriptor;
+    const jobId = `specialists_combined_${sourceType}_${externalId}`;
+    const payload: SpecialistsCombinedJobData = {
+      tenantId,
+      sourceType,
+      externalId,
+      ...(sourceType === 'meeting' ? { meetingId: externalId } : {}),
+    };
     const jobOpts: JobsOptions = { jobId };
     if (opts?.delayMs !== undefined && opts.delayMs > 0) {
       jobOpts.delay = opts.delayMs;
     }
     await q.add('specialists-combined', this.stamp(payload), jobOpts);
     this.logger.debug(
-      `enqueue core.specialists-combined meetingId=${meetingId} delay=${opts?.delayMs ?? 0}ms`,
+      `enqueue core.specialists-combined source=${sourceType}:${externalId} delay=${opts?.delayMs ?? 0}ms`,
     );
   }
 

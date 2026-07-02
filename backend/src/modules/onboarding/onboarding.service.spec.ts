@@ -93,7 +93,6 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
 
       knowledgeRiskSnapshot: { deleteMany: _del('knowledgeRiskSnapshot') },
       recurringTopic: { deleteMany: _del('recurringTopic') },
-      promiseNetworkSnapshot: { deleteMany: _del('promiseNetworkSnapshot') },
       personGoalContribution: { deleteMany: _del('personGoalContribution') },
       knowledgeVelocitySnapshot: { deleteMany: _del('knowledgeVelocitySnapshot') },
       personEngagementSnapshot: { deleteMany: _del('personEngagementSnapshot') },

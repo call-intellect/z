@@ -55,6 +55,8 @@ function buildSvc(overrides: { chronic?: unknown[]; chronicReject?: Error }) {
     customerRisk as never,
     blockerSynthesis as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
   return { svc, blockerSynthesis };
 }

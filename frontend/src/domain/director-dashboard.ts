@@ -228,7 +228,6 @@ export type DirectorDashboardValueStripApi = {
   tasksExtracted: number;
   decisionsExtracted: number;
   questionsAnsweredByMemory: number;
-  commitmentsKept: number;
   tasksResolved: number;
   ideasCollected: number;
 };
@@ -246,8 +245,6 @@ export type DirectorDashboardApi = {
   openQuestions: DirectorDashboardOpenQuestionApi[];
   narrativeSummary: NarrativeSummaryApi | null;
   kpiSentimentIndex?: DirectorDashboardKpiApi;
-  kpiCommitmentReliability?: DirectorDashboardKpiApi;
-  kpiHangingDecisions?: DirectorDashboardKpiApi;
   strategicAlignment?: DirectorDashboardStrategicAlignmentApi;
   requiresAction?: DirectorDashboardRequiresActionApi;
   goalsTree?: GoalTreeNodeApi[];
@@ -351,8 +348,6 @@ export type DirectorDashboardDomain = {
   openQuestions: DirectorDashboardOpenQuestionDomain[];
   narrativeSummary: NarrativeSummaryDomain | null;
   kpiSentimentIndex: DirectorDashboardKpiDomain | null;
-  kpiCommitmentReliability: DirectorDashboardKpiDomain | null;
-  kpiHangingDecisions: DirectorDashboardKpiDomain | null;
   strategicAlignment: DirectorDashboardStrategicAlignmentDomain | null;
   requiresAction: DirectorDashboardRequiresActionDomain | null;
   goalsTree: GoalTreeNodeDomain[] | null;
@@ -397,7 +392,6 @@ const EMPTY_VALUE_STRIP: DirectorDashboardValueStripDomain = {
   tasksExtracted: 0,
   decisionsExtracted: 0,
   questionsAnsweredByMemory: 0,
-  commitmentsKept: 0,
   tasksResolved: 0,
   ideasCollected: 0,
 };
@@ -411,7 +405,6 @@ function valueStripFromApi(
     tasksExtracted: api.tasksExtracted ?? 0,
     decisionsExtracted: api.decisionsExtracted ?? 0,
     questionsAnsweredByMemory: api.questionsAnsweredByMemory ?? 0,
-    commitmentsKept: api.commitmentsKept ?? 0,
     tasksResolved: api.tasksResolved ?? 0,
     ideasCollected: api.ideasCollected ?? 0,
   };
@@ -494,6 +487,7 @@ export function goalTreeNodeToRenderNode(
     id: node.id,
     name: node.name,
     progressStatus: node.progressStatus,
+    cachedAlignment: node.cachedAlignment,
     keyResults: node.keyResults.map((kr) => ({
       id: kr.id,
       name: kr.name,
@@ -533,8 +527,6 @@ export function directorDashboardFromApi(
     openQuestions: api.openQuestions.map(openQuestionFromApi),
     narrativeSummary: api.narrativeSummary,
     kpiSentimentIndex: api.kpiSentimentIndex ?? null,
-    kpiCommitmentReliability: api.kpiCommitmentReliability ?? null,
-    kpiHangingDecisions: api.kpiHangingDecisions ?? null,
     strategicAlignment: api.strategicAlignment
       ? strategicAlignmentFromApi(api.strategicAlignment)
       : null,

@@ -162,7 +162,6 @@ export function MobileOverviewClient() {
                   n={valueStrip.questionsAnsweredByMemory}
                   label="ответов"
                 />
-                <ValueStat n={valueStrip.commitmentsKept} label="обещаний" />
               </div>
             </div>
           )}

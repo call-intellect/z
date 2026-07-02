@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-import { CommitmentReliabilityService } from '../../dashboard/services/commitment-reliability.service';
 
 export interface PersonPulseMoodPointDto {
   date: string;
@@ -40,11 +39,6 @@ export interface PersonPulseDto {
   moodTrend30d: PersonPulseMoodPointDto[];
   checkInsTotal30d: number;
   checkInsExpectedDays: number;
-  promisesReliabilityPercent: number;
-  promisesDelta14d: number | null;
-  promisesKept14d: number;
-  promisesBroken14d: number;
-  promisesOverdue14d: number;
   riskFlags: PersonPulseRiskFlagDto[];
   riskFlagsGeneratedAt: string | null;
 }
@@ -57,8 +51,6 @@ export class PersonPulseService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
-    @Inject(CommitmentReliabilityService)
-    private readonly commits: CommitmentReliabilityService,
   ) {}
 
   async getPulse(args: {
@@ -98,28 +90,20 @@ export class PersonPulseService {
     const now = new Date();
     const since30d = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
 
-    const [checkIns30d, promisesRes] = await Promise.all([
-      this.prisma.dailyCheckIn.findMany({
-        where: {
-          tenantId: args.tenantId,
-          personId: person.id,
-          createdAt: { gte: since30d },
-        },
-        select: {
-          createdAt: true,
-          dateLocal: true,
-          sentiment: true,
-          qualityScore: true,
-        },
-        orderBy: { createdAt: 'asc' },
-      }),
-      this.commits.getReliability({
+    const checkIns30d = await this.prisma.dailyCheckIn.findMany({
+      where: {
         tenantId: args.tenantId,
-        scope: 'person',
-        scopeId: person.id,
-        windowDays: 14,
-      }),
-    ]);
+        personId: person.id,
+        createdAt: { gte: since30d },
+      },
+      select: {
+        createdAt: true,
+        dateLocal: true,
+        sentiment: true,
+        qualityScore: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
 
     const moodTrend30d: PersonPulseMoodPointDto[] = checkIns30d.map((c) => ({
       date: c.dateLocal ?? c.createdAt.toISOString().slice(0, 10),
@@ -148,11 +132,6 @@ export class PersonPulseService {
       moodTrend30d,
       checkInsTotal30d: checkIns30d.length,
       checkInsExpectedDays: 30,
-      promisesReliabilityPercent: promisesRes.reliabilityPercent,
-      promisesDelta14d: promisesRes.delta14d,
-      promisesKept14d: promisesRes.kept,
-      promisesBroken14d: promisesRes.broken,
-      promisesOverdue14d: promisesRes.overdue,
       riskFlags,
       riskFlagsGeneratedAt,
     };

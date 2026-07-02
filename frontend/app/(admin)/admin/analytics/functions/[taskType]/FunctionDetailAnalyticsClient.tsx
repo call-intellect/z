@@ -15,11 +15,10 @@ import {
 
 import { ApiError } from "@/api/api-error";
 import {
-  adminLlmRoutesApi,
-  LLM_PROVIDERS,
-  type LlmProvider,
-  type LlmRouteProvider,
-} from "@/api/admin-llm-routes.api";
+  adminAiModelsApi,
+  AI_MODELS_PROVIDERS,
+  type AiModelTier,
+} from "@/api/admin-ai-models.api";
 import { adminFunctionsApi } from "@/api/admin-experiments.api";
 import { adminUsageApi } from "@/api/admin-usage.api";
 import {
@@ -55,6 +54,10 @@ import {
 } from "../../../AdminStateViews";
 import { useAdminQuery } from "../../../useAdminQuery";
 import { ExperimentStartDialog } from "../../../experiments/ExperimentStartDialog";
+
+type LlmRouteProvider = { provider: string; model?: string };
+
+const TIER_BY_POSITION: AiModelTier[] = ["primary", "secondary", "tertiary"];
 
 export function FunctionDetailAnalyticsClient({
   taskType,
@@ -95,11 +98,24 @@ export function FunctionDetailAnalyticsClient({
       toast.error("Нужен хотя бы один provider");
       return;
     }
+    const reason = window.prompt(
+      "Причина изменения (мин. 3 символа) — попадёт в аудит-лог:",
+    );
+    if (!reason || reason.trim().length < 3) {
+      if (reason !== null) toast.error("Причина должна быть не короче 3 символов");
+      return;
+    }
     setSaving(true);
     try {
-      await adminLlmRoutesApi.upsert(taskType as never, {
-        providers,
+      await adminAiModelsApi.putChain(taskType, {
+        entries: providers.map((p, idx) => ({
+          tier: TIER_BY_POSITION[idx] ?? "tertiary",
+          providerName: p.provider,
+          model: p.model ?? null,
+          priority: idx,
+        })),
         isActive,
+        reason: reason.trim(),
       });
       toast.success("Сохранено. Применится через ~60 секунд.");
       setDirty(false);
@@ -344,7 +360,7 @@ function ProviderEditor({
   providers: LlmRouteProvider[];
   onChange: (next: LlmRouteProvider[]) => void;
 }) {
-  const [newProvider, setNewProvider] = useState<LlmProvider>("anthropic");
+  const [newProvider, setNewProvider] = useState<string>("anthropic");
   const [newModel, setNewModel] = useState("");
 
   const move = (idx: number, dir: -1 | 1) => {
@@ -423,15 +439,12 @@ function ProviderEditor({
         ))}
       </ul>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Select
-          value={newProvider}
-          onValueChange={(v) => setNewProvider(v as LlmProvider)}
-        >
+        <Select value={newProvider} onValueChange={(v) => setNewProvider(v)}>
           <SelectTrigger className="h-8 w-44 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {LLM_PROVIDERS.map((p) => (
+            {AI_MODELS_PROVIDERS.map((p) => (
               <SelectItem key={p} value={p}>
                 {p}
               </SelectItem>

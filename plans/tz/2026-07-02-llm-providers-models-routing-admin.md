@@ -260,7 +260,7 @@ export const PutChainSchema = z.object({
 - Acceptance: `bun run typecheck` (frontend) чистый; `grep -rn "ADMIN_SMOKE_TEST_PROVIDERS" frontend/src` → 0; `grep -rn "smoke-test/status" frontend/src` → 0; UI на русском; парные токены `bg-*`/`text-*-fg`, без `text-white`/hex; ключ нигде не отображается; create→discover→импорт→smoke→edit→delete проходят против локального бэка.
 - Закрывает: R15.
 
-### Ф8 — Фронт «Маршрутизация» единым экраном `[ ]`
+### Ф8 — Фронт «Маршрутизация» единым экраном `[x]`
 **Ценность:** как супер-админ, вижу и правлю все маршруты «сервис → провайдер → модель» в одном месте с дропдаунами из реестра.
 - Входит: `/admin/ai/routing` — таблица по группам taskType (существующая группировка), в строке: провайдер-дропдаун (из `adminLlmProvidersApi.list`), модель-дропдаун (модели выбранного провайдера из каталога + пункт «Ввести вручную»), колонка «Эффективно», сохранение через новый `PUT .../chain`; блок «Цепочка по умолчанию» (крутилка `llm.router.defaultChain` через admin-settings API); детальная `[taskType]` — оставить табы Метрики/История, вкладку «Цепочка» перевести на chain-endpoint, показ `pinnedVersionNote`; удалить: страницу+пункт меню `/admin/llm-routes`, `ExperimentsClient` и redirect-страницу `experiments`, битые ссылки «A/B-эксперименты»/«Все эксперименты»/«Назад к списку» (вести на `/admin/ai/routing`), redirect-папки `/admin/ai-models/*`, `/admin/llm/*`, `/admin/llm-prices` (клиенты переносятся в новые пути); скрыть A/B-контролы switch-primary (`abSplitPercent`) — vNext (Б2); `formatCostRub` — курс из `metrics.usdRubRate` (хардкод 90 удалить); `KNOWN_MODELS` удалить (модели из каталога).
 - НЕ входит: фикс A/B-рантайма; org-overrides.

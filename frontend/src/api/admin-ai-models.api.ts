@@ -59,6 +59,7 @@ export type TaskTypeMetricsApi = {
       costUsd: number;
     }
   >;
+  usdRubRate: number | null;
 };
 
 export type RouteChangeApi = {
@@ -107,6 +108,22 @@ export type AddProviderRequest = {
   reason?: string;
 };
 
+export type PutChainEntryRequest = {
+  tier: AiModelTier;
+  providerName: string;
+  model?: string | null;
+  priority: number;
+};
+
+export type PutChainRequest = {
+  entries: PutChainEntryRequest[];
+  isActive: boolean;
+  pinnedVersionNote?: string | null;
+  reason: string;
+};
+
+export type PutChainResponse = { ok: true; warnings: string[] };
+
 export type CreateExperimentRequest = {
   taskType: string;
   controlModel: string;
@@ -143,6 +160,12 @@ export const adminAiModelsApi = {
   addProvider: (taskType: string, body: AddProviderRequest) =>
     apiClient.post<{ ok: true }>(
       `/api/v1/admin/ai-models/${encodeURIComponent(taskType)}/add-provider`,
+      body,
+    ),
+
+  putChain: (taskType: string, body: PutChainRequest) =>
+    apiClient.put<PutChainResponse>(
+      `/api/v1/admin/ai-models/${encodeURIComponent(taskType)}/chain`,
       body,
     ),
 

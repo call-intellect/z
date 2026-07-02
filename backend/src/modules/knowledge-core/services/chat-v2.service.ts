@@ -490,6 +490,32 @@ function dedupe(items: string[]): string[] {
   return [...new Set(items)];
 }
 
+export function detectMultiHop(question: string): boolean {
+  const q = question.toLowerCase();
+  const phraseMarkers = [
+    'то, что',
+    'то что',
+    'того, что',
+    'того что',
+    'тем, что',
+    'тем что',
+    'из-за чего',
+    'из-за того',
+    'из-за котор',
+    'кто стоит за',
+    'что стоит за',
+    'кто за этим',
+    'что за этим',
+    'по цепочке',
+  ];
+  if (phraseMarkers.some((m) => q.includes(m))) return true;
+  const hasRelative = q.includes('котор');
+  const hasChainVerb = ['блокир', 'мешает', 'тормоз', 'влияет на', 'отвечает за'].some(
+    (w) => q.includes(w),
+  );
+  return hasRelative && hasChainVerb;
+}
+
 const BLOCK_REF_REGEX = /\[BLOCK:([a-z0-9]+)\]/gi;
 
 const CLARIFY_MARKER_REGEX = /^\s*\[\[CLARIFY\]\]/;
@@ -814,7 +840,16 @@ export class ChatV2Service {
   async ask(input: ChatV2Input, trace?: RetrievalTraceSink): Promise<ChatV2Output> {
     const { tenantId, scope, scopeId, query } = input;
     const { kRetrieve, kContext } = await this.resolveKSplit();
-    const graphHops = this.cfg.knowledgeCore.chatV2GraphHops;
+    const adaptiveHops = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2AdaptiveHops',
+      undefined,
+      true,
+    );
+    const baseGraphHops = this.cfg.knowledgeCore.chatV2GraphHops;
+    const graphHops =
+      adaptiveHops && detectMultiHop(query)
+        ? Math.max(baseGraphHops, 2)
+        : baseGraphHops;
     trace?.setGraphHops(graphHops);
     const graphAlwaysExpand = await this.cfg.getDynamic<boolean>(
       'knowledge.chatV2GraphAlwaysExpand',

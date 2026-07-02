@@ -373,6 +373,25 @@ export class ChatV2RetrievalService {
         )
       : [];
 
+    const graphAdded2 =
+      graphEligible && input.graphHops >= 2 && graphAdded.length > 0
+        ? await this.expandViaGraph(
+            {
+              tenantId: input.tenantId,
+              seedBlockIds: graphAdded.map((r) => r.blockId),
+              knownIds: new Set([
+                ...ranked.map((r) => r.blockId),
+                ...graphAdded.map((r) => r.blockId),
+              ]),
+              extraLimit: input.graphHops * 5,
+              validAt: input.validAt ?? null,
+              accessWhere: input.accessWhere,
+              contourGroupId: input.contourGroupId,
+            },
+            trace,
+          )
+        : [];
+
     const entityLinkHops = input.entityLinkHops ?? 0;
     const entityLinkAdded =
       entityLinkHops > 0 && input.entityIds && input.entityIds.length > 0
@@ -383,6 +402,7 @@ export class ChatV2RetrievalService {
               knownIds: new Set([
                 ...ranked.map((r) => r.blockId),
                 ...graphAdded.map((r) => r.blockId),
+                ...graphAdded2.map((r) => r.blockId),
               ]),
               extraLimit: input.limit,
               validAt: input.validAt ?? null,
@@ -393,7 +413,7 @@ export class ChatV2RetrievalService {
           )
         : [];
 
-    return [...ranked, ...graphAdded, ...entityLinkAdded];
+    return [...ranked, ...graphAdded, ...graphAdded2, ...entityLinkAdded];
   }
 
   /**

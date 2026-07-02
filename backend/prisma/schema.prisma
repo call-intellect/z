@@ -12750,3 +12750,51 @@ model SupportTicket {
   @@index([tenantId, status])
   @@index([tenantId, firstResponseDueAt])
 }
+
+/// Провайдер эмбеддингов (управляется из Z-Admin). Аналог LlmProvider, но
+/// отдельный bounded-context: рантайм-резолв эмбеддингов НЕ идёт через llm-router.
+model EmbeddingProvider {
+  id               String    @id @default(cuid())
+  name             String    @unique @db.VarChar(60)
+  displayName      String    @db.VarChar(120)
+  baseUrl          String    @db.VarChar(500)
+  protocolKind     String    @db.VarChar(40)
+  apiKeyEncrypted  String?   @db.Text
+  defaultHeaders   Json?
+  isActive         Boolean   @default(true)
+  priority         Int       @default(100)
+  needsReindex     Boolean   @default(false)
+  lastSmokeAt      DateTime?
+  lastSmokeSuccess Boolean?
+  lastSmokeError   String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  models EmbeddingModel[]
+
+  @@index([isActive, priority])
+  @@map("embedding_providers")
+}
+
+/// Модель эмбеддингов конкретного провайдера.
+model EmbeddingModel {
+  id            String   @id @default(cuid())
+  providerId    String
+  modelKey      String   @db.VarChar(120)
+  displayName   String   @db.VarChar(200)
+  dimensions    Int
+  pricePerMillionInputTokensKopecks Int?
+  isActive      Boolean  @default(true)
+  verifiedAt    DateTime?
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  provider EmbeddingProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, modelKey])
+  @@index([providerId, isActive])
+  @@map("embedding_models")
+}

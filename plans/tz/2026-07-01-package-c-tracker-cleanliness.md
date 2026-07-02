@@ -21,12 +21,12 @@
 ### [x] Ф3. Уровень блоков
 - Порог склейки 0.92→0.85 через **крутилку** `getDynamic('distill.merge_threshold', 'DISTILL_MERGE_THRESHOLD', 0.85)` + строка в `admin-setting-schema-registry.ts` + сид + UI-поле (правило №9; не хардкод env-only). Спорные 0.85–0.91 решает арбитр-LLM.
 
-### [ ] Ф4. Уровень материализации задачи
+### [x] Ф4. Уровень материализации задачи
 - Новый `intake-issue-similar.service.ts`: KNN по `IntakeIssue.embedding` (зеркало `SimilarIssuesService.findSimilarByVector`), фильтр `status='pending'`, порог-крутилка.
 - `specialist-3-15-tasks.service.ts:163-179`: перед созданием `IntakeIssue` — KNN-проверка; при совпадении **линковать к существующей**, а не создавать. Инжектнуть сервис (`:55-74`).
 - Убедиться, что `IntakeIssue.embedding` считается воркером эмбеддингов (иначе KNN пуст) — при отсутствии добавить в пайплайн эмбеддингов.
 
-### [ ] Ф5. Тесты
+### [x] Ф5. Тесты
 - F-2: якорь в прошлом → срок не в прошлом.
 - F-3: само-обязательство → `assigneeHint` заполнен.
 - F-4: два near-dup блока (sim 0.88) → один; повторная материализация похожей задачи → линк, не дубль.
@@ -40,4 +40,10 @@
 - Новая крутилка `distill.merge_threshold` → `docs/operations/prod-deploy-log.md` Шаг 1 (реестр admin-settings/env) + сид.
 
 ## Итог
-_Заполнить после реализации._
+**Реализовано целиком (F-2, F-3, F-4).** Коммиты: `f56ff262` (F-2 якорь срока + F-3 SELF_ASSIGNMENT_RULE), `f625002b` (F-4 block-порог как крутилка 0.92→0.85), `9aece6d5` (F-4 mat-A: IntakeIssue.embedding + HNSW + IntakeIssueSimilarService + крутилка tracker.intakeDedupThreshold), + mat-B (интеграция KNN в specialist-3-15).
+
+Верификация: typecheck 0 · lint 0 · build DI PASS · широкий прогон knowledge-core+tracker+probe 1791/1791. F-4 материализация решена по **варианту A** (полный семантический дедуп): у IntakeIssue не было embedding — добавлена колонка+HNSW, embedding считается инлайн при создании (один embed-вызов, переиспользуется для KNN и хранения), при KNN-совпадении (distance ≤ `tracker.intakeDedupThreshold` 0.15) дубль skip'ается (зеркалит exact-title-pending), иначе создаётся + сохраняет embedding.
+
+Прод: миграция `intake_issue_embedding` (авто migrate deploy) + HNSW `IntakeIssue_embedding_hnsw_cosine_idx` (apply-postgres-init) + сиды крутилок — всё в `prod-deploy-log` Шаг 1/4/5/7/12.
+
+Замечено (вне scope, на follow-up): системный рассинхрон написания FE↔backend ключей admin-крутилок knowledge (dotted-snake на FE vs camelCase в реестре) — много фантомных ключей на странице KnowledgeCoreSettings; починен только distill-порог.

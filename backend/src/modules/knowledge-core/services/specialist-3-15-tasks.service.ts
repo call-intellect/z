@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type IdeaBlock,
@@ -14,12 +16,14 @@ import {
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import { EmbeddingFallbackService } from '../../embeddings/services/embedding-fallback.service';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
 import { LogService } from '../../logging/log.service';
 import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 import { ProbeService } from '../../probe/probe.service';
 import { AssigneeResolverService } from '../../tracker/services/assignee-resolver.service';
 import { IntakeAutoTriageQueueService } from '../../tracker/services/intake-auto-triage-queue.service';
+import { IntakeIssueSimilarService } from '../../tracker/services/intake-issue-similar.service';
 import { TaskDedupService } from '../../tracker/services/task-dedup.service';
 import {
   TASK_EXTRACT_JSON_SCHEMA,
@@ -72,6 +76,12 @@ export class Specialist315TasksService {
     @Optional()
     @Inject(TaskDedupService)
     private readonly taskDedup?: TaskDedupService,
+    @Optional()
+    @Inject(EmbeddingFallbackService)
+    private readonly embeddings?: EmbeddingFallbackService,
+    @Optional()
+    @Inject(IntakeIssueSimilarService)
+    private readonly intakeSimilar?: IntakeIssueSimilarService,
   ) {}
 
   private isPromptInjectionGuardEnabled(): boolean {
@@ -178,6 +188,36 @@ export class Specialist315TasksService {
       }
     }
 
+    const dedupText = buildIntakeDedupText(draft.title, draft.sourceQuote);
+    let dedupVecLiteral: string | null = null;
+    let dedupHash: string | null = null;
+    if (
+      linkSemantics === 'link' &&
+      this.embeddings &&
+      this.intakeSimilar &&
+      dedupText.length > 0
+    ) {
+      try {
+        const vectors = await this.embeddings.embed([dedupText]);
+        const vec = vectors[0];
+        if (vec && vec.length > 0) {
+          dedupVecLiteral = `[${vec.join(',')}]`;
+          dedupHash = sha256Hex(dedupText);
+        }
+      } catch (err) {
+        this.logger.debug(
+          {
+            blockId: block.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-15: KNN-эмбеддинг не построен — деградация до exact-дедупа',
+        );
+      }
+    }
+    const dedupThreshold = this.cfg
+      ? await this.cfg.getDynamic<number>('tracker.intakeDedupThreshold', undefined, 0.15)
+      : 0.15;
+
     let created: CreateOutcome;
     try {
       created = await this.prisma.$transaction(async (tx) => {
@@ -222,6 +262,20 @@ export class Specialist315TasksService {
           if (pendingDup) {
             return { kind: 'dedup_pending', intakeIssueId: pendingDup.id };
           }
+          if (dedupVecLiteral && this.intakeSimilar) {
+            const similar = await this.intakeSimilar.findSimilarByVector({
+              tenantId: block.tenantId,
+              embedding: dedupVecLiteral,
+              threshold: dedupThreshold,
+            });
+            if (similar.length > 0) {
+              return {
+                kind: 'dedup_pending_semantic',
+                intakeIssueId: similar[0]!.intakeIssueId,
+                distance: similar[0]!.distance,
+              };
+            }
+          }
         }
         const issue = await tx.intakeIssue.create({
           data: {
@@ -247,6 +301,15 @@ export class Specialist315TasksService {
           },
           select: { id: true },
         });
+        if (dedupVecLiteral && dedupHash) {
+          await tx.$executeRawUnsafe(
+            'UPDATE "IntakeIssue" SET embedding = $1::vector(1536), "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
+            dedupVecLiteral,
+            dedupHash,
+            issue.id,
+            block.tenantId,
+          );
+        }
         return { kind: 'created', intakeIssueId: issue.id };
       });
     } catch (err) {
@@ -297,6 +360,36 @@ export class Specialist315TasksService {
         module: 'specialist-3-15-tasks',
         action: 'skipped',
         message: `дубль с pending IntakeIssue ${created.intakeIssueId} — skip`,
+        orgId: block.tenantId,
+        details: {
+          type: METRIC_TYPE,
+          entityId: created.intakeIssueId,
+          blockId: block.id,
+          source,
+        },
+      });
+      return;
+    }
+
+    if (created.kind === 'dedup_pending_semantic') {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: Specialist315TasksService.SPECIALIST_NAME,
+        reason: 'dedup_pending_intake_semantic',
+      });
+      this.logger.debug(
+        {
+          blockId: block.id,
+          intakeIssueId: created.intakeIssueId,
+          distance: created.distance,
+        },
+        'specialist-3-15: семантический дубль pending IntakeIssue (KNN) — skip',
+      );
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-15-tasks',
+        action: 'skipped',
+        message: `семантический дубль pending IntakeIssue ${created.intakeIssueId} (KNN) — skip`,
         orgId: block.tenantId,
         details: {
           type: METRIC_TYPE,
@@ -720,7 +813,20 @@ export class Specialist315TasksService {
 type CreateOutcome =
   | { kind: 'linked'; issueId: string }
   | { kind: 'dedup_pending'; intakeIssueId: string }
+  | { kind: 'dedup_pending_semantic'; intakeIssueId: string; distance: number }
   | { kind: 'created'; intakeIssueId: string };
+
+function buildIntakeDedupText(title: string, sourceQuote: string): string {
+  const t = title.trim();
+  const desc = (sourceQuote ?? '').trim();
+  if (t.length === 0 && desc.length === 0) return '';
+  if (desc.length === 0) return t;
+  return `${t}\n\n${desc}`;
+}
+
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
 
 interface RawTaskDraft {
   isTask?: boolean;

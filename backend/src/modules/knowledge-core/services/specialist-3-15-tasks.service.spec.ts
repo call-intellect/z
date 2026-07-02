@@ -73,6 +73,7 @@ interface Mocks {
     };
     $queryRaw: ReturnType<typeof vi.fn>;
     $executeRaw: ReturnType<typeof vi.fn>;
+    $executeRawUnsafe: ReturnType<typeof vi.fn>;
     $transaction: ReturnType<typeof vi.fn>;
   };
   llm: { call: ReturnType<typeof vi.fn> };
@@ -98,12 +99,18 @@ interface Mocks {
   autoTriageQueue: { enqueue: ReturnType<typeof vi.fn> };
   probe: { suggest: ReturnType<typeof vi.fn> };
   taskDedup: { evaluate: ReturnType<typeof vi.fn> };
+  embeddings: { embed: ReturnType<typeof vi.fn> };
+  intakeSimilar: { findSimilarByVector: ReturnType<typeof vi.fn> };
 }
 
-function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
+function buildService(
+  linkSemantics: 'link' | 'delete' = 'link',
+  opts: { withEmbeddings?: boolean } = {},
+): {
   svc: Specialist315TasksService;
   m: Mocks;
 } {
+  const withEmbeddings = opts.withEmbeddings ?? true;
   const m: Mocks = {
     prisma: {
       org: { findMany: vi.fn().mockResolvedValue([]) },
@@ -124,6 +131,7 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
       },
       $queryRaw: vi.fn().mockResolvedValue([]),
       $executeRaw: vi.fn().mockResolvedValue(0),
+      $executeRawUnsafe: vi.fn().mockResolvedValue(0),
       $transaction: vi.fn(),
     },
     llm: { call: vi.fn() },
@@ -162,6 +170,12 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
         .fn()
         .mockResolvedValue({ verdict: 'different', matchedIssueId: null }),
     },
+    embeddings: {
+      embed: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
+    },
+    intakeSimilar: {
+      findSimilarByVector: vi.fn().mockResolvedValue([]),
+    },
   };
 
   m.prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
@@ -187,6 +201,10 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
     m.probe as any,
 
     m.taskDedup as any,
+
+    (withEmbeddings ? m.embeddings : undefined) as any,
+
+    (withEmbeddings ? m.intakeSimilar : undefined) as any,
   );
   return { svc, m };
 }
@@ -526,6 +544,63 @@ describe('Specialist315TasksService.processBlock', () => {
     expect(m.metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'dedup_pending_intake' }),
     );
+  });
+
+  it('(k2) KNN семантический дубль pending → link к существующему, create НЕ вызван', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+    m.intakeSimilar.findSimilarByVector.mockResolvedValue([
+      { intakeIssueId: 'ii-1', extractedTitle: 'почти то же', distance: 0.05 },
+    ]);
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.embeddings.embed).toHaveBeenCalledTimes(1);
+    expect(m.intakeSimilar.findSimilarByVector).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: TENANT, embedding: '[0.1,0.2,0.3]' }),
+    );
+    expect(m.prisma.intakeIssue.create).not.toHaveBeenCalled();
+    expect(m.prisma.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(m.autoTriageQueue.enqueue).not.toHaveBeenCalled();
+    expect(m.metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'dedup_pending_intake_semantic' }),
+    );
+  });
+
+  it('(k3) KNN без совпадения → create + сохранение embedding через $executeRawUnsafe', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+    m.intakeSimilar.findSimilarByVector.mockResolvedValue([]);
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(m.prisma.$executeRawUnsafe).toHaveBeenCalledTimes(1);
+    const args = m.prisma.$executeRawUnsafe.mock.calls[0]!;
+    expect(args[0]).toContain('UPDATE "IntakeIssue" SET embedding');
+    expect(args[1]).toBe('[0.1,0.2,0.3]');
+    expect(typeof args[2]).toBe('string');
+    expect(args[3]).toBe('intake-new');
+    expect(args[4]).toBe(TENANT);
+    expect(m.autoTriageQueue.enqueue).toHaveBeenCalledWith({
+      tenantId: TENANT,
+      intakeIssueId: 'intake-new',
+    });
+  });
+
+  it('(k4) embeddings-сервис отсутствует → create без embedding, без throw', async () => {
+    ({ svc, m } = buildService('link', { withEmbeddings: false }));
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+
+    await expect(
+      svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID }),
+    ).resolves.not.toThrow();
+
+    expect(m.embeddings.embed).not.toHaveBeenCalled();
+    expect(m.intakeSimilar.findSimilarByVector).not.toHaveBeenCalled();
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(m.prisma.$executeRawUnsafe).not.toHaveBeenCalled();
   });
 
   it('(l) DELETE/legacy режим → dedup.evaluate НЕ вызван, intakeIssue.create вызван', async () => {

@@ -212,7 +212,7 @@ export const PutChainSchema = z.object({
 - Acceptance: `bunx prisma validate` ок; `grep -q "useProxy" backend/prisma/migrations/*_llm_provider_proxy_defaults/migration.sql`; `bun run prisma:generate` без ошибок; typecheck видит `llmProvider.useProxy`.
 - Закрывает: R1.
 
-### Ф2 — Шифрование и маскирование ключей `[ ]`
+### Ф2 — Шифрование и маскирование ключей `[x]`
 **Ценность:** как супер-админ, храню ключи провайдеров только шифрованными и не могу случайно утечь их через API.
 - Входит: `CryptoService` в `AdminLlmProvidersService` (encrypt на create/update, семантика пусто/null из Контракта); `present()`-маскирование для list/get/create/update (утечка `getById` закрыта); decrypt в `ProviderInfoResolver` (через `isEncrypted`, plaintext-строки читаются как есть до патча); `backend/scripts/patch-encrypt-llm-provider-keys.ts` — idempotent (шифрует только строки, где `!isEncrypted(apiKeyEncrypted)`), `createPrismaClient()`, регистрация в `apply-prod-deploy.ts` STEPS (`phase` patch, `skipBootstrap: true`).
 - НЕ входит: адаптеры, UI.

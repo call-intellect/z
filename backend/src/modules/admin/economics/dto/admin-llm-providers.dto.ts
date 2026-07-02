@@ -21,9 +21,9 @@ export const CreateLlmProviderSchema = z.object({
 });
 export type CreateLlmProviderDto = z.infer<typeof CreateLlmProviderSchema>;
 
-export const UpdateLlmProviderSchema = CreateLlmProviderSchema.partial().omit({
-  name: true,
-});
+export const UpdateLlmProviderSchema = CreateLlmProviderSchema.partial()
+  .omit({ name: true })
+  .extend({ apiKey: z.string().nullable().optional() });
 export type UpdateLlmProviderDto = z.infer<typeof UpdateLlmProviderSchema>;
 
 export const ListLlmProvidersQuerySchema = z.object({

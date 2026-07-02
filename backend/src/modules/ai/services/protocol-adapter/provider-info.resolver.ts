@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../../common/config/index';
+import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 
 import type { ProtocolAdapterProviderInfo, ProtocolKind } from './protocol-adapter.types';
@@ -21,6 +22,7 @@ export class ProviderInfoResolver {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(CryptoService) private readonly crypto: CryptoService,
   ) {}
 
   async resolveByName(name: string): Promise<{
@@ -58,10 +60,14 @@ export class ProviderInfoResolver {
     }
 
     if (row) {
+      const decryptedApiKey =
+        row.apiKeyEncrypted && this.crypto.isEncrypted(row.apiKeyEncrypted)
+          ? this.crypto.decrypt(row.apiKeyEncrypted)
+          : row.apiKeyEncrypted;
       const info: ProtocolAdapterProviderInfo = {
         name: row.name,
         baseUrl: row.baseUrl,
-        apiKey: row.apiKeyEncrypted,
+        apiKey: decryptedApiKey,
         ...(row.defaultHeaders &&
         typeof row.defaultHeaders === 'object' &&
         !Array.isArray(row.defaultHeaders)

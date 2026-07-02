@@ -563,6 +563,12 @@ const STEPS: Step[] = [
   },
   {
     phase: 'patch',
+    script: 'scripts/patch-encrypt-llm-provider-keys.ts',
+    hint: 'AES-256-GCM для LlmProvider.apiKeyEncrypted (llm-providers-models-routing-admin Ф2 Б5); идемпотентно (isEncrypted-фильтр)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'patch',
     script: 'scripts/patch-dedupe-billing-event-log.ts',
     hint: 'dedupe BillingEventLog по (providerName,externalEventId)',
     skipBootstrap: true,

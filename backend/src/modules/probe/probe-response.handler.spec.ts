@@ -9,7 +9,6 @@ import type { CompanyProfileService } from '../company-foundation/services/compa
 import type { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import type { ConversationalService } from '../conversational/conversational.service';
 import type { CoreQueueService } from '../core-queue/core-queue.service';
-import type { CurationService } from '../curation/services/curation.service';
 import type { AssigneeResolverService } from '../tracker/services/assignee-resolver.service';
 import type { IssuesService } from '../tracker/services/issues.service';
 
@@ -269,9 +268,6 @@ function makeHandler(args: {
   const coreQueue = {
     enqueueSubjectMemoryDerive: vi.fn().mockResolvedValue({ jobId: 'sm-1' }),
   } as unknown as CoreQueueService;
-  const curation = {
-    decide: args.mocks.curationDecide,
-  } as unknown as CurationService;
   const withTracker = args.withTracker !== false;
   const assigneeResolver = withTracker
     ? ({ resolve: args.mocks.assigneeResolve } as unknown as AssigneeResolverService)
@@ -294,7 +290,6 @@ function makeHandler(args: {
     cfg,
     conversational,
     coreQueue,
-    curation,
     assigneeResolver,
     issues,
     companyProfile,
@@ -485,7 +480,7 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
   });
 });
 
-describe('ProbeResponseHandler — existence-confirm → curation.decide', () => {
+describe('ProbeResponseHandler — regulation.existence_confirm снят (Ф7.1)', () => {
   function setExistenceConfirmProbe(mocks: Mocks): void {
     (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({
       ...buildProbe(),
@@ -498,7 +493,7 @@ describe('ProbeResponseHandler — existence-confirm → curation.decide', () =>
     });
   }
 
-  it('ответ «Удалить» (classifier off) → decide(reject) по существующему pending CurationItem', async () => {
+  it('ответ на историческую existence_confirm-запись НЕ трогает curation, ответ проглатывается в ingest', async () => {
     const mocks = makeMocks();
     setExistenceConfirmProbe(mocks);
     const handler = makeHandler({ mocks, classifyEnabled: false });
@@ -508,87 +503,9 @@ describe('ProbeResponseHandler — existence-confirm → curation.decide', () =>
       payload: { text: 'Удалить, это устарело' },
     });
 
-    expect(mocks.curationFindFirst).toHaveBeenCalledTimes(1);
-    const where = mocks.curationFindFirst.mock.calls[0]![0] as {
-      where: { tenantId: string; resourceId: string; status: string };
-    };
-    expect(where.where).toMatchObject({
-      tenantId: 'org-classify',
-      resourceId: 'reg-99',
-      status: 'pending',
-    });
-    expect(mocks.curationDecide).toHaveBeenCalledTimes(1);
-    const decideArg = mocks.curationDecide.mock.calls[0]![0] as {
-      tenantId: string;
-      curationItemId: string;
-      reviewerUserId: string;
-      decisionType: string;
-    };
-    expect(decideArg).toMatchObject({
-      tenantId: 'org-classify',
-      curationItemId: 'curation-item-1',
-      reviewerUserId: 'user-1',
-      decisionType: 'reject',
-    });
-  });
-
-  it('ответ «Переименовать» → decide(approve_with_edits)', async () => {
-    const mocks = makeMocks();
-    setExistenceConfirmProbe(mocks);
-    const handler = makeHandler({ mocks, classifyEnabled: false });
-
-    await handler.handle({
-      ...event,
-      payload: { text: 'Переименовать в «Политика возвратов»' },
-    });
-
-    expect(mocks.curationDecide).toHaveBeenCalledTimes(1);
-    const decideArg = mocks.curationDecide.mock.calls[0]![0] as {
-      decisionType: string;
-    };
-    expect(decideArg.decisionType).toBe('approve_with_edits');
-  });
-
-  it('нераспознанный ответ → curation НЕ трогается', async () => {
-    const mocks = makeMocks();
-    setExistenceConfirmProbe(mocks);
-    const handler = makeHandler({ mocks, classifyEnabled: false });
-
-    await handler.handle({
-      ...event,
-      payload: { text: 'хм не уверен' },
-    });
-
     expect(mocks.curationFindFirst).not.toHaveBeenCalled();
     expect(mocks.curationDecide).not.toHaveBeenCalled();
-  });
-
-  it('pending CurationItem не найден → decide НЕ вызывается (best-effort no-op)', async () => {
-    const mocks = makeMocks();
-    setExistenceConfirmProbe(mocks);
-    mocks.curationFindFirst.mockResolvedValueOnce(null);
-    const handler = makeHandler({ mocks, classifyEnabled: false });
-
-    await handler.handle({
-      ...event,
-      payload: { text: 'Удалить' },
-    });
-
-    expect(mocks.curationFindFirst).toHaveBeenCalledTimes(1);
-    expect(mocks.curationDecide).not.toHaveBeenCalled();
-  });
-
-  it('обычный probe (не existence_confirm) → curation не трогается', async () => {
-    const mocks = makeMocks();
-    const handler = makeHandler({ mocks, classifyEnabled: false });
-
-    await handler.handle({
-      ...event,
-      payload: { text: 'Удалить' },
-    });
-
-    expect(mocks.curationFindFirst).not.toHaveBeenCalled();
-    expect(mocks.curationDecide).not.toHaveBeenCalled();
+    expect(mocks.ingestArgs).toHaveLength(1);
   });
 });
 
@@ -1831,32 +1748,31 @@ describe('ProbeResponseHandler — Ф5 адресность дайджеста (
 });
 
 describe('ProbeResponseHandler — Ф6 деградация (LLM-классификатор упал)', () => {
-  function setExistenceConfirmProbe(mocks: Mocks): void {
+  function setFalsePositiveProbe(mocks: Mocks): void {
     (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({
       ...buildProbe(),
-      reason: 'regulation.existence_confirm',
+      reason: 'task.false_positive',
       payload: {
-        message: 'Кора зафиксировала регламент «Возвраты». Оставить, переименовать или удалить?',
-        contextCardId: 'reg-99',
-        contextCardKind: 'regulation',
+        message: 'Похоже, это не задача. Удалить?',
+        contextCardId: 'issue-99',
+        contextCardKind: 'issue',
       },
     });
   }
 
   it('classify throws → incProbeDialogDegraded, handler не падает, детерминированный one-shot применён', async () => {
     const mocks = makeMocks();
-    setExistenceConfirmProbe(mocks);
+    setFalsePositiveProbe(mocks);
     mocks.llmCall.mockRejectedValueOnce(new Error('llm proxy 500'));
     const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
 
     await expect(
-      handler.handle({ ...event, payload: { text: 'Удалить, это устарело' } }),
+      handler.handle({ ...event, payload: { text: 'Удалить, это не задача' } }),
     ).resolves.toBeUndefined();
 
     expect(mocks.metrics.incProbeDialogDegraded).toHaveBeenCalledTimes(1);
-    expect(mocks.curationDecide).toHaveBeenCalledTimes(1);
-    const decideArg = mocks.curationDecide.mock.calls[0]![0] as { decisionType: string };
-    expect(decideArg.decisionType).toBe('reject');
+    expect(mocks.softDelete).toHaveBeenCalledTimes(1);
+    expect(mocks.softDelete).toHaveBeenCalledWith('issue-99', 'org-classify', 'user-1');
     expect(mocks.metrics.incProbeResponseClassified).not.toHaveBeenCalled();
   });
 });

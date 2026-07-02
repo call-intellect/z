@@ -12,7 +12,6 @@ import { CompanyProfileService } from '../company-foundation/services/company-pr
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import { ConversationalService } from '../conversational/conversational.service';
 import { CoreQueueService } from '../core-queue/core-queue.service';
-import { CurationService } from '../curation/services/curation.service';
 import { AssigneeResolverService } from '../tracker/services/assignee-resolver.service';
 import { IssuesService } from '../tracker/services/issues.service';
 
@@ -69,9 +68,6 @@ export class ProbeResponseHandler {
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
-    @Optional()
-    @Inject(CurationService)
-    private readonly curation?: CurationService,
     @Optional()
     @Inject(AssigneeResolverService)
     private readonly assigneeResolver?: AssigneeResolverService,
@@ -316,16 +312,6 @@ export class ProbeResponseHandler {
   }): Promise<ApplyResult | null> {
     const { probe, event, probePayload, classification } = args;
     let applyResult: ApplyResult | null = null;
-
-    if (probe.reason === 'regulation.existence_confirm') {
-      applyResult = await this.maybeDecideExistenceConfirm({
-        tenantId: event.tenantId,
-        reviewerUserId: event.recipientUserId,
-        probePayload,
-        eventPayload: event.payload,
-        classification,
-      });
-    }
 
     if (
       probe.reason === 'task.assignee_unresolved' ||
@@ -615,93 +601,6 @@ export class ProbeResponseHandler {
         'probe-escalate: эскалация упала (best-effort)',
       );
     }
-  }
-
-  private async maybeDecideExistenceConfirm(args: {
-    tenantId: string;
-    reviewerUserId: string;
-    probePayload: Record<string, unknown>;
-    eventPayload: Record<string, unknown>;
-    classification: ProbeClassification | null;
-  }): Promise<ApplyResult> {
-    if (!this.curation) return { status: 'noop' };
-    const contextCardId = this.toStringOrUndef(args.probePayload.contextCardId);
-    if (!contextCardId) return { status: 'noop' };
-
-    const rawAnswer =
-      args.classification?.value?.trim() || this.extractResponseText(args.eventPayload);
-    if (!rawAnswer) return { status: 'noop' };
-
-    const mode = this.resolveApplyMode(args.classification, rawAnswer);
-    if (mode.kind === 'unclear') return { status: 'skipped_unclear' };
-    if (mode.kind === 'counter_question') {
-      return { status: 'needs_clarification', gap: 'counter_question' };
-    }
-
-    const decision = this.existenceConfirmDecision(mode);
-    if (!decision) return { status: 'noop' };
-
-    try {
-      const item = await this.prisma.curationItem.findFirst({
-        where: {
-          tenantId: args.tenantId,
-          resourceId: contextCardId,
-          status: 'pending',
-        },
-        orderBy: { createdAt: 'desc' },
-        select: { id: true },
-      });
-      if (!item) {
-        this.logger.log(
-          `existence-confirm: pending CurationItem не найден (tenant=${args.tenantId} card=${contextCardId} decision=${decision.decisionType}) — пропускаю проводку`,
-        );
-        return { status: 'noop' };
-      }
-      await this.curation.decide({
-        tenantId: args.tenantId,
-        curationItemId: item.id,
-        reviewerUserId: args.reviewerUserId,
-        decisionType: decision.decisionType,
-        ...(decision.payload ? { payload: decision.payload } : {}),
-        reasoning: 'existence-confirm: ответ на probe regulation.existence_confirm',
-      });
-      this.logger.log(
-        `existence-confirm: CurationItem ${item.id} → ${decision.decisionType} (tenant=${args.tenantId} card=${contextCardId})`,
-      );
-      return { status: 'applied' };
-    } catch (err) {
-      this.logger.warn(
-        {
-          tenantId: args.tenantId,
-          contextCardId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'existence-confirm: проводка ответа в curation упала (best-effort)',
-      );
-      return { status: 'noop' };
-    }
-  }
-
-  private existenceConfirmDecision(mode: ApplyMode): {
-    decisionType: 'approve' | 'approve_with_edits' | 'reject';
-    payload?: Record<string, unknown>;
-  } | null {
-    if (mode.kind === 'delete') return { decisionType: 'reject' };
-    if (mode.kind === 'value') {
-      if (mode.refine && mode.value.trim().length > 0) {
-        return {
-          decisionType: 'approve_with_edits',
-          payload: { editedName: mode.value.trim() },
-        };
-      }
-      return { decisionType: 'approve' };
-    }
-    if (mode.kind === 'degraded') {
-      const mapped = mapExistenceConfirmAnswer(mode.answer);
-      if (!mapped) return null;
-      return { decisionType: mapped.decisionType };
-    }
-    return null;
   }
 
   private async maybeApplyTaskProbeAnswer(args: {

@@ -13,7 +13,6 @@ import {
 describe('probeWindow', () => {
   it('immediate для критичных reason', () => {
     expect(probeWindow('task.assignee_unresolved')).toBe('immediate');
-    expect(probeWindow('regulation.missing_owner')).toBe('immediate');
     expect(probeWindow('consistency_violation.R3')).toBe('immediate');
     expect(probeWindow('kr_checkpoint_suggested')).toBe('immediate');
   });
@@ -553,7 +552,7 @@ describe('PROBE_REASON_RECHECK — task.false_positive (Ф5)', () => {
 });
 
 describe('resolveProbeProvenance (центральный гейт политики)', () => {
-  it('regulation.missing_owner: sourceBlockIds непуст, version null, нет curation → auto_unconfirmed', async () => {
+  it('regulation.* больше не разрешает провенанс → unknown', async () => {
     const prisma = {
       regulation: {
         findFirst: vi
@@ -568,74 +567,10 @@ describe('resolveProbeProvenance (центральный гейт политик
       contextCardId: 'r1',
       contextCardKind: 'regulation',
     });
-    expect(p).toBe('auto_unconfirmed');
-  });
-
-  it('currentVersion.trustTier=human → confirmed_or_manual', async () => {
-    const prisma = {
-      regulation: {
-        findFirst: vi.fn().mockResolvedValue({
-          sourceBlockIds: ['b1'],
-          currentVersion: { trustTier: 'human' },
-        }),
-      },
-      curationItem: { findFirst: vi.fn() },
-    } as unknown as PrismaService;
-    const p = await resolveProbeProvenance('regulation.missing_owner', {
-      prisma,
-      tenantId: 'org-1',
-      contextCardId: 'r1',
-      contextCardKind: 'regulation',
-    });
-    expect(p).toBe('confirmed_or_manual');
-  });
-
-  it('открытый CurationItem (pending) при sourceBlockIds=[] → auto_unconfirmed', async () => {
-    const prisma = {
-      process: {
-        findFirst: vi
-          .fn()
-          .mockResolvedValue({ sourceBlockIds: [], currentVersion: null }),
-      },
-      curationItem: { findFirst: vi.fn().mockResolvedValue({ id: 'ci-1' }) },
-    } as unknown as PrismaService;
-    const p = await resolveProbeProvenance('regulation.missing_owner', {
-      prisma,
-      tenantId: 'org-1',
-      contextCardId: 'p1',
-      contextCardKind: 'process',
-    });
-    expect(p).toBe('auto_unconfirmed');
-  });
-
-  it('карточка не найдена → unknown', async () => {
-    const prisma = {
-      regulation: { findFirst: vi.fn().mockResolvedValue(null) },
-      curationItem: { findFirst: vi.fn() },
-    } as unknown as PrismaService;
-    const p = await resolveProbeProvenance('regulation.missing_owner', {
-      prisma,
-      tenantId: 'org-1',
-      contextCardId: 'r1',
-      contextCardKind: 'regulation',
-    });
     expect(p).toBe('unknown');
   });
 
-  it('нет contextCardId → unknown', async () => {
-    const prisma = {
-      regulation: { findFirst: vi.fn() },
-    } as unknown as PrismaService;
-    const p = await resolveProbeProvenance('regulation.missing_owner', {
-      prisma,
-      tenantId: 'org-1',
-      contextCardId: null,
-      contextCardKind: 'regulation',
-    });
-    expect(p).toBe('unknown');
-  });
-
-  it('reason не из семьи regulation (decision.missing_decider) → unknown', async () => {
+  it('reason вне семьи regulation → unknown', async () => {
     const prisma = {
       regulation: { findFirst: vi.fn() },
     } as unknown as PrismaService;
@@ -651,14 +586,15 @@ describe('resolveProbeProvenance (центральный гейт политик
 
 describe('MACHINE_FILLABLE_REASONS (защита human-only)', () => {
   it('содержит машинно-закрываемые gap-reason', () => {
-    expect(MACHINE_FILLABLE_REASONS.has('regulation.missing_owner')).toBe(true);
-    expect(MACHINE_FILLABLE_REASONS.has('regulation.process_no_steps')).toBe(
-      true,
-    );
-    expect(MACHINE_FILLABLE_REASONS.has('regulation.scope_unclear')).toBe(true);
+    expect(MACHINE_FILLABLE_REASONS.has('card.merge_suggestion')).toBe(true);
+    expect(MACHINE_FILLABLE_REASONS.has('experiment.no_owner')).toBe(true);
+    expect(
+      MACHINE_FILLABLE_REASONS.has('process_template.step_without_owner'),
+    ).toBe(true);
   });
 
-  it('НЕ содержит attribution / decision (human-only)', () => {
+  it('НЕ содержит regulation / attribution / decision', () => {
+    expect(MACHINE_FILLABLE_REASONS.has('regulation.missing_owner')).toBe(false);
     expect(
       MACHINE_FILLABLE_REASONS.has('attribution.unresolved_at_ingest'),
     ).toBe(false);

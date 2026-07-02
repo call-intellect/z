@@ -5,7 +5,6 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 export type ProbeWindow = 'immediate' | 'deferrable';
 
 export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
-  'regulation.missing_owner': 'immediate',
   'temporal.fact_stale_contradiction.escalated': 'immediate',
   'consistency_violation.R1': 'immediate',
   'consistency_violation.R2': 'immediate',
@@ -15,7 +14,6 @@ export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
   'consistency_violation.R6': 'immediate',
   'goal.kr_checkpoint_suggested': 'immediate',
   'kr_checkpoint_suggested': 'immediate',
-  'regulation.existence_confirm': 'deferrable',
   'task.assignee_unresolved': 'immediate',
   'task.due_date_missing': 'immediate',
   'task.poorly_specified': 'immediate',
@@ -35,9 +33,6 @@ export const NUDGE_REASONS: ReadonlySet<string> = new Set([
 ]);
 
 export const MACHINE_FILLABLE_REASONS: ReadonlySet<string> = new Set([
-  'regulation.missing_owner',
-  'regulation.process_no_steps',
-  'regulation.scope_unclear',
   'card.merge_suggestion',
   'experiment.no_owner',
   'process_template.missing_input_artifact',
@@ -57,59 +52,10 @@ export interface ProbeProvenanceCtx {
   contextCardKind: string | null;
 }
 
-async function regulationFamilyProvenance(
-  ctx: ProbeProvenanceCtx,
-): Promise<ProbeProvenance> {
-  const { prisma, tenantId, contextCardId, contextCardKind } = ctx;
-  if (!contextCardId) return 'unknown';
-  const kind = (contextCardKind ?? '').toLowerCase();
-  const select = {
-    sourceBlockIds: true,
-    currentVersion: { select: { trustTier: true } },
-  } as const;
-  let card: {
-    sourceBlockIds: string[];
-    currentVersion: { trustTier: string } | null;
-  } | null;
-  if (kind === 'process') {
-    card = await prisma.process.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select,
-    });
-  } else if (kind === 'policy') {
-    card = await prisma.policy.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select,
-    });
-  } else {
-    card = await prisma.regulation.findFirst({
-      where: { id: contextCardId, tenantId, deletedAt: null },
-      select,
-    });
-  }
-  if (!card) return 'unknown';
-  if (card.currentVersion?.trustTier === 'human') return 'confirmed_or_manual';
-  const openCuration = await prisma.curationItem.findFirst({
-    where: { tenantId, resourceId: contextCardId, status: 'pending' },
-    select: { id: true },
-  });
-  if (openCuration) return 'auto_unconfirmed';
-  if (card.sourceBlockIds.length > 0) return 'auto_unconfirmed';
-  return 'unknown';
-}
-
 export async function resolveProbeProvenance(
-  reason: string,
-  ctx: ProbeProvenanceCtx,
+  _reason: string,
+  _ctx: ProbeProvenanceCtx,
 ): Promise<ProbeProvenance> {
-  if (!ctx.contextCardId) return 'unknown';
-  if (
-    reason === 'regulation.missing_owner' ||
-    reason === 'regulation.process_no_steps' ||
-    reason === 'regulation.scope_unclear'
-  ) {
-    return regulationFamilyProvenance(ctx);
-  }
   return 'unknown';
 }
 

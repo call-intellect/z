@@ -569,6 +569,12 @@ const STEPS: Step[] = [
   },
   {
     phase: 'patch',
+    script: 'scripts/patch-llm-provider-protocols.ts',
+    hint: 'kie/grsai custom-http → честные протоколы; деактивация опечатки gpt-5-4',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'patch',
     script: 'scripts/patch-dedupe-billing-event-log.ts',
     hint: 'dedupe BillingEventLog по (providerName,externalEventId)',
     skipBootstrap: true,

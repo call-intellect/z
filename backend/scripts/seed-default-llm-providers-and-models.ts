@@ -14,9 +14,15 @@ interface ProviderSeed {
     | 'openai-responses'
     | 'anthropic-messages'
     | 'ollama-native'
+    | 'kie-native'
+    | 'grsai-native'
     | 'custom-http';
   capability: 'public' | 'internal' | 'sensitive' | 'private';
   defaultHeaders?: Record<string, string>;
+  useProxy?: boolean;
+  proxyPath?: string;
+  defaultModelKey?: string;
+  timeoutMs?: number;
 }
 
 const PROVIDERS: ProviderSeed[] = [
@@ -26,6 +32,8 @@ const PROVIDERS: ProviderSeed[] = [
     baseUrl: 'https://proxy.agent-lia.ru/v1',
     protocolKind: 'openai-responses',
     capability: 'internal',
+    useProxy: true,
+    defaultModelKey: 'gpt-5-mini',
   },
   {
     name: 'deepseek',
@@ -33,6 +41,7 @@ const PROVIDERS: ProviderSeed[] = [
     baseUrl: 'https://api.deepseek.com/v1',
     protocolKind: 'openai-chat',
     capability: 'internal',
+    defaultModelKey: 'deepseek-v4-flash',
   },
   {
     name: 'anthropic',
@@ -41,6 +50,7 @@ const PROVIDERS: ProviderSeed[] = [
     protocolKind: 'anthropic-messages',
     capability: 'sensitive',
     defaultHeaders: { 'anthropic-version': '2023-06-01' },
+    defaultModelKey: 'claude-sonnet-4-6',
   },
   {
     name: 'ollama',
@@ -48,6 +58,7 @@ const PROVIDERS: ProviderSeed[] = [
     baseUrl: 'https://ollama.agent-lia.ru/v1',
     protocolKind: 'ollama-native',
     capability: 'private',
+    defaultModelKey: 'qwen3:30b-a3b-instruct-2507',
   },
   {
     name: 'minimax',
@@ -55,20 +66,26 @@ const PROVIDERS: ProviderSeed[] = [
     baseUrl: 'https://api.minimax.io/anthropic',
     protocolKind: 'anthropic-messages',
     capability: 'internal',
+    defaultModelKey: 'MiniMax-M2.5',
   },
   {
     name: 'kie',
     displayName: 'KIE (api.kie.ai — Claude/GPT/Gemini hub)',
     baseUrl: 'https://api.kie.ai',
-    protocolKind: 'custom-http',
+    protocolKind: 'kie-native',
     capability: 'internal',
+    defaultModelKey: 'gemini-3.1-pro',
+    timeoutMs: 180_000,
   },
   {
     name: 'grsai',
     displayName: 'GRSAI (Gemini через proxy.agent-lia.ru)',
-    baseUrl: 'https://proxy.agent-lia.ru/v1',
-    protocolKind: 'custom-http',
+    baseUrl: 'https://grsaiapi.com',
+    protocolKind: 'grsai-native',
     capability: 'internal',
+    useProxy: true,
+    proxyPath: 'grsai',
+    defaultModelKey: 'gemini-3.1-pro',
   },
 ];
 
@@ -79,6 +96,7 @@ interface ModelSeed {
   contextWindow?: number;
   category: 'flagship' | 'fast' | 'reasoning' | 'embedding' | 'experimental';
   notes?: string;
+  isActive?: boolean;
 }
 
 const MODELS: ModelSeed[] = [
@@ -88,6 +106,7 @@ const MODELS: ModelSeed[] = [
     displayName: 'GPT-4o',
     contextWindow: 128_000,
     category: 'flagship',
+    isActive: false,
   },
   {
     providerName: 'openai-via-proxy',
@@ -95,6 +114,15 @@ const MODELS: ModelSeed[] = [
     displayName: 'GPT-4o mini',
     contextWindow: 128_000,
     category: 'fast',
+    isActive: false,
+  },
+  {
+    providerName: 'openai-via-proxy',
+    modelKey: 'gpt-5-mini',
+    displayName: 'GPT-5 mini',
+    contextWindow: 200_000,
+    category: 'fast',
+    notes: 'Дефолт-модель OpenAI-через-прокси.',
   },
   {
     providerName: 'deepseek',
@@ -102,6 +130,22 @@ const MODELS: ModelSeed[] = [
     displayName: 'DeepSeek Chat',
     contextWindow: 64_000,
     category: 'fast',
+    isActive: false,
+  },
+  {
+    providerName: 'deepseek',
+    modelKey: 'deepseek-v4-flash',
+    displayName: 'DeepSeek V4 Flash',
+    contextWindow: 64_000,
+    category: 'fast',
+    notes: 'Дефолт-модель DeepSeek (DEEPSEEK_DEFAULT_MODEL).',
+  },
+  {
+    providerName: 'deepseek',
+    modelKey: 'deepseek-v4-pro',
+    displayName: 'DeepSeek V4 Pro',
+    contextWindow: 64_000,
+    category: 'reasoning',
   },
   {
     providerName: 'ollama',
@@ -110,6 +154,23 @@ const MODELS: ModelSeed[] = [
     contextWindow: 32_000,
     category: 'fast',
     notes: 'Локальная модель — для private dataClass.',
+    isActive: false,
+  },
+  {
+    providerName: 'ollama',
+    modelKey: 'qwen3:30b-a3b-instruct-2507',
+    displayName: 'Qwen3 30B A3B Instruct (Ollama)',
+    contextWindow: 32_000,
+    category: 'fast',
+    notes: 'Дефолт-модель Ollama (self-hosted, private dataClass).',
+  },
+  {
+    providerName: 'minimax',
+    modelKey: 'MiniMax-M2.5',
+    displayName: 'MiniMax M2.5',
+    contextWindow: 200_000,
+    category: 'flagship',
+    notes: 'Дефолт-модель MiniMax.',
   },
   {
     providerName: 'anthropic',
@@ -135,7 +196,7 @@ const MODELS: ModelSeed[] = [
   },
   {
     providerName: 'kie',
-    modelKey: 'gpt-5-4',
+    modelKey: 'gpt-5.4',
     displayName: 'GPT-5.4 (через KIE)',
     contextWindow: 200_000,
     category: 'flagship',
@@ -210,6 +271,10 @@ async function main(): Promise<void> {
         capability: p.capability,
         isActive: true,
         ...(p.defaultHeaders ? { defaultHeaders: p.defaultHeaders } : {}),
+        ...(p.useProxy !== undefined ? { useProxy: p.useProxy } : {}),
+        ...(p.proxyPath ? { proxyPath: p.proxyPath } : {}),
+        ...(p.defaultModelKey ? { defaultModelKey: p.defaultModelKey } : {}),
+        ...(p.timeoutMs ? { timeoutMs: p.timeoutMs } : {}),
       },
     });
     providersInserted++;
@@ -238,7 +303,7 @@ async function main(): Promise<void> {
         displayName: m.displayName,
         ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
         category: m.category,
-        isActive: true,
+        isActive: m.isActive ?? true,
         ...(m.notes ? { notes: m.notes } : {}),
       },
     });

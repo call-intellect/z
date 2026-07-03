@@ -7,12 +7,6 @@ export const UpdateOrgBudgetSchema = z.object({
 });
 export type UpdateOrgBudgetDto = z.infer<typeof UpdateOrgBudgetSchema>;
 
-export const UnitEconomicsGlobalQuerySchema = z.object({
-  days: z.coerce.number().int().positive().max(365).default(30),
-  topN: z.coerce.number().int().positive().max(100).default(10),
-});
-export type UnitEconomicsGlobalQuery = z.infer<typeof UnitEconomicsGlobalQuerySchema>;
-
 export const UnitEconomicsOrgQuerySchema = z.object({
   days: z.coerce.number().int().positive().max(365).default(30),
 });

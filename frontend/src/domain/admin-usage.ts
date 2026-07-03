@@ -145,39 +145,6 @@ export type AdminCallDetailDomain = AdminCallLogItemDomain & {
   responsePreview: string | null;
 };
 
-export type AdminFunctionUsageRowApi = {
-  taskType: string;
-  hasRoute: boolean;
-  isActive: boolean;
-  experimentEnabled: boolean;
-  currentProvider: string | null;
-  fallbackChain: string[];
-  totalCalls: number;
-  failedCalls: number;
-  failRate: number;
-  avgCostUsd: number;
-  avgDurationMs: number;
-  avgInputTokens: number;
-  avgOutputTokens: number;
-  totalCostUsd: number;
-};
-
-export type AdminFunctionsUsageApi = {
-  items: AdminFunctionUsageRowApi[];
-};
-
-export type AdminFunctionUsageRowDomain = AdminFunctionUsageRowApi;
-
-export type AdminFunctionsUsageDomain = {
-  items: AdminFunctionUsageRowDomain[];
-};
-
-export function adminFunctionsUsageFromApi(
-  api: AdminFunctionsUsageApi,
-): AdminFunctionsUsageDomain {
-  return { items: api.items };
-}
-
 export function formatUsd(value: number): string {
   if (value === 0) return "$0";
   if (value < 0.01) return `$${value.toFixed(4)}`;

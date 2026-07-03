@@ -4,7 +4,6 @@ import type {
   AdminCallDetailApi,
   AdminCallsLogApi,
   AdminDashboardApi,
-  AdminFunctionsUsageApi,
   AdminPeriod,
 } from "@/domain/admin-usage";
 
@@ -21,8 +20,6 @@ export type CallsLogRequest = {
   limit?: number;
   cursor?: string;
 };
-
-export type FunctionsUsageRequest = DashboardRequest;
 
 export type FunctionCallsRequest = {
   limit?: number;
@@ -49,11 +46,6 @@ export const adminUsageApi = {
   getCallDetails: (callId: string) =>
     apiClient.get<AdminCallDetailApi>(
       `/api/v1/admin/usage/calls/${encodeURIComponent(callId)}`,
-    ),
-
-  getFunctions: (req: FunctionsUsageRequest) =>
-    apiClient.get<AdminFunctionsUsageApi>(
-      `/api/v1/admin/usage/functions${buildQuery({ ...req })}`,
     ),
 
   getFunctionCalls: (taskType: string, req: FunctionCallsRequest = {}) =>

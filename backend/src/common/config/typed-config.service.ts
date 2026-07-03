@@ -900,6 +900,23 @@ export class TypedConfigService {
     };
   }
 
+  async themeAutofillOpts(): Promise<{
+    enabled: boolean;
+    threshold: number;
+    scanWindowDays: number;
+    maxPerScan: number;
+    dedupeSimilarity: number;
+  }> {
+    const [enabled, threshold, scanWindowDays, maxPerScan, dedupeSimilarity] = await Promise.all([
+      this.getDynamic<boolean>('theme.autofill.enabled', undefined, true),
+      this.getDynamic<number>('theme.autofill.threshold', undefined, 0.72),
+      this.getDynamic<number>('theme.autofill.scanWindowDays', undefined, 14),
+      this.getDynamic<number>('theme.autofill.maxPerScan', undefined, 50),
+      this.getDynamic<number>('theme.autofill.dedupeSimilarity', undefined, 0.97),
+    ]);
+    return { enabled, threshold, scanWindowDays, maxPerScan, dedupeSimilarity };
+  }
+
   get smartTables() {
     const importMaxFileMb = this.resolveSync<number>(
       'smartTables.importMaxFileMb',

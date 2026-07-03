@@ -123,6 +123,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-theme-autofill.ts',
+    hint: 'theme.autofill.* — крутилки авто-наполнения пользовательских тем (living-topic-space Ф3)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-chatbox.ts',
     hint: 'chatbox.session.idle_gap_hours + chatbox.enabled (ChatBox-интеграция)',
   },

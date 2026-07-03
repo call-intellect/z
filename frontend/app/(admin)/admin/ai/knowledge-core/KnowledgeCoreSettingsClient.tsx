@@ -124,6 +124,44 @@ const GROUPS: SettingGroup[] = [
         schema: positiveInt(20),
         defaultValue: 20,
       },
+      {
+        key: "theme.autofill.enabled",
+        label: "Авто-наполнение тем (kill-switch)",
+        description:
+          "Пользовательские темы сами наполняются блоками ≥ порога. Выключение останавливает воркер.",
+        schema: z.boolean().default(true),
+        defaultValue: true,
+      },
+      {
+        key: "theme.autofill.threshold",
+        label: "Порог авто-добавления в тему",
+        description:
+          "Минимальная близость блока к теме для авто-привязки. По умолчанию 0.72.",
+        schema: ratio01(0.72),
+        defaultValue: 0.72,
+      },
+      {
+        key: "theme.autofill.scanWindowDays",
+        label: "Окно свежих блоков (дней)",
+        description: "Сколько дней назад сканировать блоки для авто-наполнения.",
+        schema: positiveInt(14),
+        defaultValue: 14,
+      },
+      {
+        key: "theme.autofill.maxPerScan",
+        label: "Макс. авто-добавлений за проход",
+        description: "Потолок авто-привязок на тему за один проход воркера.",
+        schema: positiveInt(50),
+        defaultValue: 50,
+      },
+      {
+        key: "theme.autofill.dedupeSimilarity",
+        label: "Порог near-дубля (не добавлять)",
+        description:
+          "Кандидат-дубль не добавляется, если косинус к уже выбранному ≥ этого.",
+        schema: ratio01(0.97),
+        defaultValue: 0.97,
+      },
     ],
   },
   {

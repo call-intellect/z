@@ -63,6 +63,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private kcBlockGleaningRoundsTotal!: Counter<'tenant_top'>;
   private kcBlockGleaningBlocksTotal!: Counter<'tenant_top'>;
   private kcBlockOverlapDedupTotal!: Counter<'tenant_top'>;
+  private themeAutofillAddedTotal!: Counter<'tenant_top'>;
 
   private morningTasksDigestTotal!: Counter<'is_empty'>;
 
@@ -1300,6 +1301,11 @@ export class BusinessMetricsService implements OnModuleInit {
     this.kcBlockOverlapDedupTotal = this.getOrCreateCounter({
       name: 'kc_block_overlap_dedup_total',
       help: 'Ф12a — число блоков, отброшенных как дубль на нахлёсте окон в extractFull. tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.themeAutofillAddedTotal = this.getOrCreateCounter({
+      name: 'z_theme_autofill_added_total',
+      help: 'Авто-наполнение тем: число блоков, привязанных воркером (addedVia=autofill). tenant_top — top-bucket.',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -4696,6 +4702,11 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       args.count,
     );
+  }
+
+  incThemeAutofillAdded(args: { tenantTop: string; count: number }): void {
+    if (args.count <= 0) return;
+    this.themeAutofillAddedTotal?.inc({ tenant_top: args.tenantTop }, args.count);
   }
 
   incMorningTasksDigest(args: { isEmpty: boolean }): void {

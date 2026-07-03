@@ -38,6 +38,11 @@ import type { S3Service } from '../../src/modules/recordings/s3.service';
 import type { AiQueueService } from '../../src/modules/ai/ai-queue.service';
 import type { AiUsageLogService } from '../../src/modules/ai/services/ai-usage-log.service';
 import type { LlmFallbackService } from '../../src/modules/ai/services/llm-fallback.service';
+import type {
+  LlmCallParams,
+  LlmCallResult,
+  LlmRouterService,
+} from '../../src/modules/ai/services/llm-router.service';
 import type { LlmCompleteOutput } from '../../src/modules/ai/services/llm.types';
 import { PromptResolverService } from '../../src/modules/ai/services/prompt-resolver.service';
 import { AnalyzeWorker } from '../../src/modules/ai/workers/analyze.worker';
@@ -167,6 +172,24 @@ function buildEnv(args: {
     } satisfies LlmCompleteOutput)
     .mockResolvedValueOnce(args.structuredLlmOutput);
   const llm = { complete: llmComplete } as unknown as LlmFallbackService;
+  const legacyComplete = llmComplete as unknown as (input: unknown) => Promise<LlmCompleteOutput>;
+  const routerCall = vi.fn(async (params: LlmCallParams): Promise<LlmCallResult> => {
+    const out = await legacyComplete({
+      system: { text: params.systemPrompt, cacheControl: 'ephemeral' },
+      user: params.userMessage,
+      ...(params.tools ? { tools: params.tools } : {}),
+    });
+    return {
+      text: out.text,
+      modelUsed: `${out.provider}:${out.model}`,
+      inputTokens: out.inputTokens,
+      outputTokens: out.outputTokens,
+      cachedTokens: out.cachedTokens ?? 0,
+      durationMs: 0,
+      toolCalls: out.toolCalls,
+    };
+  });
+  const router = { call: routerCall } as unknown as LlmRouterService;
 
   const promptResolver = new PromptResolverService(prisma);
 
@@ -174,6 +197,7 @@ function buildEnv(args: {
     { client: {} } as unknown as RedisService,
     prisma,
     llm,
+    router,
     { record: vi.fn() } as unknown as AiUsageLogService,
     { enqueueNotify: vi.fn(), enqueueChapters: vi.fn(), enqueueTasksExtract: vi.fn(), enqueueTranscriptIndex: vi.fn(), enqueueCardRollup: vi.fn() } as unknown as AiQueueService,
     { transitionStatus: vi.fn() } as unknown as MeetingsService,
@@ -181,7 +205,7 @@ function buildEnv(args: {
       observeAiPipelineDuration: vi.fn(),
       incMeetingFailed: vi.fn(),
     } as unknown as BusinessMetricsService,
-    { ai: {} } as unknown as TypedConfigService,
+    { ai: {}, aiFeatures: {} } as unknown as TypedConfigService,
     { ingestMeeting: vi.fn(async () => null) } as unknown as MeetingIngestAdapter,
     promptResolver,
   );

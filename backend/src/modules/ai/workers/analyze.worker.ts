@@ -23,7 +23,8 @@ import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 import { AiUsageLogService } from '../services/ai-usage-log.service';
 import { LlmFallbackService } from '../services/llm-fallback.service';
-import type { LlmCompleteOutput, LlmTool } from '../services/llm.types';
+import { LlmRouterService, type LlmTaskType } from '../services/llm-router.service';
+import type { LlmCompleteOutput, LlmTool, LlmToolCall } from '../services/llm.types';
 import { calcCostUsd } from '../services/model-prices';
 import { OrgContextService } from '../services/org-context.service';
 import { PromptResolverService } from '../services/prompt-resolver.service';
@@ -56,6 +57,17 @@ const MAIN_REPORT_MODEL = 'deepseek-v4-pro';
 
 const CLIENT_PROTOCOL_TYPES = new Set<string>(['sales', 'customer_success', 'partner', 'custdev']);
 
+const AGENT_TYPE_TO_TASK_TYPE: Record<
+  'summary' | 'report-by-type' | 'follow-up' | 'custom' | 'client_protocol',
+  LlmTaskType
+> = {
+  summary: 'summary',
+  'report-by-type': 'report-by-type',
+  'follow-up': 'follow-up',
+  custom: 'custom-prompt',
+  client_protocol: 'client-meeting-split',
+};
+
 @Injectable()
 export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AnalyzeWorker.name);
@@ -68,6 +80,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmFallbackService) private readonly llm: LlmFallbackService,
+    @Inject(LlmRouterService) private readonly router: LlmRouterService,
     @Inject(AiUsageLogService) private readonly usage: AiUsageLogService,
     @Inject(AiQueueService) private readonly queue: AiQueueService,
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
@@ -749,7 +762,42 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private async callLlm(args: {
     meeting: Meeting;
     jobId: string | null;
-    agentType: 'summary' | 'report-by-type' | 'follow-up' | 'tasks' | 'custom' | 'client_protocol';
+    agentType: 'summary' | 'report-by-type' | 'follow-up' | 'custom' | 'client_protocol';
+    promptName: string;
+    input: Parameters<LlmFallbackService['complete']>[0];
+  }): Promise<LlmCompleteOutput> {
+    const routerEnabled = this.cfg.aiFeatures.analyzeWorkerRouterEnabled !== false;
+    if (!routerEnabled) {
+      return this.callLlmLegacy(args);
+    }
+    const taskType = AGENT_TYPE_TO_TASK_TYPE[args.agentType];
+    const tenantId = (args.meeting as unknown as { tenantId?: string | null }).tenantId ?? null;
+    const result = await this.router.call({
+      taskType,
+      tenantId,
+      meetingId: args.meeting.id,
+      jobId: args.jobId ?? undefined,
+      systemPrompt: args.input.system.text,
+      userMessage: typeof args.input.user === 'string' ? args.input.user : args.input.user.text,
+      ...(args.input.tools && args.input.tools.length > 0 ? { tools: args.input.tools } : {}),
+      sourceRef: { type: 'meeting', id: args.meeting.id },
+    });
+    const [provider, ...modelParts] = result.modelUsed.split(':');
+    return {
+      text: result.text,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      cachedTokens: result.cachedTokens,
+      model: modelParts.join(':'),
+      provider: provider as LlmCompleteOutput['provider'],
+      toolCalls: result.toolCalls,
+    };
+  }
+
+  private async callLlmLegacy(args: {
+    meeting: Meeting;
+    jobId: string | null;
+    agentType: 'summary' | 'report-by-type' | 'follow-up' | 'custom' | 'client_protocol';
     promptName: string;
     input: Parameters<LlmFallbackService['complete']>[0];
   }): Promise<LlmCompleteOutput> {
@@ -849,7 +897,7 @@ function extractErrorCode(err: unknown): string | null {
 }
 
 function pickToolInput(
-  out: LlmCompleteOutput | null | undefined,
+  out: { toolCalls?: LlmToolCall[] } | null | undefined,
   toolName: string,
 ): unknown | null {
   if (!out || !out.toolCalls || out.toolCalls.length === 0) return null;

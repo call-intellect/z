@@ -81,6 +81,7 @@ import { FaststartWorker } from '../recordings/workers/faststart.worker';
 import { RoleMapModule } from '../role-map/role-map.module';
 import { TablesModule } from '../tables/tables.module';
 import { TableEnrichWorker } from '../tables/workers/table-enrich.worker';
+import { TableGraphsyncReconcileCronService } from '../tables/workers/table-graphsync-reconcile.cron';
 import { TableSyncWorker } from '../tables/workers/table-sync.worker';
 import { TrackerModule } from '../tracker/tracker.module';
 
@@ -227,6 +228,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
 
     TableSyncWorker,
     TableEnrichWorker,
+    TableGraphsyncReconcileCronService,
 
     ChatboxSyncWorker,
     BitrixSyncWorker,

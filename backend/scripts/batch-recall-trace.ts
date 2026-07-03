@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { AppModule } from '../src/app.module';
 import { DialogService } from '../src/modules/dialog-layer/services/dialog.service';
 import { ChatV2OrchestrationService } from '../src/modules/chat-v2/chat-v2.service';
+import { splitBank, totalToRun, validateBank } from './eval/bank/parse-bank';
 
 const ORG = 'cmr1qbvpx0001pwbwxbgmh1jl';
 const USER = 'cmqxh4za3000018bwpuy1whg3';
@@ -131,20 +132,18 @@ function logProgress(n: number, total: number, rec: Record<string, unknown>): vo
 
 async function main(): Promise<void> {
   const bank = JSON.parse(readFileSync(BANK, 'utf8')) as Array<Record<string, unknown>>;
+  const bankErrors = validateBank(bank);
+  if (bankErrors.length) {
+    console.warn(`[bank] ${bankErrors.length} проблем валидации банка:`);
+    for (const e of bankErrors) console.warn(`  ${e.id}: ${e.problem}`);
+  }
+
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error'] });
   const dialog = app.get(DialogService);
   const orch = app.get(ChatV2OrchestrationService);
 
-  const singles = bank.filter((b) => !b.chain).slice(0, LIMIT);
-  const chainMap: Record<string, Array<Record<string, unknown>>> = {};
-  for (const b of bank.filter((b) => b.chain)) {
-    const key = String(b.chain);
-    (chainMap[key] ??= []).push(b);
-  }
-  for (const k of Object.keys(chainMap)) {
-    chainMap[k].sort((a, b) => Number(a.turn ?? 0) - Number(b.turn ?? 0));
-  }
-  const total = singles.length + (LIMIT === Number.POSITIVE_INFINITY ? Object.values(chainMap).flat().length : 0);
+  const { singles, chains } = splitBank(bank, LIMIT);
+  const total = totalToRun({ singles, chains });
 
   const results: Array<Record<string, unknown>> = [];
   let done = 0;
@@ -164,20 +163,18 @@ async function main(): Promise<void> {
   });
   await Promise.all(runners);
 
-  if (LIMIT === Number.POSITIVE_INFINITY) {
-    for (const k of Object.keys(chainMap)) {
-      const hist: Msg[] = [];
-      for (const it of chainMap[k]) {
-        const rec = await processOne(dialog, orch, it, hist);
-        hist.push(
-          { role: 'user', content: String(it.question) },
-          { role: 'assistant', content: String(rec.answerText ?? '') },
-        );
-        results.push(rec);
-        done += 1;
-        logProgress(done, total, rec);
-        flush();
-      }
+  for (const chain of chains) {
+    const hist: Msg[] = [];
+    for (const it of chain) {
+      const rec = await processOne(dialog, orch, it, hist);
+      hist.push(
+        { role: 'user', content: String(it.question) },
+        { role: 'assistant', content: String(rec.answerText ?? '') },
+      );
+      results.push(rec);
+      done += 1;
+      logProgress(done, total, rec);
+      flush();
     }
   }
 

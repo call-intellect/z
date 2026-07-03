@@ -187,7 +187,7 @@ export const PinToThemeSchema = z.object({ kind: z.enum(['block', 'entity']), id
 **Acceptance:** Swagger показывает маршруты; `POST /themes {personal}` → `isMine:true`; чужая personal-тема не видна user B (негативный тест); `POST /themes {team}` рядовым → 403 `forbidden_team_theme`; `DELETE pin` удаляет и исключает; `GET :id` отдаёт блоки с `addedVia/score/reason` и regulations. `typecheck && lint && build` зелёные.
 **Закрывает:** R1, R3, R5(часть), R6, R7.
 
-### Ф5 — Мост «обязательство → задача» [ ]
+### Ф5 — Мост «обязательство → задача» [x]
 **Ценность:** как менеджер, из обязательства темы одной кнопкой завожу задачу.
 **Что входит:** `POST /api/v1/knowledge/themes/:id/commitments/:blockId/to-task` → существующий сервис задачи трекера, связь задача↔блок↔тема; `taskId`.
 **Файлы:** `themes.controller.ts`; сервис трекера (перечитать).

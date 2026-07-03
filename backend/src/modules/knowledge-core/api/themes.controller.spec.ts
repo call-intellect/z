@@ -568,3 +568,94 @@ describe('KnowledgeThemesController — Ф4 темы пользователя (u
     );
   });
 });
+
+const F5_USER: CurrentUserPayload = { id: 'f5-user', email: 'f5@test', role: 'user' };
+const F5_TENANT = 'f5-org';
+
+function buildF5(opts: {
+  link?: Record<string, unknown> | null;
+  block?: { name: string | null; trustedAnswer: string } | null;
+  existingIssue?: { id: string } | null;
+  inboxProjectId?: string | null;
+  themeVisibility?: string;
+  themeOwnerId?: string | null;
+}): {
+  ctrl: KnowledgeThemesController;
+  create: ReturnType<typeof vi.fn>;
+  ensureInbox: ReturnType<typeof vi.fn>;
+  issueFindFirst: ReturnType<typeof vi.fn>;
+} {
+  const issueFindFirst = vi.fn(async () => opts.existingIssue ?? null);
+  const prisma = {
+    theme: {
+      findUnique: vi.fn(async () => ({
+        id: 't-1',
+        tenantId: F5_TENANT,
+        visibility: opts.themeVisibility ?? 'team',
+        createdByUserId: opts.themeOwnerId ?? null,
+      })),
+    },
+    themeIdeaBlock: {
+      findUnique: vi.fn(async () => (opts.link === undefined ? { themeId: 't-1' } : opts.link)),
+    },
+    ideaBlock: {
+      findFirst: vi.fn(async () =>
+        opts.block === undefined ? { name: 'Блок', trustedAnswer: 'Ответ' } : opts.block,
+      ),
+    },
+    issue: { findFirst: issueFindFirst },
+  } as unknown as PrismaService;
+
+  const rbac = { canRead: async () => true } as unknown as RbacService;
+
+  const create = vi.fn(async () => ({ id: 'issue-1', title: 'Блок' }));
+  const issues = { create } as never;
+  const ensureInbox = vi.fn(async () => opts.inboxProjectId ?? 'inbox-1');
+  const projects = { ensureInboxProjectId: ensureInbox } as never;
+
+  const ctrl = new KnowledgeThemesController(
+    prisma,
+    rbac,
+    null,
+    null,
+    null,
+    null,
+    null,
+    issues,
+    projects,
+  );
+  return { ctrl, create, ensureInbox, issueFindFirst };
+}
+
+describe('KnowledgeThemesController — Ф5 обязательство → задача (unit)', () => {
+  it('happy: блок привязан + не дублируется → issues.create вызван, created=true', async () => {
+    const { ctrl, create } = buildF5({});
+    const res = await ctrl.commitmentToTask('t-1', 'b1', F5_USER, F5_TENANT);
+    expect(create).toHaveBeenCalledWith(
+      'inbox-1',
+      expect.objectContaining({
+        sourceBlockIds: ['b1'],
+        externalSource: 'theme_commitment',
+        skipDedup: true,
+      }),
+      F5_TENANT,
+      F5_USER.id,
+    );
+    expect(res).toEqual({ taskId: 'issue-1', created: true });
+  });
+
+  it('идемпотентность: существующая задача → issues.create НЕ вызван, created=false', async () => {
+    const { ctrl, create } = buildF5({ existingIssue: { id: 'issue-existing' } });
+    const res = await ctrl.commitmentToTask('t-1', 'b1', F5_USER, F5_TENANT);
+    expect(create).not.toHaveBeenCalled();
+    expect(res).toEqual({ taskId: 'issue-existing', created: false });
+  });
+
+  it('блок не привязан → NotFound block_not_in_theme, issues.create НЕ вызван', async () => {
+    const { ctrl, create } = buildF5({ link: null });
+    await expect(ctrl.commitmentToTask('t-1', 'b1', F5_USER, F5_TENANT)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+});

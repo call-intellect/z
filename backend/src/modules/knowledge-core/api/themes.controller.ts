@@ -31,6 +31,8 @@ import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
+import { IssuesService } from '../../tracker/services/issues.service';
+import { ProjectsService } from '../../tracker/services/projects.service';
 import { ThemeFillService } from '../services/theme-fill.service';
 import { ThemeWriteService } from '../services/theme-write.service';
 
@@ -82,6 +84,12 @@ export class KnowledgeThemesController {
     @Optional()
     @Inject(ThemeFillService)
     private readonly themeFill: ThemeFillService | null = null,
+    @Optional()
+    @Inject(IssuesService)
+    private readonly issues: IssuesService | null = null,
+    @Optional()
+    @Inject(ProjectsService)
+    private readonly projects: ProjectsService | null = null,
   ) {}
 
   @Get()
@@ -593,6 +601,113 @@ export class KnowledgeThemesController {
     });
     this.metrics?.incThemeExclusions({ tenantTop: tenantTopOf(tenantId), count: 1 });
     return { ok: true };
+  }
+
+  @Post(':id/commitments/:blockId/to-task')
+  @ApiOperation({ summary: 'Завести задачу трекера из обязательства темы (идемпотентно)' })
+  async commitmentToTask(
+    @Param('id') id: string,
+    @Param('blockId') blockId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ taskId: string; created: boolean }> {
+    if (!tenantId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Org не определена' },
+      });
+    }
+    const theme = await this.loadThemeForWrite(id, tenantId);
+    if (theme.visibility === 'personal' && theme.createdByUserId !== user.id) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'theme_not_found', message: 'Тема не найдена' },
+      });
+    }
+    if (!(await this.rbac.canRead(user.id, tenantId, 'theme'))) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Недостаточно прав' },
+      });
+    }
+
+    const link = await this.prisma.themeIdeaBlock.findUnique({
+      where: { themeId_blockId_tenantId: { themeId: id, blockId, tenantId } },
+    });
+    if (!link) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'block_not_in_theme', message: 'Блок не привязан к этой теме' },
+      });
+    }
+
+    const block = await this.prisma.ideaBlock.findFirst({
+      where: { id: blockId, tenantId },
+      select: { name: true, trustedAnswer: true },
+    });
+    if (!block) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'block_not_found', message: 'Блок не найден' },
+      });
+    }
+
+    const externalId = ('theme-commitment:' + id + ':' + blockId).slice(0, 200);
+    const existing = await this.prisma.issue.findFirst({
+      where: { tenantId, externalSource: 'theme_commitment', externalId },
+    });
+    if (existing) {
+      return { taskId: existing.id, created: false };
+    }
+
+    if (!this.projects || !this.issues) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Создание задач недоступно' },
+      });
+    }
+
+    const projectId = await this.projects.ensureInboxProjectId(tenantId);
+    if (!projectId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'inbox_project_unavailable',
+          message: 'Не удалось определить проект «Входящие»',
+        },
+      });
+    }
+
+    const title = (block.name?.trim() || block.trustedAnswer.trim()).slice(0, 200);
+    const description = block.trustedAnswer;
+    const issue = await this.issues.create(
+      projectId,
+      {
+        title,
+        description,
+        descriptionHtml: null,
+        descriptionStripped: description,
+        priority: 'none',
+        stateId: null,
+        parentId: null,
+        estimatePoints: null,
+        sortOrder: 0,
+        startDate: null,
+        dueDate: null,
+        cycleId: null,
+        goalId: null,
+        assigneeUserIds: [],
+        labelIds: [],
+        externalSource: 'theme_commitment',
+        externalId,
+        sourceBlockIds: [blockId],
+        skipDedup: true,
+      },
+      tenantId,
+      user.id,
+    );
+
+    return { taskId: issue.id, created: true };
   }
 
   private async loadThemeForWrite(

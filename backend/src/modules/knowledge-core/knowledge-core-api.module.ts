@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { TrackerModule } from '../tracker/tracker.module';
+
 import { KnowledgeBlocksController } from './api/blocks.controller';
 import { KnowledgeEntitiesController } from './api/entities.controller';
 import { KnowledgeGraphController } from './api/graph.controller';
@@ -12,7 +14,7 @@ import { KnowledgeCoreModule } from './knowledge-core.module';
 import { KnowledgeSnapshotModule } from './snapshot.module';
 
 @Module({
-  imports: [KnowledgeCoreModule, KnowledgeSnapshotModule],
+  imports: [KnowledgeCoreModule, KnowledgeSnapshotModule, TrackerModule],
   controllers: [
     KnowledgeSearchController,
     KnowledgeBlocksController,

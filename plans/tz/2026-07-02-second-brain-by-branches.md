@@ -183,7 +183,13 @@ export interface BranchDetailDto {
 `typecheck`(вкл. `.spec`)/`lint`/`build` зелёные; `test:unit`/`test:integration` зелёные; second-brain обновлён (`02_architecture/module-map.md` — новый контроллер/сервис, `api-layer.md` — новые маршруты, профильная `01_projects/` про «Память»/knowledge-core); `prod-deploy-log.md` Шаг 12; рефлексия записана.
 
 ## Итог
-_(заполнит tz-orchestrator по завершении.)_
+**Реализовано целиком (Ф1–Ф4), 2026-07-03, v1 read-only без изменения схемы.** Коммиты: Ф1 `6f8ff03d` (`BranchDerivationService`: deriveBranchForEntityIds/ThemeIds, `computeBranchSignal`, `aggregateBranchMap`), Ф2 `a4c6763e` (`KnowledgeBranchesController` GET /branches + /:branch, метрики `z_branches_map_requests_total`/`z_branches_map_ms`), Ф3+Ф4 `7cdc0120` (фронтенд: карта 12 областей как главный вид «Памяти» + табы [Карта|Все реестры], экран области `/memory/:branch` со ссылками в разделы).
+
+Верификация: typecheck 0 ошибок; vitest зелёный (unit деривации/сигнала + контроллер + фронт-мапперы); backend build `BUILD_EXIT=0`; frontend build — роуты `/memory`, `/memory/[branch]` собраны.
+
+**Ключевые решения:** read-time деривация ветки из связей (Р1, без миграции); сигнал области — чистая функция от `Theme.dynamic` (declining→red, all-growing/пусто→green, иначе yellow); in-memory бакетизация (один запрос деривации, не N+1); учёт личных тем (`visibility='team' OR createdByUserId=viewer`) во всех запросах; `reversibility` у Decision не смоделирован → в DTO `null`.
+
+**Осталось / vNext (по ТЗ):** playwright-скриншоты карты и экрана области (ручная приёмка после выката); материализация `branch` колонкой + классификатор при росте доли «Не отнесено» ИЛИ >~5000 сущностей на Org (триггер зафиксирован, метрика `z_branches_map_ms` отслеживает латентность).
 
 ---
 > Дальше → реализация `tz-orchestrator` (по явному «начни реализацию»). vNext: хранить `branch` + классификатор (полнота карты), переименование областей, пульс области.

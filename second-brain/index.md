@@ -229,6 +229,11 @@
 - RBAC: ResourceType расширен `'theme'` (read для всех member'ов Org, write/delete — owner/admin)
 - LlmTaskType: `theme-classify` уже был в seed'е; `card-rollup-v2` тоже; обновление через `--update-existing` не обязательно
 
+## Заметки по реализации (2026-07-03) — Живое пространство темы + карта «Второй мозг»
+- [[01_projects/themes]] §«Живое пространство темы» — **тему теперь заводит человек** (`Theme.origin=user`, `visibility=personal|team`, `createdByUserId`), а Кора **сама наполняет** её блоками ≥ порога 0.72 (cron `theme-autofill`, pgvector без LLM на блок). Убранное лишнее → `ThemeExclusion` (не подкладывается). Провенанс «почему в теме» — `ThemeIdeaBlock.addedVia/score/reason`. Командную тему создаёт manager+ (`RbacService.canCreateTeamTheme`); мост «обязательство→задача». ТЗ [`plans/tz/2026-07-02-living-topic-space.md`](../plans/tz/2026-07-02-living-topic-space.md).
+- [[01_projects/themes]] §«Карта Второй мозг» — read-only карта 12 областей компании (деривация ветки из связей, без миграции): `BranchDerivationService`, `GET /api/v1/knowledge/branches` + `/:branch`; `/memory` стал табами [Карта | Все реестры], экран области `/memory/[branch]`. ТЗ [`plans/tz/2026-07-02-second-brain-by-branches.md`](../plans/tz/2026-07-02-second-brain-by-branches.md).
+- [[02_architecture/data-model]] §«Живое пространство темы» — миграция `20260703000000_living_topic_space` (4 enum + колонки Theme/ThemeIdeaBlock + таблица `ThemeExclusion`; аддитивна, дефолты покрывают старое). Крутилки `theme.autofill.*` — [[01_projects/admin]]; воркер — [[01_projects/workers-queues]].
+
 ## Маркетинг
 
 - [[06_marketing/index]] — навигация по маркетинговому разделу

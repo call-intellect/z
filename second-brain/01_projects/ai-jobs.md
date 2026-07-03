@@ -331,6 +331,16 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2; с 2026-06-25 �
 
 [[../index|← index]]
 
+## Авто-наполнение тем — pgvector без LLM на блок (живое пространство темы, 2026-07-03)
+
+**Источник:** ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md). Профиль — [[themes]], воркер — [[workers-queues]] §`theme-autofill`.
+
+**Новых LLM-taskType нет.** Авто-наполнение пользовательской темы — **чисто эмбеддинг-близость, без LLM-вызова на каждый блок**: cron `theme-autofill` берёт `Theme.embedding` (embedding из фразы, которой человек завёл тему), ищет `IdeaBlock` через pgvector (cosine ≥ порога `theme.autofill.threshold` 0.72) в окне `theme.autofill.scanWindowDays` (14 дней), дедупит near-дубли (`theme.autofill.dedupeSimilarity` 0.97), исключает уже-привязанные блоки и записи `ThemeExclusion` → вставляет `ThemeIdeaBlock(addedVia=autofill, score, reason)`. **`reason` («почему блок в теме») — детерминированный шаблон** (упоминания клиента/участники/близость), не генерация LLM. Высокий порог + дедуп + исключения = анти-свалка без спама подтверждениями. Крутилки — [[admin]] §«Крутилки авто-наполнения тем».
+
+Embedding темы считается на её создании (`ThemeWriteService.createTheme` → `KnowledgeEmbeddingService.embedQuery(phrase)`) — тем же `text-embedding-3-small`, что и блоки (см. §«Embedding model»), поэтому cosine между темой и блоками сопоставим.
+
+[[../index|← index]]
+
 ## Слой источника + маршрутизатор поиска — `document-summarize` + 2 backfill (2026-06-27)
 
 **Источник:** ТЗ [`plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) (Ф1–Ф10). Полная карта — [[../02_architecture/knowledge-core]] §«Слой источника + многомаршрутный retrieval»; модели — [[../02_architecture/data-model]].

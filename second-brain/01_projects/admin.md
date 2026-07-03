@@ -126,6 +126,18 @@ intake), чтобы окно и пороги не рассинхронились
 
 Программа (3 ТЗ, ветка `feature/2026-06-21-subject-memory-program`) добавила 15 крутилок в 3 новых секции реестра `admin-setting-schema-registry.ts` (засижены `seed-admin-settings.ts`, уже в STEPS): `subject-memory` (9 — `subjectMemory.enabled` kill-switch + пороги активации/подавления), `company-profile` (3 — `companyProfile.autoSummaryEnabled` kill-switch + свежесть/cold-start), `task-routing` (3 — `taskRouting.enabled` kill-switch + порог/topK). Редактируются super_admin через generic `GET/POST /api/v1/admin/settings*` (выделенной UI-страницы пока нет — vNext, см. реестр «не-сделано»). Полный перечень с дефолтами/вердиктами — [[config-knobs-catalog]] §«Выученная память уточнений»/§«Авто-профиль компании»/§«Маршрутизация задач по скиллам».
 
+### Крутилки авто-наполнения тем (`theme.autofill.*`) — 2026-07-03
+
+ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md). 5 ключей в секции `theme` реестра `admin-setting-schema-registry.ts`, засижены [`seed-admin-setting-theme-autofill.ts`](../../backend/scripts/seed-admin-setting-theme-autofill.ts) (в STEPS `phase:'seed-base'`, `apply-prod-deploy`). Читаются через `TypedConfigService.themeAutofillOpts()` (`getDynamic`, admin→ENV→code-fallback). UI-поля — секция «theme» на `/admin/ai/knowledge-core` (`KnowledgeCoreSettingsClient.tsx`). Управляют воркером `ThemeAutofillCron` (см. [[workers-queues]]).
+
+| Ключ | Default | Смысл |
+|---|---|---|
+| `theme.autofill.enabled` | `true` | kill-switch авто-наполнения пользовательских тем (Ship-On ON). Выкл → cron no-op. |
+| `theme.autofill.threshold` | `0.72` | порог близости, ниже которого блок в тему **не** кладётся (анти-свалка). |
+| `theme.autofill.scanWindowDays` | `14` | окно сканирования свежих блоков (дней). |
+| `theme.autofill.maxPerScan` | `50` | максимум блоков, добавляемых в тему за один проход. |
+| `theme.autofill.dedupeSimilarity` | `0.97` | порог near-дубля — блоки ближе этого дедупятся, чтобы не подкладывать почти-одинаковое. |
+
 ## Поверхности курации (detail-страницы)
 
 С 2026-06-03 (Action Center, Фаза C3) у курации появились собственные

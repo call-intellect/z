@@ -238,7 +238,13 @@ export const PinToThemeSchema = z.object({ kind: z.enum(['block', 'entity']), id
 `typecheck`(вкл. `.spec`)/`lint`/`build` зелёные; тесты зелёные; second-brain обновлён (`01_projects/` knowledge-core/темы, `02_architecture/data-model.md` — новая таблица/колонки, `module-map.md` — воркер/эндпоинты, `api-layer.md` — маршруты, `admin.md` — крутилки, `workers-queues.md` — крон); `prod-deploy-log.md` Шаги 1/4/12; рефлексия.
 
 ## Итог
-_(заполнит tz-orchestrator.)_
+**Реализовано целиком (Ф1–Ф6), 2026-07-03.** Коммиты: Ф1 `229c108e` (модель+миграция `20260703000000_living_topic_space`), Ф2 `41ae5351` (ThemeWriteService/ThemeFillService + `RbacService.canCreateTeamTheme`), Ф3 `3d58ff80` (ThemeAutofillCron + 5 крутилок `theme.autofill.*` + метрика `z_theme_autofill_added_total` + сид + UI), Ф4 `599fba33` (HTTP-API create/rename/archive/pin/unpin + живой вид DTO + `z_theme_exclusions_total`), Ф5 `128e844a` (мост «обязательство→задача» через IssuesService+inbox-проект, идемпотентно), Ф6 `cbdb8471` (фронтенд: живая страница, создание, «почему», unpin).
+
+Верификация: typecheck (8GB) 0 ошибок на всех фазах; vitest зелёный (unit сервисов/крона/контроллера + фронт-мапперы); backend `bun run build` (DI со всеми контроллерами/сервисами/кроном/мостом) `BUILD_EXIT=0`; frontend build — роуты `/themes/[id]` собраны; миграция применена `migrate deploy` (hand-write из-за out-of-order pending), колонки/таблица/FK/enum проверены в БД; сид крутилок идемпотентен (created=5→updated=5).
+
+**Ключевые решения:** миграция hand-write+`migrate deploy` (не `migrate dev` — риск reset на out-of-order pending); идемпотентность `ThemeExclusion` через app-level `findFirst`-guard (PG NULLS DISTINCT); authz на контроллере, сервисы чистые; `themeAutofillOpts()` async `getDynamic`; 5-я крутилка `dedupeSimilarity` под R3.
+
+**Осталось (на ручную приёмку после прод-выката):** playwright-скриншоты живой страницы и удаления привязки (нужен живой стенд) — через `qa-tester`.
 
 ---
 > Дальше → реализация `tz-orchestrator` (по явному «начни реализацию»).

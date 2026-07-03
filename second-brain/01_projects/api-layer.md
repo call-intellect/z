@@ -239,6 +239,30 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 См. [`knowledge-core.md`](../02_architecture/knowledge-core.md) — `/api/v1/knowledge/blocks`, `/entities`, `/themes`, `/graph/*`, `/search`.
 
+### Живое пространство темы + карта «Второй мозг» (2026-07-03)
+
+ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md) + [`2026-07-02-second-brain-by-branches`](../../plans/tz/2026-07-02-second-brain-by-branches.md). Все под `CookieAuthGuard, TenantGuard`, `@RequireEntitlement('feature.theme')`, `rbac.canRead(..., 'theme')`. Профиль — [[themes]], модель — [[../02_architecture/data-model]] §«Живое пространство темы».
+
+**Пользовательские темы (`KnowledgeThemesController`, `/api/v1/knowledge/themes`):**
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| POST | `/api/v1/knowledge/themes` | Создать тему фразой. Body `{ phrase, visibility: personal\|team }`. `origin=user`, embedding из фразы, авто-наполнение сразу. `team` требует manager+ (`RbacService.canCreateTeamTheme`) → иначе `403 forbidden_team_theme`. |
+| PATCH | `/api/v1/knowledge/themes/:id` | Переименовать. Body `{ name }`. Только автор темы (`403 not_theme_owner`). |
+| POST | `/api/v1/knowledge/themes/:id/archive` | Архивировать тему (`status='archived'`). Только автор. |
+| POST | `/api/v1/knowledge/themes/:id/pin` | Ручное добавление в тему. Body `{ kind: block\|entity, id }` (`addedVia=manual`). |
+| DELETE | `/api/v1/knowledge/themes/:id/pin/:kind/:objectId` | Убрать объект из темы → пишет `ThemeExclusion` (больше не подкладывается авто-наполнением). |
+| POST | `/api/v1/knowledge/themes/:id/commitments/:blockId/to-task` | Мост «обязательство → задача» трекера (через `IssuesService` + `ProjectsService.ensureInboxProjectId`). Идемпотентно. `404 block_not_in_theme`. |
+
+`GET /api/v1/knowledge/themes` расширен — скрывает чужие personal-темы (видны только автору). `GET /:id` расширен — живой вид: блоки с `addedVia`/`score`/`reason` («почему в теме») + секции decisions/tasks/documents/regulations. Коды ошибок: `forbidden_team_theme`, `not_theme_owner`, `block_not_in_theme`, `theme_not_found`.
+
+**Карта областей (`KnowledgeBranchesController`, `/api/v1/knowledge/branches`):** read-only, деривация из существующих связей (без миграции).
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/api/v1/knowledge/branches` | Карта 12 областей: плитки `{ branch, label, counts (темы/регламенты/процессы/документы/решения), signal }` + `'unassigned'` при counts>0. Метрики `z_branches_map_requests_total`/`z_branches_map_ms`. |
+| GET | `/api/v1/knowledge/branches/:branch` | Деталь области: темы + деривированные регламенты/процессы/документы/решения + summary. `branch` вне enum+`unassigned` → `400 unknown_branch`. |
+
 **Провенанс «Откуда это» (2026-06-20, ТЗ provenance-source-traceability):**
 | Метод | Путь | Назначение |
 |---|---|---|

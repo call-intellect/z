@@ -2238,6 +2238,39 @@ Pipeline: `LogService.write → in-memory буфер → bulk createMany → Sys
 
 [[../index|← index]]
 
+## Живое пространство темы + карта «Второй мозг» (2026-07-03)
+
+**Источник:** ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md) + [`2026-07-02-second-brain-by-branches`](../../plans/tz/2026-07-02-second-brain-by-branches.md). Пользовательские темы (человек заводит → Кора авто-наполняет) поверх существующего движка `Theme` + read-only карта 12 областей компании (деривация из связей, без миграции). Модель — [[data-model]] §«Живое пространство темы», профиль — [[../01_projects/themes]], эндпоинты — [[../01_projects/api-layer]] §Knowledge-core.
+
+### `backend/src/modules/knowledge-core/services/`
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `ThemeWriteService` | `knowledge-core/services/theme-write.service.ts` | Запись пользовательских тем: `createTheme` (`embedQuery(phrase)`→embedding, `origin=user`, personal/team), `rename`, `archive`, `pin`/`unpin` (unpin пишет `ThemeExclusion`, чтобы объект не подкладывался снова). |
+| `ThemeFillService` | `knowledge-core/services/theme-fill.service.ts` | `fillTheme`: pgvector-поиск блоков ≥ порога в окне сканирования, дедуп near-дублей, исключение уже-привязанных и `ThemeExclusion` → вставка `ThemeIdeaBlock(addedVia=autofill, score, reason)`. Чистые функции `selectAutofillCandidates`/`cosineSim`. |
+| `BranchDerivationService` | `knowledge-core/services/branch-derivation.service.ts` | Карта 12 областей (read-only, без миграции): `deriveBranchForEntityIds`/`deriveBranchForThemeIds` (сущность/тема→ветка, visibility-aware, max weight), `computeBranchSignal` (чистая: пусто/all-growing→green, declining→red, иначе yellow), `aggregateBranchMap` (счётчики тем/регламентов/процессов/документов/решений per branch + `'unassigned'`). Деривация из существующих связей (Р1). |
+| `RbacService.canCreateTeamTheme` (расширен) | `rbac/rbac.service.ts` | Гейт создания **командной** темы: owner/admin/manager/coo/super. Личную тему заводит любой сотрудник. |
+
+### `backend/src/modules/knowledge-core/workers/`
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `ThemeAutofillCron` | `knowledge-core/workers/theme-autofill.cron.ts` | `@Cron('35 * * * *')` (зарегистрирован в `ai/workers.module.ts`): по каждой Org → user-темы (`origin=user, status=active`) → `ThemeFillService.fillTheme`. kill-switch `theme.autofill.enabled`, per-Org gate `'theme-autofill'` (`WorkerOrgGate`). Метрика `z_theme_autofill_added_total`. |
+
+### `backend/src/modules/knowledge-core/api/`
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `KnowledgeThemesController` (расширен) | `knowledge-core/api/themes.controller.ts` | + `POST /` (создать personal/team-тему, team→manager+, авто-наполнение сразу), `PATCH /:id` (rename), `POST /:id/archive`, `POST /:id/pin`, `DELETE /:id/pin/:kind/:objectId` (unpin→исключение), `POST /:id/commitments/:blockId/to-task` (мост в трекер, идемпотентно). `GET /` скрывает чужие personal-темы; `GET /:id` — живой вид (блоки с addedVia/score/reason + секции decisions/tasks/documents/regulations). `TrackerModule` подключён в `knowledge-core-api.module.ts` (мост через `IssuesService` + `ProjectsService.ensureInboxProjectId`). |
+| `KnowledgeBranchesController` | `knowledge-core/api/branches.controller.ts` | `GET /api/v1/knowledge/branches` (карта: плитки label+counts+signal), `GET /:branch` (деталь области: темы + деривированные регламенты/процессы/документы/решения + summary; `unknown_branch`→400). Guards как у тем. Метрики `z_branches_map_requests_total`, `z_branches_map_ms`. |
+
+### Frontend
+
+- Темы: `src/api/themes.api.ts` (+create/rename/archive/pin/unpin/commitmentToTask), `src/domain/theme.ts` (+origin/visibility/isMine, addedVia/score/reason, секции detail), `app/(authenticated)/themes/CreateThemeDialog.tsx` (создание темы фразой), `ThemesClient.tsx` (кнопка «+ Новая тема», бейдж «моя тема»), `themes/[id]/ThemeDetailClient.tsx` (живая страница: суть/лента/кто в теме/решения+«завести задачу»/задачи/документы/регламенты, поповер «почему», unpin).
+- Карта: `src/api/branches.api.ts`, `src/domain/branch.ts`, `app/(authenticated)/memory/page.tsx` → табы [Карта | Все реестры] + `BranchMapClient.tsx` (карта 12 областей — главный вид «Памяти»), `memory/[branch]/BranchDetailClient.tsx` (экран области со ссылками в существующие разделы).
+
+[[../index|← index]]
+
 ## Команда + персональные доступы сотрудников (Фазы 0–5, 2026-06-04)
 
 **Источник:** [`plans/tz/2026-06-03-team-section-and-employee-access.md`](../../plans/tz/2026-06-03-team-section-and-employee-access.md). Модули `orgs` / `persons` / `users` (backend) + `structure` / `settings` (frontend). Управление участниками и приглашениями переехало из Настроек в раздел «Команда». Эндпоинты — [[../01_projects/api-layer]], страницы — [[../01_projects/frontend-pages]], модель — [[data-model]] §EmployeeCapabilityOverride.

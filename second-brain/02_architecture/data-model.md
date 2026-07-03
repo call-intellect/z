@@ -670,6 +670,48 @@ ThemeEntity {
 Поддерживается `theme-clusterer` (создание) и `reframing.reflectOnThemes`
 (перенос при `themeMerges`).
 
+## Живое пространство темы — пользовательские темы + авто-наполнение (2026-07-03)
+
+**Источник:** ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md) (миграция `20260703000000_living_topic_space`). Тему теперь **заводит человек руками** (`origin=user`), а Кора **сама наполняет** её релевантными блоками ≥ порога 0.72. Подробно — [[../01_projects/themes]] §«Пользовательские темы».
+
+**4 новых enum:**
+- `ThemeOrigin { auto  user }` — кто создал тему (кластеризатор vs человек).
+- `ThemeVisibility { personal  team }` — личная (видит только автор) vs командная (видит вся Org).
+- `ThemeLinkOrigin { clustered  autofill  manual }` — как блок попал в тему (кластеризация / авто-наполнение / ручной pin).
+- `ThemeExclusionKind { block  entity }` — что убрал пользователь (блок или сущность).
+
+**Новые колонки `Theme`:**
+```
+origin          ThemeOrigin      @default(auto)
+createdByUserId String?
+visibility      ThemeVisibility  @default(team)
+createdByUser   User?  @relation("ThemeAuthor", ...) onDelete: SetNull
+exclusions      ThemeExclusion[]
+@@index([tenantId, origin, createdByUserId])
+```
+
+**Новые колонки `ThemeIdeaBlock`** (провенанс авто-наполнения — «почему блок в теме»):
+```
+addedVia ThemeLinkOrigin @default(clustered)   // как попал: clustered | autofill | manual
+score    Decimal? @db.Decimal(4, 3)            // близость при autofill (для «почему»)
+reason   String?  @db.Text                     // человекочитаемо: «4 упоминания клиента, участник Смирнов»
+```
+
+**Новая таблица `ThemeExclusion`** — «пользователь убрал, больше не подкладывать»:
+```
+ThemeExclusion {
+  id, tenantId, themeId → Theme (Cascade),
+  kind    ThemeExclusionKind,
+  blockId  String?  → IdeaBlock? (blockId, tenantId) Cascade,   // tenantId-компаньон в составном FK (партиц. IdeaBlock)
+  entityId String?  → Entity?    (entityId, tenantId) Cascade,  // tenantId-компаньон в составном FK (партиц. Entity)
+  createdByUserId String?, createdAt
+  @@unique([themeId, kind, blockId, entityId])
+  @@index([tenantId, themeId])
+}
+```
+
+Записывается на unpin (удаление блока/сущности из темы). `ThemeFillService` исключает эти объекты при авто-наполнении. Обратные relation-поля добавлены в `User`(`ThemeAuthor`), `IdeaBlock`, `Entity`, `Org`. **Дефолты (`origin=auto`/`visibility=team`/`addedVia=clustered`) покрывают существующие темы и привязки — бэкфилл кодом не нужен.**
+
 ### Card расширение (Фаза 4)
 
 ```

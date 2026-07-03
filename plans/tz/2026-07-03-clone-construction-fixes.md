@@ -135,9 +135,9 @@ support tool_choice`) → иногда падает в фолбэки. Лока�
 тихая деградация на модель хуже. Клон — ключевой артефакт, собирать его на флейки-модели нельзя.
 
 **Контракт:**
-1. Маршрут `executable-persona-compile` primary `deepseek-v4-flash` → **`deepseek-v4-pro`** (та же capable-модель,
-   что у detect), secondary `gpt-5.4-mini`→`gpt-5.4` — в [seed-llm-task-routes-skill-and-clone.ts](../../backend/scripts/seed-llm-task-routes-skill-and-clone.ts) + обновить snapshot-спек.
-2. **Прод-путь:** сид маршрутов НЕ в аггрегаторе; добавить `executable-persona-compile` в TARGETS
+1. Маршруты `executable-persona-compile` **и** `skill-trait-verify` primary `deepseek-v4-flash` → **`deepseek-v4-pro`**
+   (та же capable-модель, что у detect), secondary `gpt-5.4-mini`→`gpt-5.4` — в [seed-llm-task-routes-skill-and-clone.ts](../../backend/scripts/seed-llm-task-routes-skill-and-clone.ts) + обновить snapshot-спек. verify на flash падал в fail-open (черта промоутилась без проверки) — тот же корень.
+2. **Прод-путь:** сид маршрутов НЕ в аггрегаторе; добавить `executable-persona-compile` и `skill-trait-verify` в TARGETS
    [patch-mass-migrate-to-deepseek-pro.ts](../../backend/scripts/patch-mass-migrate-to-deepseek-pro.ts) (в STEPS
    `--update-existing`, `everyDeploy`) — так primary→pro доедет на прод каждым деплоем, уважая admin-правки.
 3. **Ретрай в сборке:** `compilePersonaPrompt` ([executable-persona-build.service.ts](../../backend/src/modules/knowledge-core/services/executable-persona-build.service.ts)) —

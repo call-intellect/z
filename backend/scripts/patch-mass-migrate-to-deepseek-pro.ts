@@ -39,6 +39,7 @@ const TARGETS: MigrationTarget[] = [
 
   { taskType: 'card-rollup-v2', category: 'rollup', smokeOk: true },
   { taskType: 'executable-persona-compile', category: 'rollup', smokeOk: true },
+  { taskType: 'skill-trait-verify', category: 'merge', smokeOk: true },
 
   { taskType: 'axis-classify', category: 'classifier', smokeOk: true },
 ];

@@ -16,13 +16,6 @@ export const adminEconomicsApi = {
       })}`,
     ),
 
-  org: (tenantId: string, req: { days?: number } = {}) =>
-    apiClient.get<AdminEconomicsOrgApi>(
-      `/api/v1/admin/unit-economics/orgs/${tenantId}${buildQuery({
-        days: req.days,
-      })}`,
-    ),
-
   getBudget: (tenantId: string) =>
     apiClient.get<AdminOrgBudgetApi | null>(
       `/api/v1/admin/orgs/${tenantId}/budget`,

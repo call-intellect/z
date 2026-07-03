@@ -6,7 +6,6 @@ import {
   Param,
   Patch,
   Post,
-  Query,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -22,8 +21,6 @@ import { DailyCostAggregatorCron } from './daily-cost-aggregator.cron';
 import {
   AggregateUnitEconomicsBodySchema,
   type AggregateUnitEconomicsBody,
-  UnitEconomicsOrgQuerySchema,
-  type UnitEconomicsOrgQuery,
   UpdateOrgBudgetSchema,
   type UpdateOrgBudgetDto,
 } from './dto/admin-budget.dto';
@@ -42,15 +39,6 @@ export class AdminEconomicsController {
     @Inject(OrgEconomicsCron)
     private readonly orgEconomics: OrgEconomicsCron,
   ) {}
-
-  @Get('unit-economics/orgs/:id')
-  org(
-    @Param('id') id: string,
-    @Query(new ZodValidationPipe(UnitEconomicsOrgQuerySchema))
-    q: UnitEconomicsOrgQuery,
-  ) {
-    return this.svc.getOrg(id, q.days);
-  }
 
   @Post('unit-economics/aggregate')
   aggregate(

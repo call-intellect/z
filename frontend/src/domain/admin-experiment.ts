@@ -7,44 +7,6 @@ export type AdminExperimentConfigApi = {
   endsAt?: string;
 };
 
-export type AdminExperimentMetricsApi = {
-  totalCalls: number;
-  failedCalls: number;
-  failRate: number;
-  avgCostUsd: number;
-  avgDurationMs: number;
-  avgInputTokens: number;
-  avgOutputTokens: number;
-  totalCostUsd: number;
-};
-
-export type AdminExperimentCallRowApi = {
-  id: string;
-  createdAt: string;
-  model: string;
-  provider: string;
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
-  durationMs: number;
-  success: boolean;
-  errorText: string | null;
-  responsePreview: string | null;
-};
-
-export type AdminExperimentStatusApi = {
-  taskType: string;
-  config: AdminExperimentConfigApi | null;
-  metrics: {
-    A: AdminExperimentMetricsApi;
-    B: AdminExperimentMetricsApi;
-  };
-  recentCalls: {
-    A: AdminExperimentCallRowApi[];
-    B: AdminExperimentCallRowApi[];
-  };
-};
-
 export type AdminExperimentConfigDomain = {
   enabled: boolean;
   modelA: string;
@@ -53,57 +15,6 @@ export type AdminExperimentConfigDomain = {
   startedAt: Date | null;
   endsAt: Date | null;
 };
-
-export type AdminExperimentCallRowDomain = Omit<
-  AdminExperimentCallRowApi,
-  "createdAt"
-> & {
-  createdAt: Date;
-};
-
-export type AdminExperimentStatusDomain = {
-  taskType: string;
-  config: AdminExperimentConfigDomain | null;
-  metrics: {
-    A: AdminExperimentMetricsApi;
-    B: AdminExperimentMetricsApi;
-  };
-  recentCalls: {
-    A: AdminExperimentCallRowDomain[];
-    B: AdminExperimentCallRowDomain[];
-  };
-};
-
-function callRowFromApi(
-  api: AdminExperimentCallRowApi,
-): AdminExperimentCallRowDomain {
-  return { ...api, createdAt: new Date(api.createdAt) };
-}
-
-export function adminExperimentStatusFromApi(
-  api: AdminExperimentStatusApi,
-): AdminExperimentStatusDomain {
-  const cfg = api.config;
-  return {
-    taskType: api.taskType,
-    config:
-      cfg && cfg.enabled === true
-        ? {
-            enabled: true,
-            modelA: cfg.modelA ?? "unknown:default",
-            modelB: cfg.modelB ?? "unknown:default",
-            splitPercent: cfg.splitPercent ?? 50,
-            startedAt: cfg.startedAt ? new Date(cfg.startedAt) : null,
-            endsAt: cfg.endsAt ? new Date(cfg.endsAt) : null,
-          }
-        : null,
-    metrics: api.metrics,
-    recentCalls: {
-      A: api.recentCalls.A.map(callRowFromApi),
-      B: api.recentCalls.B.map(callRowFromApi),
-    },
-  };
-}
 
 export type AdminFunctionListItemApi = {
   taskType: string;

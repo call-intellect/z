@@ -51,7 +51,6 @@ import {
   AdminLoadingInline,
 } from "../../../AdminStateViews";
 import { useAdminQuery } from "../../../useAdminQuery";
-import { ExperimentStartDialog } from "../../../experiments/ExperimentStartDialog";
 
 type LlmRouteProvider = { provider: string; model?: string };
 
@@ -62,7 +61,6 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
   const [isActive, setIsActive] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [showAbDialog, setShowAbDialog] = useState(false);
 
   const detailQ = useAdminQuery(
     `admin-fn:${taskType}`,
@@ -207,13 +205,12 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
                 }}
               />
               <div className="flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAbDialog(true)}
-                  disabled={detailQ.data.experiment !== null}
-                >
-                  <FlaskConical size={14} /> Запустить A/B
+                <Button asChild variant="outline" size="sm">
+                  <Link
+                    href={`/admin/ai/routing/${encodeURIComponent(taskType)}?tab=experiment`}
+                  >
+                    <FlaskConical size={14} /> A/B-тест
+                  </Link>
                 </Button>
                 <Button
                   size="sm"
@@ -302,17 +299,6 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
             </CardContent>
           </Card>
         </>
-      )}
-
-      {showAbDialog && (
-        <ExperimentStartDialog
-          taskType={taskType}
-          onClose={() => setShowAbDialog(false)}
-          onStarted={() => {
-            setShowAbDialog(false);
-            detailQ.refetch();
-          }}
-        />
       )}
     </div>
   );

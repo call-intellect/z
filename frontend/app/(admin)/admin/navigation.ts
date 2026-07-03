@@ -14,7 +14,6 @@ import {
   CreditCard,
   DatabaseZap,
   FileText,
-  FlaskConical,
   FolderTree,
   Gauge,
   HardDrive,
@@ -209,12 +208,6 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         label: "Трекер",
         icon: Workflow,
         matchPrefix: "/admin/tracker",
-      },
-      {
-        href: "/admin/experiments",
-        label: "A/B-эксперименты",
-        icon: FlaskConical,
-        matchPrefix: "/admin/experiments",
       },
       {
         href: "/admin/ai/knowledge-core",

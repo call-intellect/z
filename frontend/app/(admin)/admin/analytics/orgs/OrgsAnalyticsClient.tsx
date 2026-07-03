@@ -12,7 +12,6 @@ import {
 } from "@/domain/admin-org";
 import {
   ADMIN_PERIOD_LABELS,
-  formatUsd,
   type AdminPeriod,
 } from "@/domain/admin-usage";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
@@ -65,7 +64,6 @@ export function OrgsAnalyticsClient() {
       ownerEmail: o.ownerEmail ?? "",
       membersCount: o.membersCount,
       meetingsCount: o.meetingsCount,
-      costUsd: o.costUsdInPeriod.toFixed(4),
     }),
   );
 
@@ -102,7 +100,6 @@ export function OrgsAnalyticsClient() {
               { key: "ownerEmail", label: "Владелец" },
               { key: "membersCount", label: "Участников" },
               { key: "meetingsCount", label: "Встреч" },
-              { key: "costUsd", label: "Расход, USD" },
             ]}
             filename={`admin-orgs-${period}.csv`}
           />
@@ -191,8 +188,13 @@ function OrgsReadonlyTable({ items }: { items: AdminOrgRowDomain[] }) {
               <td className="px-3 py-2 text-right tabular-nums">
                 {o.meetingsCount}
               </td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {formatUsd(o.costUsdInPeriod)}
+              <td className="px-3 py-2 text-right">
+                <Link
+                  href={`/admin/analytics/llm-cost?view=company&id=${encodeURIComponent(o.id)}`}
+                  className="text-accent hover:underline"
+                >
+                  Смотреть расход →
+                </Link>
               </td>
               <td className="px-3 py-2 text-right">
                 <Button asChild variant="ghost" size="sm">

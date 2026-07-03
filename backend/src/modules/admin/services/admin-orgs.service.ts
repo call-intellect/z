@@ -4,8 +4,6 @@ import { type OrgTier, type PaymentMode, Prisma, type SubscriptionStatus } from 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { AdminPeriod } from '../dto/admin-usage.dto';
 
-import { periodToRange } from './admin-usage.service';
-
 export interface AdminOrgRow {
   id: string;
   name: string;
@@ -17,8 +15,6 @@ export interface AdminOrgRow {
   ownerEmail: string | null;
   membersCount: number;
   meetingsCount: number;
-  costUsdInPeriod: number;
-  callsInPeriod: number;
   deletedAt: string | null;
   createdAt: string;
 }
@@ -86,7 +82,6 @@ export class AdminOrgsService {
     limit: number;
     includeDeleted: boolean;
   }): Promise<{ items: AdminOrgRow[] }> {
-    const range = periodToRange(args);
     const where: Prisma.OrgWhereInput = {};
     if (!args.includeDeleted) where.deletedAt = null;
     if (args.search) {
@@ -108,25 +103,6 @@ export class AdminOrgsService {
     if (orgs.length === 0) return { items: [] };
 
     const orgIds = orgs.map((o) => o.id);
-    const usage = await this.prisma.aiUsageLog.groupBy({
-      by: ['tenantId'],
-      where: {
-        tenantId: { in: orgIds },
-        createdAt: { gte: range.gte, lt: range.lt },
-      },
-      _sum: { costUsd: true },
-      _count: { _all: true },
-    });
-    const usageById = new Map(
-      usage.map((u) => [
-        u.tenantId ?? '',
-        {
-          cost: decimalToNumber(u._sum.costUsd),
-          calls: u._count._all,
-        },
-      ]),
-    );
-
     const subs = await this.prisma.subscription.findMany({
       where: { tenantId: { in: orgIds } },
       select: { tenantId: true, status: true, paymentMode: true },
@@ -144,8 +120,6 @@ export class AdminOrgsService {
       ownerEmail: o.owner?.email ?? null,
       membersCount: o._count.memberships,
       meetingsCount: o._count.meetings,
-      costUsdInPeriod: usageById.get(o.id)?.cost ?? 0,
-      callsInPeriod: usageById.get(o.id)?.calls ?? 0,
       deletedAt: o.deletedAt?.toISOString() ?? null,
       createdAt: o.createdAt.toISOString(),
     }));

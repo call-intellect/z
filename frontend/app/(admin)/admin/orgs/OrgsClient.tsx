@@ -14,7 +14,6 @@ import {
 } from '@/domain/admin-org';
 import {
   ADMIN_PERIOD_LABELS,
-  formatUsd,
   type AdminPeriod,
 } from '@/domain/admin-usage';
 import { toast } from 'sonner';
@@ -247,8 +246,13 @@ function OrgRow({
       <td className="px-3 py-2 text-xs text-fg-tertiary">{org.ownerEmail ?? '—'}</td>
       <td className="px-3 py-2 text-right tabular-nums">{org.membersCount}</td>
       <td className="px-3 py-2 text-right tabular-nums">{org.meetingsCount}</td>
-      <td className="px-3 py-2 text-right tabular-nums">
-        {formatUsd(org.costUsdInPeriod)}
+      <td className="px-3 py-2 text-right">
+        <Link
+          href={`/admin/analytics/llm-cost?view=company&id=${encodeURIComponent(org.id)}`}
+          className="text-accent hover:underline"
+        >
+          Смотреть расход →
+        </Link>
       </td>
       <td className="px-3 py-2">
         <div className="flex items-center gap-1">

@@ -57,7 +57,7 @@ owner_decisions:
   цепочки ≥2 turn = 1..N без пропусков; follow-up «А…/И…» только с chain.
 - Приёмка: `bunx vitest run scripts/eval/gold/recall-gold.spec.ts` — **11 тестов зелёные**; typecheck+lint зелёные.
 
-## Фаза 1 — Честный классификатор исхода (замена `honest`) `[ ]`
+## Фаза 1 — Честный классификатор исхода (замена `honest`) `[x]`
 
 Новый чистый модуль `backend/scripts/eval/verdict/classify-outcome.ts`, функция
 `classifyOutcome(rec, gold): 'answered' | 'honest_empty' | 'real_fail'` — БЕЗ обращения к `usedBlockIds`
@@ -71,9 +71,14 @@ owner_decisions:
 - Перефразированный отказ (q074) → `honest_empty`; refusal-когда-есть-факт (q008) → `real_fail`;
   перечни/анафора (q054/q055/q109) → `answered`.
 
-Приёмка (unit, детерминизм, БЕЗ стенда):
-- `classify-outcome.spec.ts` на фикстурах реальных записей (q074/q008/q054/q109/q088) — каждая классифицируется
-  по эталону выше; негативные пути (пустой ответ / отказ-на-answerable / противоречие).
+Приёмка (unit, детерминизм, БЕЗ стенда) — **сделано, 21 тест зелёный**:
+- `classify-outcome.spec.ts` на фикстурах реальных записей прогона-111
+  (`verdict/__fixtures__/classify-cases.json`, из results-111-v2): q008→real_fail, q054/q055/q088/q109/q110→answered,
+  q068/q074→honest_empty; негативные пути (пустой ответ, галлюцинация на honest_empty, clarification, refusalOverride).
+- **Реализация вместо `usedBlockIds`:** `isRefusal(text)` — кириллице-безопасный маркер-детект отказа
+  (`\w`/`\b` в JS-regex НЕ матчат кириллицу → `[а-яё]`+lookaround) + `refusalOverride` для внешнего LLM-сигнала.
+  Заземлённость `[BLOCK:id]`/mustMention-покрытие вынесены в метрики/судью (Ф3/Ф4); здесь — класс исхода.
+- Экспорт `mustMentionCoverage(text, mustMention)` для Ф3/Ф4.
 
 ## Фаза 2 — Прогон follow-up как диалога (всегда) `[ ]`
 

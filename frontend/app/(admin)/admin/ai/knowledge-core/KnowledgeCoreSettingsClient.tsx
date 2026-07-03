@@ -230,6 +230,14 @@ const GROUPS: SettingGroup[] = [
         defaultValue: 0.8,
       },
       {
+        key: "knowledge.skillClusterSimilarityThreshold",
+        label: "Порог склейки блоков в трейт",
+        description:
+          "Cosine-порог, при котором похожие reasoning-блоки склеиваются в один навык/принцип клона. Ниже — трейты собираются легче из перефразировок.",
+        schema: ratio01(0.72),
+        defaultValue: 0.72,
+      },
+      {
         key: "knowledge.skillLookbackMonths",
         label: "Глубина просмотра (мес.)",
         schema: positiveInt(6),
@@ -264,9 +272,10 @@ const GROUPS: SettingGroup[] = [
       {
         key: "knowledge.personaRoleAggMinPersons",
         label: "Мин. персон для роли",
-        description: "Сколько людей нужно для агрегата роли.",
-        schema: positiveInt(3),
-        defaultValue: 3,
+        description:
+          "Сколько носителей нужно для сборки клона роли. 1 — одиночная должность (типовой SMB) тоже получает клон.",
+        schema: positiveInt(1),
+        defaultValue: 1,
       },
       {
         key: "knowledge.executablePersonaThresholdTraitsCount",

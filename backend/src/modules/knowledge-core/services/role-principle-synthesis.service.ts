@@ -20,7 +20,6 @@ export class RolePrincipleSynthesisService {
   private readonly logger = new Logger(RolePrincipleSynthesisService.name);
 
   static readonly METRIC_TYPE = 'role_principle';
-  private static readonly GROUP_SIMILARITY_THRESHOLD = 0.78;
   private static readonly MAX_BLOCKS_PER_SYNTHESIS = 200;
   private static readonly MAX_GROUPS_PER_SYNTHESIS = 8;
   private static readonly MAX_QUOTES_PER_GROUP = 10;
@@ -141,7 +140,12 @@ export class RolePrincipleSynthesisService {
       embedding: embeddings.get(b.id) ?? null,
     }));
 
-    const groups = this.groupBlocksBySimilarity(blocks)
+    const clusterThreshold = await this.cfg.getDynamic<number>(
+      'knowledge.skillClusterSimilarityThreshold',
+      undefined,
+      0.72,
+    );
+    const groups = this.groupBlocksBySimilarity(blocks, clusterThreshold)
       .filter((g) => g.length >= 2)
       .slice(0, RolePrincipleSynthesisService.MAX_GROUPS_PER_SYNTHESIS);
     if (groups.length === 0) {
@@ -511,8 +515,10 @@ export class RolePrincipleSynthesisService {
     }
   }
 
-  private groupBlocksBySimilarity<T extends { embedding: number[] | null }>(blocks: T[]): T[][] {
-    const threshold = RolePrincipleSynthesisService.GROUP_SIMILARITY_THRESHOLD;
+  private groupBlocksBySimilarity<T extends { embedding: number[] | null }>(
+    blocks: T[],
+    threshold: number,
+  ): T[][] {
     const groups: T[][] = [];
     for (const block of blocks) {
       if (!block.embedding) {

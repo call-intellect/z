@@ -334,7 +334,12 @@ export class ExecutablePersonaBuildService {
       const activeProfiles = profiles.filter(
         (p) => p.person.relationship === 'employee' && p.traits.length > 0,
       );
-      if (activeProfiles.length < this.cfg.persona.roleAggMinPersons) return null;
+      const roleAggMinPersons = await this.cfg.getDynamic<number>(
+        'knowledge.personaRoleAggMinPersons',
+        'PERSONA_ROLE_AGG_MIN_PERSONS',
+        this.cfg.persona.roleAggMinPersons,
+      );
+      if (activeProfiles.length < roleAggMinPersons) return null;
 
       // Aggregate top-N traits (combined).
       const aggregatedTraits: SkillTrait[] = [];

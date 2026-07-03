@@ -22,6 +22,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.searchBm25Weight', UNIT_INTERVAL],
   ['knowledge.linkMinConfidence', UNIT_INTERVAL],
   ['knowledge.skillTraitSimilarityThreshold', UNIT_INTERVAL],
+  ['knowledge.skillClusterSimilarityThreshold', UNIT_INTERVAL],
   ['knowledge.curationAutoThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationDeepReviewThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationStaleDynamicScoreThreshold', UNIT_INTERVAL],

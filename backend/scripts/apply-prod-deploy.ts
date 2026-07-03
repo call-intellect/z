@@ -318,6 +318,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-clone-construction.ts',
+    hint: 'knowledge.skillClusterSimilarityThreshold (0.72) + knowledge.personaRoleAggMinPersons (1) — фикс построения клонов: порог склейки блоков вынесен из захардкоженного 0.78, одиночная должность получает клон роли (clone-construction-fixes)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-probe-curation.ts',
     hint: 'probe.* (10) + knowledge.curation{ItemExpiryDays,StaleMonthsThreshold,StaleDynamicScoreThreshold} (config Шаг 7 — probe + остаток курации в AdminSetting)',
   },

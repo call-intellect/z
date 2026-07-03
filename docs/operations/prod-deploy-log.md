@@ -71,6 +71,22 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-03 — Фикс построения клонов: провод назначения + порог склейки-крутилка + одиночная роль (clone-construction-fixes, ветка work/2026-07-02)
+
+> ТЗ [`plans/tz/2026-07-03-clone-construction-fixes.md`](../../plans/tz/2026-07-03-clone-construction-fixes.md), анализ [`plans/analysis/2026-07-03-clone-construction-fragility.md`](../../plans/analysis/2026-07-03-clone-construction-fragility.md). Три разрыва «создал должность → назначил человека → клона нет / клон пуст»: **Ф1** `PersonsService` при назначении из кабинета теперь эмитит `role.bearer_changed` (был сломанный провод — сборка клона роли ждала воскресного крона); **Ф2** порог склейки reasoning-блоков в трейт вынесен из захардкоженного `0.78` в крутилку `knowledge.skillClusterSimilarityThreshold` (дефолт `0.72`, оба кластеризатора — specialist-3-7 + role-principle-synthesis; живые перефразировки садятся на 0.72–0.85, 0.78 резал посередине → клоны пустые); **Ф3** `personaRoleAggMinPersons` переведён на `getDynamic` и сид `1` — одиночная должность (типовой SMB) получает клон роли.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ОБЯЗАТЕЛЬНЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (2 крутилки, не флаги). **🟢 1 НОВЫЙ СИД** (`seed-admin-setting-clone-construction.ts`, STEPS `phase:'seed-base'`). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых обязательных нет.** Крутилка `knowledge.skillClusterSimilarityThreshold`=`0.72` читается через `getDynamic` с code-fallback (Ship-On, работает ДО сида: admin→code-fallback). `knowledge.personaRoleAggMinPersons` теперь тоже через `getDynamic` (`envFallbackKey='PERSONA_ROLE_AGG_MIN_PERSONS'`, code-fallback = старый ENV `2`), сид перебивает на `1`. Обе — «крутилки» по правилу №9, не флаги (реестр флагов не трогается).
+- **Шаг 7 — Seed (НОВЫЙ, идемпотентный, зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-setting-clone-construction.ts` — 2 ключа `knowledge.skillClusterSimilarityThreshold`=`0.72` (severity `high`) + `knowledge.personaRoleAggMinPersons`=`1` (severity `medium`), section `knowledge`. Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась; эмит события и вынос порога — правки кода без новых колонок/индексов.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend: `persons.service.ts` (`EventEmitter2` + `maybeEmitBearerChanged`, эмит в `create`/`update` пост-commit), `specialist-3-7-skill.service.ts` + `role-principle-synthesis.service.ts` (`groupBlocksBySimilarity(threshold)` через `getDynamic`), `executable-persona-build.service.ts` (`roleAggMinPersons` через `getDynamic`), реестр `admin-setting-schema-registry.ts` (+1 ключ). Frontend: `KnowledgeCoreSettingsClient.tsx` (поле «Порог склейки блоков в трейт» + дефолт «Мин. персон для роли» → 1).
+- **Шаг 12 — Smoke** (после выката): `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-clone-construction.ts` (created=2 при первом прогоне, потом no-op); 2 крутилки видны в `/admin/ai/knowledge-core` (section `knowledge`, группы Skill/Persona); назначение человека на должность из кабинета → в логах backend `role.bearer_changed: создана новая версия клона роли (pending_rebuild)` без ручного вызова; клон роли с 1 носителем (у которого собран профиль) собирается (`buildForRole` не null).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-03 — Живое пространство темы + карта «Второй мозг» (living-topic-space + second-brain-by-branches, ветка work/2026-07-02)
 
 > ТЗ [`plans/tz/2026-07-02-living-topic-space.md`](../../plans/tz/2026-07-02-living-topic-space.md) + [`plans/tz/2026-07-02-second-brain-by-branches.md`](../../plans/tz/2026-07-02-second-brain-by-branches.md). **Фича A — «Живое пространство темы»:** тему заводит человек (`Theme.origin=user`, `visibility=personal|team`), Кора авто-наполняет её блоками ≥ порога 0.72 (cron `theme-autofill`, pgvector без LLM), убранное лишнее → `ThemeExclusion`; провенанс «почему» — `ThemeIdeaBlock.addedVia/score/reason`; мост «обязательство→задача»; живой вид темы. **Фича B — «Второй мозг по 12 веткам»:** read-only карта областей компании (деривация ветки из связей, БЕЗ изменения схемы). Полный контракт — в ТЗ.

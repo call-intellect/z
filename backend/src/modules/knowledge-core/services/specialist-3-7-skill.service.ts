@@ -56,7 +56,6 @@ export class Specialist37Service {
 
   static readonly SPECIALIST_NAME = '3-7-skill';
   static readonly METRIC_TYPE = 'skill_trait';
-  private static readonly GROUP_SIMILARITY_THRESHOLD = 0.78;
   private static readonly MERGE_KNN_TOP_K = 5;
   private static readonly ARBITRATION_FLOOR = 0.78;
   private static readonly MAX_BLOCKS_PER_REBUILD = 200;
@@ -328,8 +327,13 @@ export class Specialist37Service {
         undefined,
         3,
       );
+      const clusterThreshold = await this.cfg.getDynamic<number>(
+        'knowledge.skillClusterSimilarityThreshold',
+        undefined,
+        0.72,
+      );
 
-      const groups = await this.groupBlocksBySimilarity(blocks);
+      const groups = await this.groupBlocksBySimilarity(blocks, clusterThreshold);
       const eligibleGroups = groups
         .filter((g) => g.length >= clusterMinObservations)
         .slice(0, Specialist37Service.MAX_GROUPS_PER_REBUILD);
@@ -599,8 +603,8 @@ export class Specialist37Service {
       quote: string;
       embedding: number[] | null;
     }>,
+    threshold: number,
   ): Promise<Array<typeof blocks>> {
-    const threshold = Specialist37Service.GROUP_SIMILARITY_THRESHOLD;
     const groups: Array<typeof blocks> = [];
     for (const block of blocks) {
       if (!block.embedding) {

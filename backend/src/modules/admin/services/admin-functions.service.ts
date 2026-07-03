@@ -70,10 +70,15 @@ export class AdminFunctionsService {
       }),
     );
 
+    const runningExperiments = await this.prisma.llmModelExperiment.findMany({
+      where: { tenantId: null, status: 'running' },
+      select: { taskType: true },
+    });
+    const runningTaskTypes = new Set(runningExperiments.map((e) => e.taskType));
+
     const items: FunctionListItem[] = ALL_LLM_TASK_TYPES.map((taskType) => {
       const route = routesByTaskType.get(taskType);
       const providers = parseProvidersJson(route?.providers);
-      const exp = (route?.experiment as { enabled?: boolean } | null | undefined) ?? null;
       const lc = lastCalls.find((x) => x.taskType === taskType);
       const lastModel = lc?.last ? `${lc.last.provider}:${lc.last.model}` : null;
       return {
@@ -81,7 +86,7 @@ export class AdminFunctionsService {
         hasRoute: route !== undefined,
         isActive: route?.isActive ?? false,
         providers,
-        experimentEnabled: exp?.enabled === true,
+        experimentEnabled: runningTaskTypes.has(taskType),
         lastCallAt: lc?.last?.createdAt.toISOString() ?? null,
         lastModel,
         totalCalls7d: countByTaskType.get(taskType) ?? 0,
@@ -98,18 +103,9 @@ export class AdminFunctionsService {
       where: { taskType, tenantId: null },
     });
     const providers = parseProvidersJson(route?.providers);
-    const exp =
-      (route?.experiment as
-        | {
-            enabled?: boolean;
-            modelA?: string;
-            modelB?: string;
-            splitPercent?: number;
-            startedAt?: string;
-            endsAt?: string;
-          }
-        | null
-        | undefined) ?? null;
+    const activeExp = await this.prisma.llmModelExperiment.findFirst({
+      where: { tenantId: null, taskType, status: 'running' },
+    });
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const [totalCalls7d, lastCall] = await Promise.all([
@@ -131,21 +127,20 @@ export class AdminFunctionsService {
       hasRoute: route !== undefined,
       isActive: route?.isActive ?? false,
       providers,
-      experimentEnabled: exp?.enabled === true,
+      experimentEnabled: activeExp !== null,
       lastCallAt: lastCall?.createdAt.toISOString() ?? null,
       lastModel: lastCall ? `${lastCall.provider}:${lastCall.model}` : null,
       totalCalls7d,
-      experiment:
-        exp && exp.enabled === true
-          ? {
-              enabled: true,
-              ...(exp.modelA ? { modelA: exp.modelA } : {}),
-              ...(exp.modelB ? { modelB: exp.modelB } : {}),
-              ...(exp.splitPercent !== undefined ? { splitPercent: exp.splitPercent } : {}),
-              ...(exp.startedAt ? { startedAt: exp.startedAt } : {}),
-              ...(exp.endsAt ? { endsAt: exp.endsAt } : {}),
-            }
-          : null,
+      experiment: activeExp
+        ? {
+            enabled: true,
+            modelA: `${activeExp.controlProvider}:${activeExp.controlModel}`,
+            modelB: `${activeExp.variantProvider}:${activeExp.variantModel}`,
+            splitPercent: activeExp.splitPercent,
+            ...(activeExp.startedAt ? { startedAt: activeExp.startedAt.toISOString() } : {}),
+            ...(activeExp.endsAt ? { endsAt: activeExp.endsAt.toISOString() } : {}),
+          }
+        : null,
     };
   }
 

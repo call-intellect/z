@@ -551,6 +551,12 @@ export class AdminUsageService {
 
     const aggByTaskType = new Map(byTaskTypeAgg.map((r) => [r.taskType ?? '', r]));
 
+    const runningExperiments = await this.prisma.llmModelExperiment.findMany({
+      where: { tenantId: null, status: 'running' },
+      select: { taskType: true },
+    });
+    const runningTaskTypes = new Set(runningExperiments.map((e) => e.taskType));
+
     const items: AdminFunctionUsageRow[] = ALL_LLM_TASK_TYPES.map((taskType) => {
       const route = routesByTaskType.get(taskType);
       const providers = parseProvidersJson(route?.providers);
@@ -561,7 +567,6 @@ export class AdminUsageService {
       const fallbackChain = providers
         .slice(1)
         .map((p) => `${p.provider}${p.model ? `:${p.model}` : ''}`);
-      const exp = route?.experiment as { enabled?: boolean } | null | undefined;
 
       const agg = aggByTaskType.get(taskType);
       const totalCalls = agg?._count._all ?? 0;
@@ -575,7 +580,7 @@ export class AdminUsageService {
         taskType,
         hasRoute: route !== undefined,
         isActive: route?.isActive ?? false,
-        experimentEnabled: exp?.enabled === true,
+        experimentEnabled: runningTaskTypes.has(taskType),
         currentProvider,
         fallbackChain,
         totalCalls,

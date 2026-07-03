@@ -520,6 +520,12 @@ const STEPS: Step[] = [
   },
   {
     phase: 'patch',
+    script: 'scripts/patch-check-legacy-ab-experiments.ts',
+    hint: 'read-only: предупреждение об активных легаси route.experiment после вывода AdminExperimentsService из эксплуатации (ТЗ 2026-07-03 Фаза 2)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'patch',
     script: 'scripts/patch-enable-shipped-flags.ts',
     skipBootstrap: true,
     everyDeploy: true,

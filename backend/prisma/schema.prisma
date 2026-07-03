@@ -1660,7 +1660,7 @@ model AiUsageLog {
   /// Указатель на источник (откуда пришёл вызов) для drill-down в Z-Admin.
   /// Пример: { type: 'meeting', id: 'mtg_01HX...' }, { type: 'card', id: 'crd_...' }, { type: 'block', id: '...' }.
   sourceRef                          Json?
-  /// Для A/B-экспериментов LlmTaskRoute.experiment: 'A' | 'B'. NULL = вне эксперимента.
+  /// Для A/B-экспериментов LlmModelExperiment: 'A' (control) | 'B' (variant) | 'gepa_candidate'. NULL = вне эксперимента.
   experimentGroup                    String?
   /// Z-Admin Фаза 7: превью отправленного промпта (system + user, конкатенация),
   /// truncate до 8KB. Заполняется LlmRouter'ом при каждом успешном вызове.
@@ -2138,9 +2138,8 @@ model LlmTaskRoute {
   /// Фаза A.4 — был ли маршрут вручную отредактирован админом. Используется в
   /// идемпотентном seed'е: если true — seed не перезаписывает запись.
   editedByAdmin     Boolean       @default(false)
-  /// A/B-эксперимент legacy: { enabled: bool, modelA: string, modelB: string,
-  ///                    splitPercent: number, startedAt: ISO, endsAt: ISO }.
-  /// Новые A/B-эксперименты per-agent — через модель `LlmModelExperiment`.
+  /// DEPRECATED (2026-07-03) — заменено LlmModelExperiment (см.
+  /// plans/tz/2026-07-03-llm-model-ab-experiments-real-split.md). Не читать/не писать в новом коде.
   experiment        Json?
   /// Фаза 11 knowledge-core: минимальный класс данных, который маршрут
   /// поддерживает. NULL трактуется как 'internal'. LlmRouter фильтрует

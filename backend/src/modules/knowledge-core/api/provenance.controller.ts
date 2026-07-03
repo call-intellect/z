@@ -16,6 +16,7 @@ import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/curr
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
+import { RbacService } from '../../rbac/rbac.service';
 import {
   ProvenanceService,
   type ProvenanceEntityType,
@@ -32,6 +33,7 @@ const DEFAULT_CONFIDENCE_REVIEW_THRESHOLD = 0.6;
 export class ProvenanceController {
   constructor(
     @Inject(ProvenanceService) private readonly provenance: ProvenanceService,
+    @Inject(RbacService) private readonly rbac: RbacService,
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService | null = null,
@@ -57,9 +59,12 @@ export class ProvenanceController {
     }
     const type: ProvenanceEntityType = parsed.data;
 
+    const viewerRole =
+      (await this.rbac.getMembershipRole(tenantId, user.id)) ?? undefined;
     const resolved = await this.provenance.resolve(type, entityId, {
       tenantId,
       userId: user.id,
+      viewerRole,
     });
 
     const threshold =

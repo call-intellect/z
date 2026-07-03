@@ -215,6 +215,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['provenance.confidence_review_threshold', UNIT_INTERVAL],
   ['provenance.voiceNoteAudioRetentionDays', POSITIVE_INT],
   ['provenance.voiceNoteAudioPresignTtlSeconds', POSITIVE_INT],
+  ['provenance.frictionVerbatimRoles', z.array(z.string())],
   ['probe.reply_latency_rise.factor', z.number().positive()],
   ['probe.workload_overload.load_percent', POSITIVE_INT],
   ['probe.meeting_noshows.count', POSITIVE_INT],

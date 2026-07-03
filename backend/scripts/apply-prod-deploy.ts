@@ -263,6 +263,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-provenance-friction.ts',
+    hint: 'provenance.frictionVerbatimRoles=[owner,admin] — роли, видящие дословные реплики конфликта (friction) в дровере «Откуда это»; прочие видят тему+встречу без реплик (drilldown-provenance-parity Ф1)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-document-attribution.ts',
     hint: 'documents.ai_attribution.enabled kill-switch (ТЗ-4 Ф10 LLM-подсказка атрибуции документа: docType + тема)',
   },

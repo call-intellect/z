@@ -509,6 +509,170 @@ describe('ProvenanceService.resolve — последняя миля', () => {
   });
 });
 
+describe('ProvenanceService.resolve — обобщение (goal/insight/friction, R8)', () => {
+  function frictionPrisma() {
+    return {
+      entityLink: {
+        findFirst: vi.fn(async () => ({ sourceBlockIds: ['b-1'] })),
+      },
+      ideaBlock: {
+        findMany: vi.fn(async () => [{ id: 'b-1', primarySource: 'transcript' }]),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-1',
+            rawEventId: 'raw-1',
+            quote: 'Переходим на недельные спринты',
+            startMs: 90_000,
+            endMs: 95_000,
+            sourceTimestamp: new Date('2026-03-10T09:00:00.000Z'),
+          },
+        ]),
+      },
+      rawEvent: {
+        findMany: vi.fn(async () => [
+          { id: 'raw-1', sourceType: 'meeting', sourceExternalId: 'm-1' },
+        ]),
+      },
+      meeting: {
+        findMany: vi.fn(async () => [{ id: 'm-1', title: 'Планёрка' }]),
+      },
+      document: { findMany: vi.fn(async () => []) },
+    };
+  }
+
+  it('R8а goal → нода с deepLink к точному моменту встречи', async () => {
+    const prisma = {
+      goal: { findFirst: vi.fn(async () => ({ sourceBlockIds: ['b-1'] })) },
+      ideaBlock: {
+        findMany: vi.fn(async () => [{ id: 'b-1', primarySource: 'transcript' }]),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-1',
+            rawEventId: 'raw-1',
+            quote: 'Переходим на недельные спринты',
+            startMs: 90_000,
+            endMs: 95_000,
+            sourceTimestamp: new Date('2026-03-10T09:00:00.000Z'),
+          },
+        ]),
+      },
+      rawEvent: {
+        findMany: vi.fn(async () => [
+          { id: 'raw-1', sourceType: 'meeting', sourceExternalId: 'm-1' },
+        ]),
+      },
+      meeting: { findMany: vi.fn(async () => [{ id: 'm-1', title: 'Планёрка' }]) },
+      document: { findMany: vi.fn(async () => []) },
+    };
+    const svc = buildService({ prisma, isBypass: true });
+    const nodes = await svc.resolve('goal', 'g-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+    });
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]!.source.deepLink).toBe('/meetings/m-1/result?t=90');
+    expect(nodes[0]!.quote).toBe('Переходим на недельные спринты');
+  });
+
+  it('R8а-bis insight → нода с deepLink ?t=', async () => {
+    const prisma = {
+      insight: { findFirst: vi.fn(async () => ({ sourceBlockIds: ['b-1'] })) },
+      ideaBlock: {
+        findMany: vi.fn(async () => [{ id: 'b-1', primarySource: 'transcript' }]),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-1',
+            rawEventId: 'raw-1',
+            quote: 'Переходим на недельные спринты',
+            startMs: 90_000,
+            endMs: 95_000,
+            sourceTimestamp: new Date('2026-03-10T09:00:00.000Z'),
+          },
+        ]),
+      },
+      rawEvent: {
+        findMany: vi.fn(async () => [
+          { id: 'raw-1', sourceType: 'meeting', sourceExternalId: 'm-1' },
+        ]),
+      },
+      meeting: { findMany: vi.fn(async () => [{ id: 'm-1', title: 'Планёрка' }]) },
+      document: { findMany: vi.fn(async () => []) },
+    };
+    const svc = buildService({ prisma, isBypass: true });
+    const nodes = await svc.resolve('insight', 's-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+    });
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]!.source.deepLink).toBe('/meetings/m-1/result?t=90');
+  });
+
+  it('R8б friction, роль вне набора (manager) → АГРЕГАТ (лейбл, без ?t=, startMs=null)', async () => {
+    const svc = buildService({ prisma: frictionPrisma(), isBypass: true });
+    const nodes = await svc.resolve('friction', 'l-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+      viewerRole: 'manager',
+    });
+    expect(nodes).toHaveLength(1);
+    const n = nodes[0]!;
+    expect(n.quote).toBe('Встреча «Планёрка»');
+    expect(n.source.deepLink).toBe('/meetings/m-1/result');
+    expect(n.startMs).toBeNull();
+  });
+
+  it('R8б-bis friction, роль owner → ДОСЛОВНО (цитата + ?t=)', async () => {
+    const svc = buildService({ prisma: frictionPrisma(), isBypass: true });
+    const nodes = await svc.resolve('friction', 'l-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+      viewerRole: 'owner',
+    });
+    expect(nodes).toHaveLength(1);
+    const n = nodes[0]!;
+    expect(n.quote).toBe('Переходим на недельные спринты');
+    expect(n.source.deepLink).toBe('/meetings/m-1/result?t=90');
+  });
+
+  it('R8в friction, блок в закрытой группе → accessFiltered НЕЗАВИСИМО от роли', async () => {
+    for (const viewerRole of ['manager', 'owner']) {
+      const svc = buildService({
+        prisma: frictionPrisma(),
+        isBypass: false,
+        accessibleIds: new Set<string>(),
+      });
+      const nodes = await svc.resolve('friction', 'l-1', {
+        tenantId: 't-1',
+        userId: 'u-1',
+        viewerRole,
+      });
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.accessFiltered).toBe(true);
+      expect(nodes[0]!.quote).toBe(PROVENANCE_ACCESS_MASK);
+    }
+  });
+
+  it('R8г friction без источника (entityLink=null) → []', async () => {
+    const prisma = {
+      ...frictionPrisma(),
+      entityLink: { findFirst: vi.fn(async () => null) },
+    };
+    const svc = buildService({ prisma, isBypass: true });
+    const nodes = await svc.resolve('friction', 'l-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+      viewerRole: 'manager',
+    });
+    expect(nodes).toEqual([]);
+  });
+});
+
 describe('ProvenanceService.resolveQuotesForJudge (ИИ-судья курации — первоисточник)', () => {
   it('валидный тип decision + блоки с цитатами → массив непустых строк', async () => {
     const findFirst = vi.fn(async () => ({ sourceBlockIds: ['b-1', 'b-2'] }));

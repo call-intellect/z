@@ -15,6 +15,7 @@ import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockFetchService, KnowledgeBlockResolver } from './services/block-fetch.service';
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
+import { BranchDerivationService } from './services/branch-derivation.service';
 import { CardRollupV2Service } from './services/card-rollup-v2.service';
 import { ChatV2RetrievalService } from './services/chat-v2-retrieval.service';
 import { ChatV2TableContextService } from './services/chat-v2-table-context.service';
@@ -115,6 +116,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     RouterService,
     AxisClassifierService,
     BlockAccessDeriverService,
+    BranchDerivationService,
     OwnerResolverService,
     Specialist34ProbeService,
     Specialist31Service,
@@ -190,6 +192,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     RouterService,
     AxisClassifierService,
     BlockAccessDeriverService,
+    BranchDerivationService,
     OwnerResolverService,
     Specialist34ProbeService,
     Specialist31Service,

@@ -846,6 +846,27 @@ enum ThemeBranch {
   legal
 }
 
+enum ThemeOrigin {
+  auto
+  user
+}
+
+enum ThemeVisibility {
+  personal
+  team
+}
+
+enum ThemeLinkOrigin {
+  clustered
+  autofill
+  manual
+}
+
+enum ThemeExclusionKind {
+  block
+  entity
+}
+
 // ──────────────────────────── knowledge-core: goals (Фаза 9) ────────────────────────────
 
 /// Состояние цели:
@@ -1244,6 +1265,7 @@ model User {
   /// Реферальный профиль пользователя (один user → один Referral).
   /// См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9.
   referral Referral?
+  themesAuthored Theme[] @relation("ThemeAuthor")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -2547,6 +2569,7 @@ model Org {
   ideaBlockEntities      IdeaBlockEntity[]
   themeIdeaBlocks        ThemeIdeaBlock[]
   themeEntities          ThemeEntity[]
+  themeExclusions        ThemeExclusion[]
   sourceEpisodes         SourceEpisode[]
   sourceParticipants     SourceParticipant[]
   sourceEntities         SourceEntity[]
@@ -3500,6 +3523,7 @@ model IdeaBlock {
   linksFrom           IdeaBlockLink[]      @relation("BlockLinkFrom")
   linksTo             IdeaBlockLink[]      @relation("BlockLinkTo")
   themes              ThemeIdeaBlock[]
+  themeExclusions     ThemeExclusion[]
   /// Decision-сущности, созданные параллельно этому блоку (idempotent по
   /// sourceIdeaBlockId; Фаза 0b §I.66 зонтичного ТЗ).
   decisions           Decision[]
@@ -3636,6 +3660,7 @@ model Entity {
   //   EntityLink.findMany({ where: { fromEntityId, fromType: 'entity' } })
   //   или GraphService.getNeighbors. См. EntityLink выше.
   themes        ThemeEntity[]
+  themeExclusions ThemeExclusion[]
   cards         Card[]            @relation("CardEntity")
   /// Линковка Person → Entity (Фаза 0b §8.3): Entity{type=person} может быть
   /// связана с Prisma-моделью Person через EntityResolutionService.
@@ -4404,6 +4429,9 @@ model Theme {
   status         ThemeStatus                  @default(active)
   mergedIntoId   String?
   branch         ThemeBranch?
+  origin          ThemeOrigin      @default(auto)
+  createdByUserId String?
+  visibility      ThemeVisibility  @default(team)
   embedding      Unsupported("vector(1536)")?
   lastSignalAt   DateTime?
   /// Ф8 (граф-ингест 2026-06-23) — retrievable «суть темы/кластера»,
@@ -4423,10 +4451,13 @@ model Theme {
   goalLinks  GoalTheme[]
   /// ТЗ-4 Ф1 — документы, привязанные к этой теме (Document.attachedThemeId).
   documents  Document[]       @relation("DocumentTheme")
+  createdByUser User?         @relation("ThemeAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  exclusions ThemeExclusion[]
 
   @@index([tenantId, status])
   @@index([tenantId, branch])
   @@index([tenantId, mergedIntoId])
+  @@index([tenantId, origin, createdByUserId])
 }
 
 /// ThemeIdeaBlock — M:M связь Theme ↔ IdeaBlock.
@@ -4439,6 +4470,9 @@ model ThemeIdeaBlock {
   /// партиционированный IdeaBlock. Совпадает с tenantId блока/темы.
   tenantId  String
   weight    Decimal  @default(1.0) @db.Decimal(4, 3)
+  addedVia  ThemeLinkOrigin @default(clustered)
+  score     Decimal? @db.Decimal(4, 3)
+  reason    String?  @db.Text
   createdAt DateTime @default(now())
 
   theme Theme     @relation(fields: [themeId], references: [id], onDelete: Cascade)
@@ -4469,6 +4503,25 @@ model ThemeEntity {
   @@id([themeId, entityId, tenantId])
   @@index([entityId])
   @@index([tenantId])
+}
+
+model ThemeExclusion {
+  id              String             @id @default(cuid())
+  tenantId        String
+  themeId         String
+  kind            ThemeExclusionKind
+  blockId         String?
+  entityId        String?
+  createdByUserId String?
+  createdAt       DateTime           @default(now())
+
+  theme  Theme      @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  block  IdeaBlock? @relation(fields: [blockId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  entity Entity?    @relation(fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  org    Org        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([themeId, kind, blockId, entityId])
+  @@index([tenantId, themeId])
 }
 
 // ──────────────────────────── Z-Admin: SuperAdminAccessLog (Фаза 7) ────────────────────────────

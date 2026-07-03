@@ -155,7 +155,7 @@ export const PinToThemeSchema = z.object({ kind: z.enum(['block', 'entity']), id
 ## Фазы (dependency-ordered)
 Граф: **Ф1 → Ф2 → {Ф3, Ф4}**; Ф4 → Ф6; Ф2 → Ф5.
 
-### Ф1 — Модель данных [ ]
+### Ф1 — Модель данных [x]
 **Ценность:** как хранилище знаний, получаю поля user-темы, провенанс авто-привязки и таблицу исключений, чтобы авто-наполнение и чистка имели опору.
 **Что входит:** enum `ThemeOrigin/ThemeVisibility/ThemeLinkOrigin/ThemeExclusionKind`; колонки `Theme.origin/createdByUserId/visibility`; колонки `ThemeIdeaBlock.addedVia/score/reason`; таблица `ThemeExclusion` (tenantId-компаньоны, `@@unique`); relation-поля; миграция; `prisma:generate`.
 **Что НЕ входит:** логика/эндпоинты/воркеры.

@@ -179,7 +179,7 @@ export const PinToThemeSchema = z.object({ kind: z.enum(['block', 'entity']), id
 **Acceptance:** на «Стреле» тема «Логистик Плюс» **сама** получает ≥1 привязку `addedVia=autofill` с `reason` и `score ≥ threshold`; блок < порога НЕ добавлен; исключённый блок не возвращается; при `enabled=false` авто-добавлений 0; `maxPerScan` соблюдён; повтор не дублирует. Метрика `z_theme_autofill_added_total`. `bunx vitest run` зелёный.
 **Закрывает:** R2, R3.
 
-### Ф4 — HTTP-API [ ]
+### Ф4 — HTTP-API [x]
 **Ценность:** как фронт, получаю контракт создания темы, ручного pin/unpin и живого вида (с «почему»).
 **Что входит:** маршруты `POST /themes`, `PATCH :id`, `POST :id/archive`, `POST :id/pin`, `DELETE :id/pin/...`; DTO; расширение `ThemeItemDto`/`ThemeDetailDto` (blocks с `addedVia/score/reason`; decisions/tasks/documents/regulations); permission-фильтр (`OR: team | personal&&автор`); team-create gate; Swagger + коды ошибок.
 **Что НЕ входит:** frontend (Ф6).

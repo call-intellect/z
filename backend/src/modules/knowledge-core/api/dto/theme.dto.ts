@@ -20,6 +20,9 @@ export interface ThemeItemDto {
   description: string;
   branch: string | null;
   status: string;
+  origin: string;
+  visibility: string;
+  isMine: boolean;
   weight: number;
   confidence: number;
   dynamic: string;
@@ -37,12 +40,42 @@ export interface ListThemesResultDto {
   offset: number;
 }
 
+export interface ThemeBlockItemDto extends BlockSearchItemDto {
+  addedVia: string;
+  score: number | null;
+  reason: string | null;
+}
+
 export interface ThemeDetailDto {
   theme: ThemeItemDto;
-  blocks: BlockSearchItemDto[];
+  blocks: ThemeBlockItemDto[];
   entities: EntityItemDto[];
+  decisions: { id: string; statement: string | null; reversibility: string | null; href: string }[];
+  tasks: { id: string; title: string; href: string }[];
+  documents: { id: string; title: string; href: string }[];
+  regulations: { id: string; title: string; category: string; href: string }[];
   mergedIntoId?: string;
 }
+
+export const CreateThemeSchema = z.object({
+  phrase: z.string().trim().min(3).max(300),
+  visibility: z.enum(['personal', 'team']).default('personal'),
+});
+
+export type CreateThemeDto = z.infer<typeof CreateThemeSchema>;
+
+export const RenameThemeSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+});
+
+export type RenameThemeDto = z.infer<typeof RenameThemeSchema>;
+
+export const PinToThemeSchema = z.object({
+  kind: z.enum(['block', 'entity']),
+  id: z.string().min(1),
+});
+
+export type PinToThemeDto = z.infer<typeof PinToThemeSchema>;
 
 export const SaveThemeAsCardSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),

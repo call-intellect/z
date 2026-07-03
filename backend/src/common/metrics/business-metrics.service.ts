@@ -64,6 +64,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private kcBlockGleaningBlocksTotal!: Counter<'tenant_top'>;
   private kcBlockOverlapDedupTotal!: Counter<'tenant_top'>;
   private themeAutofillAddedTotal!: Counter<'tenant_top'>;
+  private themeExclusionsTotal!: Counter<'tenant_top'>;
 
   private morningTasksDigestTotal!: Counter<'is_empty'>;
 
@@ -1306,6 +1307,12 @@ export class BusinessMetricsService implements OnModuleInit {
     this.themeAutofillAddedTotal = this.getOrCreateCounter({
       name: 'z_theme_autofill_added_total',
       help: 'Авто-наполнение тем: число блоков, привязанных воркером (addedVia=autofill). tenant_top — top-bucket.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    this.themeExclusionsTotal = this.getOrCreateCounter({
+      name: 'z_theme_exclusions_total',
+      help: 'Убранные привязки темы (unpin → ThemeExclusion). tenant_top — bucket.',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -4707,6 +4714,11 @@ export class BusinessMetricsService implements OnModuleInit {
   incThemeAutofillAdded(args: { tenantTop: string; count: number }): void {
     if (args.count <= 0) return;
     this.themeAutofillAddedTotal?.inc({ tenant_top: args.tenantTop }, args.count);
+  }
+
+  incThemeExclusions(args: { tenantTop: string; count: number }): void {
+    if (args.count <= 0) return;
+    this.themeExclusionsTotal?.inc({ tenant_top: args.tenantTop }, args.count);
   }
 
   incMorningTasksDigest(args: { isEmpty: boolean }): void {

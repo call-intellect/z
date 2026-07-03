@@ -1,9 +1,5 @@
-import type { Metadata } from 'next';
-
-import { FunctionsAnalyticsClient } from './FunctionsAnalyticsClient';
-
-export const metadata: Metadata = { title: 'Функции LLM (аналитика)' };
+import { redirect } from 'next/navigation';
 
 export default function FunctionsAnalyticsPage() {
-  return <FunctionsAnalyticsClient />;
+  redirect('/admin/analytics/llm-cost?view=module');
 }

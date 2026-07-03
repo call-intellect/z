@@ -1,11 +1,5 @@
-import type { Metadata } from 'next';
-
-import { EconomicsAnalyticsClient } from './EconomicsAnalyticsClient';
-
-export const metadata: Metadata = {
-  title: 'Юнит-экономика (аналитика)',
-};
+import { redirect } from 'next/navigation';
 
 export default function EconomicsAnalyticsPage() {
-  return <EconomicsAnalyticsClient />;
+  redirect('/admin/analytics/llm-cost');
 }

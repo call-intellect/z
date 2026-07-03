@@ -22,8 +22,6 @@ import { DailyCostAggregatorCron } from './daily-cost-aggregator.cron';
 import {
   AggregateUnitEconomicsBodySchema,
   type AggregateUnitEconomicsBody,
-  UnitEconomicsGlobalQuerySchema,
-  type UnitEconomicsGlobalQuery,
   UnitEconomicsOrgQuerySchema,
   type UnitEconomicsOrgQuery,
   UpdateOrgBudgetSchema,
@@ -44,14 +42,6 @@ export class AdminEconomicsController {
     @Inject(OrgEconomicsCron)
     private readonly orgEconomics: OrgEconomicsCron,
   ) {}
-
-  @Get('unit-economics/global')
-  global(
-    @Query(new ZodValidationPipe(UnitEconomicsGlobalQuerySchema))
-    q: UnitEconomicsGlobalQuery,
-  ) {
-    return this.svc.getGlobal({ days: q.days, topN: q.topN });
-  }
 
   @Get('unit-economics/orgs/:id')
   org(

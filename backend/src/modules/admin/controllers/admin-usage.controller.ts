@@ -24,8 +24,6 @@ import {
   type ExportCsvQuery,
   FunctionCallsQuerySchema,
   type FunctionCallsQuery,
-  FunctionsUsageQuerySchema,
-  type FunctionsUsageQuery,
 } from '../dto/admin-usage.dto';
 import { type AdminCallLogItem, AdminUsageService } from '../services/admin-usage.service';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
@@ -72,16 +70,6 @@ export class AdminUsageController {
     return detail;
   }
 
-  @Get('functions')
-  async functions(@Query(new ZodValidationPipe(FunctionsUsageQuerySchema)) q: FunctionsUsageQuery) {
-    return this.svc.getFunctionsUsage({
-      scope: 'global',
-      period: q.period,
-      ...(q.from ? { from: q.from } : {}),
-      ...(q.to ? { to: q.to } : {}),
-    });
-  }
-
   @Get('functions/:taskType/calls')
   async functionCalls(
     @Param('taskType') taskType: string,
@@ -112,23 +100,12 @@ export class AdminUsageController {
     const filename = `usage-${scope}-${q.period}-${Date.now()}.csv`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    if (q.kind === 'functions') {
-      const result = await this.svc.getFunctionsUsage({
-        scope,
-        ...(tenantId !== undefined ? { tenantId } : {}),
-        period: q.period,
-        ...(q.from ? { from: q.from } : {}),
-        ...(q.to ? { to: q.to } : {}),
-      });
-      streamUsageCsv(res, result.items);
-    } else {
-      const result = await this.svc.getCallsLog({
-        scope,
-        ...(tenantId !== undefined ? { tenantId } : {}),
-        limit: 1000,
-      });
-      streamUsageCsv(res, result.items as AdminCallLogItem[]);
-    }
+    const result = await this.svc.getCallsLog({
+      scope,
+      ...(tenantId !== undefined ? { tenantId } : {}),
+      limit: 1000,
+    });
+    streamUsageCsv(res, result.items as AdminCallLogItem[]);
     res.end();
   }
 }

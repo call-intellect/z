@@ -45,7 +45,7 @@ export const ExportCsvQuerySchema = z
     period: PeriodSchema.default('week'),
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),
-    kind: z.enum(['calls', 'functions']).default('calls'),
+    kind: z.enum(['calls']).default('calls'),
   })
   .refine((v) => v.period !== 'custom' || (v.from !== undefined && v.to !== undefined), {
     message: 'period=custom требует from и to',

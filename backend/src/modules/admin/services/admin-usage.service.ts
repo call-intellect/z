@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { ALL_LLM_TASK_TYPES } from '../../ai/services/llm-router.service';
 import type { AdminPeriod } from '../dto/admin-usage.dto';
 
 import { AdminCacheService } from './admin-cache.service';
@@ -122,23 +121,6 @@ export interface AdminCallLogItem {
 export interface AdminCallDetail extends AdminCallLogItem {
   requestPreview: string | null;
   responsePreview: string | null;
-}
-
-export interface AdminFunctionUsageRow {
-  taskType: string;
-  hasRoute: boolean;
-  isActive: boolean;
-  experimentEnabled: boolean;
-  currentProvider: string | null;
-  fallbackChain: string[];
-  totalCalls: number;
-  failedCalls: number;
-  failRate: number;
-  avgCostUsd: number;
-  avgDurationMs: number;
-  avgInputTokens: number;
-  avgOutputTokens: number;
-  totalCostUsd: number;
 }
 
 @Injectable()
@@ -391,87 +373,6 @@ export class AdminUsageService {
     };
   }
 
-  async getFunctionsUsage(
-    args: ScopeArgs & PeriodArgs,
-  ): Promise<{ items: AdminFunctionUsageRow[] }> {
-    const range = periodToRange(args);
-    const tenantWhere = this.buildTenantWhere(args);
-    const baseWhere: Prisma.AiUsageLogWhereInput = {
-      createdAt: { gte: range.gte, lt: range.lt },
-      ...tenantWhere,
-    };
-
-    const routes = await this.prisma.llmTaskRoute.findMany({
-      where: { tenantId: null },
-    });
-    const routesByTaskType = new Map(routes.map((r) => [r.taskType, r]));
-
-    const byTaskTypeAgg = await this.prisma.aiUsageLog.groupBy({
-      by: ['taskType'],
-      where: { ...baseWhere, taskType: { not: null } },
-      _count: { _all: true },
-      _sum: {
-        costUsd: true,
-        durationMs: true,
-        inputTokens: true,
-        outputTokens: true,
-      },
-    });
-    const failedAgg = await this.prisma.aiUsageLog.groupBy({
-      by: ['taskType'],
-      where: { ...baseWhere, taskType: { not: null }, success: false },
-      _count: { _all: true },
-    });
-    const failedByTaskType = new Map(failedAgg.map((r) => [r.taskType ?? '', r._count._all]));
-
-    const aggByTaskType = new Map(byTaskTypeAgg.map((r) => [r.taskType ?? '', r]));
-
-    const runningExperiments = await this.prisma.llmModelExperiment.findMany({
-      where: { tenantId: null, status: 'running' },
-      select: { taskType: true },
-    });
-    const runningTaskTypes = new Set(runningExperiments.map((e) => e.taskType));
-
-    const items: AdminFunctionUsageRow[] = ALL_LLM_TASK_TYPES.map((taskType) => {
-      const route = routesByTaskType.get(taskType);
-      const providers = parseProvidersJson(route?.providers);
-      const currentProvider =
-        providers[0] !== undefined
-          ? `${providers[0].provider}${providers[0].model ? `:${providers[0].model}` : ''}`
-          : null;
-      const fallbackChain = providers
-        .slice(1)
-        .map((p) => `${p.provider}${p.model ? `:${p.model}` : ''}`);
-
-      const agg = aggByTaskType.get(taskType);
-      const totalCalls = agg?._count._all ?? 0;
-      const failedCalls = failedByTaskType.get(taskType) ?? 0;
-      const totalCostUsd = decimalToNumber(agg?._sum.costUsd);
-      const sumDurationMs = agg?._sum.durationMs ?? 0;
-      const sumInputTokens = agg?._sum.inputTokens ?? 0;
-      const sumOutputTokens = agg?._sum.outputTokens ?? 0;
-
-      return {
-        taskType,
-        hasRoute: route !== undefined,
-        isActive: route?.isActive ?? false,
-        experimentEnabled: runningTaskTypes.has(taskType),
-        currentProvider,
-        fallbackChain,
-        totalCalls,
-        failedCalls,
-        failRate: totalCalls > 0 ? failedCalls / totalCalls : 0,
-        avgCostUsd: totalCalls > 0 ? totalCostUsd / totalCalls : 0,
-        avgDurationMs: totalCalls > 0 ? sumDurationMs / totalCalls : 0,
-        avgInputTokens: totalCalls > 0 ? sumInputTokens / totalCalls : 0,
-        avgOutputTokens: totalCalls > 0 ? sumOutputTokens / totalCalls : 0,
-        totalCostUsd,
-      };
-    });
-
-    return { items };
-  }
-
   async getFunctionCalls(
     args: ScopeArgs & { taskType: string; limit: number; experimentGroup?: 'A' | 'B' },
   ): Promise<{ items: AdminCallLogItem[] }> {
@@ -531,42 +432,6 @@ export class AdminUsageService {
       sourceRef: parseSourceRef(r.sourceRef),
     };
   }
-}
-
-function parseProvidersJson(
-  raw: Prisma.JsonValue | null | undefined,
-): Array<{ provider: string; model?: string }> {
-  if (!raw) return [];
-  let arr: unknown;
-  if (Array.isArray(raw)) {
-    arr = raw;
-  } else if (
-    typeof raw === 'object' &&
-    raw !== null &&
-    Array.isArray((raw as { providers?: unknown }).providers)
-  ) {
-    arr = (raw as { providers: unknown[] }).providers;
-  } else {
-    return [];
-  }
-  const result: Array<{ provider: string; model?: string }> = [];
-  for (const item of arr as unknown[]) {
-    if (typeof item === 'string') {
-      result.push({ provider: item });
-      continue;
-    }
-    if (typeof item === 'object' && item !== null) {
-      const p = (item as { provider?: unknown }).provider;
-      const m = (item as { model?: unknown }).model;
-      if (typeof p === 'string') {
-        result.push({
-          provider: p,
-          ...(typeof m === 'string' && m.length > 0 ? { model: m } : {}),
-        });
-      }
-    }
-  }
-  return result;
 }
 
 function parseSourceRef(raw: Prisma.JsonValue): { type: string; id: string } | null {

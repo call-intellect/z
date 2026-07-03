@@ -71,6 +71,35 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-03 — Три vNext-фичи LLM-роутинга: A/B реально сплитует, costRub/hard-cap бюджета, analyze.worker → LlmRouterService (ветка fix/invite-password-existing-user-multi-org)
+
+> Три независимых ТЗ, выделенных из реестра не-сделанного при закрытии `llm-providers-models-routing-admin`:
+> 1. [`2026-07-03-llm-model-ab-experiments-real-split.md`](../../plans/tz/2026-07-03-llm-model-ab-experiments-real-split.md) — `LlmModelExperiment` стал единственным работающим A/B-механизмом (было: только запоминал намерение), sticky-split по `meetingId`; легаси `/admin/experiments*` (бэк+фронт+nav) снесён; новая вкладка «A/B-тест» на `/admin/ai/routing/[taskType]`.
+> 2. [`2026-07-03-llm-budget-cost-rub-hard-cap-fix.md`](../../plans/tz/2026-07-03-llm-budget-cost-rub-hard-cap-fix.md) — `AiUsageLog.costRub` пишется на каждой новой записи; `BudgetGuardService.getMtdRub()` считает построчно с fx-fallback (устойчиво к переходному месяцу). `llm.budget.enforce_enabled` НЕ включён — отдельное решение владельца.
+> 3. [`2026-07-03-analyze-worker-llm-router-migration.md`](../../plans/tz/2026-07-03-analyze-worker-llm-router-migration.md) — главный отчёт о встрече (`analyze.worker`, 5 операций) переведён на `LlmRouterService.call()` вместо легаси `LlmFallbackService`; модели на первом шаге строго 1:1 как раньше (`deepseek-v4-pro`→`minimax:MiniMax-M2.5`→`openai-via-proxy:gpt-5-mini`); временный kill-switch `aiFeatures.analyzeWorkerRouterEnabled` (default ON) на период стабилизации.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (только `///`-комментарии на `LlmTaskRoute.experiment`/`AiUsageLog.experimentGroup` — deprecated-пометка, без изменения структуры). **🟢 НОВЫХ ENV НЕТ. 🟢 1 НОВЫЙ АВАРИЙНЫЙ РУБИЛЬНИК** (`aiFeatures.analyzeWorkerRouterEnabled`, тип A, default ON) **+ 2 НОВЫХ PATCH-СКРИПТА (оба в STEPS).** Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Новый флаг `aiFeatures.analyzeWorkerRouterEnabled` — чистый AdminSetting (`resolveSync`, code-fallback `true`), ENV-фолбэк `ANALYZE_WORKER_ROUTER_ENABLED` опционален (только для экстренного оверрайда без похода в админку). Строка добавлена в `docs/operations/feature-flags.md` (раздел «🔴 Аварийные рубильники», тип A) — при инциденте на главном отчёте о встрече `ANALYZE_WORKER_ROUTER_ENABLED=false` в `.env` + `docker compose up -d backend` откатывает на легаси `LlmFallbackService` без rebuild.
+- **Шаг 4/5 — Prisma/postgres-init: не затронуты.** Только `///`-комментарии в `schema.prisma` (deprecated-пометка `LlmTaskRoute.experiment`, актуализация `AiUsageLog.experimentGroup`) — не требуют `prisma generate`/миграции для применения на проде (комментарии не часть SQL).
+- **Шаг 6 — One-off patch-скрипты (оба идемпотентны, оба УЖЕ в STEPS `phase:'patch'`, `skipBootstrap:true`, порядок между собой не важен, но должны идти ПОСЛЕ существующего `patch-llm-routes-report-chain-deepseek.ts`):**
+  - `docker compose exec backend bun run scripts/patch-check-legacy-ab-experiments.ts` — READ-ONLY, только логирует WARN, если на момент выката есть активные легаси A/B-эксперименты (`route.experiment.enabled=true`, ещё не истёк срок) — их нужно вручную пересоздать в новом UI (`/admin/ai/routing/[taskType]` → вкладка «A/B-тест»). На dev-БД активных не найдено.
+  - `docker compose exec backend bun run scripts/patch-llm-routes-analyze-worker-1to1.ts` — форсирует 1:1-легаси-цепочку (tier-строки `editedByAdmin=true`) для 5 `taskType` аналайз-воркера (`summary`/`report-by-type`/`follow-up`/`custom-prompt`/`client-meeting-split`). **`everyDeploy:true`** — прогоняется на КАЖДОМ деплое (защита от случайного отката на дешёвые модели при будущих ресидах `seed-llm-task-routes-default.ts`, который иначе пропустил бы эти строки по `editedByAdmin`, но явное `everyDeploy` — дополнительная страховка). Идемпотентен (повторный прогон → та же цепочка).
+- **Шаг 7 — Seed через `apply-prod-deploy` STEPS, авто:** `scripts/seed-admin-settings.ts` (уже в STEPS, `phase:'seed-base'`, без изменения регистрации) подхватит новую строку `aiFeatures.analyzeWorkerRouterEnabled=true` автоматически при следующем прогоне — отдельной регистрации не требует.
+- **Шаги 8/9/10 (backfill/migrate/setup) — НЕ затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката, порядок важен — сначала Шаг 6 патчи, потом смоук):
+  - `/admin/ai/routing/summary` (или любой из 5 taskType аналайз-воркера) → вкладка «Цепочка» показывает `deepseek/deepseek-v4-pro` первым — подтверждает, что патч Шага 6 применился.
+  - `/admin/ai/routing/summary` → вкладка «A/B-тест» открывается, форма запуска эксперимента отправляется без 404/500 (новый UI-потребитель `/admin/llm-model-experiments*`).
+  - Старый `/admin/experiments` → 404 (страница снесена), пункт «A/B-эксперименты» отсутствует в меню.
+  - **Критичный smoke на главный отчёт:** сгенерировать/пересчитать реальный отчёт о встрече (любой существующий воркер-путь `analyze.worker`) и убедиться, что отчёт приходит без ошибок при `aiFeatures.analyzeWorkerRouterEnabled=true` (default) — самый рискованный пункт выката; при любой аномалии — `ANALYZE_WORKER_ROUTER_ENABLED=false` в `.env` + `docker compose up -d backend` для мгновенного отката без rebuild.
+  - `AiUsageLog` новых записей — колонка `costRub` заполнена (не NULL) для новых вызовов ИИ.
+- **Откат:** Шаг 6 патчи — идемпотентны и не нуждаются в откате сами по себе; поведенческий откат аналайз-воркера — через ENV-рубильник (см. Шаг 1/12), без даунтайма и без пересборки образа.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-02 — Управление LLM-провайдерами/моделями/маршрутизацией (ТЗ llm-providers-models-routing-admin, ветка fix/invite-password-existing-user-multi-org)
 
 > ТЗ `plans/tz/2026-07-02-llm-providers-models-routing-admin.md`, 10 фаз. DB-реестр `LlmProvider` стал **боевым источником правды** для всех 7 легаси-провайдеров (`anthropic`/`minimax`/`openai-via-proxy`/`deepseek`/`ollama`/`kie`/`grsai`) вместо захардкоженного ENV-switch: honest-адаптеры с connection-override (baseUrl/ключ/прокси/таймаут реально читаются из БД), новые `kie-native`/`grsai-native` протоколы (заменили фейковый `custom-http`, из-за которого smoke этих двух провайдеров был гарантированно красным), дискавери моделей (`GET {baseUrl}/models`), единый write-API маршрутов (`PUT /admin/ai-models/:taskType/chain`, заменил дублирующий `PUT /admin/llm-routes/:taskType`), дефолт-цепочка вынесена в `AdminSetting` (`llm.router.defaultChain`). Фронт: 2 экрана — «Провайдеры и модели» (`/admin/ai/catalog`, полноценный CRUD) и «Маршрутизация» (`/admin/ai/routing`, единая точка правки).

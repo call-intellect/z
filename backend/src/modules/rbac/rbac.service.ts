@@ -228,6 +228,18 @@ export class RbacService implements OnModuleInit {
     return ctx.role === 'owner' || ctx.role === 'admin' || ctx.role === 'coo';
   }
 
+  async canCreateTeamTheme(userId: string, orgId: string): Promise<boolean> {
+    const ctx = await this.loadContext(userId, orgId);
+    if (ctx === null) return false;
+    if (ctx.isSuperAdmin) return true;
+    return (
+      ctx.role === 'owner' ||
+      ctx.role === 'admin' ||
+      ctx.role === 'manager' ||
+      ctx.role === 'coo'
+    );
+  }
+
   async canViewEmployeeFullCard(args: {
     viewerUserId: string;
     employeePersonId: string;

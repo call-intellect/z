@@ -163,7 +163,7 @@ export const PinToThemeSchema = z.object({ kind: z.enum(['block', 'entity']), id
 **Acceptance:** миграция создаёт колонки+таблицу; `prisma:generate`/`typecheck` зелёные; существующая тема читается `origin=auto`; существующие `ThemeIdeaBlock` читаются `addedVia=clustered`; повторный `migrate deploy` = no-op.
 **Закрывает:** R1, R2, R3.
 
-### Ф2 — Сервисы: запись темы + авто-наполнение + удаление-исключение [ ]
+### Ф2 — Сервисы: запись темы + авто-наполнение + удаление-исключение [x]
 **Ценность:** как менеджер, создаю тему, а она сама наполняется, и я убираю лишнее навсегда.
 **Что входит:** `theme-write.service` (create с `embedQuery`→embedding, rename, archive; `origin=user`, `createdByUserId`, `visibility`; team→manager+); `theme-fill.service` (кандидаты ≥ порога, дедуп, исключить `ThemeExclusion`+уже привязанные, вставка `addedVia=autofill` с `score`/`reason`); `pin` (manual), `unpin` (удалить привязку + записать `ThemeExclusion`).
 **Что НЕ входит:** HTTP (Ф4), cron (Ф3).

@@ -73,6 +73,8 @@ import { TaskAssigneeResolverService } from './services/task-assignee-resolver.s
 import { TemporalConflictService } from './services/temporal-conflict.service';
 import { TemporalProbeService } from './services/temporal-probe.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
+import { ThemeFillService } from './services/theme-fill.service';
+import { ThemeWriteService } from './services/theme-write.service';
 import { ConfidenceCalibrationCron } from './workers/confidence-calibration.cron';
 import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
 import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.cron';
@@ -159,6 +161,8 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     GoalThemeLinkerService,
     GoalTaskLinkerService,
     MeetingTitleService,
+    ThemeWriteService,
+    ThemeFillService,
   ],
   exports: [
     SegmentBuilderService,
@@ -226,6 +230,8 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     GoalThemeLinkerService,
     GoalTaskLinkerService,
     MeetingTitleService,
+    ThemeWriteService,
+    ThemeFillService,
   ],
 })
 export class KnowledgeCoreModule {}

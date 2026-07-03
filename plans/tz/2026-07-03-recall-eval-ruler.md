@@ -40,16 +40,22 @@ owner_decisions:
 - ✅ Банк-формат `strela-recall-questions.json`: `id/angle/question/expectedAnswer/expectedEntities/chain/turn`.
 - ⚠️ `honest`-эвристика (`batch-recall-trace.ts:57-61`) сломана — заменяем (Ф1).
 
-## Фаза 0 — Gold-набор с блок-заземлением `[ ]`
+## Фаза 0 — Gold-набор с заземлением на сигнатуры `[x]`
 
-- Собрать `backend/scripts/eval/gold/recall-gold.json` — ~40–60 выверенных вопросов, поля:
-  `id, angle, question, chain?, turn?, expectedBlockIds[], expectedEntities[], expectedKind` (`answerable`
-  | `honest_empty`), `mustMention[]` (ключевые факты для faithfulness).
-- Источник — отобрать из банка-111 + новых 25 те, где эталон однозначен; проставить `expectedBlockIds`
-  по реальным блокам «Стрелы» (сверка глазами по данным тенанта).
-- Валидатор набора: каждый `chain` имеет ≥2 `turn` по порядку; нет одиночного follow-up без цепочки;
-  `answerable` имеет непустой `expectedBlockIds`; `honest_empty` — пустой.
-- Приёмка: `bunx vitest run scripts/eval/gold/recall-gold.spec.ts` — валидатор зелёный; набор загружается.
+- Собран `backend/scripts/eval/gold/recall-gold.json` — **50 выверенных вопросов** (45 answerable + 5 honest_empty),
+  поля: `id, angle, question, chain?, turn?, expectedEntities[], mustMention[], expectedBlockSignatures[], expectedKind`.
+- **Отклонение от ТЗ (обосновано): вместо `expectedBlockIds[]` → `expectedBlockSignatures[]`** (`{entity?, phrases[]}`).
+  Причина: block-id нестабильны при пере-севе «Стрелы» (наблюдалось 299→321) → замораживать id хрупко и тавтологично.
+  Сигнатуры резолвятся к активным блокам (`status=canonical, mergedIntoId=null`) в рантайме метрикой (Ф3).
+- **Пин org:** заземлено на канонический `cmr1qbvpx0001pwbwxbgmh1jl` (`eval-config.ts` `RECALL_EVAL_ORG`).
+  Вскрыто: `.env` содержит `STRELA_ORG` ДРУГОГО тенанта (свежая «Стрела» соседней фичи) → eval-скрипты НЕ читают
+  `STRELA_ORG`, пинят канонический явно (как `batch-recall-trace.ts`).
+- Источник — отобраны из банка-111 (`docs/testing/strela-recall-questions.json`) вопросы с однозначным эталоном.
+- Read-only верификация `recall-gold.verify.ts`: **0 unresolved entities, 0 weak signatures** — весь эталон
+  реально резолвится к «Стреле».
+- Валидатор `recall-gold.spec.ts`: id уникальны; answerable имеет ≥1 сигнатуру+mustMention; honest_empty пуст;
+  цепочки ≥2 turn = 1..N без пропусков; follow-up «А…/И…» только с chain.
+- Приёмка: `bunx vitest run scripts/eval/gold/recall-gold.spec.ts` — **11 тестов зелёные**; typecheck+lint зелёные.
 
 ## Фаза 1 — Честный классификатор исхода (замена `honest`) `[ ]`
 

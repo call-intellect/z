@@ -30,7 +30,7 @@ import { AdminLlmProvidersController } from './economics/admin-llm-providers.con
 import { AdminLlmProvidersService } from './economics/admin-llm-providers.service';
 import { BudgetAlertCron } from './economics/budget-alert.cron';
 import { CurrencyRateSyncCron } from './economics/currency-rate-sync.cron';
-import { CurrencyRateService } from './economics/currency-rate.service';
+import { CurrencyRateModule } from './economics/currency-rate.module';
 import { DailyCostAggregatorCron } from './economics/daily-cost-aggregator.cron';
 import { OrgEconomicsController } from './economics/org-economics.controller';
 import { OrgEconomicsCron } from './economics/org-economics.cron';
@@ -88,6 +88,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminSkillTraitConceptsModule,
     OnboardingModule,
     CryptoModule,
+    CurrencyRateModule,
   ],
   controllers: [
     AdminDemoController,
@@ -137,7 +138,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminLlmModelsService,
     AdminEmbeddingProvidersService,
     UnitEconomicsService,
-    CurrencyRateService,
     DailyCostAggregatorCron,
     OrgEconomicsCron,
     BudgetAlertCron,
@@ -162,7 +162,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminLlmProvidersService,
     AdminLlmModelsService,
     UnitEconomicsService,
-    CurrencyRateService,
+    CurrencyRateModule,
     DailyCostAggregatorCron,
     OrgEconomicsCron,
     BudgetAlertCron,

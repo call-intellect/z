@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
+import { CurrencyRateModule } from '../admin/economics/currency-rate.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { S3Service } from '../recordings/s3.service';
 
@@ -40,7 +41,7 @@ import { VoxService } from './services/vox.service';
 
 @Global()
 @Module({
-  imports: [EmbeddingsModule],
+  imports: [EmbeddingsModule, CurrencyRateModule],
   providers: [
     AiQueueService,
     AiUsageLogService,

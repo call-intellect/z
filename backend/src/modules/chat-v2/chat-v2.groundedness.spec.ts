@@ -14,7 +14,7 @@ interface GateHarness {
 }
 
 function makeHarness(opts: {
-  mode: 'off' | 'shadow' | 'on';
+  mode: 'off' | 'shadow' | 'lenient' | 'on';
   llmText?: string;
   llmThrows?: boolean;
 }): GateHarness {
@@ -130,5 +130,48 @@ describe('ChatV2OrchestrationService.applyGroundednessGate', () => {
     const h = makeHarness({ mode: 'on', llmText: '{"grounded":false,"reason":"x"}' });
     await callGate(h);
     expect(h.llmCall.mock.calls[0]?.[0]?.taskType).toBe('rag-groundedness');
+  });
+
+  it('(Ф1) mode=lenient + grounded=false + fabricated=false («неполно») → ответ НЕ перезаписан', async () => {
+    const h = makeHarness({
+      mode: 'lenient',
+      llmText: '{"grounded":false,"fabricated":false,"reason":"ответ неполный"}',
+    });
+    const out = await callGate(h);
+    expect(out.text).toBe('План продаж — миллион рублей.');
+    expect(out.citations).toEqual([{ meetingId: 'm1' }]);
+    expect(h.incRagAbstain).not.toHaveBeenCalled();
+  });
+
+  it('(Ф1) mode=lenient + grounded=false + fabricated=true («выдумал имя») → честный отказ + incRagAbstain(lenient)', async () => {
+    const h = makeHarness({
+      mode: 'lenient',
+      llmText: '{"grounded":false,"fabricated":true,"reason":"выдумал имя"}',
+    });
+    const out = await callGate(h);
+    expect(out.text).toBe(HONEST_ABSTAIN);
+    expect(out.citations).toEqual([]);
+    expect(h.incRagAbstain).toHaveBeenCalledWith({ mode: 'lenient' });
+  });
+
+  it('(Ф1) mode=lenient + grounded=true → ответ как есть, метрика не тронута', async () => {
+    const h = makeHarness({
+      mode: 'lenient',
+      llmText: '{"grounded":true,"fabricated":false,"reason":""}',
+    });
+    const out = await callGate(h);
+    expect(out.text).toBe('План продаж — миллион рублей.');
+    expect(h.incRagAbstain).not.toHaveBeenCalled();
+  });
+
+  it('(Ф1) mode=lenient — судья получает мягкий системный промпт (RAG_GROUNDEDNESS_LENIENT_SYSTEM_PROMPT)', async () => {
+    const h = makeHarness({
+      mode: 'lenient',
+      llmText: '{"grounded":true,"fabricated":false,"reason":""}',
+    });
+    await callGate(h);
+    const systemPrompt = h.llmCall.mock.calls[0]?.[0]?.systemPrompt as string;
+    expect(systemPrompt).toContain('мягкий контролёр заземления');
+    expect(systemPrompt).toContain('fabricated');
   });
 });

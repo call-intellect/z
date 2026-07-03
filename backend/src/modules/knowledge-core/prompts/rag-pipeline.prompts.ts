@@ -111,9 +111,16 @@ export function buildRagSufficiencyUser(question: string, collected: string): st
 export const RAG_GROUNDEDNESS_SYSTEM_PROMPT = `Ты — контролёр заземления. Верни JSON: {"grounded":bool,"reason":str}.
 grounded=false, если ответ утверждает факты, которых НЕТ в блоках, ИЛИ выдаёт "готово/сделано" без опоры. Честное "не нашёл" при отсутствии данных — grounded=true.`;
 
+export const RAG_GROUNDEDNESS_LENIENT_SYSTEM_PROMPT = `Ты — мягкий контролёр заземления. Верни JSON: {"grounded":bool,"reason":str,"fabricated":bool}.
+Правила:
+- fabricated=true ТОЛЬКО если ответ утверждает КОНКРЕТНЫЙ факт (имя, число, дату, решение, статус «готово/сделано»), которого НЕТ в блоках, ИЛИ прямо противоречит блокам.
+- Неполнота ответа, осторожные формулировки («судя по…», «возможно»), обоснованный вывод из контекста, честное «не нашёл» при отсутствии данных — это НЕ выдумка: fabricated=false.
+- grounded=false, если есть хоть один невыдуманный признак незаземлённости; иначе grounded=true. Поле grounded оставь для совместимости, ключевое решение — fabricated.`;
+
 export const RagGroundednessSchema = z.object({
   grounded: z.boolean(),
   reason: z.string().default(''),
+  fabricated: z.boolean().optional(),
 });
 export type RagGroundedness = z.infer<typeof RagGroundednessSchema>;
 

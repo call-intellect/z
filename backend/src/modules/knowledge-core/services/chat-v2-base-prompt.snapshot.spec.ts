@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BASE_SYSTEM_PROMPT } from './chat-v2.service';
+import { BASE_SYSTEM_PROMPT, resolveBaseSystemPrompt } from './chat-v2.service';
 
 describe('chat-v2 единый промпт-ответчик — snapshot', () => {
   it('BASE_SYSTEM_PROMPT стабилен', () => {
@@ -29,5 +29,25 @@ describe('chat-v2 единый промпт-ответчик — snapshot', () =
 
   it('хвост «О компании» в стабильную часть НЕ входит (подмешивается отдельно)', () => {
     expect(BASE_SYSTEM_PROMPT).not.toContain('## О компании');
+  });
+
+  it('recall-to-99 Ф1 — правило 4 ассертивно (дефолт), правило 7 структурно, самопроверка усилена', () => {
+    expect(BASE_SYSTEM_PROMPT).toContain('Отвечай при основании');
+    expect(BASE_SYSTEM_PROMPT).not.toContain('Честно про пустоту');
+    expect(BASE_SYSTEM_PROMPT).toContain('Структура и полнота');
+    expect(BASE_SYSTEM_PROMPT).toContain('включи ВСЕ существенные факты');
+    expect(BASE_SYSTEM_PROMPT).toContain(
+      'Ответ структурен и включает все существенные факты из контекста по вопросу?',
+    );
+  });
+
+  it('recall-to-99 Ф1 — resolveBaseSystemPrompt(true) ассертивен, (false) откатывает правило 4', () => {
+    const assertive = resolveBaseSystemPrompt(true);
+    expect(assertive).toContain('Отвечай при основании');
+    expect(assertive).not.toContain('Честно про пустоту');
+
+    const legacy = resolveBaseSystemPrompt(false);
+    expect(legacy).toContain('Честно про пустоту');
+    expect(legacy).not.toContain('Отвечай при основании');
   });
 });

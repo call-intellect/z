@@ -597,17 +597,14 @@ interface RenderedContradictingBlock {
   contradictsBlockId: string;
 }
 
-/**
- * Chat-v2 единый промпт-ответчик (ТЗ 2026-06-15, Приложение A, SYSTEM часть 1).
- *
- * Один промпт на ВСЕ ответы из графа — режимов «факт/синтез/в стиле сотрудника»
- * больше нет (их тексты удалены). Стабильная часть (кэшируется для всех
- * компаний): роль, границы, правила, few-shot, self-check, запреты + правила
- * чтения особых пометок контекста (цепочка рассуждения / противоречащий факт /
- * данные из таблиц). Хвост «## О компании» подмешивается отдельно per-tenant
- * (buildSystemPrompt companyAbout), сюда НЕ входит. Также обслуживает старый
- * `chat`-модуль (buildSystemPrompt fallback) — имя экспорта сохранено.
- */
+export const ASSERTIVE_RULE_4_TEXT = `4. Отвечай при основании. Если в контексте ЕСТЬ основание (даже неполное или
+   косвенное) — отвечай уверенно и назови найденное: человека, факт, решение.
+   Молчи («В памяти компании я этого не нашёл») ТОЛЬКО когда по вопросу
+   в контексте реально ничего нет. Не выдумывай фактов, которых в контексте нет.`;
+
+export const LEGACY_RULE_4_TEXT = `4. Честно про пустоту. Если ответа в контексте нет — так и скажи: «В памяти
+   компании я этого не нашёл» — и не досочиняй.`;
+
 export const BASE_SYSTEM_PROMPT = `## Роль
 Ты — Кора, ИИ-помощник по памяти компании. Отвечаешь сотрудникам компании
 на их вопросы, опираясь ТОЛЬКО на то, что компания уже зафиксировала: встречи,
@@ -660,8 +657,7 @@ export const BASE_SYSTEM_PROMPT = `## Роль
    рядом с фактом — из него получится кликабельная ссылка на источник. Можно
    несколько маркеров на одно утверждение. Не придумывай номера, которых нет
    в контексте.
-4. Честно про пустоту. Если ответа в контексте нет — так и скажи: «В памяти
-   компании я этого не нашёл» — и не досочиняй.
+${ASSERTIVE_RULE_4_TEXT}
 5. Честно про надёжность. Где это важно, помечай словами, насколько факт
    надёжен: «по нескольким источникам» (подтверждён 2+ блоками), «однажды
    упоминалось» (единичный источник), «возможно устарело» (явно старее
@@ -670,9 +666,11 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 6. Конфликт не заглаживай. Если факты спорят — назови оба
    ([BLOCK:<id1>] vs [BLOCK:<id2>]) и предложи человеку уточнить, какой
    актуальный. Никогда не выбирай «правильный» сам.
-7. Структура по содержанию. Простой факт — 1-2 предложения. Составной ответ
-   (несколько частей, пунктов, сущностей) — короткая вводная фраза, затем
-   список или разделы. Структурируй ради ясности, а не ради объёма.
+7. Структура и полнота. Ответ — связный разбор, а не набор цитат и не сырой
+   пересказ блоков: короткое резюме → суть по пунктам или подзаголовкам →
+   кто/что/когда → при необходимости «что дальше». Простой факт — 1-2
+   предложения. Полно: включи ВСЕ существенные факты из контекста по вопросу,
+   не выбирай подмножество.
 
 ## Переспрос при нескольких РАЗНЫХ объектах
 Это не про конфликт фактов (правило 6 — когда факты спорят об ОДНОМ объекте).
@@ -748,6 +746,7 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 - Каждый факт подкреплён [BLOCK:<id>] из контекста? Нет выдуманных номеров?
 - Если данных не было — сказал честно, не досочинил?
 - Конфликт назван, а не заглажен?
+- Ответ структурен и включает все существенные факты из контекста по вопросу?
 - Если это вопрос-список — ответ перечислением источников с маркерами
   [ИСТОЧНИК:<id>], а не абзацем?
 - В тексте нет ни одного английского/служебного слова, кроме маркеров
@@ -760,6 +759,12 @@ export const BASE_SYSTEM_PROMPT = `## Роль
   Даже если они есть во входе — переводи на человеческий русский.
 - Не выдумывай факты, даты, имена, решения, которых нет в контексте.
 - Не выбирай «победителя» при споре двух фактов.`;
+
+export function resolveBaseSystemPrompt(assertiveSynthesis: boolean): string {
+  return assertiveSynthesis
+    ? BASE_SYSTEM_PROMPT
+    : BASE_SYSTEM_PROMPT.replace(ASSERTIVE_RULE_4_TEXT, LEGACY_RULE_4_TEXT);
+}
 
 interface RetrievalCtx {
   tenantId: string;
@@ -1072,10 +1077,16 @@ export class ChatV2Service {
     // (префикс-кэш в рамках тенанта цел). Пустой профиль → секция опускается.
     const companyAbout = await this.buildCompanyAbout(tenantId);
     const scopeAddon = await this.buildScopeAddon(scope, scopeId, tenantId);
+    const assertiveSynthesis = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2AssertiveSynthesis',
+      undefined,
+      true,
+    );
     const systemPrompt = this.buildSystemPrompt(
       scopeAddon,
       input.systemPromptOverride ?? null,
       companyAbout,
+      assertiveSynthesis,
     );
     // ТЗ 2026-06-15 §6 — summary/history переехали из SYSTEM в конец USER
     // (cache-friendly: всё переменное — в USER).
@@ -2193,25 +2204,16 @@ export class ChatV2Service {
     }
   }
 
-  /**
-   * Собирает system prompt: единый промпт (или override для старого chat-
-   * модуля) + scope-addon + «О компании» (стабильный per-tenant хвост).
-   *
-   * ТЗ 2026-06-15 §6 — summary/history БОЛЬШЕ НЕ в SYSTEM (переехали в конец
-   * USER, buildUserMessage): SYSTEM целиком стабилен (cache-friendly).
-   *  - `systemPromptOverride` — обслуживает старый `chat`-модуль; null →
-   *    BASE_SYSTEM_PROMPT (единый промпт-ответчик).
-   *  - `companyAbout` — стабильное описание компании; '' → секция опускается.
-   */
   private buildSystemPrompt(
     scopeAddon: string,
     systemPromptOverride?: string | null,
     companyAbout?: string,
+    assertiveSynthesis = true,
   ): string {
     const base =
       systemPromptOverride && systemPromptOverride.length > 0
         ? systemPromptOverride
-        : BASE_SYSTEM_PROMPT;
+        : resolveBaseSystemPrompt(assertiveSynthesis);
     const parts: string[] = [base, '', scopeAddon];
     if (companyAbout && companyAbout.length > 0) {
       parts.push('', companyAbout);

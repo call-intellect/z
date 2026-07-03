@@ -20,6 +20,7 @@ import {
   narrowToChatIntent,
 } from '../dialog-layer/services/query-classifier.service';
 import {
+  RAG_GROUNDEDNESS_LENIENT_SYSTEM_PROMPT,
   RAG_GROUNDEDNESS_SYSTEM_PROMPT,
   RagGroundednessSchema,
   buildRagGroundednessUser,
@@ -463,7 +464,11 @@ export class ChatV2OrchestrationService {
   }): Promise<{ text: string; citations: unknown[] }> {
     const unchanged = { text: args.text, citations: args.citations };
 
-    const mode = await this.cfg.getDynamic<string>('rag.groundedness_mode', undefined, 'on');
+    const mode = await this.cfg.getDynamic<string>(
+      'knowledge.chatV2GroundednessMode',
+      undefined,
+      'lenient',
+    );
     if (mode === 'off') {
       return unchanged;
     }
@@ -488,13 +493,19 @@ export class ChatV2OrchestrationService {
       }
     }
 
+    const judgeSystem =
+      mode === 'lenient'
+        ? RAG_GROUNDEDNESS_LENIENT_SYSTEM_PROMPT
+        : RAG_GROUNDEDNESS_SYSTEM_PROMPT;
+
     let grounded: boolean;
+    let fabricated: boolean | undefined;
     try {
       const out = await this.llm.call({
         taskType: 'rag-groundedness',
         tenantId: args.tenantId,
         userId: args.userId,
-        systemPrompt: withInjectionGuard(RAG_GROUNDEDNESS_SYSTEM_PROMPT),
+        systemPrompt: withInjectionGuard(judgeSystem),
         userMessage: wrapUserData(
           buildRagGroundednessUser(args.question, args.text, blocksStr),
         ),
@@ -507,6 +518,7 @@ export class ChatV2OrchestrationService {
         return unchanged;
       }
       grounded = parsed.data.grounded;
+      fabricated = parsed.data.fabricated;
     } catch (err) {
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -518,12 +530,17 @@ export class ChatV2OrchestrationService {
     if (grounded) {
       return unchanged;
     }
-
     if (mode === 'shadow') {
       this.metrics.incRagAbstain({ mode: 'shadow' });
       return unchanged;
     }
-
+    if (mode === 'lenient') {
+      if (fabricated === true) {
+        this.metrics.incRagAbstain({ mode: 'lenient' });
+        return { text: GROUNDEDNESS_HONEST_ABSTAIN, citations: [] };
+      }
+      return unchanged;
+    }
     this.metrics.incRagAbstain({ mode: 'on' });
     return { text: GROUNDEDNESS_HONEST_ABSTAIN, citations: [] };
   }

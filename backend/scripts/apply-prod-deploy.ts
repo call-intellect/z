@@ -218,6 +218,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-recall-to-99.ts',
+    hint: 'knowledge.chatV2{AssertiveSynthesis,GroundednessMode,GroundingEmbedding,GroundingEmbeddingTopK,GroundingEmbeddingMinSim,DeterministicPeriod,GraphCypherRecall,GraphCypherMaxDepth} + knowledge.graphReconcile{Enabled,BatchSize} — 10 крутилок ТЗ recall-master-to-99 (ассертивный синтез, эмбеддинг-резолв, детерминизм периода, AGE-в-recall, reconcile)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-personal-brief.ts',
     hint: 'operations.personal_daily_brief.{enabled,morning_hour} + operations.knows_who.enabled + knows_who.min_confidence (TZ-1 Ф2 движок рядового)',
   },

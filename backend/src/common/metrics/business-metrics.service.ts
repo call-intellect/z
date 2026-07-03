@@ -495,6 +495,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private riskEdgeTotal!: Counter<'relation' | 'outcome'>;
   private ragAbstainTotal!: Counter<'mode'>;
   private chatV2GroundingEmbeddingHitsTotal!: Counter<string>;
+  private graphReconcileMergedTotal!: Counter<'type'>;
+  private graphReconcileDeletedTotal!: Counter<'type'>;
   // Ф3 МТЗ «разблокировка конвейера» (баг #18) — счётчик ранних skip-return'ов
   // хендлеров специалистов. До этого skip был неотличим от success (duration-
   // метрика в finally на ВСЕХ путях). reason: 'block_not_found' /
@@ -2532,6 +2534,16 @@ export class BusinessMetricsService implements OnModuleInit {
     this.chatV2GroundingEmbeddingHitsTotal = this.getOrCreateCounter({
       name: 'chat_v2_grounding_embedding_hits_total',
       help: 'Понималщик chat-v2: семантические (эмбеддинг-KNN) подсказки-сущности, добавленные к лексическому справочнику',
+    });
+    this.graphReconcileMergedTotal = this.getOrCreateCounter({
+      name: 'graph_reconcile_merged_total',
+      help: 'graph-reconcile: узлы/рёбра MERGE в z_graph (type: entity|entityLink)',
+      labelNames: ['type'] as const,
+    });
+    this.graphReconcileDeletedTotal = this.getOrCreateCounter({
+      name: 'graph_reconcile_deleted_total',
+      help: 'graph-reconcile: узлы/рёбра удалены (DETACH DELETE) из z_graph (type: entity|entityLink)',
+      labelNames: ['type'] as const,
     });
     // Ф3 МТЗ «разблокировка конвейера» (баг #18) — skip-return'ы хендлеров.
     this.coreSpecialistSkippedTotal = this.getOrCreateCounter({
@@ -6234,6 +6246,14 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incChatV2GroundingEmbeddingHits(n = 1): void {
     this.chatV2GroundingEmbeddingHitsTotal.inc(n);
+  }
+
+  incGraphReconcileMerged(args: { type: string }): void {
+    this.graphReconcileMergedTotal.inc({ type: args.type });
+  }
+
+  incGraphReconcileDeleted(args: { type: string }): void {
+    this.graphReconcileDeletedTotal.inc({ type: args.type });
   }
 
   /**

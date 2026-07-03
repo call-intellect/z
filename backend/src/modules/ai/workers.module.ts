@@ -31,6 +31,7 @@ import { GoalHierarchyRebuildCron } from '../knowledge-core/workers/goal-hierarc
 import { GoalTaskLinkerCron } from '../knowledge-core/workers/goal-task-linker.cron';
 import { GoalThemeLinkerCron } from '../knowledge-core/workers/goal-theme-linker.cron';
 import { GraphMaterializationVerifyCron } from '../knowledge-core/workers/graph-materialization-verify.cron';
+import { GraphReconcileCronService } from '../knowledge-core/workers/graph-reconcile.cron';
 import { IdeaClustererCron } from '../knowledge-core/workers/idea-clusterer.cron';
 import { InsightClustererCron } from '../knowledge-core/workers/insight-clusterer.cron';
 import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
@@ -145,6 +146,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     BlockLinkerWorker,
     EntityGraphBuilderCron,
     GraphMaterializationVerifyCron,
+    GraphReconcileCronService,
     // Аудит-баг Б4 (high, класс K7) — cron каждые 30 мин: реконсиляция
     // застрявших draft-блоков. block-ingest.worker помечает RawEvent=ingested
     // ДО best-effort enqueueBlockDistill; краш/сбой Redis между ними оставляет

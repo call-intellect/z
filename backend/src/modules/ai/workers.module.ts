@@ -19,6 +19,7 @@ import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.work
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { BlockLinkerWorker } from '../knowledge-core/workers/block-linker.worker';
 import { CardRollupV2Worker } from '../knowledge-core/workers/card-rollup-v2.worker';
+import { EntityConsolidateSameNameCronService } from '../knowledge-core/workers/entity-consolidate-same-name.cron';
 import { EntityGraphBuilderCron } from '../knowledge-core/workers/entity-graph-builder.cron';
 import { EntityResolverCronService } from '../knowledge-core/workers/entity-resolver.cron';
 import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.worker';
@@ -142,6 +143,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     BlockDistillWorker,
     EntityResolverWorker,
     EntityResolverCronService,
+    EntityConsolidateSameNameCronService,
     RegulationConsolidatorWorker,
     RegulationConsolidatorCronService,
     BlockLinkerWorker,

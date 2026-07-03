@@ -647,6 +647,16 @@ export class TypedConfigService {
         12,
       ),
       entityMergeThreshold: this.get('ENTITY_MERGE_THRESHOLD'),
+      entityConsolidateSameNameEnabled: this.resolveSync<boolean>(
+        'knowledge.entityConsolidateSameNameEnabled',
+        undefined,
+        true,
+      ),
+      entityConsolidateSameNameBatchSize: this.resolveSync<number>(
+        'knowledge.entityConsolidateSameNameBatchSize',
+        undefined,
+        200,
+      ),
       entityResolverCron: this.get('ENTITY_RESOLVER_CRON'),
       regulationConsolidatorCron: this.get('REGULATION_CONSOLIDATOR_CRON'),
       blockIngestWindowSegments: this.resolveSync<number>('knowledge.blockIngestWindowSegments', 'BLOCK_INGEST_WINDOW_SEGMENTS', 5),

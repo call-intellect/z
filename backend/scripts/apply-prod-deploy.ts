@@ -358,6 +358,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-admin-setting-support.ts',
     hint: 'support_critic_min_groundedness=0.6 (R-INV-5) + support_promote_min_csat=4 (TZ support-desk Ф3 гейт промоута R-INV-2)',
   },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-entity-consolidate.ts',
+    hint: 'knowledge.entityConsolidateSameName{Enabled,BatchSize} — kill-switch + батч крон-консолидатора одноимённых сущностей (Ф1b кросс-типовая консолидация)',
+  },
 
   ...[
     'phase-B',
@@ -910,6 +915,18 @@ const STEPS: Step[] = [
     skipBootstrap: true,
     args: ['--apply'],
     hint: 'Пакет A: перепривязать осиротевшие ссылки на уже-слитые сущности к канону (idempotent)',
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-client-to-customer.ts',
+    skipBootstrap: true,
+    hint: 'Ф1b: детерминированный client→customer для активных Entity (idempotent); ДО консолидации одноимённых',
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-entity-consolidate-same-name.ts',
+    skipBootstrap: true,
+    hint: 'Ф1b: кросс-типовая консолидация одноимённых сущностей (после client→customer); LLM-арбитр + матрица приоритета типов',
   },
 ];
 

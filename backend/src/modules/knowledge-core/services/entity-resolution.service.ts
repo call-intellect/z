@@ -18,6 +18,7 @@ import {
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { canonicalizeEntityIds, setPersonEntity } from './entity-companion.helpers';
+import { normalizeEntityType } from './entity-type-priority';
 
 export function normalizeEntityName(input: string): string {
   if (!input) return '';
@@ -170,6 +171,7 @@ export class EntityResolutionService {
     if (normalized.length === 0) {
       throw new Error('EntityResolution: пустое имя сущности');
     }
+    const resolvedType: EntityType = normalizeEntityType(args.type);
     const lowered = normalized.toLowerCase();
     const startedAt = Date.now();
     const observeLatency = (): void => {
@@ -182,7 +184,7 @@ export class EntityResolutionService {
     const strong = this.normalizeStrongIds(args);
     const strongHit = await this.resolveByStrongIds({
       tenantId: args.tenantId,
-      type: args.type,
+      type: resolvedType,
       ...strong,
     });
     if (strongHit) {
@@ -202,7 +204,7 @@ export class EntityResolutionService {
         },
       });
       // Кладём в cache по имени, чтобы повторный resolve по имени тоже работал.
-      const cacheKey = this.buildCacheKey(args.tenantId, args.type, lowered);
+      const cacheKey = this.buildCacheKey(args.tenantId, resolvedType, lowered);
       await this.writeCache(cacheKey, updated.id);
       this.metrics?.incKcEntityResolvePath({ path: 'strong_id' });
       observeLatency();
@@ -211,7 +213,7 @@ export class EntityResolutionService {
     }
 
     // 1. Redis cache hit — горячее имя возвращаем без БД-вызова.
-    const cacheKey = this.buildCacheKey(args.tenantId, args.type, lowered);
+    const cacheKey = this.buildCacheKey(args.tenantId, resolvedType, lowered);
     const cachedId = await this.readCache(cacheKey);
     if (cachedId) {
       const cached = await this.prisma.entity.findUnique({
@@ -239,7 +241,7 @@ export class EntityResolutionService {
     // 2. Exact match — раз-запрос вместо findMany+filter (см. W1.5 §1).
     const exact = await this.findExactByLowerName(
       args.tenantId,
-      args.type,
+      resolvedType,
       lowered,
     );
     if (exact) {
@@ -264,7 +266,7 @@ export class EntityResolutionService {
             ...(merged !== undefined ? { metadata: merged } : {}),
           },
         });
-        if (args.type === 'person') {
+        if (resolvedType === 'person') {
           await this.linkEntityPerson({
             tenantId: args.tenantId,
             entityId: updated.id,
@@ -289,7 +291,7 @@ export class EntityResolutionService {
     // 3. KNN top-3 cosine.
     const knnHit = await this.knnResolve({
       tenantId: args.tenantId,
-      type: args.type,
+      type: resolvedType,
       name: normalized,
     });
     if (knnHit) {
@@ -311,7 +313,7 @@ export class EntityResolutionService {
           ...(merged !== undefined ? { metadata: merged } : {}),
         },
       });
-      if (args.type === 'person') {
+      if (resolvedType === 'person') {
         await this.linkEntityPerson({
           tenantId: args.tenantId,
           entityId: updated.id,
@@ -338,7 +340,7 @@ export class EntityResolutionService {
     const created = await this.prisma.entity.create({
       data: {
         tenantId: args.tenantId,
-        type: args.type,
+        type: resolvedType,
         canonicalName: normalized,
         mentionsCount: 1,
         metadata: (args.metadata ?? Prisma.JsonNull) as Prisma.InputJsonValue,
@@ -367,7 +369,7 @@ export class EntityResolutionService {
         'entity: не удалось проставить embedding — продолжаем без него',
       );
     }
-    if (args.type === 'person') {
+    if (resolvedType === 'person') {
       await this.linkEntityPerson({
         tenantId: args.tenantId,
         entityId: created.id,

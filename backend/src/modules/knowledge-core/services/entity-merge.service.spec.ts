@@ -174,6 +174,29 @@ async function seedMergePair(suffix: string): Promise<{
     },
   });
 
+  await prisma.customerRiskSnapshot.create({
+    data: {
+      id: `${PREFIX}-${suffix}-risk`,
+      tenantId,
+      customerEntityId: aId,
+      dateLocal: '2026-07-03',
+      signalCounts: {},
+      riskScore: 1,
+      riskLevel: 'ok',
+      topBlockIdsJson: [],
+    },
+  });
+
+  await prisma.themeExclusion.create({
+    data: {
+      id: `${PREFIX}-${suffix}-excl`,
+      tenantId,
+      themeId,
+      kind: 'entity',
+      entityId: aId,
+    },
+  });
+
   return {
     tenantId,
     aId,
@@ -192,6 +215,8 @@ async function seedMergePair(suffix: string): Promise<{
 
 async function cleanupMergePair(): Promise<void> {
   const prisma = await getPrismaClient();
+  await prisma.customerRiskSnapshot.deleteMany({ where: { id: { startsWith: `${PREFIX}-` } } }).catch(() => undefined);
+  await prisma.themeExclusion.deleteMany({ where: { id: { startsWith: `${PREFIX}-` } } }).catch(() => undefined);
   await prisma.person.deleteMany({ where: { id: { startsWith: `${PREFIX}-` } } }).catch(() => undefined);
   await prisma.card.deleteMany({ where: { id: { startsWith: `${PREFIX}-` } } }).catch(() => undefined);
   await prisma.entityLink.deleteMany({ where: { explanation: { startsWith: PREFIX } } }).catch(() => undefined);
@@ -252,6 +277,18 @@ describe('EntityMergeService.mergeEntities (integration)', () => {
     const person = await prisma.person.findUnique({ where: { id: s.personId } });
     expect(person?.entityId).toBe(s.bId);
     expect(person?.entityTenantId).toBe(s.tenantId);
+
+    const risk = await prisma.customerRiskSnapshot.findMany({
+      where: { id: { startsWith: `${PREFIX}-all-` } },
+    });
+    expect(risk.every((r) => r.customerEntityId === s.bId)).toBe(true);
+    expect(risk.some((r) => r.customerEntityId === s.aId)).toBe(false);
+
+    const excl = await prisma.themeExclusion.findMany({
+      where: { id: { startsWith: `${PREFIX}-all-` } },
+    });
+    expect(excl.every((r) => r.entityId === s.bId)).toBe(true);
+    expect(excl.some((r) => r.entityId === s.aId)).toBe(false);
 
     const into = await prisma.entity.findUnique({
       where: { id_tenantId: { id: s.bId, tenantId: s.tenantId } },
@@ -407,5 +444,375 @@ describe('EntityMergeService.mergeManually (unit)', () => {
       intoEntityId: 'into-1',
       actor: { byUserId: 'user-9' },
     });
+  });
+});
+
+interface FakeEntity {
+  id: string;
+  tenantId: string;
+  type: string;
+  canonicalName: string;
+  aliases: string[];
+  mentionsCount: number;
+  mergedIntoId: string | null;
+  mergedIntoTenantId: string | null;
+  metadata: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface FakeSubrecord {
+  id: string;
+  tenantId: string;
+  entityId: string;
+  entityTenantId?: string | null;
+}
+
+const TYPED_MODELS = [
+  'vendor',
+  'customer',
+  'event',
+  'goal',
+  'document',
+  'market',
+  'orgUnit',
+  'role',
+  'department',
+] as const;
+type TypedModel = (typeof TYPED_MODELS)[number];
+
+function buildFakePrisma(seed: {
+  entities: FakeEntity[];
+  subrecords?: Partial<Record<TypedModel, FakeSubrecord[]>>;
+}): { prisma: PrismaService; store: { entities: FakeEntity[]; subrecords: Record<TypedModel, FakeSubrecord[]> } } {
+  const entities = seed.entities.map((e) => ({ ...e }));
+  const subrecords = Object.fromEntries(
+    TYPED_MODELS.map((m) => [m, (seed.subrecords?.[m] ?? []).map((s) => ({ ...s }))]),
+  ) as Record<TypedModel, FakeSubrecord[]>;
+
+  const entityDelegate = {
+    findUnique: async ({ where }: { where: { id_tenantId: { id: string; tenantId: string } } }) =>
+      entities.find(
+        (e) => e.id === where.id_tenantId.id && e.tenantId === where.id_tenantId.tenantId,
+      ) ?? null,
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id_tenantId: { id: string; tenantId: string } };
+      data: Record<string, unknown>;
+    }) => {
+      const e = entities.find(
+        (x) => x.id === where.id_tenantId.id && x.tenantId === where.id_tenantId.tenantId,
+      );
+      if (!e) throw new Error('fake entity.update: not found');
+      Object.assign(e, data);
+      return e;
+    },
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: { tenantId: string; mergedIntoId: string };
+      data: Record<string, unknown>;
+    }) => {
+      let count = 0;
+      for (const e of entities) {
+        if (e.tenantId === where.tenantId && e.mergedIntoId === where.mergedIntoId) {
+          Object.assign(e, data);
+          count++;
+        }
+      }
+      return { count };
+    },
+    count: async () => 0,
+  };
+
+  const emptyGraphDelegate = {
+    findMany: async () => [],
+    findUnique: async () => null,
+    findFirst: async () => null,
+    update: async () => ({}),
+    updateMany: async () => ({ count: 0 }),
+    delete: async () => ({}),
+    count: async () => 0,
+  };
+
+  const makeTypedDelegate = (model: TypedModel) => ({
+    findUnique: async ({ where }: { where: { entityId: string }; select?: unknown }) =>
+      subrecords[model].find((s) => s.entityId === where.entityId) ?? null,
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { entityId: string };
+      data: { entityId: string; entityTenantId?: string };
+    }) => {
+      const s = subrecords[model].find((x) => x.entityId === where.entityId);
+      if (!s) throw new Error(`fake ${model}.update: not found`);
+      s.entityId = data.entityId;
+      if (data.entityTenantId !== undefined) s.entityTenantId = data.entityTenantId;
+      return s;
+    },
+    delete: async ({ where }: { where: { entityId: string } }) => {
+      const idx = subrecords[model].findIndex((x) => x.entityId === where.entityId);
+      if (idx < 0) throw new Error(`fake ${model}.delete: not found`);
+      return subrecords[model].splice(idx, 1)[0];
+    },
+    count: async ({ where }: { where: { tenantId: string; entityId: string } }) =>
+      subrecords[model].filter(
+        (s) => s.tenantId === where.tenantId && s.entityId === where.entityId,
+      ).length,
+  });
+
+  const client: Record<string, unknown> = {
+    entity: entityDelegate,
+    ideaBlockEntity: emptyGraphDelegate,
+    entityLink: emptyGraphDelegate,
+    sourceEntity: emptyGraphDelegate,
+    themeEntity: emptyGraphDelegate,
+    card: emptyGraphDelegate,
+    person: emptyGraphDelegate,
+    customerRiskSnapshot: emptyGraphDelegate,
+    themeExclusion: emptyGraphDelegate,
+  };
+  for (const m of TYPED_MODELS) {
+    client[m] = makeTypedDelegate(m);
+  }
+  client.$transaction = async (
+    fn: (tx: unknown) => Promise<unknown>,
+  ): Promise<unknown> => fn(client);
+
+  return {
+    prisma: client as unknown as PrismaService,
+    store: { entities, subrecords },
+  };
+}
+
+function makeEntity(over: Partial<FakeEntity> & Pick<FakeEntity, 'id' | 'type'>): FakeEntity {
+  return {
+    tenantId: 't1',
+    canonicalName: over.id,
+    aliases: [],
+    mentionsCount: 1,
+    mergedIntoId: null,
+    mergedIntoTenantId: null,
+    metadata: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    ...over,
+  };
+}
+
+describe('EntityMergeService.mergeEntities — кросс-типовой merge (unit, mock Prisma)', () => {
+  it('vendor→customer: сабрекорд Vendor перецеплен, into.type=canonicalType, from tombstone', async () => {
+    const { prisma, store } = buildFakePrisma({
+      entities: [
+        makeEntity({ id: 'vendorE', type: 'vendor', canonicalName: 'Логистик Плюс', mentionsCount: 2 }),
+        makeEntity({ id: 'customerE', type: 'customer', canonicalName: 'Логистик Плюс', mentionsCount: 3 }),
+      ],
+      subrecords: {
+        vendor: [{ id: 'v1', tenantId: 't1', entityId: 'vendorE' }],
+      },
+    });
+    const svc = new EntityMergeService(prisma, null as unknown as LlmRouterService, undefined);
+
+    await svc.mergeEntities({
+      tenantId: 't1',
+      fromEntityId: 'vendorE',
+      intoEntityId: 'customerE',
+      canonicalType: 'customer',
+    });
+
+    expect(store.subrecords.vendor).toHaveLength(1);
+    expect(store.subrecords.vendor[0]!.entityId).toBe('customerE');
+
+    const into = store.entities.find((e) => e.id === 'customerE')!;
+    expect(into.type).toBe('customer');
+    expect(into.mentionsCount).toBe(5);
+    expect(into.aliases).toContain('Логистик Плюс');
+
+    const from = store.entities.find((e) => e.id === 'vendorE')!;
+    expect(from.mergedIntoId).toBe('customerE');
+    expect(from.mergedIntoTenantId).toBe('t1');
+  });
+
+  it('НЕ бросает на разных type (type-guard снят) и применяет canonicalType к into', async () => {
+    const { prisma, store } = buildFakePrisma({
+      entities: [
+        makeEntity({ id: 'techE', type: 'technology', canonicalName: 'Битрикс' }),
+        makeEntity({ id: 'productE', type: 'product', canonicalName: 'Битрикс' }),
+      ],
+    });
+    const svc = new EntityMergeService(prisma, null as unknown as LlmRouterService, undefined);
+
+    await expect(
+      svc.mergeEntities({
+        tenantId: 't1',
+        fromEntityId: 'techE',
+        intoEntityId: 'productE',
+        canonicalType: 'technology',
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(store.entities.find((e) => e.id === 'productE')!.type).toBe('technology');
+  });
+
+  it('конфликт сабрекордов (обе имели Customer): мигрируемая удалена, каноническая сохранена', async () => {
+    const { prisma, store } = buildFakePrisma({
+      entities: [
+        makeEntity({ id: 'fromC', type: 'customer' }),
+        makeEntity({ id: 'intoC', type: 'customer' }),
+      ],
+      subrecords: {
+        customer: [
+          { id: 'cust-from', tenantId: 't1', entityId: 'fromC' },
+          { id: 'cust-into', tenantId: 't1', entityId: 'intoC' },
+        ],
+      },
+    });
+    const svc = new EntityMergeService(prisma, null as unknown as LlmRouterService, undefined);
+
+    await svc.mergeEntities({ tenantId: 't1', fromEntityId: 'fromC', intoEntityId: 'intoC' });
+
+    expect(store.subrecords.customer).toHaveLength(1);
+    expect(store.subrecords.customer[0]!.id).toBe('cust-into');
+    expect(store.subrecords.customer[0]!.entityId).toBe('intoC');
+  });
+
+  it('SetNull-модель (Goal): переносит entityId и entityTenantId', async () => {
+    const { prisma, store } = buildFakePrisma({
+      entities: [
+        makeEntity({ id: 'goalE', type: 'goal' }),
+        makeEntity({ id: 'topicE', type: 'topic' }),
+      ],
+      subrecords: {
+        goal: [{ id: 'g1', tenantId: 't1', entityId: 'goalE', entityTenantId: 't1' }],
+      },
+    });
+    const svc = new EntityMergeService(prisma, null as unknown as LlmRouterService, undefined);
+
+    await svc.mergeEntities({
+      tenantId: 't1',
+      fromEntityId: 'goalE',
+      intoEntityId: 'topicE',
+      canonicalType: 'goal',
+    });
+
+    expect(store.subrecords.goal[0]!.entityId).toBe('topicE');
+    expect(store.subrecords.goal[0]!.entityTenantId).toBe('t1');
+    expect(store.entities.find((e) => e.id === 'topicE')!.type).toBe('goal');
+  });
+
+  it('идемпотентность: повторный merge той же пары упирается в already-merged guard', async () => {
+    const { prisma } = buildFakePrisma({
+      entities: [
+        makeEntity({ id: 'aE', type: 'vendor' }),
+        makeEntity({ id: 'bE', type: 'customer' }),
+      ],
+      subrecords: { vendor: [{ id: 'v1', tenantId: 't1', entityId: 'aE' }] },
+    });
+    const svc = new EntityMergeService(prisma, null as unknown as LlmRouterService, undefined);
+
+    await svc.mergeEntities({
+      tenantId: 't1',
+      fromEntityId: 'aE',
+      intoEntityId: 'bE',
+      canonicalType: 'customer',
+    });
+
+    await expect(
+      svc.mergeEntities({
+        tenantId: 't1',
+        fromEntityId: 'aE',
+        intoEntityId: 'bE',
+        canonicalType: 'customer',
+      }),
+    ).rejects.toThrow('уже мержена');
+  });
+});
+
+describe('EntityMergeService.findCrossTypeSameNameCandidates (unit, mock query)', () => {
+  it('возвращает одноимённых другого типа (исключает person и себя через SQL)', async () => {
+    const rawRows = [
+      {
+        id: 'customerE',
+        tenantId: 't1',
+        type: 'customer',
+        canonicalName: 'Логистик Плюс',
+        aliases: [],
+        mergedIntoId: null,
+        mentionsCount: 3,
+        metadata: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    const prisma = {
+      $queryRawUnsafe: vi.fn(async () => rawRows),
+    } as unknown as PrismaService;
+    const svc = new EntityMergeService(prisma, null as unknown as LlmRouterService, undefined);
+
+    const res = await svc.findCrossTypeSameNameCandidates({
+      tenantId: 't1',
+      entityId: 'vendorE',
+    });
+
+    expect(res).toHaveLength(1);
+    expect(res[0]!.id).toBe('customerE');
+    expect(res[0]!.type).toBe('customer');
+    const sql = (prisma.$queryRawUnsafe as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as string;
+    expect(sql).toContain("e.type <> 'person'");
+    expect(sql).toContain('e.id <> $2');
+    expect(sql).toContain('e.type <> (SELECT type FROM "Entity" WHERE id = $2)');
+  });
+});
+
+describe('EntityMergeService.parseVerdict — canonicalType (unit)', () => {
+  const svc = new EntityMergeService(
+    {} as unknown as PrismaService,
+    null as unknown as LlmRouterService,
+    undefined,
+  );
+  const parse = (
+    text: string,
+    candidates: Array<{ id: string; type: string }>,
+    allowed?: string[],
+  ) =>
+    (svc as unknown as {
+      parseVerdict: (
+        t: string,
+        c: unknown[],
+        a?: unknown[],
+      ) => { verdict: string; canonicalType?: string } | null;
+    }).parseVerdict(text, candidates, allowed);
+
+  it('merge с валидным canonicalType прокидывает его', () => {
+    const out = parse(
+      JSON.stringify({ verdict: 'merge', canonicalId: 'cand-1', canonicalType: 'customer', explanation: 'ок' }),
+      [{ id: 'cand-1', type: 'vendor' }],
+      ['vendor', 'customer'],
+    );
+    expect(out).toMatchObject({ verdict: 'merge', canonicalId: 'cand-1', canonicalType: 'customer' });
+  });
+
+  it('невалидный canonicalType (не из allowed) игнорируется', () => {
+    const out = parse(
+      JSON.stringify({ verdict: 'merge', canonicalId: 'cand-1', canonicalType: 'project', explanation: 'ок' }),
+      [{ id: 'cand-1', type: 'vendor' }],
+      ['vendor', 'customer'],
+    );
+    expect(out).toMatchObject({ verdict: 'merge', canonicalId: 'cand-1' });
+    expect(out && 'canonicalType' in out ? out.canonicalType : undefined).toBeUndefined();
+  });
+
+  it('canonicalType — мусорная строка (не EntityType) игнорируется', () => {
+    const out = parse(
+      JSON.stringify({ verdict: 'merge', canonicalId: 'cand-1', canonicalType: 'gibberish', explanation: 'ок' }),
+      [{ id: 'cand-1', type: 'vendor' }],
+      ['vendor', 'customer'],
+    );
+    expect(out && 'canonicalType' in out ? out.canonicalType : undefined).toBeUndefined();
   });
 });

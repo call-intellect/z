@@ -54,7 +54,19 @@ export class CypherBuilder {
   }
 
   static escapeString(value: string): string {
-    return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return value
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r');
+  }
+
+  static dollarQuote(cypher: string): string {
+    let tag = 'cypher';
+    while (cypher.includes(`$${tag}$`)) {
+      tag = `${tag}x`;
+    }
+    return `$${tag}$ ${cypher} $${tag}$`;
   }
 
   static buildMergeNode(type: NodeType, id: string, tenantId: string): string {

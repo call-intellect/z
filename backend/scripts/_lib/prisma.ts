@@ -9,6 +9,9 @@ export function createPrismaClient(): PrismaClient {
     );
   }
   return new PrismaClient({
-    adapter: new PrismaPg({ connectionString: url }),
+    adapter: new PrismaPg({
+      connectionString: url,
+      options: '-c search_path=ag_catalog,"$user",public',
+    }),
   });
 }

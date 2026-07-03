@@ -398,6 +398,82 @@ export class GraphService {
     return result;
   }
 
+  async mergeEdgeGraphOnly(params: {
+    tenantId: string;
+    from: NodeRef;
+    to: NodeRef;
+    linkType: EntityLinkType;
+    confidence?: number;
+    validFrom?: Date;
+    validTo?: Date | null;
+    properties?: Record<string, unknown>;
+  }): Promise<void> {
+    const { tenantId, from, to, linkType } = params;
+    if (!tenantId || !from?.id || !to?.id) {
+      throw new BadRequestException('tenantId, from.id and to.id required');
+    }
+    CypherBuilder.toAgeLabel(from.type);
+    CypherBuilder.toAgeLabel(to.type);
+    CypherBuilder.toRelType(linkType);
+    await this.runCypherMergeNode(this.prisma, tenantId, from.type, from.id);
+    await this.runCypherMergeNode(this.prisma, tenantId, to.type, to.id);
+    const baseMerge = CypherBuilder.buildMergeEdge({
+      fromType: from.type,
+      fromId: from.id,
+      toType: to.type,
+      toId: to.id,
+      linkType,
+      tenantId,
+    });
+    const conf = params.confidence !== undefined ? params.confidence : 1.0;
+    const validFromIso = (params.validFrom ?? new Date()).toISOString();
+    const validToIso = params.validTo ? params.validTo.toISOString() : null;
+    const propsJson = CypherBuilder.escapeString(JSON.stringify(params.properties ?? {}));
+    const setProps =
+      ` SET r.confidence = ${conf.toFixed(3)},` +
+      ` r.valid_from = '${validFromIso}',` +
+      ` r.valid_to = ${validToIso ? `'${validToIso}'` : 'NULL'},` +
+      ` r.properties = '${propsJson}'`;
+    await this.runRawCypher(this.prisma, baseMerge + setProps);
+  }
+
+  async deleteEdgeGraphOnly(params: {
+    tenantId: string;
+    from: NodeRef;
+    to: NodeRef;
+    linkType: EntityLinkType;
+  }): Promise<void> {
+    const { tenantId, from, to, linkType } = params;
+    if (!tenantId || !from?.id || !to?.id) {
+      throw new BadRequestException('tenantId, from.id and to.id required');
+    }
+    const cypher = CypherBuilder.buildDeleteEdge({
+      fromType: from.type,
+      fromId: from.id,
+      toType: to.type,
+      toId: to.id,
+      linkType,
+      tenantId,
+    });
+    await this.runRawCypher(this.prisma, cypher);
+  }
+
+  async deleteNodeGraphOnly(params: {
+    tenantId: string;
+    type: NodeType;
+    id: string;
+  }): Promise<void> {
+    const { tenantId, type, id } = params;
+    if (!tenantId || !id) {
+      throw new BadRequestException('tenantId and id required');
+    }
+    const label = CypherBuilder.toAgeLabel(type);
+    const cypher =
+      `MATCH (n:${label} {id: '${CypherBuilder.escapeString(id)}', ` +
+      `tenant_id: '${CypherBuilder.escapeString(tenantId)}'}) DETACH DELETE n`;
+    await this.runRawCypher(this.prisma, cypher);
+  }
+
   private async runCypherMergeNode(
     client: PrismaService | Tx,
     tenantId: string,
@@ -417,7 +493,8 @@ export class GraphService {
 
   private async runRawCypher(client: PrismaService | Tx, cypher: string): Promise<void> {
     if (!this.cfg.graph.ageEnabled) return;
-    const sql = `SELECT * FROM cypher('${Z_GRAPH}', $cypher$ ${cypher} $cypher$) AS (v agtype)`;
+    const quoted = CypherBuilder.dollarQuote(cypher);
+    const sql = `SELECT * FROM cypher('${Z_GRAPH}', ${quoted}) AS (v agtype)`;
     await client.$queryRawUnsafe(sql);
   }
 
@@ -425,14 +502,14 @@ export class GraphService {
     client: PrismaService | Tx,
     cypher: string,
   ): Promise<Array<Record<string, unknown>>> {
-    const sql = `SELECT * FROM cypher('${Z_GRAPH}', $cypher$ ${cypher} $cypher$) AS (v agtype)`;
+    const quoted = CypherBuilder.dollarQuote(cypher);
+    const sql = `SELECT * FROM cypher('${Z_GRAPH}', ${quoted}) AS (v agtype)`;
     try {
       const result = await client.$queryRawUnsafe<Array<Record<string, unknown>>>(sql);
       return result ?? [];
     } catch (err) {
       const sqlMulti =
-        `SELECT * FROM cypher('${Z_GRAPH}', $cypher$ ${cypher} $cypher$) ` +
-        `AS (a agtype, r agtype, b agtype)`;
+        `SELECT * FROM cypher('${Z_GRAPH}', ${quoted}) ` + `AS (a agtype, r agtype, b agtype)`;
       try {
         const result = await client.$queryRawUnsafe<Array<Record<string, unknown>>>(sqlMulti);
         return result ?? [];

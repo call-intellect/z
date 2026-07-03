@@ -495,6 +495,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private riskEdgeTotal!: Counter<'relation' | 'outcome'>;
   private ragAbstainTotal!: Counter<'mode'>;
   private chatV2GroundingEmbeddingHitsTotal!: Counter<string>;
+  private chatV2GraphCypherRecallTotal!: Counter<string>;
   private graphReconcileMergedTotal!: Counter<'type'>;
   private graphReconcileDeletedTotal!: Counter<'type'>;
   // Ф3 МТЗ «разблокировка конвейера» (баг #18) — счётчик ранних skip-return'ов
@@ -2534,6 +2535,10 @@ export class BusinessMetricsService implements OnModuleInit {
     this.chatV2GroundingEmbeddingHitsTotal = this.getOrCreateCounter({
       name: 'chat_v2_grounding_embedding_hits_total',
       help: 'Понималщик chat-v2: семантические (эмбеддинг-KNN) подсказки-сущности, добавленные к лексическому справочнику',
+    });
+    this.chatV2GraphCypherRecallTotal = this.getOrCreateCounter({
+      name: 'chat_v2_graph_cypher_recall_total',
+      help: 'recall «Мастера»: deep-hop обход графа AGE (Cypher) добавил блоки в пул на многошаговом вопросе',
     });
     this.graphReconcileMergedTotal = this.getOrCreateCounter({
       name: 'graph_reconcile_merged_total',
@@ -6246,6 +6251,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incChatV2GroundingEmbeddingHits(n = 1): void {
     this.chatV2GroundingEmbeddingHitsTotal.inc(n);
+  }
+
+  incChatV2GraphCypherRecall(n = 1): void {
+    this.chatV2GraphCypherRecallTotal.inc(n);
   }
 
   incGraphReconcileMerged(args: { type: string }): void {

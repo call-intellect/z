@@ -16,7 +16,7 @@ export interface RetrievalTraceNeighbor {
   viaRelation: string;
   fromBlockId: string;
   confidence: number;
-  viaSource?: 'block-link' | 'entity-link';
+  viaSource?: 'block-link' | 'entity-link' | 'age-cypher';
 }
 
 export interface RetrievalTraceGraphExpansion {
@@ -60,7 +60,7 @@ interface RawNeighbor {
   viaRelation: string;
   fromBlockId: string;
   confidence: number;
-  viaSource?: 'block-link' | 'entity-link';
+  viaSource?: 'block-link' | 'entity-link' | 'age-cypher';
 }
 
 export class RetrievalTraceSink {

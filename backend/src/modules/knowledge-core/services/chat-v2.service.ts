@@ -778,6 +778,8 @@ interface RetrievalCtx {
   filterMode: 'boost' | 'hard';
   filterBoostWeight: number;
   entityLinkHops: number;
+  graphCypherRecall: boolean;
+  graphCypherMaxDepth: number;
   aggregationMode: boolean;
   accessWhere: Record<string, unknown> | undefined;
 }
@@ -876,6 +878,16 @@ export class ChatV2Service {
       undefined,
       1,
     );
+    const graphCypherRecall = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2GraphCypherRecall',
+      undefined,
+      true,
+    );
+    const graphCypherMaxDepth = await this.cfg.getDynamic<number>(
+      'knowledge.chatV2GraphCypherMaxDepth',
+      undefined,
+      3,
+    );
     const aggregationMode = await this.cfg.getDynamic<boolean>(
       'knowledge.chatV2AggregationMode',
       undefined,
@@ -941,6 +953,8 @@ export class ChatV2Service {
           filterMode,
           filterBoostWeight,
           entityLinkHops,
+          graphCypherRecall,
+          graphCypherMaxDepth,
           aggregationMode,
           accessWhere,
         },
@@ -1481,7 +1495,7 @@ export class ChatV2Service {
     rrfK: number,
     trace?: RetrievalTraceSink,
   ): Promise<string[]> {
-    const { tenantId, scope, scopeId, kRetrieve, graphHops, graphAlwaysExpand, filterMode, filterBoostWeight, entityLinkHops, accessWhere } = ctx;
+    const { tenantId, scope, scopeId, kRetrieve, graphHops, graphAlwaysExpand, filterMode, filterBoostWeight, entityLinkHops, graphCypherRecall, graphCypherMaxDepth, accessWhere } = ctx;
 
     const perQueryLimit =
       queries.length > 1
@@ -1504,6 +1518,8 @@ export class ChatV2Service {
             filterMode,
             filterBoostWeight,
             entityLinkHops,
+            graphCypherRecall,
+            graphCypherMaxDepth,
             validAt: input.validAt ?? null,
             accessWhere,
             dateFrom: input.structuralFilters?.dateFrom ?? null,

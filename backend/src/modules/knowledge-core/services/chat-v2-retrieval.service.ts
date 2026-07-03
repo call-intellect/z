@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { GraphService } from '../../../common/graph/graph.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
@@ -24,6 +25,8 @@ import { ACTIVE_LINK_FILTER } from './link-read-filter';
  * search.service.ts.
  */
 export type ChatV2Scope = 'org' | 'meeting' | 'card' | 'theme' | 'entity';
+
+const GRAPH_CYPHER_MAX_SEEDS = 10;
 
 export interface RetrievalInput {
   tenantId: string;
@@ -63,6 +66,8 @@ export interface RetrievalInput {
   filterMode?: 'boost' | 'hard';
   filterBoostWeight?: number;
   entityLinkHops?: number;
+  graphCypherRecall?: boolean;
+  graphCypherMaxDepth?: number;
 }
 
 export interface RankedBlockId {
@@ -194,6 +199,9 @@ export class ChatV2RetrievalService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(GraphService)
+    private readonly graph?: GraphService,
   ) {}
 
   /**
@@ -413,7 +421,38 @@ export class ChatV2RetrievalService {
           )
         : [];
 
-    return [...ranked, ...graphAdded, ...graphAdded2, ...entityLinkAdded];
+    const graphCypherAdded =
+      input.graphCypherRecall === true &&
+      input.graphHops >= 2 &&
+      input.entityIds !== undefined &&
+      input.entityIds.length > 0
+        ? await this.expandViaGraphCypher(
+            {
+              tenantId: input.tenantId,
+              entityIds: input.entityIds,
+              knownIds: new Set([
+                ...ranked.map((r) => r.blockId),
+                ...graphAdded.map((r) => r.blockId),
+                ...graphAdded2.map((r) => r.blockId),
+                ...entityLinkAdded.map((r) => r.blockId),
+              ]),
+              extraLimit: input.limit,
+              maxDepth: input.graphCypherMaxDepth ?? 3,
+              validAt: input.validAt ?? null,
+              accessWhere: input.accessWhere,
+              contourGroupId: input.contourGroupId,
+            },
+            trace,
+          )
+        : [];
+
+    return [
+      ...ranked,
+      ...graphAdded,
+      ...graphAdded2,
+      ...entityLinkAdded,
+      ...graphCypherAdded,
+    ];
   }
 
   /**
@@ -1597,6 +1636,92 @@ export class ChatV2RetrievalService {
     if (trace && neighbors.length > 0) {
       trace.addGraphExpansion([], neighbors);
     }
+    return result;
+  }
+
+  private async expandViaGraphCypher(
+    args: {
+      tenantId: string;
+      entityIds: string[];
+      knownIds: Set<string>;
+      extraLimit: number;
+      maxDepth: number;
+      validAt: Date | null;
+      accessWhere?: Record<string, unknown>;
+      contourGroupId?: string;
+    },
+    trace?: RetrievalTraceSink,
+  ): Promise<RankedBlockId[]> {
+    if (!this.graph || args.entityIds.length === 0 || args.extraLimit <= 0) return [];
+    const depth = Math.min(Math.max(1, Math.floor(args.maxDepth)), 5);
+    const seedSet = new Set(args.entityIds);
+    const relatedEntities = new Set<string>();
+    const seeds = args.entityIds.slice(0, GRAPH_CYPHER_MAX_SEEDS);
+    for (const eid of seeds) {
+      let res;
+      try {
+        res = await this.graph.getNeighbors({
+          tenantId: args.tenantId,
+          node: { type: 'entity', id: eid },
+          depth,
+          direction: 'both',
+        });
+      } catch (err) {
+        this.logger.debug(
+          { err: err instanceof Error ? err.message : String(err) },
+          'chat-v2 retrieval: expandViaGraphCypher getNeighbors упал — fail-open (реляционный путь отвечает)',
+        );
+        return [];
+      }
+      for (const node of res.nodes) {
+        if (node.type !== 'entity') continue;
+        if (seedSet.has(node.id)) continue;
+        relatedEntities.add(node.id);
+      }
+    }
+    if (relatedEntities.size === 0) return [];
+    const relatedIds = [...relatedEntities];
+    const blockRows = await this.prisma.ideaBlockEntity.findMany({
+      where: {
+        entityId: { in: relatedIds },
+        block: {
+          status: 'canonical',
+          tenantId: args.tenantId,
+          ...(args.validAt ? { createdAt: { lte: args.validAt } } : {}),
+          ...(args.accessWhere ?? {}),
+          ...(args.contourGroupId
+            ? { blockAccess: { some: { groupId: args.contourGroupId } } }
+            : {}),
+        },
+      },
+      select: { blockId: true, entityId: true },
+      orderBy: { block: { updatedAt: 'desc' } },
+      take: args.extraLimit * 3,
+    });
+    const result: RankedBlockId[] = [];
+    const neighbors: Array<{
+      blockId: string;
+      viaRelation: string;
+      fromBlockId: string;
+      confidence: number;
+      viaSource: 'age-cypher';
+    }> = [];
+    const added = new Set<string>();
+    for (const row of blockRows) {
+      if (args.knownIds.has(row.blockId) || added.has(row.blockId)) continue;
+      added.add(row.blockId);
+      result.push({ blockId: row.blockId, score: -2, fromGraph: true });
+      neighbors.push({
+        blockId: row.blockId,
+        viaRelation: 'age-cypher',
+        fromBlockId: row.blockId,
+        confidence: 0,
+        viaSource: 'age-cypher',
+      });
+      if (result.length >= args.extraLimit) break;
+    }
+    if (trace && neighbors.length > 0) trace.addGraphExpansion([], neighbors);
+    if (result.length > 0) this.metrics?.incChatV2GraphCypherRecall();
     return result;
   }
 }

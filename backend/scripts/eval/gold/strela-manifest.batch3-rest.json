@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "tenant": "Стрела (синтетика)",
+    "batch": "3-rest",
+    "sources": "T3 чат-день (C) + стендап/bitrix/chatbox (D) + ревью/чек-ины/ретро/регламент (E)",
+    "anchors": 24,
+    "method": "3 куска × 2 слепых разметчика → сверка → сверялка read-only + дедуп-тесты",
+    "compareResult": "found=22 · partial=1 (C10) · wrong_type=1 (D3 pain→blocker) · missing=0",
+    "dedupChecks": "ВСЕ ТРИ duplicated: «Моя история» idea×2, webhook-риск ×3, Битрикс-429 blocker ×4 — база НЕ схлопывает кросс-канальные повторы",
+    "fullResult": "tasks/w3pa66ayz.output"
+  },
+  "blocks": [
+    { "anchorId": "C1", "signalType": "task_completed", "gist": "Михаил отправил официальный запрос в техподдержку Битрикс на увеличение rate limit; ждёт ответа в течение суток", "verdict": "found" },
+    { "anchorId": "C2", "signalType": "idea", "gist": "Анна: реализовать exponential backoff с джиттером на запросах к Битрикс (временно, пока ждём лимита)", "verdict": "found" },
+    { "anchorId": "C3", "signalType": "commitment", "gist": "Михаил берёт реализацию exponential backoff, сделает сегодня к вечеру", "verdict": "found" },
+    { "anchorId": "C4", "signalType": "update", "gist": "Игорь: Логистик Плюс берут пилот при условии Zoom, дальше годовой контракт; Telegram обязателен", "verdict": "found" },
+    { "anchorId": "C5", "signalType": "task_completed", "gist": "Михаил реализовал backoff, прогнал на стейдже (429 не валит), выкатывает вечером; задача закрыта", "verdict": "found" },
+    { "anchorId": "C6", "signalType": "risk", "gist": "Если Битрикс не поднимет лимиты, backoff не спасёт на объёмах → webhook-модель (мин 2 недели)", "verdict": "found" },
+    { "anchorId": "C7", "signalType": "task", "gist": "Сергей→Михаил: настроить мониторинг ошибок Битрикс API (частота 429 на дашборде)", "verdict": "found" },
+    { "anchorId": "C8", "signalType": "commitment", "gist": "Михаил берёт мониторинг ошибок Битрикс, настроит до завтра, повесит алерт", "verdict": "found" },
+    { "anchorId": "C9", "signalType": "task_completed", "gist": "Дарья почистила мёртвые адреса (~8%), обновила сегменты, база готова", "verdict": "found" },
+    { "anchorId": "C10", "signalType": "update", "gist": "Михаил: backoff на проде, всё зелёное; мониторинг доделает с утра", "verdict": "partial", "note": "нет единого update-блока — статус размазан на fact+commitment_status" },
+    { "anchorId": "D1", "signalType": "update", "gist": "Михаил (стендап): пишу backoff; блокер прежний — Битрикс 429, ждём лимита", "verdict": "found" },
+    { "anchorId": "D2", "signalType": "commitment", "gist": "Дарья→Пётр: подготовлю и пришлю КП в среду", "verdict": "found" },
+    { "anchorId": "D3", "signalType": "blocker", "gist": "Ромашка: отчёт по встрече не формируется 2-й день, критично — завтра совет директоров", "verdict": "wrong_type", "baseType": "pain", "note": "критичный клиент-стоп записан как pain, а не blocker" },
+    { "anchorId": "D4", "signalType": "commitment", "gist": "Дарья: заведёт задачу на поддержку, проверит отчёт сегодня, вернётся до конца дня", "verdict": "found" },
+    { "anchorId": "D5", "signalType": "idea", "gist": "Ольга: пожелание уведомления, когда отчёт готов", "verdict": "found", "baseType": "feature_request" },
+    { "anchorId": "E1", "signalType": "task_completed", "gist": "Михаил: мониторинг ошибок Битрикс настроил и выкатил, задача выполнена; backoff на проде", "verdict": "found" },
+    { "anchorId": "E2", "signalType": "idea", "gist": "Анна (чек-ин): добавить раздел «Моя история» в кабинет", "verdict": "found", "note": "ДУБЛЬ идеи из планёрки — база НЕ схлопнула" },
+    { "anchorId": "E3", "signalType": "not_done", "gist": "Дарья: не успела согласовать сегменты с Игорем", "verdict": "found", "baseType": "commitment_status" },
+    { "anchorId": "E4", "signalType": "idea", "gist": "Михаил: вынести таймауты Битрикс в конфиг", "verdict": "found" },
+    { "anchorId": "E5", "signalType": "decision", "gist": "Сергей (ретро): перед массовым синком внешнего API сначала backoff+мониторинг, потом объём (правило)", "verdict": "found" },
+    { "anchorId": "E6", "signalType": "insight", "gist": "Анна (ретро): поздно узнали про 429 (постфактум) — про наблюдаемость, надо усилить", "verdict": "found", "baseType": "pain" },
+    { "anchorId": "E7", "signalType": "risk", "gist": "Михаил (ретро): при росте клиентов поллинг Битрикса не потянет, нужна webhook-модель заранее", "verdict": "found", "note": "ДУБЛЬ риска из T3 (C6) — база НЕ схлопнула" },
+    { "anchorId": "E8", "signalType": "fact", "gist": "Владелец регламента обработки обращений — Елена (руководитель поддержки)", "verdict": "found" },
+    { "anchorId": "E9", "signalType": "process", "gist": "Процесс поддержки: шаг1 регистрация задачи 15 мин, шаг2 эскалация критичных владельцу в тот же день, шаг3 уведомление клиенту", "verdict": "found", "baseType": "process_step×3" }
+  ]
+}

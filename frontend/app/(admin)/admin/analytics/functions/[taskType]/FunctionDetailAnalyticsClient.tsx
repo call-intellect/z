@@ -1,25 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  FlaskConical,
-  Loader2,
-  Plus,
-  Save,
-  Trash2,
-} from "lucide-react";
+import { ArrowLeft, ExternalLink, FlaskConical, Settings } from "lucide-react";
 
-import { ApiError } from "@/api/api-error";
-import {
-  adminAiModelsApi,
-  AI_MODELS_PROVIDERS,
-  type AiModelTier,
-} from "@/api/admin-ai-models.api";
 import { adminFunctionsApi } from "@/api/admin-experiments.api";
+import { adminLlmCostApi } from "@/api/admin-llm-cost.api";
 import { adminUsageApi } from "@/api/admin-usage.api";
 import {
   adminCallsLogFromApi,
@@ -30,21 +15,12 @@ import {
   adminFunctionDetailFromApi,
   taskTypeLabel,
 } from "@/domain/admin-experiment";
-import { toast } from "sonner";
+import { formatRub, llmCostTaskTypeDetailFromApi } from "@/domain/admin-llm-cost";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
 import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
-import { Input } from "@/ui/shadcn/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/shadcn/select";
-import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminError,
@@ -54,20 +30,11 @@ import {
 } from "../../../AdminStateViews";
 import { useAdminQuery } from "../../../useAdminQuery";
 
-type LlmRouteProvider = { provider: string; model?: string };
-
-const TIER_BY_POSITION: AiModelTier[] = ["primary", "secondary", "tertiary"];
-
 export function FunctionDetailAnalyticsClient({
   taskType,
 }: {
   taskType: string;
 }) {
-  const [providers, setProviders] = useState<LlmRouteProvider[] | null>(null);
-  const [isActive, setIsActive] = useState(true);
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-
   const detailQ = useAdminQuery(
     `admin-analytics-fn:${taskType}`,
     async () => {
@@ -86,44 +53,21 @@ export function FunctionDetailAnalyticsClient({
     [taskType],
   );
 
-  if (detailQ.data && providers === null) {
-    setProviders(detailQ.data.providers as LlmRouteProvider[]);
-    setIsActive(detailQ.data.isActive);
-  }
+  const costQ = useAdminQuery(
+    `admin-analytics-fn-cost:${taskType}`,
+    async () =>
+      llmCostTaskTypeDetailFromApi(
+        await adminLlmCostApi.taskTypeDetail(taskType, {
+          period: "30d",
+          trend: "day",
+        }),
+      ),
+    [taskType],
+  );
 
-  const handleSave = useCallback(async () => {
-    if (!providers || providers.length === 0) {
-      toast.error("Нужен хотя бы один provider");
-      return;
-    }
-    const reason = window.prompt(
-      "Причина изменения (мин. 3 символа) — попадёт в аудит-лог:",
-    );
-    if (!reason || reason.trim().length < 3) {
-      if (reason !== null) toast.error("Причина должна быть не короче 3 символов");
-      return;
-    }
-    setSaving(true);
-    try {
-      await adminAiModelsApi.putChain(taskType, {
-        entries: providers.map((p, idx) => ({
-          tier: TIER_BY_POSITION[idx] ?? "tertiary",
-          providerName: p.provider,
-          model: p.model ?? null,
-          priority: idx,
-        })),
-        isActive,
-        reason: reason.trim(),
-      });
-      toast.success("Сохранено. Применится через ~60 секунд.");
-      setDirty(false);
-      detailQ.refetch();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Не удалось сохранить");
-    } finally {
-      setSaving(false);
-    }
-  }, [detailQ, isActive, providers, taskType]);
+  const costHref = costQ.data
+    ? `/admin/analytics/llm-cost?view=module&id=${encodeURIComponent(costQ.data.module)}&period=30d`
+    : "/admin/analytics/llm-cost?view=module";
 
   const callsRows: Array<Record<string, unknown>> = (
     callsQ.data?.items ?? []
@@ -161,9 +105,8 @@ export function FunctionDetailAnalyticsClient({
           <AdminError message={detailQ.error} onRetry={detailQ.refetch} />
         )}
 
-        {!detailQ.isLoading && detailQ.data && providers && (
+        {!detailQ.isLoading && detailQ.data && (
           <>
-            {}
             {detailQ.data.experiment && (
               <Card className="border-accent/40 bg-accent-muted/20">
                 <CardHeader>
@@ -200,54 +143,73 @@ export function FunctionDetailAnalyticsClient({
               </Card>
             )}
 
-            {}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base">Цепочка провайдеров</CardTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-fg-tertiary">Активна</span>
-                  <Switch
-                    checked={isActive}
-                    onCheckedChange={(v) => {
-                      setIsActive(v);
-                      setDirty(true);
-                    }}
-                  />
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <ProviderEditor
-                  providers={providers}
-                  onChange={(next) => {
-                    setProviders(next);
-                    setDirty(true);
-                  }}
-                />
-                <div className="flex items-center justify-between">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">
+                    Текущая цепочка моделей
+                  </CardTitle>
+                  <Badge variant={detailQ.data.isActive ? "secondary" : "danger"}>
+                    {detailQ.data.isActive ? "активна" : "выключена"}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <ul className="space-y-1">
+                    {detailQ.data.providers.length === 0 && (
+                      <li className="rounded-md border border-dashed border-border-subtle p-3 text-center text-xs text-fg-tertiary">
+                        Цепочка не настроена.
+                      </li>
+                    )}
+                    {detailQ.data.providers.map((p, idx) => (
+                      <li
+                        key={`${p.provider}-${idx}`}
+                        className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-card p-2 text-sm"
+                      >
+                        <Badge variant="secondary" className="text-[10px]">
+                          #{idx + 1}
+                        </Badge>
+                        <span className="font-mono text-xs">{p.provider}</span>
+                        {p.model && (
+                          <span className="text-[11px] text-fg-tertiary">
+                            model: {p.model}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                   <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={`/admin/ai/routing/${encodeURIComponent(taskType)}?tab=experiment`}
-                    >
-                      <FlaskConical size={14} /> A/B-тест
+                    <Link href={`/admin/ai/routing/${encodeURIComponent(taskType)}`}>
+                      <Settings size={14} /> Настроить модель для этой операции
                     </Link>
                   </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => void handleSave()}
-                    disabled={!dirty || saving}
-                  >
-                    {saving ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <Save size={12} />
-                    )}
-                    Сохранить
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            {}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Расход за 30 дней</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {costQ.isLoading && <AdminLoadingInline />}
+                  {!costQ.isLoading && costQ.error && (
+                    <p className="text-xs text-fg-tertiary">
+                      Не удалось загрузить расход.
+                    </p>
+                  )}
+                  {!costQ.isLoading && costQ.data && (
+                    <div className="text-2xl font-semibold leading-none tracking-tight">
+                      {formatRub(costQ.data.totals.costRub)}
+                    </div>
+                  )}
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={costHref}>
+                      <ExternalLink size={14} /> Смотреть расход этой операции
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-base">
@@ -336,117 +298,5 @@ export function FunctionDetailAnalyticsClient({
         )}
       </div>
     </AdminSection>
-  );
-}
-
-function ProviderEditor({
-  providers,
-  onChange,
-}: {
-  providers: LlmRouteProvider[];
-  onChange: (next: LlmRouteProvider[]) => void;
-}) {
-  const [newProvider, setNewProvider] = useState<string>("anthropic");
-  const [newModel, setNewModel] = useState("");
-
-  const move = (idx: number, dir: -1 | 1) => {
-    const next = [...providers];
-    const target = idx + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[idx], next[target]] = [next[target]!, next[idx]!];
-    onChange(next);
-  };
-
-  const remove = (idx: number) => {
-    onChange(providers.filter((_, i) => i !== idx));
-  };
-
-  const add = () => {
-    onChange([
-      ...providers,
-      newModel
-        ? { provider: newProvider, model: newModel }
-        : { provider: newProvider },
-    ]);
-    setNewModel("");
-  };
-
-  return (
-    <div>
-      <ul className="space-y-1">
-        {providers.length === 0 && (
-          <li className="rounded-md border border-dashed border-border-subtle p-3 text-center text-xs text-fg-tertiary">
-            Нет провайдеров. Добавьте хотя бы один.
-          </li>
-        )}
-        {providers.map((p, idx) => (
-          <li
-            key={`${p.provider}-${idx}`}
-            className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-card p-2 text-sm"
-          >
-            <Badge variant="secondary" className="text-[10px]">
-              #{idx + 1}
-            </Badge>
-            <span className="font-mono text-xs">{p.provider}</span>
-            {p.model && (
-              <span className="text-[11px] text-fg-tertiary">
-                model: {p.model}
-              </span>
-            )}
-            <div className="ml-auto flex items-center gap-1">
-              <button
-                type="button"
-                className="rounded p-1 text-fg-tertiary hover:bg-bg-overlay disabled:opacity-30"
-                disabled={idx === 0}
-                onClick={() => move(idx, -1)}
-                aria-label="Выше"
-              >
-                <ArrowUp size={12} />
-              </button>
-              <button
-                type="button"
-                className="rounded p-1 text-fg-tertiary hover:bg-bg-overlay disabled:opacity-30"
-                disabled={idx === providers.length - 1}
-                onClick={() => move(idx, 1)}
-                aria-label="Ниже"
-              >
-                <ArrowDown size={12} />
-              </button>
-              <button
-                type="button"
-                className="rounded p-1 text-fg-tertiary hover:bg-danger/15 hover:text-danger"
-                onClick={() => remove(idx)}
-                aria-label="Удалить"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Select value={newProvider} onValueChange={(v) => setNewProvider(v)}>
-          <SelectTrigger className="h-8 w-44 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {AI_MODELS_PROVIDERS.map((p) => (
-              <SelectItem key={p} value={p}>
-                {p}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
-          placeholder="model (опционально)"
-          value={newModel}
-          onChange={(e) => setNewModel(e.target.value)}
-          className="h-8 max-w-[260px] text-xs"
-        />
-        <Button size="sm" variant="secondary" onClick={add}>
-          <Plus size={12} /> Добавить
-        </Button>
-      </div>
-    </div>
   );
 }

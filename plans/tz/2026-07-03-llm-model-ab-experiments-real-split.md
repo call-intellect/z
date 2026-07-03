@@ -296,4 +296,17 @@ this.activeModelExperiments = expMap;
 
 ## Итог
 
-_Заполняет `tz-orchestrator` по завершении реализации: реализовано ли целиком, какие фазы, что осталось._
+**Реализовано целиком, все 4 фазы.**
+
+- Фаза 1 (`019464f6`) — `chooseProviders()` читает `LlmModelExperiment` вместо `route.experiment`, sticky-split по `meetingId` через переиспользованный `simpleHash`, кэш активных экспериментов в `refreshCache()`, явная инвалидация из `startExperiment`/`stopExperiment`/`switchPrimary`. GEPA-приоритет над базовым A/B сохранён (regression-тест). Мёртвые `ExperimentConfig`/`parseProviderModelString` удалены. 21+15 новых/адаптированных тестов зелёных, весь `ai`+`admin` модуль (106 файлов/864 теста) без регрессий.
+- Фаза 2 (`3f238b38`) — легаси `AdminExperimentsService`/`AdminExperimentsController`/DTO удалены; `admin.module.ts` перепроводен; Prisma-комментарии на `LlmTaskRoute.experiment`/`AiUsageLog.experimentGroup` актуализированы (без миграции схемы — только `///`-документация); read-only скрипт-предупреждение `patch-check-legacy-ab-experiments.ts` зарегистрирован в `apply-prod-deploy.ts`. **Найдено и исправлено по ходу приёмки (вне исходного REALITY-CHECK):** два отдельных, не-A/B-специфичных дэшборда (`/admin/functions`, `/admin/usage`) читали то же мёртвое `route.experiment` для поля `experimentEnabled` — переведены на `LlmModelExperiment(status='running')`, батч-запросом (не N+1).
+- Фаза 3 (`b54c30ce`) — новая вкладка «A/B-тест» на `/admin/ai/routing/[taskType]` (`ExperimentTabSection.tsx`, 511 строк) — первый реальный UI-потребитель `adminAiModelsApi.experimentsList/experimentCreate/experimentStart/experimentStop/experimentAnalytics`, которым раньше не пользовалась ни одна страница. UI-паттерн (карточки/метрики/диалог) портирован из легаси `ExperimentClient.tsx`/`ExperimentStartDialog.tsx` — тексты переведены на 100% русский (легаси-оригинал содержал английские подписи `Fail rate`/`Avg cost` и т.п., это исправлено). Contract create()+start() (два вызова вместо одного legacy) реализован как единый UX. Попутно почищены 2 «висячие» ссылки на снесённую в Фазе 2 страницу.
+- Фаза 4 (`63ed4136`) — легаси-страницы `/admin/experiments*` удалены целиком; мёртвая часть API-клиента/domain-типов вычищена (живая часть `adminFunctionsApi`, используемая другими дэшбордами, сохранена); nav-пункт убран. **Найдено и исправлено по ходу приёмки:** 2 компонента (`FunctionDetailClient.tsx`/`FunctionDetailAnalyticsClient.tsx`) импортировали уже несуществующий `ExperimentStartDialog` — заменены на ссылку на новую вкладку.
+
+**Верификация:** `bun run typecheck`/`build` (backend+frontend) зелёные на каждой фазе; `bunx vitest run` по затронутым модулям без регрессий на всех 4 фазах.
+
+**Осталось (осознанно, не хвост):**
+- Удаление Prisma-колонки `LlmTaskRoute.experiment` — не делалось (В5, отдельная возможная будущая уборка схемы, без функциональной ценности сейчас).
+- Автоматический перенос данных активных легаси-экспериментов — не делался (Scope «Не входит»); скрипт-предупреждение (Фаза 2) прогнан дважды на dev-БД — активных легаси-экспериментов не найдено, миграционных данных для переноса не оказалось.
+
+**Prod-деплой:** новый шаг `patch-check-legacy-ab-experiments.ts` в `apply-prod-deploy.ts` (read-only, `skipBootstrap: true`) — прогонится автоматически при следующем `apply-prod-deploy.ts --mode update`. Миграций схемы нет (только `///`-комментарии).

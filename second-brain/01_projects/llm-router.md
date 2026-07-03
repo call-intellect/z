@@ -70,16 +70,9 @@ LlmTaskRoute {
 - `NULL` — глобальный дефолт от super_admin (видят все Org).
 - не-NULL — override на конкретную Org (Z-Admin Фаза 7).
 
-**`experiment` Json (Фаза 7):**
-```
-{
-  enabled: bool,
-  modelA: string, modelB: string,
-  splitPercent: number,
-  startedAt: ISO, endsAt: ISO
-}
-```
-Когда `enabled=true` — LlmRouter рандомно выбирает A/B и пишет `experimentGroup` в `AiUsageLog`. На Фазе 0 поле есть, логика A/B — Фаза 7.
+**`experiment` Json — DEPRECATED (2026-07-03).** Легаси-механизм A/B (рандомный выбор A/B на каждый вызов, `/admin/experiments`) выведен из эксплуатации целиком (ТЗ [`2026-07-03-llm-model-ab-experiments-real-split.md`](../../plans/tz/2026-07-03-llm-model-ab-experiments-real-split.md)). Поле больше не читается/не пишется новым кодом — оставлено в схеме без функции.
+
+**Канонический A/B-механизм сегодня — `LlmModelExperiment`** (отдельная таблица: `controlModel/controlProvider/variantModel/variantProvider/splitPercent/status('draft'|'running'|'stopped'|'completed')/startedAt/endsAt/createdById/notes`). `LlmRouterService.chooseProviders()` читает активные (`status='running'`, в окне `[startedAt,endsAt)`) записи из in-memory кэша (`activeModelExperiments`, обновляется в `refreshCache()`), деление трафика — **sticky по `meetingId`** (`simpleHash(experimentId::meetingId) % 100 < splitPercent`), а не рандом на каждый вызов — один и тот же `meetingId` всегда попадает в одну группу. Управление — REST `/admin/llm-model-experiments*` (`AdminAiModelsService`), UI — вкладка «A/B-тест» на `/admin/ai/routing/[taskType]` (`ExperimentTabSection.tsx`).
 
 ## LlmModelPrice (версионируемая прайс-карта)
 
@@ -110,7 +103,7 @@ AiUsageLog {
   reasoningTokens?, costUsd Decimal(10,6),
   durationMs, success, errorText?,
   sourceRef Json? (NEW: { type, id }),
-  experimentGroup? (NEW: 'A'|'B'),
+  experimentGroup? ('A' control | 'B' variant, из LlmModelExperiment; | 'gepa_candidate'),
   createdAt
 }
 ```

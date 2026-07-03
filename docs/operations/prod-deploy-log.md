@@ -71,6 +71,31 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-03 — Расход на LLM: консолидированный дашборд (ТЗ llm-cost-dashboard, 9 фаз, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ [`2026-07-03-llm-cost-dashboard.md`](../../plans/tz/2026-07-03-llm-cost-dashboard.md) + архитектура [`2026-07-03-llm-cost-dashboard.md`](../../plans/architecture/2026-07-03-llm-cost-dashboard.md). Новый экран `/admin/analytics/llm-cost` (5 уровней: общий → модель → раздел → компания → компания×модель, график по дням/неделям) поверх существующей `AiCostDaily` (копится с 24 мая 2026, до этого ТЗ ни один экран её не читал). Консолидирует 8 разрозненных путей расхода: 2 полный редирект (`/admin/analytics/economics`, `/admin/analytics/functions`), 3 хирургия — денежная часть вырезана, остальное осталось (`/admin/analytics/orgs`, `/admin/economics/orgs/[id]`, `/admin/analytics/functions/[taskType]` + попутный дедуп дублирующего редактора цепочки моделей), 3 мёртвых удалены насовсем (`/admin/economics`, `/admin/usage/functions(+[taskType])`, `/admin/usage/users` + `getUsersUsage`/`getFunctionsUsage`/`UnitEconomicsService.getGlobal()`).
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (только чтение существующей `AiCostDaily`). **🟢 НОВЫХ ENV/ФЛАГОВ НЕТ** (Ship-On, чистая read-only витрина). **🟡 1 НОВЫЙ BACKFILL-СКРИПТ (в STEPS).** Docker rebuild backend+frontend обязателен (новый контроллер + новый фронт-экран).
+
+- **Шаг 1/4/5 — ENV/Prisma/postgres-init: не затронуты.** Новых полей/таблиц/индексов нет — только чтение существующей `AiCostDaily`.
+- **Шаг 6 — патчей нет.**
+- **Шаг 7 — сидов нет** (таксономия `taskType → module` — код-константа, не `AdminSetting`).
+- **Шаг 8 — Backfill (уже в STEPS `phase:'backfill'`, `skipBootstrap:true`, идемпотентен):**
+  - `docker compose exec backend bun run scripts/backfill-ai-cost-daily-gap.ts` — досчитывает `AiCostDaily` за 2026-05-09..2026-05-23 (период до появления ночного `DailyCostAggregatorCron`, раньше 9 мая исходных данных `AiUsageLog` физически нет). Идемпотентен: pre-check по `count` в диапазоне дат + `@@unique` на `AiCostDaily` защищают от дублей при повторном прогоне.
+- **Шаг 9/10 — миграции/боты: не затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - Swagger-раздел скрыт (`@ApiExcludeController`, как и все соседи-admin) — **проверить руками**: `GET /api/v1/admin/llm-cost/overview?period=30d` под суперадмин-сессией → 200 с `totals`/`trend`/`byModel`/`byModule`/`topCompanies`.
+  - Заход в браузере на `/admin/analytics/llm-cost` под суперадмином → рендерится уровень 1 (график + 3 плитки «по модели/разделу/компании»); клик по любой ведёт на `?view=...`, `←` возвращает назад.
+  - Старые URL `/admin/analytics/economics` и `/admin/analytics/functions` → редирект на `/admin/analytics/llm-cost` (второй — с `?view=module`); `/admin/economics`, `/admin/usage/functions`, `/admin/usage/users` → 404 (удалены физически, не редирект).
+  - `/admin/analytics/orgs` — колонка расхода заменена ссылкой «Смотреть расход →»; `/admin/economics/orgs/[id]` — форма бюджет-лимита (`PATCH .../budget`) по-прежнему работает; `/admin/org/economics` (self-service, вне scope) — без изменений в поведении.
+  - `/admin/ai/routing/[taskType]` вкладка «Метрики» — рядом с tier/success-разбивкой появилась врезка «Расход по общему дашборду».
+- **Откат:** чисто read-only консолидация — при инциденте достаточно оставить старые редиректы/файлы недокоммиченными (нет kill-switch, не требуется по CLAUDE.md принципу 8 — не деньги/доступ).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-03 — Три vNext-фичи LLM-роутинга: A/B реально сплитует, costRub/hard-cap бюджета, analyze.worker → LlmRouterService (ветка fix/invite-password-existing-user-multi-org)
 
 > Три независимых ТЗ, выделенных из реестра не-сделанного при закрытии `llm-providers-models-routing-admin`:

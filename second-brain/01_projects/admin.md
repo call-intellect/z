@@ -159,6 +159,19 @@ admin-поверхности с разбором конкретной карто
 - **Навигация:** пункт «Управление роутами LLM» убран из меню (страница удалена).
 - **ТЗ:** [plans/tz/2026-07-02-llm-providers-models-routing-admin.md](../../plans/tz/2026-07-02-llm-providers-models-routing-admin.md).
 
+### `/admin/analytics/llm-cost` — Расход на LLM, консолидированный дашборд (2026-07-03)
+
+Единый экран super_admin с лестницей из 5 уровней: **общий итог → по модели → по смысловому разделу → по компании → по компании×модели**, график по дням/неделям на каждом уровне (переключатель `7д/30д/90д`, дефолт 30 дней). Источник данных — **`AiCostDaily`** (посуточная агрегация `tenantId×date×taskType×provider×model`, наполняется `DailyCostAggregatorCron` с 24 мая 2026), **не** `AiUsageLog` — впервые подключён читатель к таблице, которая копилась месяц без единого потребителя. Все суммы только в рублях.
+
+Заменяет 8 разрозненных путей расхода на LLM:
+- **Полный редирект (2):** `/admin/analytics/economics` (общая юнит-экономика) и `/admin/analytics/functions` (список функций LLM) — теперь 307 на новый дашборд.
+- **Хирургия — денежная часть вырезана, остальное осталось (3):** `/admin/analytics/orgs` (список организаций — колонка расхода в USD заменена ссылкой на уровень 5), `/admin/economics/orgs/[id]` (юнит-экономика компании — расчёт расхода и топ-задачи убраны в пользу ссылки, форма редактирования бюджет-лимита осталась без изменений), `/admin/analytics/functions/[taskType]` (деталь функции — собственный дублирующий редактор цепочки моделей, вызывавший тот же `putChain`, что и «Роутинг моделей», — убран в пользу ссылки туда; блок «Последние вызовы» остался).
+- **Мёртвые пути удалены насовсем, не редирект (3):** `/admin/economics`, `/admin/usage/functions(+[taskType])`, `/admin/usage/users` — redirect-заглушки в никуда + обслуживающий их код (`getUsersUsage`, `getFunctionsUsage`, `UnitEconomicsService.getGlobal()`).
+
+Вкладка «Метрики» `/admin/ai/routing/[taskType]` получила встроенную вырезку из нового источника (не просто ссылку) — рядом с существующей tier/success-разбивкой, которую не тронули.
+
+**API:** `LlmCostDashboardController` (см. [api-layer.md](api-layer.md) §«Расход на LLM»). **ТЗ + архитектура:** [`plans/tz/2026-07-03-llm-cost-dashboard.md`](../../plans/tz/2026-07-03-llm-cost-dashboard.md) / [`plans/architecture/2026-07-03-llm-cost-dashboard.md`](../../plans/architecture/2026-07-03-llm-cost-dashboard.md).
+
 ### `/admin/clones` — Доступы к клонам (2026-05-26)
 
 Страница для `owner` / `admin` Org: управление гранатами `CloneAccessGrant` (выдача, soft-revoke, продление срока действия). Создана 2026-05-26 в рамках Фазы 7 §9 clone-respond v2.

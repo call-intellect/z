@@ -137,6 +137,7 @@ function buildRouter(opts: {
   const prisma = {
     llmTaskRoute: { findMany, findFirst: vi.fn(async () => null), create: vi.fn(), update: vi.fn() },
     llmModelPrice: { findFirst: priceFindFirst },
+    llmModelExperiment: { findMany: vi.fn(async () => []) },
     llmProvider: { findUnique: llmProviderFindUnique },
   } as unknown as PrismaService;
 
@@ -507,6 +508,7 @@ describe('Фаза 5 — dispatch учитывает LlmProvider.defaultModelKey
         update: vi.fn(),
       },
       llmModelPrice: { findFirst: vi.fn(async () => null) },
+      llmModelExperiment: { findMany: vi.fn(async () => []) },
       llmProvider: { findUnique: llmProviderFindUnique },
     } as unknown as PrismaService;
 

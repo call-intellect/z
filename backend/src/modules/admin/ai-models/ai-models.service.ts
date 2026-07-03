@@ -552,6 +552,7 @@ export class AdminAiModelsService {
     });
     this.metrics.incAdminAiModelsExperimentStarted({ taskType: exp.taskType });
     this.logger.log({ id, taskType: exp.taskType, userId }, 'LlmModelExperiment started');
+    await this.router.refreshCache();
     return { ok: true as const };
   }
 
@@ -564,6 +565,7 @@ export class AdminAiModelsService {
     });
     this.metrics.incAdminAiModelsExperimentStopped({ taskType: exp.taskType });
     this.logger.log({ id, taskType: exp.taskType, userId }, 'LlmModelExperiment stopped');
+    await this.router.refreshCache();
     return { ok: true as const };
   }
 
@@ -678,6 +680,7 @@ export class AdminAiModelsService {
     });
     if (status === 'running') {
       this.metrics.incAdminAiModelsExperimentStarted({ taskType: args.taskType });
+      await this.router.refreshCache();
     }
     await this.writeAuditLogSimple({
       taskType: args.taskType,

@@ -6,11 +6,13 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { CurrencyRateService } from '../economics/currency-rate.service';
 
 import { AdminAiModelsService } from './ai-models.service';
+import type { CreateExperimentDto } from './dto/ai-models.dto';
 
 interface BuildOpts {
   llmProviders?: Array<{ id: string; name: string }>;
   llmModels?: Array<{ id: string; providerId: string; modelKey: string }>;
   usdRubRate?: number | null;
+  experiments?: Array<Record<string, unknown>>;
 }
 
 function build(routesInDb: Array<Record<string, unknown>> = [], opts: BuildOpts = {}) {
@@ -109,6 +111,30 @@ function build(routesInDb: Array<Record<string, unknown>> = [], opts: BuildOpts 
   const llmProviderFindMany = vi.fn(async () => llmProviders);
   const llmModelFindMany = vi.fn(async () => llmModels);
 
+  let nextExperimentId = 1;
+  const experimentsInDb: Array<Record<string, unknown>> = opts.experiments
+    ? [...opts.experiments]
+    : [];
+  const experimentFindUnique = vi.fn(
+    async (args: { where: { id: string } }) =>
+      experimentsInDb.find((e) => e.id === args.where.id) ?? null,
+  );
+  const experimentCreate = vi.fn(async (args: { data: Record<string, unknown> }) => {
+    const row = { id: `exp-${nextExperimentId++}`, ...args.data };
+    experimentsInDb.push(row);
+    return row;
+  });
+  const experimentUpdate = vi.fn(
+    async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+      const idx = experimentsInDb.findIndex((e) => e.id === args.where.id);
+      if (idx >= 0) {
+        experimentsInDb[idx] = { ...experimentsInDb[idx], ...args.data };
+      }
+      return experimentsInDb[idx];
+    },
+  );
+  const experimentFindMany = vi.fn(async () => experimentsInDb);
+
   const prisma = {
     llmTaskRoute: {
       findMany,
@@ -123,10 +149,10 @@ function build(routesInDb: Array<Record<string, unknown>> = [], opts: BuildOpts 
     },
     llmTaskRouteChange: { create: auditCreate, count: auditCount, findMany: vi.fn(async () => []) },
     llmModelExperiment: {
-      findUnique: vi.fn(async () => null),
-      create: vi.fn(async () => ({})),
-      update: vi.fn(),
-      findMany: vi.fn(async () => []),
+      findUnique: experimentFindUnique,
+      create: experimentCreate,
+      update: experimentUpdate,
+      findMany: experimentFindMany,
     },
     llmProvider: { findMany: llmProviderFindMany },
     llmModel: { findMany: llmModelFindMany },
@@ -157,7 +183,17 @@ function build(routesInDb: Array<Record<string, unknown>> = [], opts: BuildOpts 
       : undefined;
 
   const svc = new AdminAiModelsService(prisma, router, metrics, currencyRate);
-  return { svc, prisma, routesInDb, auditCreate, metrics, router, deleteMany, createMany };
+  return {
+    svc,
+    prisma,
+    routesInDb,
+    auditCreate,
+    metrics,
+    router,
+    deleteMany,
+    createMany,
+    experimentsInDb,
+  };
 }
 
 describe('AdminAiModelsService', () => {
@@ -405,6 +441,113 @@ describe('AdminAiModelsService', () => {
       const ctx = build([], { usdRubRate: null });
       const res = await ctx.svc.metrics_('summary', { period: '7d' });
       expect(res.usdRubRate).toBeNull();
+    });
+  });
+
+  // ТЗ 2026-07-03 Фаза 1 (R5) — мутации LlmModelExperiment обязаны немедленно
+  // инвалидировать кэш LlmRouterService, иначе новый/остановленный эксперимент
+  // применится только после минутного крона.
+  describe('LlmModelExperiment → инвалидация кэша роутера (ТЗ 2026-07-03, R5)', () => {
+    it('startExperiment: draft → running + router.refreshCache() вызван', async () => {
+      const ctx = build([], {
+        experiments: [
+          {
+            id: 'exp-1',
+            taskType: 'summary',
+            status: 'draft',
+            controlModel: 'deepseek-v4-pro',
+            controlProvider: 'deepseek',
+            variantModel: 'deepseek-v4-flash',
+            variantProvider: 'deepseek',
+            splitPercent: 20,
+            startedAt: null,
+            endsAt: null,
+          },
+        ],
+      });
+
+      await ctx.svc.startExperiment('exp-1', 'user-1');
+
+      const updated = ctx.experimentsInDb.find((e) => e.id === 'exp-1');
+      expect(updated?.status).toBe('running');
+      expect(ctx.router.refreshCache).toHaveBeenCalledOnce();
+    });
+
+    it('stopExperiment: running → stopped + router.refreshCache() вызван', async () => {
+      const ctx = build([], {
+        experiments: [
+          {
+            id: 'exp-1',
+            taskType: 'summary',
+            status: 'running',
+            controlModel: 'deepseek-v4-pro',
+            controlProvider: 'deepseek',
+            variantModel: 'deepseek-v4-flash',
+            variantProvider: 'deepseek',
+            splitPercent: 20,
+            startedAt: new Date(),
+            endsAt: new Date(Date.now() + 3_600_000),
+          },
+        ],
+      });
+
+      await ctx.svc.stopExperiment('exp-1', 'user-1');
+
+      const updated = ctx.experimentsInDb.find((e) => e.id === 'exp-1');
+      expect(updated?.status).toBe('stopped');
+      expect(ctx.router.refreshCache).toHaveBeenCalledOnce();
+    });
+
+    it('createExperiment (autoStart=false) создаёт draft и НЕ вызывает router.refreshCache()', async () => {
+      const ctx = build([]);
+
+      await ctx.svc.createExperiment(
+        {
+          taskType: 'summary',
+          controlModel: 'deepseek-v4-pro',
+          controlProvider: 'deepseek',
+          variantModel: 'deepseek-v4-flash',
+          variantProvider: 'deepseek',
+          splitPercent: 20,
+          durationDays: 7,
+        } as CreateExperimentDto,
+        'user-1',
+      );
+
+      expect(ctx.experimentsInDb).toHaveLength(1);
+      expect(ctx.experimentsInDb[0]).toMatchObject({ status: 'draft' });
+      expect(ctx.router.refreshCache).not.toHaveBeenCalled();
+    });
+
+    it('switchPrimary(abSplitPercent<100) создаёт running LlmModelExperiment и вызывает router.refreshCache()', async () => {
+      const ctx = build([
+        {
+          id: 'r1',
+          taskType: 'summary',
+          tenantId: null,
+          tier: 'primary',
+          priority: 0,
+          providerName: 'deepseek',
+          model: 'deepseek-v4-pro',
+          editedByAdmin: false,
+        },
+      ]);
+
+      await ctx.svc.switchPrimary(
+        'summary',
+        {
+          providerName: 'openai-via-proxy',
+          model: 'gpt-5.5',
+          reason: 'A/B тест перед полным переключением',
+          abSplitPercent: 20,
+          abDurationDays: 7,
+        },
+        'user-1',
+      );
+
+      expect(ctx.experimentsInDb).toHaveLength(1);
+      expect(ctx.experimentsInDb[0]).toMatchObject({ status: 'running', taskType: 'summary' });
+      expect(ctx.router.refreshCache).toHaveBeenCalledOnce();
     });
   });
 });

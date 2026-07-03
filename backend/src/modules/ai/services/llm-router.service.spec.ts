@@ -10,6 +10,7 @@ import type { DeepSeekService } from './deepseek.service';
 import type { GrsaiService } from './grsai.service';
 import type { KieService } from './kie.service';
 import {
+  type LlmCallParams,
   LlmRouterAllProvidersFailedError,
   LlmRouterService,
   type LlmTaskType,
@@ -29,8 +30,58 @@ function makeOutput(provider: LlmCompleteOutput['provider'], model = 'm-test'): 
   };
 }
 
+interface ExperimentFixture {
+  id: string;
+  tenantId: string | null;
+  taskType: string;
+  controlModel: string;
+  controlProvider: string;
+  variantModel: string;
+  variantProvider: string;
+  splitPercent: number;
+  status: string;
+  startedAt: Date | null;
+  endsAt: Date | null;
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+  notes: string | null;
+}
+
+function makeExperiment(
+  overrides: Partial<ExperimentFixture> & { taskType: string },
+): ExperimentFixture {
+  const now = Date.now();
+  return {
+    id: overrides.id ?? 'exp-1',
+    tenantId: overrides.tenantId ?? null,
+    taskType: overrides.taskType,
+    controlModel: overrides.controlModel ?? 'MiniMax-M2.5',
+    controlProvider: overrides.controlProvider ?? 'minimax',
+    variantModel: overrides.variantModel ?? 'deepseek-v4-flash',
+    variantProvider: overrides.variantProvider ?? 'deepseek',
+    splitPercent: overrides.splitPercent ?? 50,
+    status: overrides.status ?? 'running',
+    startedAt: overrides.startedAt ?? new Date(now - 60_000),
+    endsAt: overrides.endsAt ?? new Date(now + 3_600_000),
+    createdById: overrides.createdById ?? 'admin-1',
+    createdAt: overrides.createdAt ?? new Date(now - 60_000),
+    updatedAt: overrides.updatedAt ?? new Date(now - 60_000),
+    notes: overrides.notes ?? null,
+  };
+}
+
+interface GepaCandidateFixture {
+  promptKey: string;
+  tenantId: string | null;
+  promptText: string;
+  abTrafficShare: number;
+}
+
 interface BuildOpts {
   routes?: Array<{ taskType: string; providers: string[]; isActive: boolean }>;
+  experiments?: ExperimentFixture[];
+  gepaCandidates?: GepaCandidateFixture[];
   anthropic?: ReturnType<typeof vi.fn>;
   minimax?: ReturnType<typeof vi.fn>;
   openai?: ReturnType<typeof vi.fn>;
@@ -65,9 +116,24 @@ function build(opts: BuildOpts) {
   );
   const update = vi.fn();
   const priceFindFirst = vi.fn(async () => null);
+  const experimentFindMany = vi.fn(
+    async (args?: { where?: { tenantId?: string | null; status?: string } }) =>
+      (opts.experiments ?? []).filter((e) => {
+        if (args?.where?.tenantId !== undefined && (e.tenantId ?? null) !== args.where.tenantId) {
+          return false;
+        }
+        if (args?.where?.status !== undefined && e.status !== args.where.status) {
+          return false;
+        }
+        return true;
+      }),
+  );
+  const promptCandidateFindMany = vi.fn(async () => opts.gepaCandidates ?? []);
   const prisma = {
     llmTaskRoute: { findMany, findFirst, create, update },
     llmModelPrice: { findFirst: priceFindFirst },
+    llmModelExperiment: { findMany: experimentFindMany },
+    promptCandidate: { findMany: promptCandidateFindMany },
   } as unknown as PrismaService;
 
   const anthropic = {
@@ -116,6 +182,7 @@ function build(opts: BuildOpts) {
     findFirst,
     create,
     update,
+    experimentFindMany,
     anthropic,
     minimax,
     openai,
@@ -124,6 +191,34 @@ function build(opts: BuildOpts) {
     usageRecord,
     incLlmRouterDispatch,
   };
+}
+
+/**
+ * `chooseProviders` — приватный метод; для юнит-теста sticky-split обходим
+ * TS-приватность прямым вызовом (route всегда `undefined` — легаси-ветка
+ * удалена в Фазе 1 ТЗ 2026-07-03, chooseProviders больше не читает route).
+ */
+async function callChooseProviders(
+  router: LlmRouterService,
+  params: Partial<LlmCallParams> & { taskType: LlmTaskType },
+): Promise<{ providers: Array<{ provider: string; model?: string }>; experimentGroup: 'A' | 'B' | null }> {
+  const fn = (
+    router as unknown as {
+      chooseProviders: (
+        route: undefined,
+        params: LlmCallParams,
+      ) => Promise<{
+        providers: Array<{ provider: string; model?: string }>;
+        experimentGroup: 'A' | 'B' | null;
+      }>;
+    }
+  ).chooseProviders.bind(router);
+  return fn(undefined, {
+    systemPrompt: '',
+    userMessage: '',
+    tenantId: null,
+    ...params,
+  } as LlmCallParams);
 }
 
 describe('LlmRouterService', () => {
@@ -439,6 +534,154 @@ describe('LlmRouterService', () => {
       expect(ctx.minimax.complete).toHaveBeenCalledOnce();
       expect(ctx.anthropic.complete).not.toHaveBeenCalled();
       expect(out.modelUsed.startsWith('minimax:')).toBe(true);
+    });
+  });
+
+  // ТЗ 2026-07-03 Фаза 1 — `chooseProviders()` читает `LlmModelExperiment`
+  // вместо `LlmTaskRoute.experiment`, sticky-split по meetingId.
+  describe('LlmModelExperiment sticky-split (ТЗ 2026-07-03, Фаза 1)', () => {
+    it('R1: активный эксперимент переопределяет обычную цепочку LlmTaskRoute', async () => {
+      const ctx = build({
+        routes: [{ taskType: 'chapters', providers: ['anthropic'], isActive: true }],
+        experiments: [
+          makeExperiment({
+            taskType: 'chapters',
+            controlProvider: 'minimax',
+            controlModel: 'MiniMax-M2.5',
+            variantProvider: 'deepseek',
+            variantModel: 'deepseek-v4-flash',
+            splitPercent: 0,
+          }),
+        ],
+      });
+      await ctx.router.refreshCache();
+
+      const out = await ctx.router.call({
+        ...baseParams,
+        taskType: 'chapters' as LlmTaskType,
+        meetingId: 'm-1',
+      });
+
+      expect(ctx.minimax.complete).toHaveBeenCalledOnce();
+      expect(ctx.anthropic.complete).not.toHaveBeenCalled();
+      expect(out.modelUsed).toBe('minimax:MiniMax-M2.5');
+      expect(ctx.usageRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ experimentGroup: 'A' }),
+      );
+    });
+
+    it('R2: детерминированность — тот же meetingId даёт ту же группу при повторных вызовах', async () => {
+      const ctx = build({
+        experiments: [makeExperiment({ taskType: 'chapters', splitPercent: 50 })],
+      });
+      await ctx.router.refreshCache();
+
+      const first = await callChooseProviders(ctx.router, {
+        taskType: 'chapters' as LlmTaskType,
+        meetingId: 'm-fixed',
+      });
+      const second = await callChooseProviders(ctx.router, {
+        taskType: 'chapters' as LlmTaskType,
+        meetingId: 'm-fixed',
+      });
+      const third = await callChooseProviders(ctx.router, {
+        taskType: 'chapters' as LlmTaskType,
+        meetingId: 'm-fixed',
+      });
+
+      expect(first.experimentGroup).not.toBeNull();
+      expect(second.experimentGroup).toBe(first.experimentGroup);
+      expect(third.experimentGroup).toBe(first.experimentGroup);
+      expect(second.providers).toEqual(first.providers);
+      expect(third.providers).toEqual(first.providers);
+    });
+
+    it('R3: распределение ~30% на 1000 разных meetingId (допуск 20-40%)', async () => {
+      const ctx = build({
+        experiments: [makeExperiment({ taskType: 'chapters', splitPercent: 30 })],
+      });
+      await ctx.router.refreshCache();
+
+      let groupBCount = 0;
+      for (let i = 0; i < 1000; i++) {
+        const { experimentGroup } = await callChooseProviders(ctx.router, {
+          taskType: 'chapters' as LlmTaskType,
+          meetingId: `meeting-${i}`,
+        });
+        if (experimentGroup === 'B') groupBCount++;
+      }
+
+      const fraction = groupBCount / 1000;
+      expect(fraction).toBeGreaterThanOrEqual(0.2);
+      expect(fraction).toBeLessThanOrEqual(0.4);
+    });
+
+    it('R4 (regression): активный GEPA PromptCandidate перекрывает experimentGroup даже при активном LlmModelExperiment', async () => {
+      const ctx = build({
+        experiments: [
+          makeExperiment({ taskType: 'chapters', splitPercent: 100, variantProvider: 'deepseek' }),
+        ],
+        gepaCandidates: [
+          { promptKey: 'chapters', tenantId: null, promptText: 'GEPA-PROMPT', abTrafficShare: 1 },
+        ],
+      });
+      await ctx.router.refreshCache();
+
+      await ctx.router.call({
+        ...baseParams,
+        taskType: 'chapters' as LlmTaskType,
+        meetingId: 'm-1',
+      });
+
+      expect(ctx.deepseek.complete).toHaveBeenCalledOnce();
+      expect(ctx.usageRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ experimentGroup: 'gepa_candidate' }),
+      );
+    });
+
+    it('без активного эксперимента для taskType — используется обычная цепочка LlmTaskRoute', async () => {
+      const ctx = build({
+        routes: [{ taskType: 'summary', providers: ['minimax'], isActive: true }],
+        experiments: [makeExperiment({ taskType: 'chapters', splitPercent: 100 })],
+      });
+      await ctx.router.refreshCache();
+
+      const out = await ctx.router.call({
+        ...baseParams,
+        taskType: 'summary' as LlmTaskType,
+      });
+
+      expect(ctx.minimax.complete).toHaveBeenCalledOnce();
+      expect(ctx.deepseek.complete).not.toHaveBeenCalled();
+      expect(out.modelUsed).toBe('minimax:MiniMax-M2.5');
+      expect(ctx.usageRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ experimentGroup: null }),
+      );
+    });
+
+    it('эксперимент вне окна [startedAt, endsAt) игнорируется', async () => {
+      const ctx = build({
+        routes: [{ taskType: 'chapters', providers: ['anthropic'], isActive: true }],
+        experiments: [
+          makeExperiment({
+            taskType: 'chapters',
+            startedAt: new Date(Date.now() - 2 * 3_600_000),
+            endsAt: new Date(Date.now() - 3_600_000),
+          }),
+        ],
+      });
+      await ctx.router.refreshCache();
+
+      const out = await ctx.router.call({
+        ...baseParams,
+        taskType: 'chapters' as LlmTaskType,
+        meetingId: 'm-1',
+      });
+
+      expect(ctx.anthropic.complete).toHaveBeenCalledOnce();
+      expect(ctx.minimax.complete).not.toHaveBeenCalled();
+      expect(ctx.deepseek.complete).not.toHaveBeenCalled();
+      expect(out.modelUsed.startsWith('anthropic:')).toBe(true);
     });
   });
 });

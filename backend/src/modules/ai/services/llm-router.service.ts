@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import type { DataClass, LlmRouteTier, LlmTaskRoute } from '@prisma/client';
+import type { DataClass, LlmModelExperiment, LlmRouteTier, LlmTaskRoute } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -1060,22 +1060,6 @@ interface ProviderEntry {
   tier?: LlmRouteTier;
 }
 
-/**
- * Параметры эксперимента LlmTaskRoute.experiment.
- *
- *  - modelA / modelB — `<provider>:<model>` (например `deepseek:deepseek-v4-flash`).
- *  - splitPercent: доля трафика на A в процентах (0..100).
- *  - startedAt / endsAt — ISO-строки.
- */
-interface ExperimentConfig {
-  enabled?: boolean;
-  modelA?: string;
-  modelB?: string;
-  splitPercent?: number;
-  startedAt?: string;
-  endsAt?: string;
-}
-
 interface PriceCacheEntry {
   inputPer1M: number;
   outputPer1M: number;
@@ -1240,9 +1224,9 @@ export class LlmBudgetExceededError extends Error {
  *   пробует последовательно. Успех — пишет в `AiUsageLog` + метрика
  *   `llm_router_dispatch_total{status='success'}`. Падение — переключение
  *   с метрикой `status='fallback'`. Все упали → `status='failed'` + exception.
- * - A/B-эксперименты через `LlmTaskRoute.experiment`: при `enabled=true`
- *   и в окне `[startedAt, endsAt)` — рандомно по `splitPercent` выбираем
- *   A или B и пишем `experimentGroup` в `AiUsageLog`.
+ * - A/B-эксперименты через `LlmModelExperiment` (`status='running'`, в окне
+ *   `[startedAt, endsAt)`): sticky-split по `meetingId` выбирает A или B и
+ *   пишет `experimentGroup` в `AiUsageLog`.
  * - Цена считается по `LlmModelPrice` (БД); при отсутствии записи — fallback
  *   на `MODEL_PRICES` из кода. Цены кэшируются в памяти на 60 секунд.
  */
@@ -1255,6 +1239,12 @@ export class LlmRouterService implements OnModuleInit {
    * (используется дефолтная цепочка), но видим в `getRoutes()` для админ-UI.
    */
   private allRoutes: LlmTaskRoute[] = [];
+  /**
+   * ТЗ 2026-07-03 — активные (status='running', глобальные, tenantId=null)
+   * A/B-эксперименты моделей `LlmModelExperiment`, ключ — `taskType`.
+   * Обновляется тем же `refreshCache()` циклом, что и `routes`.
+   */
+  private activeModelExperiments = new Map<string, LlmModelExperiment>();
   private priceCache = new Map<string, PriceCacheEntry>();
 
   /**
@@ -1385,6 +1375,23 @@ export class LlmRouterService implements OnModuleInit {
       map.set(r.taskType as LlmTaskType, providers);
     }
     this.routes = map;
+
+    // ТЗ 2026-07-03 — активные A/B-эксперименты моделей (LlmModelExperiment).
+    // Окно [startedAt, endsAt) проверяется на каждое чтение chooseProviders(),
+    // здесь только фильтруем status='running' + глобальные (tenantId=null).
+    const activeExperiments = await this.prisma.llmModelExperiment.findMany({
+      where: { tenantId: null, status: 'running' },
+    });
+    const expMap = new Map<string, LlmModelExperiment>();
+    const nowTs = Date.now();
+    for (const e of activeExperiments) {
+      const startedAtMs = e.startedAt?.getTime();
+      const endsAtMs = e.endsAt?.getTime();
+      if (startedAtMs === undefined || endsAtMs === undefined) continue;
+      if (nowTs < startedAtMs || nowTs >= endsAtMs) continue;
+      expMap.set(e.taskType, e);
+    }
+    this.activeModelExperiments = expMap;
 
     // Agents v2 Фаза C2 — подкачка PromptCandidate(status='testing') для A/B.
     // Не критично если запрос упадёт (например, prod без новой колонки) —
@@ -1862,23 +1869,16 @@ export class LlmRouterService implements OnModuleInit {
     route: LlmTaskRoute | undefined,
     params: LlmCallParams,
   ): Promise<{ providers: ProviderEntry[]; experimentGroup: 'A' | 'B' | null }> {
-    if (route?.experiment) {
-      const exp = route.experiment as ExperimentConfig;
-      const now = Date.now();
-      const startedAt = exp.startedAt ? Date.parse(exp.startedAt) : Number.NaN;
-      const endsAt = exp.endsAt ? Date.parse(exp.endsAt) : Number.NaN;
-      const inWindow =
-        Number.isFinite(startedAt) && Number.isFinite(endsAt) && now >= startedAt && now < endsAt;
-      if (exp.enabled === true && inWindow && exp.modelA && exp.modelB) {
-        const splitPercent = typeof exp.splitPercent === 'number' ? exp.splitPercent : 50;
-        const pickA = Math.random() * 100 < splitPercent;
-        const pick = pickA ? exp.modelA : exp.modelB;
-        const entry = parseProviderModelString(pick);
-        if (entry) {
-          this.logger.debug(`experiment ${params.taskType}: group=${pickA ? 'A' : 'B'} → ${pick}`);
-          return { providers: [entry], experimentGroup: pickA ? 'A' : 'B' };
-        }
-      }
+    const exp = this.activeModelExperiments.get(params.taskType);
+    if (exp) {
+      const picked = pickExperimentModel(exp, params.meetingId);
+      this.logger.debug(
+        `experiment ${params.taskType}: group=${picked.group} → ${picked.provider}:${picked.model}`,
+      );
+      return {
+        providers: [{ provider: picked.provider as LlmProviderName, model: picked.model }],
+        experimentGroup: picked.group,
+      };
     }
     const cached = this.routes.get(params.taskType);
     if (cached && cached.length > 0) {
@@ -2177,19 +2177,6 @@ function parseProviders(raw: unknown): ProviderEntry[] {
 }
 
 /**
- * Парсит строку формата `<provider>:<model>` (используется в
- * `LlmTaskRoute.experiment.modelA/modelB`).
- */
-function parseProviderModelString(s: string): ProviderEntry | null {
-  const idx = s.indexOf(':');
-  if (idx <= 0 || idx === s.length - 1) return null;
-  const provider = s.slice(0, idx);
-  const model = s.slice(idx + 1);
-  if (!(ALL_PROVIDERS as string[]).includes(provider)) return null;
-  return { provider: provider as LlmProviderName, model };
-}
-
-/**
  * Фаза A.4 — классификация ошибки провайдера для `fallbackReason`. Из исходного
  * текста ошибки извлекаем короткий код: timeout / rate_limit / auth / network / error.
  * Используется в аналитике `/admin/ai-models` для понимания, почему случается fallback.
@@ -2218,4 +2205,31 @@ function simpleHash(s: string): number {
     h >>>= 0;
   }
   return h >>> 0;
+}
+
+/**
+ * ТЗ 2026-07-03 — sticky-split для `LlmModelExperiment`. При заданном
+ * `meetingId` бакет считается через `simpleHash(exp.id::meetingId)` — тот же
+ * `meetingId` в рамках одного эксперимента всегда попадает в одну группу.
+ * Без `meetingId` (системные/фоновые вызовы) — обычный random per-call.
+ */
+function pickExperimentModel(
+  exp: {
+    id: string;
+    controlModel: string;
+    controlProvider: string;
+    variantModel: string;
+    variantProvider: string;
+    splitPercent: number;
+  },
+  meetingId: string | undefined,
+): { provider: string; model: string; group: 'A' | 'B' } {
+  const bucket =
+    meetingId !== undefined
+      ? simpleHash(`${exp.id}::${meetingId}`) % 100
+      : Math.floor(Math.random() * 100);
+  const pickVariant = bucket < exp.splitPercent;
+  return pickVariant
+    ? { provider: exp.variantProvider, model: exp.variantModel, group: 'B' }
+    : { provider: exp.controlProvider, model: exp.controlModel, group: 'A' };
 }

@@ -146,6 +146,7 @@ describe('LlmProvider из БД с реальным шифрованием → L
         update: vi.fn(),
       },
       llmModelPrice: { findFirst: vi.fn(async () => null) },
+      llmModelExperiment: { findMany: vi.fn(async () => []) },
       llmProvider: { findUnique },
     } as unknown as PrismaService;
 

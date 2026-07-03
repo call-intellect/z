@@ -71,6 +71,22 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-03 — Единый drill-down + provenance parity: goal/insight/friction + двухуровневый конфликт + meeting_report→встреча (ветка work/2026-07-02)
+
+> ТЗ `plans/tz/2026-07-02-universal-entity-drilldown-provenance-parity.md`. Инвариант: элемент кликабелен ⇔ есть непустой резолвимый первоисточник, доступный зрителю. Ф0 задача из встречи → `/issues/:id` + кружок «выполнено»; Ф1 резолвер обобщён на `goal/insight/friction` + двухуровневая маскировка конфликта по роли (owner/admin — дословно + `?t=`; прочие вправе — тема+встреча без реплик; поверх `partitionProjectionsByAccess`); Ф2 цель показывает «Откуда»; Ф3 дашборд блокер/риск/идея кликабельны по факту источника; Ф4 конфликт двухуровневый + anti-leak списка; Ф5 `classify` резолвит `meeting_report`→встреча (единый корень deepLink report-производного). Коммиты `55c3f8a9`/`ebf1fc2c`/`282b5fc1`/`6019ba22`/`54f35999`/`5472462a`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ОБЯЗАТЕЛЬНЫХ ENV НЕТ. 🟢 1 НОВЫЙ ФЛАГ — `provenance.frictionVerbatimRoles` (тип C — решение владельца / матрица доступа, ON с дефолтом `['owner','admin']`; реестр `feature-flags.md`).** **🟢 1 НОВЫЙ СИД** (`seed-admin-setting-provenance-friction.ts`, в STEPS `phase:'seed-base'`). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых обязательных нет.** 1 новая крутилка `provenance.frictionVerbatimRoles`=`['owner','admin']` читается через `getDynamic` с code-fallback (Ship-On/ON, работает ДО сида — admin→code-fallback). Тип — «решение владельца» (матрица доступа: какие роли видят дословные реплики конфликта в дровере «Откуда это»). Реестр флагов — `docs/operations/feature-flags.md` (1 новая строка, тип C, состояние ON с дефолтом).
+- **Шаг 7 — Seed (НОВЫЙ, идемпотентный, зарегистрирован в STEPS `phase:'seed-base'`, доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):** `scripts/seed-admin-setting-provenance-friction.ts` — ключ `provenance.frictionVerbatimRoles`=`['owner','admin']` (section `provenance`, severity `high`). Защита admin-edited (`updatedBy !== 'system'`); повтор = no-op.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Схема БД не менялась: `goal/insight/friction` резолвятся on-demand по существующим `sourceBlockIds` (`Goal`/`Insight`/`EntityLink`), `meeting_report`→встреча — правка резолвера без новых колонок.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (+ frontend, если раздельно). Backend: `provenance.service.ts` (enum + `collectSourceBlockIds` goal/insight/friction, `maskFrictionByRole`, `classify` meeting_report→meeting), `provenance.controller.ts` (роль зрителя из `RbacService.getMembershipRole`). Frontend: панель «Задачи» встречи, `GoalDetailClient`, дашборд Day/Week/Month (Blockers + SignalsGrid).
+- **Шаг 12 — Smoke** (после выката): `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-provenance-friction.ts` (created=1 при первом прогоне, потом no-op); крутилка `provenance.frictionVerbatimRoles` видна в админке (section `provenance`); эндпоинт принимает новые типы — `GET /api/v1/provenance/goal/<goalId>` и `/insight/<id>` возвращают ноды с deepLink; `/provenance/friction/<entityLinkId>` под ролью owner → дословная цитата + `?t=`, под manager → агрегат (тема+встреча, без `?t=`); в кабинете: задача из встречи проваливается в `/issues/:id`, цель/блокер/риск/конфликт — к моменту-первоисточнику.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-03 — Переработка recall «Мастера» (chat-v2 retrieval): 7 фаз + 10 крутилок (ветка work/2026-07-02)
 
 > ТЗ `plans/tz/2026-07-02-recall-master-retrieval-redesign.md`. Поиск «Мастера» перестал гасить себя структурным фильтром: граф-обход блоков участвует всегда (Ф1), фильтр стал boost вместо cutoff (Ф2), в recall читается `EntityLink` вещь↔вещь (Ф3), бедный пул → каскад расширения (Ф4), broad/списки → сводка без ложного отрицания (Ф5), понималщик получает справочник тенанта (Ф6), глубина обхода адаптивна 1-2 (Ф7). Приёмка Ф8 (перепрогон 111): верно 59.5→79.3%, граф 14→100%, провал 33→8%, 0 галлюцинаций. Коммиты `b487ebe8`/`e264fa9d`/`192c10e8`/`6116ea86`/`9212fadf`/`f05ceb19`/`33ddade8`.

@@ -55,6 +55,15 @@ AdminSetting — [[admin-settings]].
 `deepReviewThreshold` (`knowledge.curationDeepReviewThresholdDefault`) — те же
 крутилки, переключены на `resolveSync` в этой же фазе.
 
+### Роли дословного просмотра конфликтов (`provenance.frictionVerbatimRoles`)
+
+Добавлена 2026-07-03 (universal-entity-drilldown-provenance-parity), секция
+knowledge/provenance реестра, читается в `ProvenanceService.maskFrictionByRole`.
+
+| Ключ | Default | Смысл |
+|---|---|---|
+| `provenance.frictionVerbatimRoles` | `['owner','admin']` | список ролей, видящих **дословные** реплики конфликта person↔person в дровере «Откуда это». Роль вне набора → агрегат (лейбл встречи + тема, без цитаты и точного `?t=`). Маскировка идёт поверх access-групп. |
+
 ### 5 ключей напоминаний (`pendingActions.*`)
 
 Единая точка — `cfg.pendingActions`, читается в

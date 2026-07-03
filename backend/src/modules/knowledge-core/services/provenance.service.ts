@@ -674,6 +674,13 @@ export class ProvenanceService {
       };
     }
     switch (sourceType) {
+      case 'meeting_report': {
+        const meetingId =
+          sourceExternalId && sourceExternalId.startsWith('report_')
+            ? sourceExternalId.slice('report_'.length)
+            : sourceExternalId;
+        return { type: 'meeting', refId: meetingId };
+      }
       case 'meeting':
         return { type: 'meeting', refId: sourceExternalId };
       case 'email':

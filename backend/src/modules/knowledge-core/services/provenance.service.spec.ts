@@ -509,6 +509,107 @@ describe('ProvenanceService.resolve — последняя миля', () => {
   });
 });
 
+describe('ProvenanceService.resolve — meeting_report → встреча (Ф5, единый корень)', () => {
+  function reportPrisma(opts: {
+    startMs: number | null;
+    endMs: number | null;
+    sourceExternalId: string;
+  }) {
+    return {
+      decision: {
+        findFirst: vi.fn(async () => ({ sourceBlockIds: ['b-1'] })),
+      },
+      ideaBlock: {
+        findMany: vi.fn(async () => [{ id: 'b-1', primarySource: 'report' }]),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-1',
+            rawEventId: 'raw-r',
+            quote: 'Запустить доработку оплаты',
+            startMs: opts.startMs,
+            endMs: opts.endMs,
+            sourceTimestamp: new Date('2026-06-27T10:00:00Z'),
+          },
+        ]),
+      },
+      rawEvent: {
+        findMany: vi.fn(async () => [
+          {
+            id: 'raw-r',
+            sourceType: 'meeting_report',
+            sourceExternalId: opts.sourceExternalId,
+          },
+        ]),
+      },
+      meeting: {
+        findMany: vi.fn(async () => [{ id: 'm-9', title: 'Планёрка' }]),
+      },
+      document: { findMany: vi.fn(async () => []) },
+    };
+  }
+
+  it('Ф5-а report-источник резолвится в встречу с точным моментом', async () => {
+    const svc = buildService({
+      prisma: reportPrisma({
+        startMs: 42_000,
+        endMs: 47_000,
+        sourceExternalId: 'report_m-9',
+      }),
+      isBypass: true,
+    });
+    const nodes = await svc.resolve('decision', 'd-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+    });
+    expect(nodes).toHaveLength(1);
+    const n = nodes[0]!;
+    expect(n.source.type).toBe('meeting');
+    expect(n.source.refId).toBe('m-9');
+    expect(n.source.label).toBe('Встреча «Планёрка»');
+    expect(n.source.deepLink).toBe('/meetings/m-9/result?t=42');
+    expect(n.attribution).toBe('inferred');
+  });
+
+  it('Ф5-б report без startMs → рабочая ссылка на встречу ?t=0 (не мёртвый чат)', async () => {
+    const svc = buildService({
+      prisma: reportPrisma({
+        startMs: null,
+        endMs: null,
+        sourceExternalId: 'report_m-9',
+      }),
+      isBypass: true,
+    });
+    const nodes = await svc.resolve('decision', 'd-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+    });
+    const n = nodes[0]!;
+    expect(n.source.type).toBe('meeting');
+    expect(n.source.deepLink).toBe('/meetings/m-9/result?t=0');
+  });
+
+  it('Ф5-в sourceExternalId без префикса report_ → refId как есть (регресс-стойкость)', async () => {
+    const svc = buildService({
+      prisma: reportPrisma({
+        startMs: 42_000,
+        endMs: 47_000,
+        sourceExternalId: 'm-9',
+      }),
+      isBypass: true,
+    });
+    const nodes = await svc.resolve('decision', 'd-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+    });
+    const n = nodes[0]!;
+    expect(n.source.type).toBe('meeting');
+    expect(n.source.refId).toBe('m-9');
+    expect(n.source.deepLink).toBe('/meetings/m-9/result?t=42');
+  });
+});
+
 describe('ProvenanceService.resolve — обобщение (goal/insight/friction, R8)', () => {
   function frictionPrisma() {
     return {

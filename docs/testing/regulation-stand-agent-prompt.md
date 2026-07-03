@@ -15,16 +15,17 @@
 | **Карта ситуаций 360°** (что покрываем) | `plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md` |
 | **ТЗ стенда** (контракт: файлы/форматы/метрики/фазы) | `plans/tz/2026-07-03-regulation-instruction-stand.md` |
 | **Этот хэндофф-промпт** | `docs/testing/regulation-stand-agent-prompt.md` |
-| **Стартовый корпус** (26 сценариев, готов — РАСШИРЯТЬ) | `docs/testing/regulation-stand-corpus.json` |
-| **Стартовый эталон** (26 эталонов под корпус) | `docs/testing/regulation-stand-ruler.json` |
+| **Корпус** (493 сценария, полное покрытие карты 360°) | `docs/testing/regulation-stand-corpus.json` |
+| **Эталон** (493 эталона 1:1 под корпус) | `docs/testing/regulation-stand-ruler.json` |
 | **Методология линейки** | `docs/methodology/synthetic-fidelity-eval-method.md` |
 | Скрипты стенда (СОЗДАТЬ) | `backend/scripts/regulation-stand/{stand,seed-reg-feed,annotate,match,judge,report}.ts` |
 | README стенда (СОЗДАТЬ) | `docs/testing/regulation-stand.md` |
 | Отчёт baseline (СГЕНЕРИТ report) | `docs/testing/regulation-stand-report.md` |
 
-**Уже готово (не с нуля):** карта ситуаций, ТЗ, стартовый корпус+эталон (26 критических сценариев,
-провалидированы: id корпуса ↔ id эталона 1:1). Твоя работа — дописать скрипты стенда, **расширить корпус+эталон
-до полного покрытия карты** (каждая ячейка ≥1, критические ≥3) и прогнать фазы.
+**Уже готово (не с нуля):** карта ситуаций, ТЗ, **полный корпус+эталон — 493 сценария** с покрытием всех
+ячеек карты (A1.*/A2.*/A3.*/СК1-9), провалидированы: id корпуса ↔ id эталона 1:1, 0 коллизий. Твоя работа —
+дописать **скрипты стенда** (`backend/scripts/regulation-stand/*`), прогнать фазы (prepare→build→annotate→run→
+judge→report) и снять baseline. Корпус можно точечно дополнять, но основное покрытие уже есть.
 
 ---
 

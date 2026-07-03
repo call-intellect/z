@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import {
   ArrowLeft,
+  FlaskConical,
   History,
   LineChart,
   ListTree,
@@ -57,6 +58,7 @@ import { Textarea } from "@/ui/shadcn/textarea";
 import { AdminEmpty, AdminError, AdminLoading } from "../../../AdminStateViews";
 import { useAdminQuery } from "../../../useAdminQuery";
 import { adminRootCrumb } from "@/ui/components/admin/brand";
+import { ExperimentTabSection } from "./ExperimentTabSection";
 
 interface Props {
   taskType: string;
@@ -66,6 +68,7 @@ const TABS: AdminTabDef[] = [
   { value: "chain", label: "Цепочка", icon: ListTree },
   { value: "metrics", label: "Метрики", icon: LineChart },
   { value: "history", label: "История переключений", icon: History },
+  { value: "experiment", label: "A/B-тест", icon: FlaskConical },
 ];
 
 export function RoutingDetailClient({ taskType }: Props) {
@@ -86,6 +89,9 @@ export function RoutingDetailClient({ taskType }: Props) {
             {active === "chain" && <ChainTabSection taskType={taskType} />}
             {active === "metrics" && <MetricsTabSection taskType={taskType} />}
             {active === "history" && <HistoryTabSection taskType={taskType} />}
+            {active === "experiment" && (
+              <ExperimentTabSection taskType={taskType} />
+            )}
           </>
         )}
       </AdminTabs>

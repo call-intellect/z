@@ -193,7 +193,7 @@ export function FunctionDetailAnalyticsClient({
                   </div>
                   <Button asChild size="sm" variant="outline" className="mt-2">
                     <Link
-                      href={`/admin/experiments/${encodeURIComponent(taskType)}`}
+                      href={`/admin/ai/routing/${encodeURIComponent(taskType)}?tab=experiment`}
                     >
                       Перейти к эксперименту
                     </Link>

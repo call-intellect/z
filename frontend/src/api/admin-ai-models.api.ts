@@ -135,6 +135,18 @@ export type CreateExperimentRequest = {
   notes?: string;
 };
 
+export type ExperimentMetricsApi = {
+  model: string;
+  totalCalls: number;
+  failedCalls: number;
+  failRate: number;
+  avgCostUsd: number;
+  avgDurationMs: number;
+  avgInputTokens: number;
+  avgOutputTokens: number;
+  totalCostUsd: number;
+};
+
 export const adminAiModelsApi = {
   list: (params?: { group?: AiModelGroup; search?: string }) => {
     const search = new URLSearchParams();
@@ -217,8 +229,8 @@ export const adminAiModelsApi = {
   experimentAnalytics: (id: string) =>
     apiClient.get<{
       experiment: ModelExperimentApi;
-      control: Record<string, number | string>;
-      variant: Record<string, number | string>;
+      control: ExperimentMetricsApi;
+      variant: ExperimentMetricsApi;
     }>(
       `/api/v1/admin/llm-model-experiments/${encodeURIComponent(id)}/analytics`,
     ),

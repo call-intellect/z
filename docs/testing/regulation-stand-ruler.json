@@ -1,0 +1,136 @@
+{
+  "meta": {
+    "name": "regulation-stand-ruler",
+    "version": "0.1-starter",
+    "date": "2026-07-03",
+    "about": "Эталон (ground truth) под каждый сценарий regulation-stand-corpus.json. Авторский — при прогоне кросс-проверяется слепой разметкой (annotate.ts). Пороги первого прогона = baseline (non-regression), не абсолют.",
+    "corpus": "docs/testing/regulation-stand-corpus.json",
+    "matrix": "plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md",
+    "tz": "plans/tz/2026-07-03-regulation-instruction-stand.md",
+    "legend": {
+      "extractor.byOrder[n]": "ожидаемый разбор блока order=n: kind, isOrgNorm, ownerCompany, isKeepableOrgNorm, notabilityReason, extractionStatus, scope, roles, severity, category, materialized(создалась ли карточка), statementGist(смысл, матч по смыслу), confidenceBand(low|high)",
+      "arbiter.byOrder[n]": "verdict(new|merge|extension|contradicts|distinct) + targetIsOrder(на какой order ссылается)",
+      "compiler.byOrder[n]": "mode(create|extend|null), contentMustContain[], contentMustPreserve[], noDuplicatePoint, steps[]",
+      "final": "cardsByType(активные карточки по типу), conflictItems[], deprecated(сколько задепрекейчено)"
+    }
+  },
+  "rulers": {
+    "A1.1-regulation-clean": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "isOrgNorm": true, "ownerCompany": "наша", "isKeepableOrgNorm": true, "extractionStatus": "существует", "scope": "org", "roles": ["юрист","менеджер"], "category": "regulation", "materialized": true, "statementGist": "договоры с подрядчиком проходят юрпроверку до подписания, юрист отвечает за 3 дня", "confidenceBand": "high" } } },
+      "final": { "cardsByType": { "regulation": 1 }, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.1-instruction-clean": {
+      "extractor": { "byOrder": { "1": { "kind": "instruction", "isOrgNorm": true, "ownerCompany": "наша", "isKeepableOrgNorm": true, "materialized": true, "roles": ["менеджер"], "scope": "role:менеджер", "statementGist": "менеджер оформляет возврат в 1С: открыть заказ, создать возврат, провести", "confidenceBand": "high" } } },
+      "final": { "cardsByType": { "instruction": 1 }, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.1-process-clean": {
+      "extractor": { "byOrder": { "1": { "kind": "process", "isOrgNorm": true, "ownerCompany": "наша", "isKeepableOrgNorm": true, "materialized": true, "roles": ["продажи","юрист","внедрение","поддержка"], "statementGist": "онбординг клиента: продажи -> юрист -> внедрение -> поддержка", "confidenceBand": "high" } } },
+      "compiler": { "byOrder": { "1": { "mode": "create", "steps": ["продажи","юрист","внедрение","поддержка"] } } },
+      "final": { "cardsByType": { "process": 1 }, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.1-policy-clean": {
+      "extractor": { "byOrder": { "1": { "kind": "policy", "isOrgNorm": true, "ownerCompany": "наша", "isKeepableOrgNorm": true, "severity": "blocking", "materialized": true, "statementGist": "данные клиентов только на серверах РФ", "confidenceBand": "high" } } },
+      "final": { "cardsByType": { "policy": 1 }, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.1-standard-clean": {
+      "extractor": { "byOrder": { "1": { "kind": "standard", "isOrgNorm": true, "ownerCompany": "наша", "isKeepableOrgNorm": true, "category": "standard", "materialized": true, "statementGist": "процессы качества опираются на ISO 9001", "confidenceBand": "high" } } },
+      "final": { "cardsByType": { "regulation": 1 }, "conflictItems": [], "deprecated": 0, "note": "standard хранится в regulations с category=standard" }
+    },
+    "A1.2-regulation-vs-policy": {
+      "extractor": { "byOrder": { "1": { "kind": "policy", "materialized": true, "statementGist": "скидка выше 15% только с согласия директора", "confidenceBand": "high", "trapNote": "принцип без пошаговой процедуры -> policy, НЕ regulation" } } },
+      "final": { "cardsByType": { "policy": 1 }, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.2-instruction-vs-process": {
+      "extractor": { "byOrder": { "1": { "kind": "process", "materialized": true, "roles": ["сотрудник","руководитель","кадры"], "statementGist": "согласование отпуска: сотрудник -> руководитель -> кадры", "confidenceBand": "high", "trapNote": "передача между ролями -> process, НЕ instruction" } } },
+      "final": { "cardsByType": { "process": 1 }, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.2-regulation-vs-standard": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "category": "regulation", "materialized": true, "statementGist": "юрист проверяет договор по чек-листу за 2 дня", "confidenceBand": "high", "trapNote": "наш норматив с процедурой -> regulation; ISO лишь основа чек-листа, не сам standard" } } },
+      "final": { "cardsByType": { "regulation": 1 }, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.3-external-practice": {
+      "extractor": { "byOrder": { "1": { "isOrgNorm": false, "ownerCompany": "неизвестно", "materialized": false, "confidenceBand": "low", "trapNote": "чужая практика (Google) + гипотетика -> не материализуется" } } },
+      "final": { "cardsByType": {}, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.3-hypothetical": {
+      "extractor": { "byOrder": { "1": { "isOrgNorm": false, "materialized": false, "confidenceBand": "low", "trapNote": "гипотетика 'если бы' -> не действующая норма" } } },
+      "final": { "cardsByType": {}, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.3-one-off": {
+      "extractor": { "byOrder": { "1": { "isOrgNorm": false, "materialized": false, "confidenceBand": "low", "trapNote": "разовое поручение, не повторяемая норма" } } },
+      "final": { "cardsByType": {}, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.3-bare-mention": {
+      "extractor": { "byOrder": { "1": { "isOrgNorm": false, "materialized": false, "extractionStatus": "существует", "confidenceBand": "low", "trapNote": "голое упоминание документа без содержания -> тело не извлекать, confidence ~0.5" } } },
+      "final": { "cardsByType": {}, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.4-client-on-sales": {
+      "extractor": { "byOrder": { "1": { "isOrgNorm": true, "ownerCompany": "клиент", "materialized": false, "trapNote": "приор=клиент + внешняя встреча -> норма клиента, НЕ наша -> не материализуется" } } },
+      "final": { "cardsByType": {}, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.5-product-demo": {
+      "extractor": { "byOrder": { "1": { "isKeepableOrgNorm": false, "notabilityReason": "product_demo", "materialized": false, "trapNote": "кнопки самого продукта Кора -> не норма компании" } } },
+      "final": { "cardsByType": {}, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.5-tool-over-service-trap": {
+      "extractor": { "byOrder": { "1": { "kind": "instruction", "isKeepableOrgNorm": true, "notabilityReason": null, "materialized": true, "roles": ["менеджер"], "statementGist": "менеджер ведёт сделку в Bitrix: стадия, ответственный, обновление статуса после звонка", "confidenceBand": "high", "trapNote": "наш порядок работы поверх Bitrix -> НОРМА (не product_demo)" } } },
+      "final": { "cardsByType": { "instruction": 1 }, "conflictItems": [], "deprecated": 0 }
+    },
+    "A1.6-status-needed": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "isOrgNorm": true, "extractionStatus": "нужен", "materialized": true, "status": "deprecated", "statementGist": "нужен регламент обработки жалоб (его пока нет)", "trapNote": "extractionStatus=нужен -> ProcessStatus=deprecated (не активна)" } } },
+      "final": { "cardsByType": { "regulation": 0 }, "conflictItems": [], "deprecated": 1, "note": "карточка есть, но status=deprecated -> не в активных" }
+    },
+    "A1.7-fields-role-owner": {
+      "extractor": { "byOrder": { "1": { "kind": "instruction", "materialized": true, "roles": ["оператор поддержки"], "scope": "role:поддержка", "ownerResolved": "Дарья", "statementGist": "оператор поддержки отвечает на первое обращение за 4 часа", "confidenceBand": "high" } } },
+      "final": { "cardsByType": { "instruction": 1 }, "conflictItems": [], "deprecated": 0, "note": "ownerPersonId должен резолвнуться в Person 'Дарья' (посеять в prepare)" }
+    },
+    "A2.1-new": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "materialized": true, "statementGist": "ночной автобэкап базы, хранение 30 дней" } } },
+      "arbiter": { "byOrder": { "1": { "verdict": "new", "targetIsOrder": null } } },
+      "final": { "cardsByType": { "regulation": 1 }, "conflictItems": [], "deprecated": 0 }
+    },
+    "A2.2-merge": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "materialized": true }, "2": { "kind": "regulation", "materialized": true } } },
+      "arbiter": { "byOrder": { "1": { "verdict": "new" }, "2": { "verdict": "merge", "targetIsOrder": 1 } } },
+      "final": { "cardsByType": { "regulation": 1 }, "conflictItems": [], "deprecated": 1, "note": "одна норма согласования отпуска; '2 недели'='14 дней'; проигравшая -> deprecated" }
+    },
+    "A2.3-extension": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "materialized": true }, "2": { "kind": "regulation", "materialized": true } } },
+      "arbiter": { "byOrder": { "1": { "verdict": "new" }, "2": { "verdict": "extension", "targetIsOrder": 1 } } },
+      "compiler": { "byOrder": { "2": { "mode": "extend", "contentMustPreserve": ["договоры подписывает директор"], "contentMustContain": ["при сумме выше миллиона визирует юрист"], "noDuplicatePoint": true } } },
+      "final": { "cardsByType": { "regulation": 1 }, "conflictItems": [], "deprecated": 0, "note": "extension -> новая версия, старое сохранено; ConflictItem НЕ создаётся" }
+    },
+    "A2.4-contradicts": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "materialized": true }, "2": { "kind": "regulation", "materialized": true } } },
+      "arbiter": { "byOrder": { "1": { "verdict": "new" }, "2": { "verdict": "contradicts", "targetIsOrder": 1 } } },
+      "final": { "cardsByType": { "regulation": 1 }, "conflictItems": [ { "resourceType": "regulation", "relationType": "contradicts" } ], "deprecated": 0, "note": "взаимоисключающий подписант -> ConflictItem людям, карточки не слиты" }
+    },
+    "A2.5-distinct-scope": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "materialized": true }, "2": { "kind": "regulation", "materialized": true } } },
+      "arbiter": { "byOrder": { "1": { "verdict": "new" }, "2": { "verdict": "distinct", "targetIsOrder": null } } },
+      "final": { "cardsByType": { "regulation": 2 }, "conflictItems": [], "deprecated": 0, "note": "мелкие траты/руководитель vs командировки/финотдел -> ДВЕ карточки (no_false_merge)" }
+    },
+    "A2.5-distinct-homonym": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "materialized": true }, "2": { "kind": "regulation", "materialized": true } } },
+      "arbiter": { "byOrder": { "1": { "verdict": "new" }, "2": { "verdict": "distinct", "targetIsOrder": null } } },
+      "final": { "cardsByType": { "regulation": 2 }, "conflictItems": [], "deprecated": 0, "note": "'Портал' проект vs продукт -> одноимённые, разный охват -> ДВЕ карточки" }
+    },
+    "A3.1-create-process-steps": {
+      "extractor": { "byOrder": { "1": { "kind": "process", "materialized": true, "roles": ["менеджер","пресейл"] } } },
+      "compiler": { "byOrder": { "1": { "mode": "create", "steps": ["квалификация (менеджер)","расчёт и КП (пресейл)","отправка клиенту (менеджер)"], "contentMustContain": ["квалифицирует","КП","отправ"] } } },
+      "final": { "cardsByType": { "process": 1 }, "conflictItems": [], "deprecated": 0, "note": "ProcessStep-строки синхронны steps[] компилятора" }
+    },
+    "A3.2-extend-preserve": {
+      "extractor": { "byOrder": { "1": { "kind": "instruction", "materialized": true }, "2": { "kind": "instruction", "materialized": true } } },
+      "arbiter": { "byOrder": { "1": { "verdict": "new" }, "2": { "verdict": "extension", "targetIsOrder": 1 } } },
+      "compiler": { "byOrder": { "2": { "mode": "extend", "contentMustPreserve": ["ревью","тесты"], "contentMustContain": ["двух инженеров","зелёные тесты","бэкап перед выкаткой"], "noDuplicatePoint": true } } },
+      "final": { "cardsByType": { "instruction": 1 }, "conflictItems": [], "deprecated": 0, "note": "ГЛАВНОЕ: старые пункты (ревью+тесты) сохранены, добавлены новые -> preservation=100%" }
+    },
+    "SK1-lifecycle": {
+      "extractor": { "byOrder": { "1": { "kind": "regulation", "materialized": true }, "2": { "kind": "regulation", "materialized": true }, "3": { "kind": "regulation", "materialized": true }, "4": { "kind": "regulation", "materialized": true } } },
+      "arbiter": { "byOrder": { "1": { "verdict": "new" }, "2": { "verdict": "merge", "targetIsOrder": 1 }, "3": { "verdict": "extension", "targetIsOrder": 1 }, "4": { "verdict": "contradicts", "targetIsOrder": 1 } } },
+      "compiler": { "byOrder": { "3": { "mode": "extend", "contentMustPreserve": ["4 часа"], "contentMustContain": ["критичные эскалируются в тот же день"], "noDuplicatePoint": true } } },
+      "final": { "cardsByType": { "regulation": 1 }, "conflictItems": [ { "resourceType": "regulation", "relationType": "contradicts" } ], "deprecated": 1, "versionsMin": 3, "note": "жизненный цикл одной карточки: new -> merge(deprecate дубль) -> extension(новая версия) -> contradicts(ConflictItem); история версий >=3" }
+    }
+  }
+}

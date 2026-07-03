@@ -1,0 +1,319 @@
+{
+  "meta": {
+    "name": "regulation-stand-corpus",
+    "version": "0.1-starter",
+    "date": "2026-07-03",
+    "about": "Стартовый синтетический корпус для стенда агентов регламентов/инструкций. Покрывает критические ячейки карты 360° (A1 границы+фильтры, A2 все исходы, A3 создание/дополнение, СК1 жизненный цикл). РАСШИРЯТЬ по plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md (каждая ячейка >=1, критические >=3).",
+    "matrix": "plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md",
+    "ruler": "docs/testing/regulation-stand-ruler.json",
+    "blockFields": "signalType(regulation|process_step|policy), name, criticalQuestion, trustedAnswer, evidenceQuotes[], tags[], ownerCompanyPrior(наша|клиент|гость|неизвестно), meetingExternalLikely, order",
+    "note": "order управляет консолидацией: кандидат приходит ПОСЛЕ оригинала. Для арбитр-сценариев order=1 оригинал, order=2 приходящий черновик."
+  },
+  "scenarios": [
+    {
+      "id": "A1.1-regulation-clean", "agentFocus": "extractor", "cell": "A1.1", "channel": "planerka", "trap": false,
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Юрпроверка договоров с подрядчиками",
+          "criticalQuestion": "Как проходят договоры с подрядчиками?",
+          "trustedAnswer": "Все договоры с подрядчиком сначала уходят юристу на проверку, юрист отвечает в течение 3 рабочих дней, только после этого подписываем.",
+          "evidenceQuotes": ["договоры с подрядчиком сначала уходят юристу на проверку", "юрист отвечает в течение 3 рабочих дней"],
+          "tags": ["договоры","юрист","подрядчики"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.1-instruction-clean", "agentFocus": "extractor", "cell": "A1.1", "channel": "document", "trap": false,
+      "blocks": [
+        { "order": 1, "signalType": "process_step", "name": "Оформление возврата в 1С",
+          "criticalQuestion": "Как менеджеру оформить возврат в 1С?",
+          "trustedAnswer": "Менеджер оформляет возврат в 1С сам: открыть заказ, создать возврат, провести документ.",
+          "evidenceQuotes": ["Менеджер оформляет возврат в 1С: открыть заказ, создать возврат, провести документ"],
+          "tags": ["1С","возврат","менеджер"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.1-process-clean", "agentFocus": "extractor", "cell": "A1.1", "channel": "planerka", "trap": false,
+      "blocks": [
+        { "order": 1, "signalType": "process_step", "name": "Онбординг нового клиента",
+          "criticalQuestion": "Как мы онбордим нового клиента?",
+          "trustedAnswer": "Онбординг клиента идёт по цепочке: продажи заводят карточку и передают юристу, юрист проверяет договор и передаёт внедрению, внедрение настраивает и передаёт поддержке.",
+          "evidenceQuotes": ["продажи передают юристу, юрист внедрению, внедрение поддержке"],
+          "tags": ["онбординг","клиент","процесс"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.1-policy-clean", "agentFocus": "extractor", "cell": "A1.1", "channel": "document", "trap": false,
+      "blocks": [
+        { "order": 1, "signalType": "policy", "name": "Хранение данных клиентов",
+          "criticalQuestion": "Где хранятся данные клиентов?",
+          "trustedAnswer": "Данные клиентов хранятся только на серверах в РФ, размещение за рубежом запрещено — нарушение блокирует запуск.",
+          "evidenceQuotes": ["данные клиентов только на серверах в РФ","размещение за рубежом запрещено"],
+          "tags": ["данные","безопасность","РФ"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.1-standard-clean", "agentFocus": "extractor", "cell": "A1.1", "channel": "interview", "trap": false,
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Работа по ISO 9001",
+          "criticalQuestion": "По какому стандарту работаем?",
+          "trustedAnswer": "Наши процессы качества опираются на внешний стандарт ISO 9001, на него ссылаемся в регламентах.",
+          "evidenceQuotes": ["опираемся на ISO 9001"],
+          "tags": ["ISO","стандарт","качество"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.2-regulation-vs-policy", "agentFocus": "extractor", "cell": "A1.2", "channel": "planerka", "trap": true, "boundaryPair": "regulation|policy",
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Скидки клиентам",
+          "criticalQuestion": "Какие скидки можно давать клиентам?",
+          "trustedAnswer": "Скидку выше 15% давать нельзя без согласия директора — это принцип, без пошаговой процедуры.",
+          "evidenceQuotes": ["скидку выше 15% нельзя без согласия директора"],
+          "tags": ["скидки","правило"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.2-instruction-vs-process", "agentFocus": "extractor", "cell": "A1.2", "channel": "chat", "trap": true, "boundaryPair": "instruction|process",
+      "blocks": [
+        { "order": 1, "signalType": "process_step", "name": "Согласование отпуска",
+          "criticalQuestion": "Как оформить отпуск?",
+          "trustedAnswer": "Сотрудник пишет заявление, руководитель согласует, кадры вносят в график и оформляют приказ.",
+          "evidenceQuotes": ["сотрудник пишет заявление, руководитель согласует, кадры оформляют приказ"],
+          "tags": ["отпуск","кадры"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.2-regulation-vs-standard", "agentFocus": "extractor", "cell": "A1.2", "channel": "document", "trap": true, "boundaryPair": "regulation|standard",
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Проверка договоров по ISO",
+          "criticalQuestion": "Как проверяем договоры?",
+          "trustedAnswer": "Каждый договор проверяет юрист по нашему чек-листу за 2 дня; чек-лист составлен на основе внешнего стандарта ISO 9001.",
+          "evidenceQuotes": ["юрист проверяет по чек-листу за 2 дня"],
+          "tags": ["договоры","ISO","юрист"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.3-external-practice", "agentFocus": "extractor", "cell": "A1.3", "channel": "planerka", "trap": true,
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Онбординг как в Google",
+          "criticalQuestion": "Как можно улучшить онбординг?",
+          "trustedAnswer": "Хорошо бы когда-нибудь описать онбординг так, как это делают в Google.",
+          "evidenceQuotes": ["как это делают в Google"],
+          "tags": ["онбординг","идея"], "ownerCompanyPrior": "неизвестно", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.3-hypothetical", "agentFocus": "extractor", "cell": "A1.3", "channel": "chat", "trap": true,
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Гипотетический регламент возвратов",
+          "criticalQuestion": "Как могли бы обрабатывать возвраты?",
+          "trustedAnswer": "Если бы у нас было больше людей, можно было бы сделать отдельный отдел возвратов.",
+          "evidenceQuotes": ["если бы было больше людей, можно было бы"],
+          "tags": ["возвраты","гипотеза"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.3-one-off", "agentFocus": "extractor", "cell": "A1.3", "channel": "planerka", "trap": true,
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Разовая задача на встречу",
+          "criticalQuestion": "Что делаем с отчётом Ромашки?",
+          "trustedAnswer": "Иван, отправь именно этот отчёт Ромашке до завтра — разово, к сегодняшней ситуации.",
+          "evidenceQuotes": ["отправь этот отчёт до завтра"],
+          "tags": ["задача","разовое"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.3-bare-mention", "agentFocus": "extractor", "cell": "A1.3", "channel": "chat", "trap": true,
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Упоминание регламента без содержания",
+          "criticalQuestion": "Есть ли у нас регламент по эскалациям?",
+          "trustedAnswer": "Да, где-то был регламент по эскалациям, но что там внутри — не помню.",
+          "evidenceQuotes": ["был регламент по эскалациям"],
+          "tags": ["эскалации","упоминание"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.4-client-on-sales", "agentFocus": "extractor", "cell": "A1.4", "channel": "interview", "trap": true,
+      "blocks": [
+        { "order": 1, "signalType": "process_step", "name": "Процесс закупок у клиента",
+          "criticalQuestion": "Как у вас устроены закупки?",
+          "trustedAnswer": "У нас закупки согласует наш финдиректор, потом тендерный комитет — так работает наша компания.",
+          "evidenceQuotes": ["у нас закупки согласует наш финдиректор"],
+          "tags": ["закупки","клиент"], "ownerCompanyPrior": "клиент", "meetingExternalLikely": true }
+      ]
+    },
+    {
+      "id": "A1.5-product-demo", "agentFocus": "extractor", "cell": "A1.5", "channel": "document", "trap": true,
+      "blocks": [
+        { "order": 1, "signalType": "process_step", "name": "Как добавить ярлык Коры на экран",
+          "criticalQuestion": "Как добавить ярлык приложения Кора на экран?",
+          "trustedAnswer": "Откройте меню, нажмите «добавить на экран», подтвердите — ярлык Коры появится на рабочем столе.",
+          "evidenceQuotes": ["нажмите добавить на экран"],
+          "tags": ["Кора","UI"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.5-tool-over-service-trap", "agentFocus": "extractor", "cell": "A1.5", "channel": "planerka", "trap": true,
+      "blocks": [
+        { "order": 1, "signalType": "process_step", "name": "Ведение сделок в Bitrix",
+          "criticalQuestion": "Как ведём сделки?",
+          "trustedAnswer": "Каждую сделку менеджер заводит в Bitrix, ставит стадию и ответственного, обновляет статус после каждого звонка — это наш обязательный порядок работы в CRM.",
+          "evidenceQuotes": ["менеджер заводит сделку в Bitrix, ставит стадию, обновляет статус"],
+          "tags": ["Bitrix","CRM","сделки"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.6-status-needed", "agentFocus": "extractor", "cell": "A1.6", "channel": "planerka", "trap": false,
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Регламент обработки жалоб (нужен)",
+          "criticalQuestion": "Что с регламентом жалоб?",
+          "trustedAnswer": "Нам нужен регламент обработки жалоб, но его пока нет — надо написать.",
+          "evidenceQuotes": ["нам нужен регламент обработки жалоб, но его пока нет"],
+          "tags": ["жалобы","нужен"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A1.7-fields-role-owner", "agentFocus": "extractor", "cell": "A1.7", "channel": "document", "trap": false,
+      "blocks": [
+        { "order": 1, "signalType": "process_step", "name": "Ответ на обращение в поддержке",
+          "criticalQuestion": "Как оператор поддержки отвечает на обращение?",
+          "trustedAnswer": "Оператор поддержки отвечает на первое обращение в течение 4 часов: прочитать, уточнить, ответить, закрыть тикет. Ответственный за инструкцию — Дарья.",
+          "evidenceQuotes": ["оператор поддержки отвечает в течение 4 часов","ответственный — Дарья"],
+          "tags": ["поддержка","SLA","инструкция"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A2.1-new", "agentFocus": "arbiter", "cell": "A2.1", "channel": "planerka", "trap": false,
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Резервное копирование базы",
+          "criticalQuestion": "Как делаем бэкапы?",
+          "trustedAnswer": "Базу бэкапим каждую ночь автоматически, копию храним 30 дней.",
+          "evidenceQuotes": ["базу бэкапим каждую ночь, храним 30 дней"],
+          "tags": ["бэкап","база"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A2.2-merge", "agentFocus": "arbiter", "cell": "A2.2", "channel": "planerka", "trap": false, "boundaryPair": "merge|extension",
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Согласование отпуска",
+          "criticalQuestion": "За сколько согласуют отпуск?",
+          "trustedAnswer": "Отпуск согласуется с руководителем за две недели.",
+          "evidenceQuotes": ["отпуск согласуется с руководителем за две недели"],
+          "tags": ["отпуск"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false },
+        { "order": 2, "signalType": "regulation", "name": "Заявление на отпуск",
+          "criticalQuestion": "Когда подавать заявление на отпуск?",
+          "trustedAnswer": "Заявление на отпуск подаётся не позднее чем за 14 дней, утверждает непосредственный руководитель.",
+          "evidenceQuotes": ["заявление на отпуск не позднее чем за 14 дней, утверждает руководитель"],
+          "tags": ["отпуск","заявление"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A2.3-extension", "agentFocus": "arbiter", "cell": "A2.3", "channel": "planerka", "trap": true, "boundaryPair": "extension|contradicts",
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Подписание договоров",
+          "criticalQuestion": "Кто подписывает договоры?",
+          "trustedAnswer": "Договоры подписывает директор.",
+          "evidenceQuotes": ["договоры подписывает директор"],
+          "tags": ["договоры","подпись"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false },
+        { "order": 2, "signalType": "regulation", "name": "Визирование крупных договоров",
+          "criticalQuestion": "Что с крупными договорами?",
+          "trustedAnswer": "При сумме сделки выше миллиона договор дополнительно визирует юрист перед подписью директора.",
+          "evidenceQuotes": ["при сумме выше миллиона договор дополнительно визирует юрист"],
+          "tags": ["договоры","юрист","крупные"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A2.4-contradicts", "agentFocus": "arbiter", "cell": "A2.4", "channel": "planerka", "trap": true, "boundaryPair": "extension|contradicts",
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Кто подписывает договоры",
+          "criticalQuestion": "Кто подписывает договоры?",
+          "trustedAnswer": "Договоры подписывает только директор.",
+          "evidenceQuotes": ["договоры подписывает только директор"],
+          "tags": ["договоры","подпись"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false },
+        { "order": 2, "signalType": "regulation", "name": "Кто подписывает договоры (расхождение)",
+          "criticalQuestion": "Кто подписывает договоры на проектах?",
+          "trustedAnswer": "Договоры подписывает руководитель проекта.",
+          "evidenceQuotes": ["договоры подписывает руководитель проекта"],
+          "tags": ["договоры","подпись","проект"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A2.5-distinct-scope", "agentFocus": "arbiter", "cell": "A2.5", "channel": "document", "trap": true, "boundaryPair": "merge|distinct",
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Согласование мелких расходов",
+          "criticalQuestion": "Как согласуют мелкие расходы?",
+          "trustedAnswer": "Расходы до пяти тысяч сотрудник согласует с руководителем отдела.",
+          "evidenceQuotes": ["расходы до пяти тысяч согласует руководитель отдела"],
+          "tags": ["расходы","согласование"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false },
+        { "order": 2, "signalType": "regulation", "name": "Согласование командировочных",
+          "criticalQuestion": "Как согласуют командировочные?",
+          "trustedAnswer": "Командировочные расходы согласует финансовый отдел по авансовому отчёту.",
+          "evidenceQuotes": ["командировочные согласует финансовый отдел по авансовому отчёту"],
+          "tags": ["командировки","финотдел"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A2.5-distinct-homonym", "agentFocus": "arbiter", "cell": "A2.5", "channel": "chat", "trap": true, "boundaryPair": "merge|distinct",
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Доступ к порталу проекта",
+          "criticalQuestion": "Кто даёт доступ к Порталу проекта?",
+          "trustedAnswer": "Доступ к Порталу (внутренний проект автоматизации) выдаёт руководитель проекта.",
+          "evidenceQuotes": ["доступ к Порталу-проекту выдаёт руководитель проекта"],
+          "tags": ["Портал","проект","доступ"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false },
+        { "order": 2, "signalType": "regulation", "name": "Продажа Портала клиентам",
+          "criticalQuestion": "Как продаём Портал?",
+          "trustedAnswer": "Портал (наш продукт для клиентов) продаётся только по годовой подписке через отдел продаж.",
+          "evidenceQuotes": ["Портал-продукт продаётся по годовой подписке"],
+          "tags": ["Портал","продукт","продажи"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A3.1-create-process-steps", "agentFocus": "compiler", "cell": "A3.1", "channel": "document", "trap": false,
+      "blocks": [
+        { "order": 1, "signalType": "process_step", "name": "Обработка входящей заявки",
+          "criticalQuestion": "Как обрабатываем входящую заявку?",
+          "trustedAnswer": "Заявка приходит в отдел продаж: менеджер квалифицирует, затем передаёт пресейлу на расчёт, пресейл готовит КП и передаёт менеджеру на отправку клиенту.",
+          "evidenceQuotes": ["менеджер квалифицирует, пресейл считает и готовит КП, менеджер отправляет"],
+          "tags": ["заявка","продажи","процесс"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "A3.2-extend-preserve", "agentFocus": "compiler", "cell": "A3.2", "channel": "planerka", "trap": true,
+      "blocks": [
+        { "order": 1, "signalType": "process_step", "name": "Инструкция по релизу",
+          "criticalQuestion": "Как выкатываем релиз?",
+          "trustedAnswer": "Инженер выкатывает релиз после ревью и прохождения тестов.",
+          "evidenceQuotes": ["выкатываем после ревью и тестов"],
+          "tags": ["релиз","деплой"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false },
+        { "order": 2, "signalType": "process_step", "name": "Уточнение по релизу",
+          "criticalQuestion": "Что уточнили про релиз?",
+          "trustedAnswer": "Релиз выкатываем после ревью двух инженеров и обязательно зелёных тестов; перед выкаткой снять бэкап.",
+          "evidenceQuotes": ["ревью двух инженеров","зелёные тесты","снять бэкап перед выкаткой"],
+          "tags": ["релиз","ревью","бэкап"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    },
+    {
+      "id": "SK1-lifecycle", "agentFocus": "cross", "cell": "SK1", "channel": "planerka", "trap": true,
+      "blocks": [
+        { "order": 1, "signalType": "regulation", "name": "Приёмка обращений в поддержке",
+          "criticalQuestion": "Как принимаем обращения?",
+          "trustedAnswer": "Поддержка отвечает на обращение в течение 4 часов.",
+          "evidenceQuotes": ["ответ на обращение в течение 4 часов"],
+          "tags": ["поддержка","обращения"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false },
+        { "order": 2, "signalType": "regulation", "name": "Реакция поддержки (дубль)",
+          "criticalQuestion": "За сколько реагирует поддержка?",
+          "trustedAnswer": "Первый ответ клиенту поддержка даёт не позже четырёх часов.",
+          "evidenceQuotes": ["первый ответ не позже четырёх часов"],
+          "tags": ["поддержка","SLA"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false },
+        { "order": 3, "signalType": "regulation", "name": "Эскалация критичных обращений (дополнение)",
+          "criticalQuestion": "Что с критичными обращениями?",
+          "trustedAnswer": "Критичные обращения дополнительно эскалируются старшему в тот же день.",
+          "evidenceQuotes": ["критичные эскалируются старшему в тот же день"],
+          "tags": ["поддержка","эскалация"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false },
+        { "order": 4, "signalType": "regulation", "name": "Смена SLA (противоречие)",
+          "criticalQuestion": "Новый норматив реакции?",
+          "trustedAnswer": "Теперь поддержка обязана отвечать в течение 30 минут, а не четырёх часов.",
+          "evidenceQuotes": ["отвечать в течение 30 минут"],
+          "tags": ["поддержка","SLA","смена"], "ownerCompanyPrior": "наша", "meetingExternalLikely": false }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,28 @@
 
 ---
 
+## 📌 Прямые пути ко всем артефактам (чтобы не потерять)
+
+Всё лежит в репозитории `kora`. Пути — от корня репо:
+
+| Артефакт | Путь |
+|---|---|
+| **Карта ситуаций 360°** (что покрываем) | `plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md` |
+| **ТЗ стенда** (контракт: файлы/форматы/метрики/фазы) | `plans/tz/2026-07-03-regulation-instruction-stand.md` |
+| **Этот хэндофф-промпт** | `docs/testing/regulation-stand-agent-prompt.md` |
+| **Стартовый корпус** (26 сценариев, готов — РАСШИРЯТЬ) | `docs/testing/regulation-stand-corpus.json` |
+| **Стартовый эталон** (26 эталонов под корпус) | `docs/testing/regulation-stand-ruler.json` |
+| **Методология линейки** | `docs/methodology/synthetic-fidelity-eval-method.md` |
+| Скрипты стенда (СОЗДАТЬ) | `backend/scripts/regulation-stand/{stand,seed-reg-feed,annotate,match,judge,report}.ts` |
+| README стенда (СОЗДАТЬ) | `docs/testing/regulation-stand.md` |
+| Отчёт baseline (СГЕНЕРИТ report) | `docs/testing/regulation-stand-report.md` |
+
+**Уже готово (не с нуля):** карта ситуаций, ТЗ, стартовый корпус+эталон (26 критических сценариев,
+провалидированы: id корпуса ↔ id эталона 1:1). Твоя работа — дописать скрипты стенда, **расширить корпус+эталон
+до полного покрытия карты** (каждая ячейка ≥1, критические ≥3) и прогнать фазы.
+
+---
+
 ## Кто ты и что делаешь
 
 Ты — инженер-верификатор в проекте «Кора» (память компании; ядро — knowledge-core). Тестируешь

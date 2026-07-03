@@ -104,6 +104,46 @@ getDynamic-ключ на [:326](../../backend/src/modules/knowledge-core/service
 1. Заменить на `const roleAggMin = await this.cfg.getDynamic<number>('knowledge.personaRoleAggMinPersons', 'PERSONA_ROLE_AGG_MIN_PERSONS', this.cfg.persona.roleAggMinPersons); if (activeProfiles.length < roleAggMin) return null;`
 2. Seed значения **1** (см. Фаза 4). FE `defaultValue` 3→1 для консистентности.
 
+## 4а. Фаза 5 — гейт сборки клона считает все слои метода, а не только skill (вскрыто прогоном)
+
+**Проблема (данные стенда):** клон в промпт собирает 7 компонентов (skill/value/motivation/process_marker +
+RolePrinciple + PracticeSkill + регламенты), НО гейт минимума `dedupedTraits.length < minTraits(3)` считает
+**только слой `skill`** — в `buildForProfile` ([:123](../../backend/src/modules/knowledge-core/services/executable-persona-build.service.ts#L123)) и `buildForRole` ([:352](../../backend/src/modules/knowledge-core/services/executable-persona-build.service.ts#L352)).
+На стенде: Дарья 2 skill + 3 value + 2 process = 7 черт, но роль-клон НЕ собрался (2<3); собрался только
+Михаил (ровно 3 skill). Гейтим по 1 слою из 7 — несостыковка с тем, что в промпт идут все.
+
+**Контракт:**
+1. `personaMinTraits` — читать через `getDynamic('knowledge.personaMinTraits', 'PERSONA_MIN_TRAITS', this.cfg.persona.minTraits)` (ключ уже в реестре+FE, потребитель читал статику — тот же латентный баг, что roleAggMinPersons).
+2. `buildForProfile`: убрать ранний skill-only гейт (:123); после загрузки слоёв (values/motivations/processMarkers)
+   гейтить по `profile.traits.length + values.length + motivations.length + processMarkers.length < personaMinTraits`.
+3. `buildForRole`: убрать skill-only гейт (:352); после загрузки слоёв гейтить по
+   `dedupedTraits.length + values.length + motivations.length + processMarkers.length < personaMinTraits`.
+4. Секции промпта НЕ трогаем (skill остаётся «черты подхода»). Меняется только условие «клон достаточно наполнен».
+5. **Seed `knowledge.personaMinTraits=3`** (и FE default 5→3). Причина: админка была засеяна **5**, а потребитель
+   читал ENV `PERSONA_MIN_TRAITS=3` МИМО админки → эффективный порог в проде всегда был 3. Перевод на getDynamic
+   заставляет честно читать админку — без выравнивания это **подняло бы** порог 3→5 (регресс: меньше клонов).
+   Сид=3 сохраняет фактическое поведение и делает крутилку честной.
+
+**Открытая находка Слоя 0 (в baseline, НЕ в этом ТЗ):** почему skill-слой недопроизводится (у Дарьи 2 skill из
+7 кластеров, хотя корм — метод) — мульти-детектор (skill/value/process на одном кластере). Разобрать в baseline.
+
+## 4б. Фаза 6 — надёжность сборки клона (compile flash→pro + ретрай)
+
+**Проблема (владелец: «1 из 5 упал — на 500 будет пачка»):** `executable-persona-compile` (сборка всей персоны из
+7 слоёв) шёл primary на `deepseek-v4-flash`, который спотыкается на structured/thinking (`Thinking mode does not
+support tool_choice`) → иногда падает в фолбэки. Локально (битые ключи фолбэков) → клон обнуляется; в проде →
+тихая деградация на модель хуже. Клон — ключевой артефакт, собирать его на флейки-модели нельзя.
+
+**Контракт:**
+1. Маршрут `executable-persona-compile` primary `deepseek-v4-flash` → **`deepseek-v4-pro`** (та же capable-модель,
+   что у detect), secondary `gpt-5.4-mini`→`gpt-5.4` — в [seed-llm-task-routes-skill-and-clone.ts](../../backend/scripts/seed-llm-task-routes-skill-and-clone.ts) + обновить snapshot-спек.
+2. **Прод-путь:** сид маршрутов НЕ в аггрегаторе; добавить `executable-persona-compile` в TARGETS
+   [patch-mass-migrate-to-deepseek-pro.ts](../../backend/scripts/patch-mass-migrate-to-deepseek-pro.ts) (в STEPS
+   `--update-existing`, `everyDeploy`) — так primary→pro доедет на прод каждым деплоем, уважая admin-правки.
+3. **Ретрай в сборке:** `compilePersonaPrompt` ([executable-persona-build.service.ts](../../backend/src/modules/knowledge-core/services/executable-persona-build.service.ts)) —
+   цикл до 3 попыток на throw ИЛИ подозрительно короткий текст (<50 симв.), null только после всех попыток.
+4. Проверка: build всех 5 person + 4 role клонов на стенде — 9/9 собираются стабильно (2+ прогона).
+
 ## 5. Фаза 4 — seed + деплой-регистрация
 
 1. Новый `backend/scripts/seed-admin-setting-clone-construction.ts` (шаблон — `seed-admin-setting-knowledge-graph.ts`,

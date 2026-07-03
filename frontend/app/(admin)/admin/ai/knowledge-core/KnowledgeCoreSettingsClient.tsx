@@ -266,8 +266,10 @@ const GROUPS: SettingGroup[] = [
       {
         key: "knowledge.personaMinTraits",
         label: "Мин. трейтов для персоны",
-        schema: positiveInt(5),
-        defaultValue: 5,
+        description:
+          "Минимум черт метода (skill+value+motivation+process_marker), при котором собирается клон. Совпадает с код-дефолтом (3).",
+        schema: positiveInt(3),
+        defaultValue: 3,
       },
       {
         key: "knowledge.personaRoleAggMinPersons",

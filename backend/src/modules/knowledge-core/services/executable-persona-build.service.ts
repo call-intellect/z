@@ -119,8 +119,6 @@ export class ExecutablePersonaBuildService {
       if (!profile) return null;
       if (profile.person.relationship !== 'employee') return null;
       if (profile.status !== 'active') return null;
-      // Гейт минимума — по skill-чертам (как до ИНТ.1, деградация совместима).
-      if (profile.traits.length < this.cfg.persona.minTraits) return null;
 
       // ИНТ.1 (R9) — новые слои метода: values/motivations/processMarkers
       // (топ-5 на слой), принципы активной роли person'а, процедуры
@@ -171,7 +169,15 @@ export class ExecutablePersonaBuildService {
         practiceSkillRows,
       );
 
-      // LLM compile (v2 — секционная сборка из всех слоёв метода).
+      const personaMinTraits = await this.cfg.getDynamic<number>(
+        'knowledge.personaMinTraits',
+        'PERSONA_MIN_TRAITS',
+        this.cfg.persona.minTraits,
+      );
+      const methodTraitCount =
+        profile.traits.length + values.length + motivations.length + processMarkers.length;
+      if (methodTraitCount < personaMinTraits) return null;
+
       const personaPrompt = await this.compilePersonaPrompt({
         tenantId: profile.tenantId,
         personName: profile.person.name,
@@ -349,7 +355,6 @@ export class ExecutablePersonaBuildService {
       // Ф7 (H) — схлопнуть черты по conceptId: одна и та же черта от N
       // сотрудников не должна повторяться N раз в персоне роли.
       const dedupedTraits = this.dedupeTraitsByConcept(aggregatedTraits);
-      if (dedupedTraits.length < this.cfg.persona.minTraits) return null;
 
       const role = await this.prisma.role.findUnique({
         where: { id: args.roleId },
@@ -401,6 +406,15 @@ export class ExecutablePersonaBuildService {
       const practiceSkills = this.parsePracticeSkillsForPrompt(
         practiceSkillRows,
       );
+
+      const personaMinTraits = await this.cfg.getDynamic<number>(
+        'knowledge.personaMinTraits',
+        'PERSONA_MIN_TRAITS',
+        this.cfg.persona.minTraits,
+      );
+      const roleMethodTraitCount =
+        dedupedTraits.length + values.length + motivations.length + processMarkers.length;
+      if (roleMethodTraitCount < personaMinTraits) return null;
 
       const personaPrompt = await this.compilePersonaPrompt({
         tenantId: args.tenantId,
@@ -719,38 +733,43 @@ export class ExecutablePersonaBuildService {
       practiceSkills: args.practiceSkills ?? [],
       processMarkers: args.processMarkers ?? [],
     });
-    let result: LlmCallResult;
-    try {
-      result = await this.llm.call({
-        taskType: 'executable-persona-compile',
-        systemPrompt: guardOn
-          ? withInjectionGuard(EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT)
-          : EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT,
-        userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
-        tenantId: args.tenantId,
-        dataClass: 'internal',
-        // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — текст persona 300-800
-        // слов + thinking-токены DeepSeek-Pro. На дефолтных 4096 проваливается.
-        maxTokens: 8_000,
-      });
-    } catch (err) {
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      let result: LlmCallResult;
+      try {
+        result = await this.llm.call({
+          taskType: 'executable-persona-compile',
+          systemPrompt: guardOn
+            ? withInjectionGuard(EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT)
+            : EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT,
+          userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
+          tenantId: args.tenantId,
+          dataClass: 'internal',
+          maxTokens: 8_000,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err), attempt },
+          'executable-persona-build.compilePersonaPrompt: LLM упал — retry',
+        );
+        continue;
+      }
+      if (result.modelUsed) {
+        this.metrics.incCoreSpecialistLlmTokens({
+          type: 'persona',
+          model: result.modelUsed,
+          tier: result.tier ?? 'primary',
+          tokens: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
+        });
+      }
+      const text = result.text.trim();
+      if (text.length >= 50) return text.slice(0, 8_000);
       this.logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        'executable-persona-build.compilePersonaPrompt: LLM упал',
+        { attempt, length: text.length },
+        'executable-persona-build.compilePersonaPrompt: слишком короткий текст — retry',
       );
-      return null;
     }
-    if (result.modelUsed) {
-      this.metrics.incCoreSpecialistLlmTokens({
-        type: 'persona',
-        model: result.modelUsed,
-        tier: result.tier ?? 'primary',
-        tokens: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
-      });
-    }
-    const text = result.text.trim();
-    if (text.length < 50) return null;
-    return text.slice(0, 8_000);
+    return null;
   }
 
   /** K1 (Б24) — P2002 (unique violation). */

@@ -38,6 +38,7 @@ const TARGETS: MigrationTarget[] = [
   { taskType: 'chat-v2-conversation-title', category: 'chat', smokeOk: true },
 
   { taskType: 'card-rollup-v2', category: 'rollup', smokeOk: true },
+  { taskType: 'executable-persona-compile', category: 'rollup', smokeOk: true },
 
   { taskType: 'axis-classify', category: 'classifier', smokeOk: true },
 ];

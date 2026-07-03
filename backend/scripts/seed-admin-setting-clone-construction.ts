@@ -34,6 +34,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Минимум носителей с активным SkillProfile, при котором собирается клон роли (executable-persona-build). 1 — одиночная должность (типовой SMB) тоже получает клон роли. По умолчанию 1.',
   },
+  {
+    key: 'knowledge.personaMinTraits',
+    value: 3,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Минимум черт метода (сумма слоёв skill+value+motivation+process_marker), при котором собирается клон (person и role). Совпадает с код-дефолтом ENV PERSONA_MIN_TRAITS=3 (потребитель раньше читал ENV мимо админки=5; теперь через getDynamic — админку выравниваем на 3, чтобы не поднять порог). По умолчанию 3.',
+  },
 ];
 
 interface Counters {

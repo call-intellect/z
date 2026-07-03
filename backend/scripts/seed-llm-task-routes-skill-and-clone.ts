@@ -79,17 +79,18 @@ const SEEDS: TaskRouteSeed[] = [
   },
   {
     taskType: 'executable-persona-compile',
-    playbookSection: '§2.1 persona compile — структурированный текст 300–800 слов.',
+    playbookSection:
+      '§2.3 capable LLM — сборка всего клона (persona 300–800 слов из 7 слоёв). Primary = deepseek-v4-pro: flash спотыкался на structured/thinking (Thinking mode does not support tool_choice) и иногда обнулял клон при сборке. Compile редкий (раз на сборку клона), стоимость Pro оправдана надёжностью + качеством персоны.',
     chain: [
       {
         tier: 'primary',
         providerName: 'deepseek',
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-v4-pro',
       },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',
-        model: 'gpt-5.4-mini',
+        model: 'gpt-5.4',
       },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],

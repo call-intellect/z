@@ -666,6 +666,12 @@ const STEPS: Step[] = [
   { phase: 'backfill', script: 'scripts/backfill-idea-quality.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-ai-cost-daily-gap.ts',
+    skipBootstrap: true,
+    hint: 'AiCostDaily за 2026-05-09..2026-05-23 — период до появления ночного крона',
+  },
   { phase: 'backfill', script: 'scripts/backfill-meeting-linked-ids.ts', hint: 'IntakeIssue.meetingId → Issue.linkedMeetingIds backfill (intake-issue-linked-meeting-ids-fix, только meeting:-формат externalId)', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-day-report.ts', skipBootstrap: true, hint: 'сборка дневных отчётов из block-ingest за 30 дней (4 сущности)' },
   {

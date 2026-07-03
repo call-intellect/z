@@ -93,17 +93,19 @@ owner_decisions:
   **реальный банк-111 валиден (0 ошибок)**. Полный прогон цепочек — «под стендом позже».
 - Пред-существующие 9 `no-explicit-any` в теле `processOne` — вне scope (dev-скрипт, не мои строки).
 
-## Фаза 3 — Постадийные метрики `[ ]`
+## Фаза 3 — Постадийные метрики `[x]`
 
-Новый `backend/scripts/eval/metrics/stage-metrics.ts` — из `retrievalTrace` + gold считает на вопрос и агрегат:
-- **retrieval recall@k**: `gold.expectedBlockIds ⊆ poolAfterFusion` (и отдельно топ-k afterRerank).
-- **resolve hit-rate**: `gold.expectedEntities ⊆ resolvedEntityIds/PersonIds`.
-- **sub-question lift**: recall@k пула, построенного из расширенных под-вопросов, vs из одного исходного
-  (режим `--no-expansion` на прогоне — прокинуть флаг до `MultiQueryExpansionService` через тестовый конфиг,
-  НЕ трогая прод-логику; если недоступно — считать по трассе `doorPerQuery`).
-- **synthesis faithfulness** — линза судьи (Ф4), не эвристика.
-- Приёмка: unit на `stage-metrics` с синтетическими трассами (gold-блок в пуле → recall=1; отсутствует → 0;
-  резолв-hit; lift ≥0 при расширении).
+Новый `backend/scripts/eval/metrics/stage-metrics.ts` — чистые функции, из нормализованной трассы + gold:
+- **retrieval recall@k** (`retrievalRecall(signatures, poolTexts)`): доля gold-сигнатур, чей `entity`/`phrases`
+  находятся в текстах пула. **Сигнатурный резолв** вместо `⊆ blockId` (см. Ф0: id нестабильны). На замороженной
+  записи пул = `rerankTop`-имена (полный `poolAfterFusion` по именам харнесс пока не пишет → под стенд).
+- **resolve hit-rate** (`resolveHitRate(expectedNames, resolvedNames)`): доля ожидаемых сущностей, совпавших по
+  имени/подстроке. Id→имя маппинг — в оркестраторе (под стенд), в сухом прогоне — прокси по `rerankTop`/answerText.
+- **sub-question lift** (`subQuestionLift(recallExpanded, recallSingle)`): разница recall с экспансией и без.
+- **synthesis faithfulness** — линза судьи (Ф4), не эвристика (поле в `PerQuestionMetrics`, заполняет Ф4).
+- `aggregate(rows)` — средние по корпусу, null-строки пропускаются.
+- Приёмка (unit, БЕЗ стенда) — **сделано, 12 тестов зелёные**: сигнатура в пуле → recall=1; отсутствует → 0.5/0;
+  resolve полный/частичный/0; lift; агрегация с null.
 
 ## Фаза 4 — Судья встроен в прогон `[ ]`
 

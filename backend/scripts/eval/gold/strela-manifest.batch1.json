@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "tenant": "Стрела (синтетика)",
+    "batch": 1,
+    "source": "T1 — планёрка недели (seed-synthetic-company.ts)",
+    "anchors": 10,
+    "method": "2 непересекающихся агента-разметчика (blind) → сверка → сверялка с базой read-only",
+    "compareResult": "10/10 found против org cmr1qbvpx0001pwbwxbgmh1jl (299 блоков, 171 сущность)",
+    "note": "signalType manifest — словарь разметчика; в базе онтология: goal→plan_item, task→action_item/task_created (матчить по смыслу, не по имени enum)"
+  },
+  "blocks": [
+    { "anchorId": "A1", "signalType": "decision", "gist": "Зафиксированное решение: основная метрика квартала — retention (удержание пользователей), а не выручка; выручка — следствие", "author": "Сергей", "agreement": "partial" },
+    { "anchorId": "A2", "signalType": "goal", "gist": "Поднять недельный retention с 42% до 55% к концу сентября — ключевой измеримый результат квартала", "author": "Сергей", "agreement": "partial" },
+    { "anchorId": "A3", "signalType": "fact", "gist": "Недельный возврат по активным кабинетам ~42%, но выборка маленькая — клиентам пока не показывать", "author": "Дарья", "agreement": "partial" },
+    { "anchorId": "A4", "signalType": "idea", "gist": "Добавить в кабинет раздел «Моя история» — пользователь видит, что Кора о нём запомнила, для роста вовлечённости и retention", "author": "Анна", "agreement": "partial" },
+    { "anchorId": "A5", "signalType": "idea", "gist": "По понедельникам присылать пользователю короткий дайджест: что Кора за неделю про него запомнила (для вовлечённости)", "author": "Анна", "agreement": "partial" },
+    { "anchorId": "A6", "signalType": "commitment", "gist": "Анна обещала подготовить презентацию нового онбординга к пятнице 4 июля — показать на демо", "author": "Анна", "agreement": "partial" },
+    { "anchorId": "A7", "signalType": "blocker", "gist": "Битрикс API отдаёт 429 (rate limit) при массовом синке диалогов — держит весь сценарий импорта чатов", "author": "Михаил", "agreement": "partial" },
+    { "anchorId": "A8", "signalType": "task", "gist": "Михаил сегодня пишет в техподдержку Битрикс официальный запрос на увеличение rate limit", "author": "Михаил", "agreement": "partial" },
+    { "anchorId": "A9", "signalType": "risk", "gist": "База контактов для email-кампании устарела (3 мес) — мёртвые адреса могут ударить по репутации домена", "author": "Дарья", "agreement": "conflict" },
+    { "anchorId": "A10", "signalType": "task", "gist": "Дарья актуализирует базу контактов до среды: прочистить мёртвые адреса, обновить сегменты", "author": "Дарья", "agreement": "partial" }
+  ],
+  "entities": [
+    { "name": "Сергей", "type": "person" },
+    { "name": "Анна", "type": "person" },
+    { "name": "Михаил", "type": "person" },
+    { "name": "Дарья", "type": "person" },
+    { "name": "retention", "type": "metric" },
+    { "name": "выручка", "type": "metric" },
+    { "name": "Моя история", "type": "feature" },
+    { "name": "еженедельный дайджест", "type": "feature" },
+    { "name": "Кора", "type": "project" },
+    { "name": "презентация онбординга", "type": "project" },
+    { "name": "Битрикс", "type": "tool" },
+    { "name": "импорт чатов", "type": "feature" },
+    { "name": "база контактов", "type": "project" },
+    { "name": "email-кампания", "type": "project" }
+  ],
+  "blockEdges": [
+    { "from": "A2", "to": "A1", "relation": "goal_supports_decision" },
+    { "from": "A3", "to": "A2", "relation": "fact_is_baseline_for_goal" },
+    { "from": "A4", "to": "A2", "relation": "idea_develops_goal" },
+    { "from": "A5", "to": "A2", "relation": "idea_develops_goal" },
+    { "from": "A8", "to": "A7", "relation": "task_addresses_blocker" },
+    { "from": "A10", "to": "A9", "relation": "task_addresses_risk" }
+  ]
+}

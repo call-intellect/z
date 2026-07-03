@@ -684,4 +684,54 @@ describe('LlmRouterService', () => {
       expect(out.modelUsed.startsWith('anthropic:')).toBe(true);
     });
   });
+
+  describe('taskTypeToAgentType (ТЗ 2026-07-03 analyze-worker-llm-router-migration, Фаза 1)', () => {
+    function callTaskTypeToAgentType(router: LlmRouterService, taskType: LlmTaskType): string {
+      const fn = (
+        router as unknown as {
+          taskTypeToAgentType: (taskType: LlmTaskType) => string;
+        }
+      ).taskTypeToAgentType.bind(router);
+      return fn(taskType);
+    }
+
+    it('report-by-type → report-by-type', () => {
+      const { router } = build({});
+      expect(callTaskTypeToAgentType(router, 'report-by-type' as LlmTaskType)).toBe(
+        'report-by-type',
+      );
+    });
+
+    it('custom-prompt → custom', () => {
+      const { router } = build({});
+      expect(callTaskTypeToAgentType(router, 'custom-prompt' as LlmTaskType)).toBe('custom');
+    });
+
+    it('client-meeting-split → client_protocol', () => {
+      const { router } = build({});
+      expect(callTaskTypeToAgentType(router, 'client-meeting-split' as LlmTaskType)).toBe(
+        'client_protocol',
+      );
+    });
+
+    it('summary → summary (regression)', () => {
+      const { router } = build({});
+      expect(callTaskTypeToAgentType(router, 'summary' as LlmTaskType)).toBe('summary');
+    });
+
+    it('tasks → tasks (regression)', () => {
+      const { router } = build({});
+      expect(callTaskTypeToAgentType(router, 'tasks' as LlmTaskType)).toBe('tasks');
+    });
+
+    it('follow-up → follow-up (regression)', () => {
+      const { router } = build({});
+      expect(callTaskTypeToAgentType(router, 'follow-up' as LlmTaskType)).toBe('follow-up');
+    });
+
+    it('неизвестный taskType → custom (default)', () => {
+      const { router } = build({});
+      expect(callTaskTypeToAgentType(router, 'chapters' as LlmTaskType)).toBe('custom');
+    });
+  });
 });

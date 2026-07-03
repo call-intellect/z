@@ -41,6 +41,7 @@ import { ProviderInfoResolver } from './protocol-adapter/provider-info.resolver'
  */
 export type LlmTaskType =
   | 'summary'
+  | 'report-by-type'
   | 'chapters'
   | 'tasks'
   | 'chat'
@@ -685,6 +686,7 @@ export type LlmTaskType =
  */
 export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'summary',
+  'report-by-type',
   'chapters',
   'tasks',
   'chat',
@@ -2090,20 +2092,22 @@ export class LlmRouterService implements OnModuleInit {
     return calcCostUsd(model, inputTokens, outputTokens, cachedTokens);
   }
 
-  /**
-   * Маппинг `taskType` → `agentType` для AiUsageLog. Существующая
-   * `AiAgentType` enum в `AiUsageLogService` — сохраняем совместимость.
-   */
   private taskTypeToAgentType(
     taskType: LlmTaskType,
-  ): 'summary' | 'report-by-type' | 'follow-up' | 'tasks' | 'custom' {
+  ): 'summary' | 'report-by-type' | 'follow-up' | 'tasks' | 'custom' | 'client_protocol' {
     switch (taskType) {
       case 'summary':
         return 'summary';
+      case 'report-by-type':
+        return 'report-by-type';
       case 'tasks':
         return 'tasks';
       case 'follow-up':
         return 'follow-up';
+      case 'custom-prompt':
+        return 'custom';
+      case 'client-meeting-split':
+        return 'client_protocol';
       default:
         return 'custom';
     }

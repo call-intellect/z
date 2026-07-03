@@ -36,12 +36,7 @@ import {
   type ExtractedBlock,
   type ExtractedEntityMention,
 } from '../services/block-extraction.service';
-import { ChunkContextService, CONTEXT_HEADER_VERSION } from '../services/chunk-context.service';
-import {
-  isCompanyEntityType,
-  makeContextHeaderInput,
-  resolveContextHeaderTitle,
-} from '../services/context-header-input';
+import { EMBED_NO_HEADER_VERSION } from '../services/chunk-context.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { isJunkEntityName } from '../services/entity-name-quality';
 import { EntityResolutionService } from '../services/entity-resolution.service';
@@ -181,9 +176,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(ProbeService)
     private readonly probeService?: ProbeService,
-    @Optional()
-    @Inject(ChunkContextService)
-    private readonly chunkContext?: ChunkContextService,
   ) {}
 
   onModuleInit(): void {
@@ -281,28 +273,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         'block-ingest: извлечение завершено',
       );
 
-      const headerInput = makeContextHeaderInput({
-        sourceTitle: resolveContextHeaderTitle({
-          sourceTitle: event.sourceTitle,
-          payloadTitle: meetingTitle ?? null,
-          sourceExternalId: event.sourceExternalId,
-          fallback: `${event.sourceType}:${event.id}`,
-        }),
-        companies: this.collectCompanyNames(blocksInOrder),
-        participants: this.tryGetParticipantNames(payload) ?? [],
-        meetingType: this.tryGetMeetingType(payload) ?? null,
-        meetingDateIso: event.occurredAt.toISOString(),
-      });
-      const contextHeader = this.chunkContext
-        ? await this.chunkContext
-            .buildContextHeader({ tenantId: event.tenantId, ...headerInput })
-            .catch(() => '')
-        : '';
-
       const embeddings =
-        blocksInOrder.length > 0
-          ? await this.embeddings.embedBlocks(blocksInOrder, contextHeader)
-          : [];
+        blocksInOrder.length > 0 ? await this.embeddings.embedBlocks(blocksInOrder) : [];
 
       const indexToBlockId = new Map<number, string>();
       const blockIds: string[] = [];
@@ -350,7 +322,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const summary = await this.maybePersistSourceSummary({
         event,
         payload,
-        contextHeader,
       }).catch((err) => {
         this.logger.warn(
           { rawEventId, err: err instanceof Error ? err.message : String(err) },
@@ -895,19 +866,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     return undefined;
   }
 
-  private collectCompanyNames(blocks: ExtractedBlock[]): string[] {
-    const names: string[] = [];
-    for (const b of blocks) {
-      for (const ent of b.mentionedEntities ?? []) {
-        if (isCompanyEntityType(ent.type) && typeof ent.name === 'string') {
-          const trimmed = ent.name.trim();
-          if (trimmed.length > 0) names.push(trimmed);
-        }
-      }
-    }
-    return names;
-  }
-
   private tryGetParticipantNames(payload: unknown): string[] | undefined {
     if (typeof payload !== 'object' || payload === null) return undefined;
     const parts = (payload as { participants?: unknown }).participants;
@@ -1091,9 +1049,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
   private async maybePersistSourceSummary(args: {
     event: RawEvent;
     payload: unknown;
-    contextHeader: string;
   }): Promise<MeetingSummaryResult> {
-    const { event, payload, contextHeader } = args;
+    const { event, payload } = args;
     const kind = this.resolveSourceEpisodeKind(event.sourceType);
     if (!kind) return { blockId: null, text: null, vector: null };
     const summaryText = this.resolveSourceSummaryText(kind, payload);
@@ -1113,7 +1070,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       mentionedEntities: [],
       role_relevant: false,
     };
-    const [vector] = await this.embeddings.embedBlocks([summaryBlock], contextHeader);
+    const [vector] = await this.embeddings.embedBlocks([summaryBlock]);
     const blockId = await this.persistBlock({
       event,
       block: summaryBlock,
@@ -1376,7 +1333,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           await tx.$executeRawUnsafe(
             'UPDATE "IdeaBlock" SET embedding = $1::vector(1536), "contextHeaderVersion" = $2 WHERE id = $3 AND "tenantId" = $4',
             this.toVectorLiteral(embedding),
-            CONTEXT_HEADER_VERSION,
+            EMBED_NO_HEADER_VERSION,
             ideaBlock.id,
             event.tenantId,
           );

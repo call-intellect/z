@@ -867,8 +867,8 @@ const STEPS: Step[] = [
   },
   {
     phase: 'backfill',
-    script: 'scripts/backfill-context-header-reembed.ts',
-    hint: 'ре-эмбеддинг IdeaBlock с contextual-header v2 (компании/состав/заголовок источника) + REINDEX HNSW; идемпотентно по contextHeaderVersion (Ф7). Запускать ПОСЛЕ backfill-source-layer',
+    script: 'scripts/backfill-reembed-blocks-no-header.ts',
+    hint: 'ре-эмбеддинг IdeaBlock БЕЗ контекст-хедера (block-space=query-space, Ф2 консолидации) + REINDEX HNSW; идемпотентно по contextHeaderVersion=noheader-v1. ОБЯЗАТЕЛЬНО вместе с выкатом кода (иначе смешанное header-ful/header-less пространство → KNN хуже). Без --org=ALL orgs',
     skipBootstrap: true,
   },
   {

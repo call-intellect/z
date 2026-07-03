@@ -520,6 +520,13 @@ const STEPS: Step[] = [
   },
   {
     phase: 'patch',
+    script: 'scripts/patch-llm-routes-analyze-worker-1to1.ts',
+    hint: 'форсирует 1:1-легаси-совместимую цепочку (deepseek-v4-pro→minimax→openai-via-proxy gpt-5-mini) для summary/report-by-type/follow-up/custom-prompt/client-meeting-split — миграция analyze.worker на LlmRouterService (ТЗ 2026-07-03), временно, до отдельного решения владельца об экономии на дешёвых моделях',
+    skipBootstrap: true,
+    everyDeploy: true,
+  },
+  {
+    phase: 'patch',
     script: 'scripts/patch-check-legacy-ab-experiments.ts',
     hint: 'read-only: предупреждение об активных легаси route.experiment после вывода AdminExperimentsService из эксплуатации (ТЗ 2026-07-03 Фаза 2)',
     skipBootstrap: true,

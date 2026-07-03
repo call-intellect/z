@@ -1745,7 +1745,11 @@ export class TypedConfigService {
       currencyRateApiUrl: String(
         this.get('CURRENCY_RATE_API_URL') ?? 'https://www.cbr-xml-daily.ru/daily_json.js',
       ),
-      currencyFallbackUsdRub: Number(this.get('CURRENCY_RATE_FALLBACK_USD_RUB') ?? 90),
+      currencyFallbackUsdRub: this.resolveSync<number>(
+        'llm.budget.currencyRateFallbackUsdRub',
+        'CURRENCY_RATE_FALLBACK_USD_RUB',
+        90,
+      ),
       providerSmokeTestEnabled: this.get('PROVIDER_SMOKE_TEST_ENABLED') !== false,
       providerSmokeTestIntervalMinutes: Number(
         this.get('PROVIDER_SMOKE_TEST_INTERVAL_MINUTES') ?? 30,

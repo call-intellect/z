@@ -932,6 +932,18 @@ function buildSettings(): SettingSeed[] {
       'high',
       'Дефолт-цепочка провайдеров для taskType без явного маршрута (primary→secondary→tertiary). Раньше — хардкод DEFAULT_FALLBACK_CHAIN в коде.',
     ],
+    [
+      'llm.budget.enforce_enabled',
+      envBool('LLM_BUDGET_ENFORCE_ENABLED', false),
+      'high',
+      'Жёсткий лимит месячного бюджета на ИИ: false = только наблюдение (превышение логируется, вызовы не блокируются), true = новые вызовы ИИ отклоняются при превышении лимита компании. Включение — отдельное решение владельца (см. docs/operations/feature-flags.md, пункт 1).',
+    ],
+    [
+      'llm.budget.currencyRateFallbackUsdRub',
+      envFloat('CURRENCY_RATE_FALLBACK_USD_RUB', 90),
+      'low',
+      'Запасной курс USD→RUB на случай, если свежих данных о курсе ЦБ нет (таблица currency_rates пуста или синк не сработал). Используется CurrencyRateService и при построчной подстраховке расчёта costRub.',
+    ],
   ];
   for (const [key, value, severity, description] of llm) {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });

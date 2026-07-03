@@ -147,6 +147,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['aiFeatures.clientProtocolEnabled', z.boolean()],
   ['aiFeatures.analyzeWorkerRouterEnabled', z.boolean()],
 
+  ['llm.budget.enforce_enabled', z.boolean()],
+  ['llm.budget.currencyRateFallbackUsdRub', z.number().positive()],
+
   ['llm.cacheSmokeEnabled', z.boolean()],
   ['llm.cacheHitRatioWarnThreshold', UNIT_INTERVAL],
   // Ф6 llm-providers-models-routing-admin (2026-07-02, Б11) — дефолт-цепочка

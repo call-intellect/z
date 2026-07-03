@@ -318,6 +318,13 @@ export function DaySignalsGrid({
                         label: `уверенность ${Math.round(fr.confidence * 100)}%`,
                         tone: "warn",
                       }}
+                      onClick={() =>
+                        setActiveSignal({
+                          entityType: "friction",
+                          id: fr.id,
+                          title,
+                        })
+                      }
                     />
                   );
                 })}

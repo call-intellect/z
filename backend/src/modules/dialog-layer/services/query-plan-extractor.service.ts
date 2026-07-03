@@ -663,6 +663,21 @@ export class QueryPlanExtractorService {
         undefined,
         15,
       );
+      const embeddingEnabled = await this.cfg.getDynamic<boolean>(
+        'knowledge.chatV2GroundingEmbedding',
+        undefined,
+        true,
+      );
+      const embeddingTopK = await this.cfg.getDynamic<number>(
+        'knowledge.chatV2GroundingEmbeddingTopK',
+        undefined,
+        10,
+      );
+      const embeddingMinSim = await this.cfg.getDynamic<number>(
+        'knowledge.chatV2GroundingEmbeddingMinSim',
+        undefined,
+        0.35,
+      );
       const tokens = [
         ...new Set(
           question
@@ -672,35 +687,37 @@ export class QueryPlanExtractorService {
             .filter((t) => t.length >= 4),
         ),
       ].slice(0, 12);
-      if (tokens.length === 0) return [];
 
-      const [entities, themes] = await Promise.all([
-        this.prisma.entity.findMany({
-          where: {
-            tenantId,
-            mergedIntoId: null,
-            OR: [
-              ...tokens.map((t) => ({
-                canonicalName: { contains: t, mode: 'insensitive' as const },
-              })),
-              { aliases: { hasSome: tokens } },
-            ],
-          },
-          select: { canonicalName: true },
-          take: topK * 2,
-        }),
-        this.prisma.theme.findMany({
-          where: {
-            tenantId,
-            status: 'active',
-            OR: tokens.map((t) => ({
-              name: { contains: t, mode: 'insensitive' as const },
-            })),
-          },
-          select: { name: true },
-          take: topK,
-        }),
-      ]);
+      const [entities, themes] =
+        tokens.length === 0
+          ? [[], []]
+          : await Promise.all([
+              this.prisma.entity.findMany({
+                where: {
+                  tenantId,
+                  mergedIntoId: null,
+                  OR: [
+                    ...tokens.map((t) => ({
+                      canonicalName: { contains: t, mode: 'insensitive' as const },
+                    })),
+                    { aliases: { hasSome: tokens } },
+                  ],
+                },
+                select: { canonicalName: true },
+                take: topK * 2,
+              }),
+              this.prisma.theme.findMany({
+                where: {
+                  tenantId,
+                  status: 'active',
+                  OR: tokens.map((t) => ({
+                    name: { contains: t, mode: 'insensitive' as const },
+                  })),
+                },
+                select: { name: true },
+                take: topK,
+              }),
+            ]);
 
       const out: string[] = [];
       const seen = new Set<string>();
@@ -714,9 +731,43 @@ export class QueryPlanExtractorService {
         if (seen.has(key)) continue;
         seen.add(key);
         out.push(trimmed);
-        if (out.length >= topK) break;
       }
-      return out;
+
+      let embeddingHints: string[] = [];
+      if (embeddingEnabled && this.entityResolution) {
+        try {
+          embeddingHints = await this.entityResolution.resolveEntityHintsByEmbedding(
+            tenantId,
+            question,
+            embeddingTopK,
+            embeddingMinSim,
+          );
+        } catch {
+          embeddingHints = [];
+        }
+      }
+
+      const embeddingKeys = new Set<string>();
+      for (const name of embeddingHints) {
+        const trimmed = name?.trim();
+        if (!trimmed) continue;
+        const key = trimmed.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        embeddingKeys.add(key);
+        out.push(trimmed);
+      }
+
+      const capped = out.slice(0, topK);
+      let survived = 0;
+      for (const name of capped) {
+        if (embeddingKeys.has(name.toLowerCase())) survived += 1;
+      }
+      if (survived > 0) {
+        this.metrics.incChatV2GroundingEmbeddingHits(survived);
+      }
+
+      return capped;
     } catch (err) {
       this.logger.warn(
         { tenantId, err: err instanceof Error ? err.message : String(err) },

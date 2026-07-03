@@ -1138,6 +1138,59 @@ export class EntityResolutionService {
     return out;
   }
 
+  async resolveEntityHintsByEmbedding(
+    tenantId: string,
+    question: string,
+    topK: number,
+    minSim: number,
+  ): Promise<string[]> {
+    if (!this.embeddings) return [];
+    let vec: number[] | null;
+    try {
+      vec = await this.embeddings.embedQuery(question);
+    } catch {
+      return [];
+    }
+    if (!vec || vec.length === 0) return [];
+    const limit = Math.max(1, Math.floor(topK));
+    interface Row {
+      canonicalName: string;
+      score: string | number;
+    }
+    let rows: Row[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT "canonicalName" AS "canonicalName",
+               1 - (embedding <=> $1::vector(1536)) AS score
+        FROM "Entity"
+        WHERE "tenantId" = $2
+          AND "mergedIntoId" IS NULL
+          AND embedding IS NOT NULL
+        ORDER BY embedding <=> $1::vector(1536)
+        LIMIT ${limit}
+        `,
+        this.toVectorLiteral(vec),
+        tenantId,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'resolveEntityHintsByEmbedding: pgvector KNN упал — возвращаем []',
+      );
+      return [];
+    }
+    const out: string[] = [];
+    for (const r of rows) {
+      const score = typeof r.score === 'string' ? Number(r.score) : r.score;
+      if (Number.isFinite(score) && score >= minSim) {
+        const name = r.canonicalName?.trim();
+        if (name) out.push(name);
+      }
+    }
+    return out;
+  }
+
   /**
    * LLM-арбитр выбора одного Person из неоднозначных кандидатов (fail-closed).
    * Cache-friendly: стабильный SYSTEM, переменные данные (имя/контекст/список)

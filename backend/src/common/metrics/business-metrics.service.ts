@@ -494,6 +494,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private blockWithoutEvidenceTotal!: Counter<'reason'>;
   private riskEdgeTotal!: Counter<'relation' | 'outcome'>;
   private ragAbstainTotal!: Counter<'mode'>;
+  private chatV2GroundingEmbeddingHitsTotal!: Counter<string>;
   // Ф3 МТЗ «разблокировка конвейера» (баг #18) — счётчик ранних skip-return'ов
   // хендлеров специалистов. До этого skip был неотличим от success (duration-
   // метрика в finally на ВСЕХ путях). reason: 'block_not_found' /
@@ -2527,6 +2528,10 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'rag_abstain_total',
       help: 'Гейт честности RAG: ответ не заземлён блоками → честный отказ. mode: on (отказ применён) | shadow (только наблюдение over-abstention)',
       labelNames: ['mode'] as const,
+    });
+    this.chatV2GroundingEmbeddingHitsTotal = this.getOrCreateCounter({
+      name: 'chat_v2_grounding_embedding_hits_total',
+      help: 'Понималщик chat-v2: семантические (эмбеддинг-KNN) подсказки-сущности, добавленные к лексическому справочнику',
     });
     // Ф3 МТЗ «разблокировка конвейера» (баг #18) — skip-return'ы хендлеров.
     this.coreSpecialistSkippedTotal = this.getOrCreateCounter({
@@ -6225,6 +6230,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incRagAbstain(args: { mode: string }): void {
     this.ragAbstainTotal.inc({ mode: args.mode });
+  }
+
+  incChatV2GroundingEmbeddingHits(n = 1): void {
+    this.chatV2GroundingEmbeddingHitsTotal.inc(n);
   }
 
   /**

@@ -24,6 +24,12 @@ import {
   type RouteChangeApi,
   type TaskTypeMetricsApi,
 } from "@/api/admin-ai-models.api";
+import {
+  adminLlmCostApi,
+  type LlmCostModule,
+  type LlmCostPeriod,
+  type LlmCostTaskTypeDetailApi,
+} from "@/api/admin-llm-cost.api";
 import { adminLlmModelsApi } from "@/api/admin-llm-models.api";
 import { adminLlmProvidersApi } from "@/api/admin-llm-providers.api";
 import {
@@ -39,7 +45,12 @@ import {
   mapTaskTypeRoute,
   tierLabel,
 } from "@/domain/admin-ai-model";
+import { formatRub as formatCostRub } from "@/domain/admin-llm-cost";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
+import {
+  AdminSparkline,
+  type AdminSparklinePoint,
+} from "@/ui/components/admin/AdminSparkline";
 import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
 import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
@@ -516,6 +527,16 @@ const PERIOD_OPTIONS: ReadonlyArray<{ value: UnifiedPeriod; label: string }> = [
 function periodToApi(p: UnifiedPeriod): "24h" | "7d" | "30d" {
   return p === "day" ? "24h" : p === "week" ? "7d" : "30d";
 }
+function periodToLlmCostPeriod(p: UnifiedPeriod): LlmCostPeriod {
+  return p === "month" ? "30d" : "7d";
+}
+
+const LLM_COST_MODULE_LABELS: Record<LlmCostModule, string> = {
+  memory_graph: "Память/граф",
+  extraction: "Извлечение из разговора",
+  agent: "Агент",
+  other: "Прочее/служебное",
+};
 
 function MetricsTabSection({ taskType }: { taskType: string }) {
   const [metrics, setMetrics] = useState<TaskTypeMetricsApi | null>(null);
@@ -640,7 +661,119 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
           </div>
         </>
       )}
+
+      <LlmCostCrossLinkSection taskType={taskType} period={period} />
     </section>
+  );
+}
+
+function LlmCostCrossLinkSection({
+  taskType,
+  period,
+}: {
+  taskType: string;
+  period: UnifiedPeriod;
+}) {
+  const costPeriod = periodToLlmCostPeriod(period);
+  const [detail, setDetail] = useState<LlmCostTaskTypeDetailApi | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    adminLlmCostApi
+      .taskTypeDetail(taskType, { period: costPeriod, trend: "day" })
+      .then((res) => {
+        if (!cancelled) setDetail(res);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(
+            e instanceof ApiError ? e.message : "Не удалось загрузить расход",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskType, costPeriod]);
+
+  const moduleId = detail?.module ?? null;
+  const moduleLabel = moduleId ? LLM_COST_MODULE_LABELS[moduleId] : null;
+  const dashboardHref = moduleId
+    ? `/admin/analytics/llm-cost?view=module&id=${moduleId}&period=${costPeriod}`
+    : `/admin/analytics/llm-cost?view=overview`;
+
+  const sparklineData: AdminSparklinePoint[] = (detail?.trend ?? []).map(
+    (p) => ({ x: p.date, y: p.costRub }),
+  );
+
+  return (
+    <div className="mt-4 rounded-lg border border-border-subtle bg-bg-subtle p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-fg-primary">
+          Расход по общему дашборду
+        </h3>
+        <Link
+          href={dashboardHref}
+          className="text-xs text-info hover:underline"
+        >
+          Смотреть в общем дашборде →
+        </Link>
+      </div>
+
+      {loading && (
+        <div className="flex items-center gap-2 py-3 text-xs text-fg-secondary">
+          <Loader2 size={12} className="animate-spin" /> Загружаем…
+        </div>
+      )}
+      {error && !loading && (
+        <p className="rounded border border-danger/30 bg-danger/5 p-2 text-xs text-danger">
+          {error}
+        </p>
+      )}
+      {!loading && !error && detail && (
+        <div className="flex flex-wrap items-center gap-5">
+          <div>
+            <div className="text-[11px] uppercase text-fg-tertiary">
+              Расход
+            </div>
+            <div className="text-base font-semibold text-fg-primary">
+              {formatCostRub(detail.totals.costRub)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase text-fg-tertiary">
+              Вызовов
+            </div>
+            <div className="text-base font-semibold text-fg-primary">
+              {detail.totals.callsCount}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase text-fg-tertiary">
+              Модуль
+            </div>
+            <div className="text-sm text-fg-primary">
+              {moduleLabel ?? detail.module}
+            </div>
+          </div>
+          <div className="ml-auto">
+            <AdminSparkline
+              data={sparklineData}
+              width={140}
+              height={36}
+              ariaLabel="Динамика расхода по taskType"
+            />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

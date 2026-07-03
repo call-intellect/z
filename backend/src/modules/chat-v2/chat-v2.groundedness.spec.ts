@@ -174,4 +174,15 @@ describe('ChatV2OrchestrationService.applyGroundednessGate', () => {
     expect(systemPrompt).toContain('мягкий контролёр заземления');
     expect(systemPrompt).toContain('fabricated');
   });
+
+  it('(Ф6) mode=lenient — судья ловит выдуманный статус и провенанс', async () => {
+    const h = makeHarness({
+      mode: 'lenient',
+      llmText: '{"grounded":true,"fabricated":false,"reason":""}',
+    });
+    await callGate(h);
+    const systemPrompt = h.llmCall.mock.calls[0]?.[0]?.systemPrompt as string;
+    expect(systemPrompt).toContain('завершено');
+    expect(systemPrompt).toContain('провенанс');
+  });
 });

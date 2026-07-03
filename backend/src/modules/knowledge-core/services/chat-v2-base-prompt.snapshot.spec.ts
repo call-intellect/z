@@ -50,4 +50,18 @@ describe('chat-v2 единый промпт-ответчик — snapshot', () =
     expect(legacy).toContain('Честно про пустоту');
     expect(legacy).not.toContain('Отвечай при основании');
   });
+
+  it('recall-to-99 Ф6 — правило 4 запрещает выдуманный статус/провенанс, но ассертивность жива', () => {
+    const assertive = resolveBaseSystemPrompt(true);
+    expect(assertive).toContain('не додумывай итог');
+    expect(assertive).toContain('Не придумывай провенанс');
+    expect(assertive).toContain('уверенно назови НАЙДЕННОЕ');
+    expect(assertive).toContain(
+      'Не приписал ли я статус «готово/завершено/решено/не блокирует/доволен»',
+    );
+
+    const legacy = resolveBaseSystemPrompt(false);
+    expect(legacy).toContain('Честно про пустоту');
+    expect(legacy).not.toContain('не додумывай итог');
+  });
 });

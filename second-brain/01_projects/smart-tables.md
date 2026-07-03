@@ -209,9 +209,21 @@ related_projects:
 - **R4 — `reconcileTypesWithData`.** Type-guard по сэмплу строк: тип date/number/currency/percent понижается до `text`, если в данных <50% валидных значений; `text` повышается до `longtext` при длинном контенте. Парсер чисел `parseNumericLoose` вынесен в `services/_num.util.ts` (переиспользуется R4 и проверками типов).
 - **Тесты:** 109 tables-тестов зелёные.
 
+## graphSync — авто-наполнение таблиц из графа (2026-07-03, ветка `work/2026-07-02`)
+
+Закрывает находку живого прод-аудита 2026-06-20 (см. §«Долг / далее» — «прод-строки ручные, `entityId:null`»): 4 «мягких» системных таблицы теперь **живо наполняются из графа знаний**, а не только из Entity-синка. ТЗ [`2026-06-21-smart-tables-revive-and-autofill`](../../plans/tz/2026-06-21-smart-tables-revive-and-autofill.md) (Ф4). Модель/поля — [[../02_architecture/data-model]] §«Умные таблицы graphSync»; крон — [[workers-queues]]; крутилки — [[admin]] §«Крутилки graphSync таблиц».
+
+- **Новый канал `graphSync`** на `SystemTableTemplate` (`templates/system-tables.catalog.ts`) — параллельно `entitySync`; проставлен для `ideas`/`promises`/`okr`/`hypotheses`.
+- **`TableGraphSyncService`** (`services/table-graph-sync.service.ts`) заводит `TableRow` из графовых объектов: `Goal`→«Цели и метрики» (okr), `Experiment`→«Гипотезы и эксперименты» (hypotheses), `IdeaBlock signalType='idea'`→«Идеи и бэклог» (ideas), `IdeaBlock signalType='commitment'`→«Обещания и обязательства» (promises). Гейт `table.graphsync.min_confidence` (0.5; `null`=доверяем), детерминированный дедуп по `(tableId, sourceObjectType, sourceObjectId)`, **fill-empty** (ручные правки не перетираются), `TableCellProvenance` на каждую ячейку. Методы `syncObject` (по объекту) + `reconcileTenant` (весь тенант, offset-пагинация).
+- **Крон** `TableGraphsyncReconcileCronService` (`workers/table-graphsync-reconcile.cron.ts`, `@Cron('25 */3 * * *')`, per-Org owner/admin, kill-switch `table.graphsync.enabled`, зарегистрирован в `ai/workers.module.ts`).
+- **Новые колонки БД** (миграция `20260703120000_smart_tables_graphsync`): `Table.graphSync Json?`, `TableRow.sourceObjectType/sourceObjectId String?`, `TableRow.status String @default("active")`, `TableRow.draftExpiresAt DateTime?`, `@@unique([tableId, sourceObjectType, sourceObjectId])`.
+- **Скрипты**: backfill `backend/scripts/backfill-table-graphsync.ts` (конфиг `Table.graphSync` из каталога + reconcile строк), сид `backend/scripts/seed-admin-setting-table-graphsync.ts`.
+- **Отличие от entitySync/Фазы 3-enrich:** entitySync тянул только `Entity`-строки; graphSync тянет полноценные графовые объекты (Goal/Experiment/IdeaBlock). Связка таблиц с чатом-Мастером (`ChatV2TableContextService`) уже была — graphSync наполняет те же таблицы данными.
+- **Фронт:** пункт меню «Таблицы» возвращён в подгруппу «Справочник» (`nav-config.ts`) — закрывает находку аудита «нет пункта меню».
+
 ## Итог
 
-**Все 6 фаз (0–5) ТЗ [2026-06-02-smart-tables-auto-creation](../../plans/archive/2026-06-02-smart-tables-auto-creation.md) реализованы.** Параллельные потоки: Eval (Фаза 1.5) и Privacy — после основных фаз.
+**Все 6 фаз (0–5) ТЗ [2026-06-02-smart-tables-auto-creation](../../plans/archive/2026-06-02-smart-tables-auto-creation.md) реализованы.** Параллельные потоки: Eval (Фаза 1.5) и Privacy — после основных фаз. **graphSync (2026-07-03)** — авто-наполнение 4 «мягких» таблиц из графа поверх этого (см. §выше).
 
 > **Флаг `feature.tables_text_to_schema` — включён дефолтом (ship-on, ТЗ [2026-06-08-enable-shipped-features-by-default](../../plans/tz/2026-06-08-enable-shipped-features-by-default.md), коммит `bb7701dc`).** Раньше был default off «до прохождения Eval»; по правилу Ship-On готовая фича выкатывается включённой (seed-дефолт `true` + патч `patch-enable-shipped-flags.ts`). Eval Text-to-Schema (Фаза 1.5) остаётся инструментом регрессий, а не блокером выката.
 

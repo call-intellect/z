@@ -138,6 +138,15 @@ intake), чтобы окно и пороги не рассинхронились
 | `theme.autofill.maxPerScan` | `50` | максимум блоков, добавляемых в тему за один проход. |
 | `theme.autofill.dedupeSimilarity` | `0.97` | порог near-дубля — блоки ближе этого дедупятся, чтобы не подкладывать почти-одинаковое. |
 
+### Крутилки graphSync таблиц (`table.graphsync.*`) — 2026-07-03
+
+ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md). 2 ключа в секции `table` реестра `admin-setting-schema-registry.ts`, засижены [`seed-admin-setting-table-graphsync.ts`](../../backend/scripts/seed-admin-setting-table-graphsync.ts). Управляют `TableGraphSyncService` + кроном `TableGraphsyncReconcileCronService` — авто-наполнение системных таблиц (ideas/promises/okr/hypotheses) из графовых объектов (Goal / Experiment / IdeaBlock). См. [[workers-queues]], [[smart-tables]] §«graphSync».
+
+| Ключ | Default | Смысл |
+|---|---|---|
+| `table.graphsync.enabled` | `true` | kill-switch авто-наполнения таблиц из графа (Ship-On ON). Выкл → cron no-op. |
+| `table.graphsync.min_confidence` | `0.5` | порог уверенности графового объекта, ниже которого строка **не** заводится; `null`=доверяем (без гейта). |
+
 ## Поверхности курации (detail-страницы)
 
 С 2026-06-03 (Action Center, Фаза C3) у курации появились собственные

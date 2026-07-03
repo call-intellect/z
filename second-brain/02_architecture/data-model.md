@@ -1508,6 +1508,13 @@ GIN-индекс `table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_
 - **`TableCellProvenance`** (Фаза 3) — `{ id, tenantId, tableRowId, propertyId, sourceType (meeting|document|manual), sourceId, sourceLabel, sourceLink?, previousValue Json?, appliedValue Json?, confidence Decimal(3,2)?, appliedAt, appliedBy (agent|userId), rolledBackAt? }`. Индексы `[tableRowId, propertyId]`, `[tenantId, sourceType, sourceId]`. Audit-trail правок агента + undo.
 - **`TableCellPendingPatch`** (Фаза 3) — `{ id, tenantId, tableId, tableRowId, propertyId, proposedValue Json, currentValue Json?, confidence Decimal(3,2), sourceType, sourceId, sourceLabel, sourceLink?, status (pending|approved|rejected), reason (low_confidence|overwrite), createdAt, decidedAt?, decidedBy? }`. Индексы `[tenantId, status]`, `[tableId, status]`, `[tableRowId, propertyId]`. Очередь подтверждений спорных правок.
 
+### Умные таблицы graphSync — авто-наполнение из графа (2026-07-03, миграция `20260703120000_smart_tables_graphsync`)
+
+Строки системных таблиц заводятся из графовых объектов (не только Entity, как в entitySync) — Goal / Experiment / IdeaBlock(`signalType='idea'`) / IdeaBlock(`signalType='commitment'`). ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md). Профильная заметка — [[../01_projects/smart-tables]] §«graphSync».
+- **`Table.graphSync Json?`** — конфиг канала graphSync (параллельно `entitySync`): маппинг «тип графового объекта → эта таблица». Проставлен на 4 системных шаблона (`ideas`/`promises`/`okr`/`hypotheses`) в каталоге `system-tables.catalog.ts`.
+- **`TableRow`** += `sourceObjectType String?` + `sourceObjectId String?` (какой графовый объект породил строку) + `status String @default("active")` + `draftExpiresAt DateTime?` + **`@@unique([tableId, sourceObjectType, sourceObjectId])`** — детерминированный дедуп (один графовый объект → максимум одна строка в таблице).
+- Ячейки заполняет `TableGraphSyncService` в режиме **fill-empty** (не перетирает ручные правки) + пишет `TableCellProvenance` на каждую ячейку. Гейт уверенности — крутилка `table.graphsync.min_confidence` (см. [[../01_projects/admin]]).
+
 [[../index|← index]]
 
 ## Goals OKR v2 — Граф целей (2026-06-02)

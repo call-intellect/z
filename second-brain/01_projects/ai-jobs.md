@@ -752,3 +752,13 @@ LLM-judge текстового подтверждения мутаций в ка
 - **Ф3 — `block-ingest`, граница pain/blocker.** Добавлено правило: работа продолжается → `pain`; работа встала/заблокирована → `blocker`; критичный клиентский инцидент (клиент-стоп: у клиента не работает / не формируется / упало к дедлайну) → всегда `blocker`, а не `pain` (+ пример 13). Code-промпт, едет с деплоем кода.
 
 [[../index|← index]]
+
+## Умные таблицы graphSync — авто-наполнение таблиц из графа (крон, 2026-07-03)
+
+**Источник:** ветка `work/2026-07-02`. **НЕ LLM-джоб и НЕ новый taskType** — детерминированный реконсилер (только чтение графовых объектов + fill-empty ячеек), поэтому не даёт LLM-нагрузки. Здесь — для полноты реестра фоновых джобов.
+
+- **Крон `table-graphsync-reconcile`** (`TableGraphsyncReconcileCronService`, `@Cron('25 */3 * * *')`, каждые 3 часа, kill-switch `table.graphsync.enabled`) проходит по всем Org (owner/admin) → `TableGraphSyncService.reconcileTenant`.
+- `TableGraphSyncService` заводит строки `TableRow` из графовых объектов: Goal→«Цели и метрики» (okr), Experiment→«Гипотезы и эксперименты» (hypotheses), IdeaBlock `signalType=idea`→«Идеи и бэклог» (ideas), IdeaBlock `signalType=commitment`→«Обещания и обязательства» (promises). Гейт уверенности — крутилка `table.graphsync.min_confidence` (0.5; `null`=доверяем), дедуп по `(tableId, sourceObjectType, sourceObjectId)`, fill-empty (ручные правки не перетираются) + `TableCellProvenance` на каждую ячейку. Методы `syncObject` / `reconcileTenant`.
+- Крутилки/канал/поля — [[smart-tables]] §«graphSync», [[admin]] §«Крутилки graphSync таблиц», [[workers-queues]], [[../02_architecture/data-model]].
+
+[[../index|← index]]

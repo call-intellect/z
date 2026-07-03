@@ -107,7 +107,7 @@ owner_decisions:
 
 **Цель:** данные сами текут в 6 пустых таблиц → чат отвечает на структурные вопросы. Труба в чат готова (см. REALITY-CHECK), не хватает строк.
 
-### Ф4.1 — Канал `graphSync` на шаблоне + схема `[ ]`
+### Ф4.1 — Канал `graphSync` на шаблоне + схема `[x]`
 - `SystemTableTemplate` (`system-tables.catalog.ts:18-23`): добавить опц.
   ```ts
   graphSync?: { source: 'idea_block' | 'goal' | 'experiment' | 'action_item'; fieldMap: Record<string,string>; autoCreate: boolean };
@@ -116,18 +116,18 @@ owner_decisions:
 - Prisma `Table`: поле `graphSync Json?` (**миграция**, additive nullable). Backfill проставляет `graphSync` системным таблицам по `systemKey` (существующие Org).
 - **Локально:** `prisma migrate dev --create-only --name table_graphsync_and_draft` + `prisma generate` (типы) — файл миграции без применения к общей БД, пока стенд занят.
 
-### Ф4.2 — Row-extractor в enrich-пайплайне `[ ]`
+### Ф4.2 — Row-extractor в enrich-пайплайне `[x]`
 - `table-enrich.service.ts`: помимо ветки «патч ячеек sync-таблиц» — новая ветка `findGraphSyncTables` + «создать строку в graphSync-таблице».
 - Вход: графовый объект (Goal/Experiment/IdeaBlock/action-item) → `fieldMap`→ячейки. Свободные формулировки → LLM `table-extract-rows` (уже есть) по схеме колонок.
 - **Дедуп строк** по primary-колонке — переиспользовать Jaccard/embedding из R3 (`findSimilarTables`); не плодить дубли при повторных событиях.
 - Строки из графа помечать `TableCellProvenance` (источник + deep-link на объект/тайминг).
 
-### Ф4.3 — Гейт уверенности (v1: только высокоуверенные) `[ ]`
+### Ф4.3 — Гейт уверенности (v1: только высокоуверенные) `[x]`
 - `confidence ≥ table.agent.confirmation_threshold (0.85)` → строка создаётся сразу (`status='active'`) + provenance.
 - `confidence < порога` → **v1: не создаём** (пропуск; никаких пушей владельцу). TTL-пул спорных — Ф4.6.
 - Ручные правки пользователя НЕ перетирать (анти-самоотравление): при обновлении из графа не трогать ячейки с `provenance='manual'`.
 
-### Ф4.4 — Триггеры `[ ]`
+### Ф4.4 — Триггеры (reconcile-крон вместо событий) `[x]`
 - `meeting.ai_ready` (эмитится) — action_item/idea из встреч.
 - Расширить `entity.created/updated` на Goal/Experiment/IdeaBlock (шина knowledge-core) — новая цель/эксперимент сразу строкой.
 - Throttle на Org (`table:enrich:jobs:${tenantId}`) и бюджет (`max_daily_tokens`) — уже есть.
@@ -175,7 +175,7 @@ Cache-friendly: SYSTEM стабилен (каталоги/правила), пе�
 - (Опц. vNext) стрим превью DRAFT.
 - Проверка: живой `infer-schema` < 20с; качество (A/B) не просело.
 
-## Фаза 1 — Вернуть «Таблицы» в меню `[ ]` (после Ф3)
+## Фаза 1 — Вернуть «Таблицы» в меню `[x]`
 
 - `nav-config.ts`: `NavConfigItem` в `REFERENCE_SUBGROUP` (подгруппа «Справочник»):
   ```ts
@@ -221,4 +221,4 @@ Cache-friendly: SYSTEM стабилен (каталоги/правила), пе�
 **Ф4 (данные) → Ф2 (качество промптов) → Ф3 (латентность) → Ф1 (меню) → Ф5 (приёмка).** Ф0 (редеплой) и живые замеры — owner-gate / под стенд. Ф4 — главный recall-рычаг; остальное — качество/скорость/видимость.
 
 ## Итог
-**Реализовано (на 2026-07-03):** модуль tables целиком; связка chat-v2↔таблицы (прошита); R1–R4 пост-пассы; файлы 6 промптов (старые версии); авто-наполнение Группы A (`entitySync`); фикс краша деталки. **Осталось:** Ф4 (graphSync-наполнение 6 пустых — главный recall-рычаг), Ф2 (промпты 12b + call-site обёртки), Ф3 (латентность + детерминированный entity-check), Ф1 (пункт меню), Ф0/Ф5 (редеплой + приёмка — owner/стенд). Вести по фазам в ветке `work/2026-07-02`; живое наполнение и замер recall — под стенд (owner-gate), как у консолидации.
+**Реализовано (на 2026-07-04):** модуль tables целиком; связка chat-v2↔таблицы (прошита); R1–R4; авто-наполнение Группы A (`entitySync`). **+ НОВОЕ (эта сессия):** **Ф4.1-4.4** — graphSync авто-создание строк 4 категорий (Идеи/Обещания/Цели/Гипотезы) из графа (Goal/Experiment/IdeaBlock): `TableGraphSyncService` (гейт confidence≥0.5, детерминированный дедуп по `sourceObjectId` + `@@unique`, fill-empty анти-clobber, provenance) + reconcile-крон `table-graphsync-reconcile` (@Cron 3ч, Ship-On) + backfill-скрипт + AdminSettings (`table.graphsync.enabled`/`min_confidence`) + миграция; **Ф1** — пункт меню «Таблицы» (Справочник). Всё зелёное (typecheck+build+vitest 136), коммиты `bab90b22`/`098eda68`/`7d42144e` (ревизия ТЗ `158b60af`). Ревью адверсариальным агентом — 2 HIGH (backfill no-op DbNull/JsonNull, дедуп без unique) + 3 MEDIUM (enum, порог, N+1) починены. **Осталось (отложено до стенд-замера — см. реестр не-сделано):** Ф4.5 риски (LLM-классификатор), Ф4.6 черновой TTL-пул + чат-фильтр `status='active'`, Ф2 промпты 12b (A/B под стенд), Ф3 латентность, Ф0/Ф5 (редеплой + приёмка — owner/стенд), мгновенная пост-встреча свежесть. **Живой замер recall** (backfill на fresh-тенанте «Стрелы» + линейка) — под стенд/owner-gate. Дисциплина роадмапа: полировочные фазы приоритизируются ПО ЦИФРАМ линейки после замера.

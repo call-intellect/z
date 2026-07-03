@@ -31,7 +31,7 @@ PostgreSQL + Redis  ←─────────────────  ре
 | **Redis** | сессии, временные ключи, очереди задач |
 | **S3** | видеофайлы, аудиодорожки |
 | **AI Processing** | транскрибация, разделение по спикерам, шаблоны по типу |
-| **Tables (smart-tables)** | модуль `backend/src/modules/tables/` — Notion-database-style таблицы (5 моделей в БД, 19 CRUD-эндпоинтов, RBAC ресурс `table`). MVP-старт 2026-05-31. См. [[../01_projects/smart-tables]]. |
+| **Tables (smart-tables)** | модуль `backend/src/modules/tables/` — Notion-database-style таблицы (5 моделей в БД, 19 CRUD-эндпоинтов, RBAC ресурс `table`). MVP-старт 2026-05-31. **graphSync (2026-07-03):** `TableGraphSyncService` (`services/table-graph-sync.service.ts`) — заводит строки `TableRow` из графовых объектов (Goal→okr, Experiment→hypotheses, IdeaBlock `idea`→ideas, IdeaBlock `commitment`→promises); методы `syncObject` (по объекту) + `reconcileTenant` (весь тенант, offset-пагинация); гейт `table.graphsync.min_confidence`, дедуп по `(tableId, sourceObjectType, sourceObjectId)`, fill-empty + `TableCellProvenance`. Крон `TableGraphsyncReconcileCronService` (`workers/table-graphsync-reconcile.cron.ts`, `@Cron('25 */3 * * *')`, kill-switch `table.graphsync.enabled`, зарегистрирован в `ai/workers.module.ts`). См. [[../01_projects/smart-tables]] §«graphSync». |
 
 ## Потоки данных
 

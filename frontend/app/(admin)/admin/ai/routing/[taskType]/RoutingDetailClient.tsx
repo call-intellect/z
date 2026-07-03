@@ -33,9 +33,9 @@ import {
 import { adminLlmProviderFromApi } from "@/domain/admin-llm-provider";
 import {
   changeTypeLabel,
-  formatCostRub,
   formatLatency,
   formatPercent,
+  formatRub,
   mapTaskTypeRoute,
   tierLabel,
 } from "@/domain/admin-ai-model";
@@ -613,7 +613,7 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
                         {formatLatency(row.p95LatencyMs)}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {formatCostRub(row.costUsd, metrics.usdRubRate)}
+                        {formatRub(row.costRub)}
                       </td>
                     </tr>
                   );
@@ -632,7 +632,7 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
                     fallback: {formatPercent(metrics.totals.fallbackRate)}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {formatCostRub(metrics.totals.totalCostUsd, metrics.usdRubRate)}
+                    {formatRub(metrics.totals.totalCostRub)}
                   </td>
                 </tr>
               </tbody>

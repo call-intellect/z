@@ -46,6 +46,7 @@ export type TaskTypeMetricsApi = {
     successCalls: number;
     failedCalls: number;
     totalCostUsd: number;
+    totalCostRub: number | null;
     fallbackCalls: number;
     fallbackRate: number;
   };
@@ -57,6 +58,7 @@ export type TaskTypeMetricsApi = {
       avgLatencyMs: number;
       p95LatencyMs: number;
       costUsd: number;
+      costRub: number | null;
     }
   >;
   usdRubRate: number | null;

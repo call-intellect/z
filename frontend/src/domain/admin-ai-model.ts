@@ -100,11 +100,8 @@ export function formatLatency(ms: number): string {
   return `${(ms / 1000).toFixed(1)} с`;
 }
 
-export function formatCostRub(usd: number, rubRate: number | null): string {
-  if (rubRate === null) {
-    return `$${usd.toFixed(4)}`;
-  }
-  const rub = usd * rubRate;
+export function formatRub(rub: number | null): string {
+  if (rub === null) return "—";
   if (rub < 1) return `${(rub * 100).toFixed(2)} коп`;
   return `${rub.toFixed(2)} ₽`;
 }

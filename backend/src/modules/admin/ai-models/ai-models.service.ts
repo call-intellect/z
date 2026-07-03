@@ -32,6 +32,15 @@ import type {
 
 const TIERS_ORDER: LlmRouteTier[] = ['primary', 'secondary', 'tertiary'];
 
+interface MetricsRawRow {
+  tier: LlmRouteTier | null;
+  success: boolean;
+  cnt: number;
+  duration_sum: string | null;
+  cost_usd_sum: string | null;
+  cost_rub_sum: string | null;
+}
+
 const TASK_TYPE_GROUP: Record<string, 'ai-pipeline' | 'knowledge-core' | 'competitor-parity'> = {
   summary: 'ai-pipeline',
   tasks: 'ai-pipeline',
@@ -86,6 +95,7 @@ export interface TaskTypeMetricsView {
     successCalls: number;
     failedCalls: number;
     totalCostUsd: number;
+    totalCostRub: number | null;
     fallbackCalls: number;
     fallbackRate: number;
   };
@@ -97,9 +107,9 @@ export interface TaskTypeMetricsView {
       avgLatencyMs: number;
       p95LatencyMs: number;
       costUsd: number;
+      costRub: number | null;
     }
   >;
-  /** Ф6 (2026-07-02): текущий курс USD→RUB из CurrencyRateService (ЦБ РФ), null если недоступен. */
   usdRubRate: number | null;
 }
 
@@ -429,36 +439,67 @@ export class AdminAiModelsService {
       period === '24h' ? 24 * 3600_000 : period === '7d' ? 7 * 24 * 3600_000 : 30 * 24 * 3600_000;
     const since = new Date(Date.now() - ms);
 
-    const grouped = await this.prisma.aiUsageLog.groupBy({
-      by: ['tier', 'success'],
-      where: { taskType, createdAt: { gte: since } },
-      _count: { _all: true },
-      _sum: { costUsd: true, durationMs: true },
-    });
+    const usdRubRate = (await this.currencyRate?.getCurrentUsdRubRate().catch(() => null)) ?? null;
+    const fxForCoalesce = usdRubRate ?? 0;
 
-    const perTier = {
-      primary: { calls: 0, successRate: 0, avgLatencyMs: 0, p95LatencyMs: 0, costUsd: 0 },
-      secondary: { calls: 0, successRate: 0, avgLatencyMs: 0, p95LatencyMs: 0, costUsd: 0 },
-      tertiary: { calls: 0, successRate: 0, avgLatencyMs: 0, p95LatencyMs: 0, costUsd: 0 },
-    } satisfies TaskTypeMetricsView['perTier'];
+    const grouped = await this.prisma.$queryRaw<MetricsRawRow[]>`
+      SELECT
+        tier,
+        success,
+        COUNT(*)::int AS cnt,
+        SUM("durationMs")::text AS duration_sum,
+        SUM("costUsd")::text AS cost_usd_sum,
+        SUM(COALESCE("costRub", "costUsd" * ${fxForCoalesce}))::text AS cost_rub_sum
+      FROM "AiUsageLog"
+      WHERE "taskType" = ${taskType} AND "createdAt" >= ${since}
+      GROUP BY tier, success
+    `;
+
+    const perTier: TaskTypeMetricsView['perTier'] = {
+      primary: {
+        calls: 0,
+        successRate: 0,
+        avgLatencyMs: 0,
+        p95LatencyMs: 0,
+        costUsd: 0,
+        costRub: null,
+      },
+      secondary: {
+        calls: 0,
+        successRate: 0,
+        avgLatencyMs: 0,
+        p95LatencyMs: 0,
+        costUsd: 0,
+        costRub: null,
+      },
+      tertiary: {
+        calls: 0,
+        successRate: 0,
+        avgLatencyMs: 0,
+        p95LatencyMs: 0,
+        costUsd: 0,
+        costRub: null,
+      },
+    };
 
     const tierTotals: Record<
       LlmRouteTier,
-      { ok: number; fail: number; latency: number; cost: number }
+      { ok: number; fail: number; latency: number; cost: number; costRub: number }
     > = {
-      primary: { ok: 0, fail: 0, latency: 0, cost: 0 },
-      secondary: { ok: 0, fail: 0, latency: 0, cost: 0 },
-      tertiary: { ok: 0, fail: 0, latency: 0, cost: 0 },
+      primary: { ok: 0, fail: 0, latency: 0, cost: 0, costRub: 0 },
+      secondary: { ok: 0, fail: 0, latency: 0, cost: 0, costRub: 0 },
+      tertiary: { ok: 0, fail: 0, latency: 0, cost: 0, costRub: 0 },
     };
     for (const row of grouped) {
       const tier = (row.tier ?? 'primary') as LlmRouteTier;
       const bucket = tierTotals[tier];
       if (!bucket) continue;
-      const n = row._count._all;
+      const n = row.cnt;
       if (row.success) bucket.ok += n;
       else bucket.fail += n;
-      bucket.latency += row._sum.durationMs ?? 0;
-      bucket.cost += decimalToNumber(row._sum.costUsd);
+      bucket.latency += Number.parseFloat(row.duration_sum ?? '0') || 0;
+      bucket.cost += Number.parseFloat(row.cost_usd_sum ?? '0') || 0;
+      bucket.costRub += usdRubRate !== null ? Number.parseFloat(row.cost_rub_sum ?? '0') || 0 : 0;
     }
 
     const latencyRows = await this.prisma.aiUsageLog.findMany({
@@ -482,6 +523,7 @@ export class AdminAiModelsService {
       perTier[t].avgLatencyMs = calls > 0 ? Math.round(tot.latency / calls) : 0;
       perTier[t].p95LatencyMs = arr.length > 0 ? (arr[Math.floor(arr.length * 0.95)] ?? 0) : 0;
       perTier[t].costUsd = Math.round(tot.cost * 1_000_000) / 1_000_000;
+      perTier[t].costRub = usdRubRate !== null ? Math.round(tot.costRub * 1_000_000) / 1_000_000 : null;
     }
 
     const totalCalls = perTier.primary.calls + perTier.secondary.calls + perTier.tertiary.calls;
@@ -490,9 +532,12 @@ export class AdminAiModelsService {
       tierTotals.primary.fail + tierTotals.secondary.fail + tierTotals.tertiary.fail;
     const totalCost =
       perTier.primary.costUsd + perTier.secondary.costUsd + perTier.tertiary.costUsd;
+    const totalCostRub =
+      usdRubRate !== null
+        ? (perTier.primary.costRub ?? 0) + (perTier.secondary.costRub ?? 0) + (perTier.tertiary.costRub ?? 0)
+        : null;
     const fallbackCalls = perTier.secondary.calls + perTier.tertiary.calls;
     const fallbackRate = totalCalls > 0 ? fallbackCalls / totalCalls : 0;
-    const usdRubRate = (await this.currencyRate?.getCurrentUsdRubRate().catch(() => null)) ?? null;
 
     return {
       period,
@@ -501,6 +546,7 @@ export class AdminAiModelsService {
         successCalls,
         failedCalls,
         totalCostUsd: Math.round(totalCost * 1_000_000) / 1_000_000,
+        totalCostRub: totalCostRub !== null ? Math.round(totalCostRub * 1_000_000) / 1_000_000 : null,
         fallbackCalls,
         fallbackRate,
       },

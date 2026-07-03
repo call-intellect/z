@@ -8,11 +8,21 @@ import type { CurrencyRateService } from '../economics/currency-rate.service';
 import { AdminAiModelsService } from './ai-models.service';
 import type { CreateExperimentDto } from './dto/ai-models.dto';
 
+interface MetricsRawRowFixture {
+  tier: 'primary' | 'secondary' | 'tertiary' | null;
+  success: boolean;
+  cnt: number;
+  duration_sum: string | null;
+  cost_usd_sum: string | null;
+  cost_rub_sum: string | null;
+}
+
 interface BuildOpts {
   llmProviders?: Array<{ id: string; name: string }>;
   llmModels?: Array<{ id: string; providerId: string; modelKey: string }>;
   usdRubRate?: number | null;
   experiments?: Array<Record<string, unknown>>;
+  metricsRawRows?: MetricsRawRowFixture[];
 }
 
 function build(routesInDb: Array<Record<string, unknown>> = [], opts: BuildOpts = {}) {
@@ -157,6 +167,7 @@ function build(routesInDb: Array<Record<string, unknown>> = [], opts: BuildOpts 
     llmProvider: { findMany: llmProviderFindMany },
     llmModel: { findMany: llmModelFindMany },
     aiUsageLog: { groupBy: vi.fn(async () => []), findMany: vi.fn(async () => []) },
+    $queryRaw: vi.fn(async () => opts.metricsRawRows ?? []),
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
       return fn({
         llmTaskRoute: { findFirst, update, create, deleteMany, createMany },
@@ -441,6 +452,63 @@ describe('AdminAiModelsService', () => {
       const ctx = build([], { usdRubRate: null });
       const res = await ctx.svc.metrics_('summary', { period: '7d' });
       expect(res.usdRubRate).toBeNull();
+    });
+
+    it('costRub=null в БД (старая запись) → perTier.costRub считается фолбэком costUsd*usdRubRate', async () => {
+      const ctx = build([], {
+        usdRubRate: 90.5,
+        metricsRawRows: [
+          {
+            tier: 'primary',
+            success: true,
+            cnt: 1,
+            duration_sum: '100',
+            cost_usd_sum: '1',
+            cost_rub_sum: '90.5',
+          },
+        ],
+      });
+      const res = await ctx.svc.metrics_('summary', { period: '7d' });
+      expect(res.perTier.primary.costRub).toBe(90.5);
+    });
+
+    it('costRub сохранён и НЕ совпадает с costUsd*usdRubRate → используется сохранённое значение (ключевой тест, доказывает что баг исправлен)', async () => {
+      const ctx = build([], {
+        usdRubRate: 90.5,
+        metricsRawRows: [
+          {
+            tier: 'primary',
+            success: true,
+            cnt: 1,
+            duration_sum: '100',
+            cost_usd_sum: '1',
+            cost_rub_sum: '100',
+          },
+        ],
+      });
+      const res = await ctx.svc.metrics_('summary', { period: '7d' });
+      expect(res.perTier.primary.costRub).toBe(100);
+    });
+
+    it('usdRubRate=null → totals.totalCostRub и все perTier[t].costRub равны null', async () => {
+      const ctx = build([], {
+        usdRubRate: null,
+        metricsRawRows: [
+          {
+            tier: 'primary',
+            success: true,
+            cnt: 1,
+            duration_sum: '100',
+            cost_usd_sum: '1',
+            cost_rub_sum: '100',
+          },
+        ],
+      });
+      const res = await ctx.svc.metrics_('summary', { period: '7d' });
+      expect(res.totals.totalCostRub).toBeNull();
+      expect(res.perTier.primary.costRub).toBeNull();
+      expect(res.perTier.secondary.costRub).toBeNull();
+      expect(res.perTier.tertiary.costRub).toBeNull();
     });
   });
 

@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import type { INestApplicationContext } from '@nestjs/common';
@@ -7,11 +7,12 @@ import type { PrismaClient } from '@prisma/client';
 
 import { createPrismaClient } from '../_lib/prisma';
 import { catalogByReason, PROBE_CATALOG } from './registry';
-import { judgeProbe, type JudgeVerdict } from './judge';
+import { judgeGaps, judgeProbe, type GapCandidate, type JudgeVerdict } from './judge';
 
 const STRELA = process.env['STRELA_ORG'] ?? 'cmr1qbvpx0001pwbwxbgmh1jl';
 const REPORT_MD = resolve(process.cwd(), '../docs/testing/probe-stand-report.md');
 const REPORT_JSON = resolve(process.cwd(), '../docs/testing/probe-stand-report.json');
+const RUNS_DIR = resolve(process.cwd(), '../docs/testing/probe-stand-runs');
 
 interface ProbeRow {
   reason: string;
@@ -189,6 +190,7 @@ async function modeReport(sinceDays: number, doJudge: boolean): Promise<void> {
           message: a.sample || (cat?.asks ?? a.reason),
           recipient: cat?.recipient ?? a.recipient,
           asks: cat?.asks ?? '',
+          trigger: cat?.trigger ?? 'неизвестен',
           volumePerWeek: a.count,
         });
         judged.push({ ...a, verdict });
@@ -198,20 +200,68 @@ async function modeReport(sinceDays: number, doJudge: boolean): Promise<void> {
         judged.push(a);
       }
     }
-    writeReport(judged, sinceDays);
+    let gaps: GapCandidate[] = [];
+    if (doJudge) {
+      try {
+        gaps = await judgeGaps(buildGapsInventory(judged));
+        log(`gaps: судья предложил кандидатов — ${gaps.length}`);
+      } catch (err) {
+        log(`gaps FAIL: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    writeReport(judged, gaps, sinceDays);
     log(`\nОтчёт: ${REPORT_MD}`);
   } finally {
     await prisma.$disconnect();
   }
 }
 
+function buildGapsInventory(items: Array<ReasonAgg & { verdict?: JudgeVerdict }>): string {
+  const active = PROBE_CATALOG.filter((e) => e.status === 'active');
+  const seen = new Map(items.map((i) => [i.reason, i]));
+  const lines = active.map((e) => {
+    const hit = seen.get(e.reason);
+    const observed = hit ? `наблюдался ×${hit.count}` : 'в окне не наблюдался';
+    return `- ${e.reason} [${e.family}] → ${e.recipient}: «${e.asks}» (${observed})`;
+  });
+  return ['Инвентарь существующих вопросов Коры:', ...lines].join('\n');
+}
+
 function rankVerdict(v?: JudgeVerdict): number {
-  if (!v) return 3;
-  return v.verdict === 'noise' ? 0 : v.verdict === 'borderline' ? 1 : 2;
+  if (!v) return 4;
+  switch (v.verdict) {
+    case 'drop':
+      return 0;
+    case 'automate':
+      return 1;
+    case 'rework':
+      return 2;
+    case 'keep':
+      return 3;
+    default:
+      return 4;
+  }
+}
+
+function verdictRu(v?: JudgeVerdict): string {
+  if (!v) return '—';
+  switch (v.verdict) {
+    case 'keep':
+      return 'keep (нужен)';
+    case 'rework':
+      return 'rework (переделать)';
+    case 'automate':
+      return 'automate (автоматизировать)';
+    case 'drop':
+      return 'drop (убрать)';
+    default:
+      return v.verdict;
+  }
 }
 
 function writeReport(
   items: Array<ReasonAgg & { verdict?: JudgeVerdict }>,
+  gaps: GapCandidate[],
   sinceDays: number,
 ): void {
   const sorted = [...items].sort(
@@ -220,33 +270,56 @@ function writeReport(
   const lines: string[] = [];
   lines.push(`# Probe-стенд: отчёт (Стрела ${STRELA})`);
   lines.push('');
-  lines.push(`Окно: ${sinceDays} дн. Типов: ${items.length}. Событий: ${items.reduce((s, a) => s + a.count, 0)}.`);
+  lines.push(
+    `Окно: ${sinceDays} дн. Типов: ${items.length}. Событий: ${items.reduce((s, a) => s + a.count, 0)}. Рубрика судьи: [поле правильности](probe-field-rules.md) (смыслы P1–P8, не белый список).`,
+  );
   lines.push('');
-  lines.push('| Вердикт | reason | агент | ×/окно | адресат | рекомендация |');
-  lines.push('|---|---|---|---:|---|---|');
+  lines.push('| Вердикт | reason | агент | ×/окно | адресат | нарушено | рекомендация |');
+  lines.push('|---|---|---|---:|---|---|---|');
   for (const a of sorted) {
     const v = a.verdict;
     const cat = catalogByReason(a.reason);
     lines.push(
-      `| ${v?.verdict ?? '—'} | ${a.reason} | ${a.service} | ${a.count} | ${cat?.recipient ?? a.recipient} | ${v?.suggestedFix ?? ''} |`,
+      `| ${verdictRu(v)} | ${a.reason} | ${a.service} | ${a.count} | ${cat?.recipient ?? a.recipient} | ${v?.violatedPrinciples.join(' ') || '—'} | ${v?.suggestedFix ?? ''} |`,
     );
+  }
+  lines.push('');
+  lines.push('## Пробелы: где вопросов не хватает (обратная проверка по P1/P3)');
+  if (gaps.length === 0) {
+    lines.push('');
+    lines.push('Судья кандидатов не предложил (или проверка не запускалась — режим без LLM).');
+  }
+  for (const g of gaps) {
+    lines.push('');
+    lines.push(`- **Момент:** ${g.moment}`);
+    lines.push(`  **Вопрос:** «${g.question}» → ${g.recipient}`);
+    lines.push(`  **Почему человек:** ${g.whyHuman}`);
   }
   lines.push('');
   lines.push('## Детали');
   for (const a of sorted) {
     lines.push('');
-    lines.push(`### ${a.reason} (×${a.count})`);
+    lines.push(`### ${a.reason} (×${a.count}) — ${verdictRu(a.verdict)}`);
     if (a.sample) lines.push(`- пример: «${a.sample}»`);
     if (a.verdict) {
       lines.push(
-        `- relevance=${a.verdict.relevance} actionClear=${a.verdict.actionClear} recipientRight=${a.verdict.recipientRight} notDuplicate=${a.verdict.notDuplicate} notOnUnconfirmed=${a.verdict.notOnUnconfirmed}`,
+        `- humanOnly=${a.verdict.humanOnly} recipientRight=${a.verdict.recipientRight} нарушения=[${a.verdict.violatedPrinciples.join(', ')}]`,
       );
+      if (a.verdict.machinePath) lines.push(`- как закрыть без вопроса: ${a.verdict.machinePath}`);
       lines.push(`- почему: ${a.verdict.rationale}`);
       lines.push(`- фикс: ${a.verdict.suggestedFix}`);
     }
   }
-  writeFileSync(REPORT_MD, lines.join('\n'), 'utf8');
-  writeFileSync(REPORT_JSON, JSON.stringify(items, null, 2), 'utf8');
+  const body = lines.join('\n');
+  writeFileSync(REPORT_MD, body, 'utf8');
+  writeFileSync(REPORT_JSON, JSON.stringify({ items, gaps }, null, 2), 'utf8');
+  const stamp = new Date()
+    .toISOString()
+    .slice(0, 16)
+    .replace('T', '-')
+    .replace(':', '');
+  mkdirSync(RUNS_DIR, { recursive: true });
+  writeFileSync(resolve(RUNS_DIR, `${stamp}.md`), body, 'utf8');
 }
 
 async function modeTrigger(): Promise<void> {

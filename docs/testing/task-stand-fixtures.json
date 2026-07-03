@@ -1,0 +1,121 @@
+{
+  "_meta": {
+    "purpose": "Фикстуры стенда task-stand: мир, который seed-task-feed.ts создаёт в Ф0/Ф1 ДО подачи банка. Люди-исполнители, проекты со статусами, baseline setup-задачи (открытые/закрытые), на которые ссылаются сценарии из task-stand-scenarios.json по ключу setupRefs.",
+    "consumedBy": "backend/scripts/task-stand/seed-task-feed.ts",
+    "groundTruth": true,
+    "note": "Значения полей — ЭТАЛОН по построению. Изменение фикстур меняет эталон сценариев — синхронизировать с task-stand-scenarios.json.",
+    "envOrgA": "STRELA_ORG",
+    "envOrgB": "TASK_STAND_ORG_B"
+  },
+
+  "people": [
+    { "name": "Сергей", "role": "owner", "membership": "owner", "assignable": true, "note": "владелец — подтверждает pending-actions" },
+    { "name": "Игорь", "role": "разработчик", "membership": "manager", "assignable": true },
+    { "name": "Аня", "role": "юрист", "membership": "member", "assignable": true },
+    { "name": "Петя", "role": "закупки", "membership": "member", "assignable": true },
+    { "name": "Катя", "role": "аккаунт-менеджер", "membership": "member", "assignable": true },
+    { "name": "Дима", "role": "аналитик", "membership": "member", "assignable": true },
+    { "name": "Мария", "role": "дизайнер", "membership": "member", "assignable": true },
+    { "name": "Оля", "role": "маркетолог", "membership": "member", "assignable": true },
+    { "name": "Иван", "role": "инженер-сметчик", "membership": "member", "assignable": true }
+  ],
+
+  "projects": [
+    {
+      "key": "ops",
+      "identifier": "OPS",
+      "name": "Операции",
+      "isInboxFallback": false,
+      "states": [
+        { "name": "Бэклог", "category": "backlog", "sequence": 0, "isDefault": true },
+        { "name": "К выполнению", "category": "unstarted", "sequence": 1, "isDefault": false },
+        { "name": "В работе", "category": "started", "sequence": 2, "isDefault": false },
+        { "name": "Готово", "category": "completed", "sequence": 3, "isDefault": false },
+        { "name": "Отменено", "category": "cancelled", "sequence": 4, "isDefault": false }
+      ]
+    },
+    {
+      "key": "meet",
+      "identifier": "MEET",
+      "name": "Из встреч",
+      "isInboxFallback": false,
+      "note": "проект по умолчанию для задач со встреч (meetingTasksAlwaysPromote)",
+      "states": [
+        { "name": "Бэклог", "category": "backlog", "sequence": 0, "isDefault": true },
+        { "name": "В работе", "category": "started", "sequence": 1, "isDefault": false },
+        { "name": "Готово", "category": "completed", "sequence": 2, "isDefault": false }
+      ]
+    },
+    {
+      "key": "inbox",
+      "identifier": "INBOX",
+      "name": "Входящие",
+      "isInboxFallback": true,
+      "note": "ensureInboxProjectId — fallback когда проект не определён (C-08)",
+      "states": [
+        { "name": "Бэклог", "category": "backlog", "sequence": 0, "isDefault": true },
+        { "name": "Готово", "category": "completed", "sequence": 1, "isDefault": false }
+      ]
+    },
+    {
+      "key": "nocomplete",
+      "identifier": "NOCPL",
+      "name": "Проект без завершения",
+      "isInboxFallback": false,
+      "note": "НАМЕРЕННО без статуса category=completed — под сценарий J-12 (approve кандидата → 400 task_closure_no_completed_state)",
+      "states": [
+        { "name": "Бэклог", "category": "backlog", "sequence": 0, "isDefault": true },
+        { "name": "В работе", "category": "started", "sequence": 1, "isDefault": false }
+      ]
+    }
+  ],
+
+  "setupTasks": [
+    { "key": "smeta_x", "tenant": "A", "project": "ops", "title": "Подготовить смету по проекту X", "descriptionStripped": "Свести смету по проекту X: материалы, работы, накладные. Согласовать с финансами.", "assignee": "Иван", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["D-01"] },
+    { "key": "smeta_x_closed", "tenant": "A", "project": "ops", "title": "Подготовить смету по проекту X (первая версия)", "descriptionStripped": "Смета по проекту X, первая итерация. Сделано в прошлом квартале.", "assignee": "Иван", "stateCategory": "completed", "priority": "medium", "closed": true, "embeddingRequired": true, "usedBy": ["D-07"], "note": "ЗАКРЫТА — проверка openOnly в KNN (не должна быть кандидатом дубля)" },
+    { "key": "maket_lending", "tenant": "A", "project": "ops", "title": "Согласовать макет лендинга", "descriptionStripped": "Согласовать финальный макет лендинга с заказчиком и командой.", "assignee": "Мария", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["D-02"] },
+    { "key": "report_sales_anna", "tenant": "A", "project": "ops", "title": "Отчёт по продажам за квартал", "descriptionStripped": "Собрать квартальный отчёт по продажам: выручка, воронка, когорты.", "assignee": "Анна", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["D-03", "D-04"], "note": "assignee Анна (не в списке people — создать доп. Person 'Анна' ИЛИ переиспользовать Аня как отдельного; ВАЖНО D-03: кандидат с ДРУГИМ исполнителем -> different)" },
+    { "key": "price_site", "tenant": "A", "project": "ops", "title": "Обновить прайс на сайте", "descriptionStripped": "Обновить прайс-лист на сайте по новым тарифам, проверить на всех страницах.", "assignee": "Оля", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["D-08", "D-09", "E-01", "J-01", "J-02", "J-06"] },
+    { "key": "plan_hire_q3", "tenant": "A", "project": "ops", "title": "Подготовить план найма Q3", "descriptionStripped": "План найма на третий квартал: роли, бюджет, сроки, приоритеты.", "assignee": "Катя", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["D-12", "D-13"] },
+    { "key": "domain_lending", "tenant": "A", "project": "ops", "title": "Купить домен для лендинга", "descriptionStripped": "Подобрать и купить домен под новый лендинг, настроить DNS.", "assignee": "Игорь", "stateCategory": "started", "priority": "low", "closed": false, "embeddingRequired": true, "usedBy": ["D-11"] },
+    { "key": "kp_beta", "tenant": "A", "project": "ops", "title": "Отправить КП клиенту Бета", "descriptionStripped": "Собрать и отправить коммерческое предложение клиенту Бета по проекту внедрения.", "assignee": "Игорь", "stateCategory": "started", "priority": "high", "closed": false, "embeddingRequired": true, "usedBy": ["H-01"] },
+    { "key": "maket_review", "tenant": "A", "project": "ops", "title": "Проверить макет с дизайнером и клиентом", "descriptionStripped": "Провести ревью макета с дизайнером и заказчиком, собрать правки.", "assignee": "Мария", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["G-01", "H-04"] },
+    { "key": "analytics", "tenant": "A", "project": "ops", "title": "Настроить аналитику", "descriptionStripped": "Настроить сквозную аналитику: события, воронки, дашборд.", "assignee": "Дима", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["G-02"] },
+    { "key": "export", "tenant": "A", "project": "ops", "title": "Доделать экспорт данных", "descriptionStripped": "Доделать выгрузку данных: пагинация, форматы, обработка ошибок.", "assignee": "Игорь", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["H-13"] },
+    { "key": "ci_task", "tenant": "A", "project": "ops", "title": "Настроить CI", "descriptionStripped": "Настроить CI-пайплайн: сборка, тесты, деплой на стейдж.", "assignee": "Игорь", "stateCategory": "started", "priority": "high", "closed": false, "embeddingRequired": true, "usedBy": ["H-05", "J-07", "J-08"] },
+    { "key": "redesign_card", "tenant": "A", "project": "ops", "title": "Редизайн карточки задачи", "descriptionStripped": "Переверстать карточку задачи: шапка, тело, панель действий.", "assignee": "Мария", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["G-07"] },
+    { "key": "report_ambig_1", "tenant": "A", "project": "ops", "title": "Отчёт для совета директоров", "descriptionStripped": "Подготовить отчёт для совета директоров за полугодие.", "assignee": "Дима", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["G-08"], "note": "пара с report_ambig_2 — обе содержат 'отчёт', под неоднозначность имени (409 task_ambiguous)" },
+    { "key": "report_ambig_2", "tenant": "A", "project": "ops", "title": "Отчёт по маркетингу", "descriptionStripped": "Собрать отчёт по маркетингу: каналы, CAC, ROI.", "assignee": "Оля", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["G-08"] },
+    { "key": "release_v2", "tenant": "A", "project": "ops", "title": "Релиз v2", "descriptionStripped": "Выпустить релиз v2: собрать, проверить, задеплоить, объявить.", "assignee": "Игорь", "stateCategory": "started", "priority": "high", "closed": false, "embeddingRequired": false, "checklist": [ { "text": "Собрать сборку", "done": true }, { "text": "Прогнать тесты", "done": true }, { "text": "Задеплоить на стейдж", "done": true }, { "text": "Задеплоить на прод", "done": false }, { "text": "Объявить в канале", "done": false } ], "usedBy": ["F-07", "G-05"], "note": "чек-лист 3/5 — под пересчёт счётчиков и накопление сигналов авто-черновика" },
+    { "key": "lending_parent", "tenant": "A", "project": "ops", "title": "Запустить лендинг", "descriptionStripped": "Родительская задача по запуску лендинга (для ручных подзадач).", "assignee": "Оля", "stateCategory": "started", "priority": "high", "closed": false, "embeddingRequired": false, "usedBy": ["F-01", "F-04", "F-05"], "note": "родитель для ручных подзадач F-01; для F-05 добавить ей ребёнка при сиде" },
+    { "key": "onboard_dashboard_parent", "tenant": "A", "project": "ops", "title": "Онбординг: дашборд", "descriptionStripped": "Родитель второго уровня для проверки max_subtask_depth (F-02).", "assignee": "Катя", "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": false, "usedBy": ["F-02"], "note": "при сиде создать цепочку: onboard_dashboard_parent -> child (parentId), под F-02 попытка 3-го уровня" },
+    { "key": "price_site_orgB", "tenant": "B", "project": "ops", "title": "Обновить прайс на сайте", "descriptionStripped": "Двойник задачи из org A — в ДРУГОМ тенанте, для проверки изоляции (INV-2).", "assignee": null, "stateCategory": "started", "priority": "medium", "closed": false, "embeddingRequired": true, "usedBy": ["J-01", "J-02"], "note": "ТОЛЬКО в ORG_B — дедуп/закрытие из org A НЕ должны его находить" }
+  ],
+
+  "configPins": {
+    "_note": "дефолты §6 картографии — фиксировать на baseline (tenant-scoped на STRELA_ORG). Для калибровочных/конфиг-off прогонов менять по одной, отдельным прогоном.",
+    "taskDedup.enabled": true,
+    "taskDedup.suggestThreshold": 0.88,
+    "taskDedup.embedTimeoutMs": 2500,
+    "taskClosure.enabled": true,
+    "taskClosure.matchThreshold": 0.85,
+    "taskClosure.lexicalFallbackMinOverlap": 0.5,
+    "taskClosure.candidateTtlDays": 14,
+    "tracker.autoAcceptConfidenceThreshold": 0.75,
+    "tracker.meetingTasksAlwaysPromote": true,
+    "tracker.livingCardEnabled": true,
+    "tracker.progressFromConversationMinConfidence": 0.6,
+    "tracker.progressAutoDraftMinSignals": 2,
+    "tracker.methodCaptureEnabled": true,
+    "tracker.methodCaptureMinComplexity": 0.5,
+    "tracker.completionDetailGateEnabled": true,
+    "intake.autoAcceptSources": []
+  },
+
+  "configVariants": {
+    "_note": "отдельные диагностические прогоны — не baseline",
+    "dedup_off": { "taskDedup.enabled": false, "usedBy": ["J-10"] },
+    "closure_off": { "taskClosure.enabled": false, "usedBy": ["J-11"] },
+    "autoaccept_meeting_only": { "intake.autoAcceptSources": ["meeting"], "usedBy": ["C-10"] }
+  }
+}

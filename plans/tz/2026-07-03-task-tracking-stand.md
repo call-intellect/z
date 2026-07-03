@@ -23,7 +23,7 @@ templates: [backend/scripts/clone-stand/, backend/scripts/probe-stand/]
 
 ## 0. Цель, границы, инварианты
 
-**Цель:** построить измерительный стенд `task-stand`, который через **реальный конвейер** льёт 85 синтетических
+**Цель:** построить измерительный стенд `task-stand`, который через **реальный конвейер** льёт 100 синтетических
 входов (банк) в синтетический тенант, снимает **машинный исход** каждого (создалась/не создалась задача, дубль-
 исход, запись журнала, кандидат закрытия, переход статуса), сверяет с **эталоном по построению** (ground truth
 в банке), судит смысл панелью LLM и печатает **baseline** — распределение вердиктов по 4 механизмам + статус
@@ -52,19 +52,20 @@ PASS ≥85% на банке (планка — решение владельца 
 ## 1. Файлы (контракт)
 
 ```
-backend/scripts/task-stand/
-  stand.ts            раннер-диспетчер: prepare | seed | settle | run | judge | report | report:nollm | all
-  seed-task-feed.ts   Ф0+Ф1: тенант/проекты/статусы/исполнители + baseline-задачи (setup сценариев дедупа/закрытия) + манифест
-  inject.ts           Ф2: подача 85 входов банка через реальный конвейер (RawEvent/adapter) + прямые вызовы извлекателей (изоляция Т1)
+backend/scripts/task-stand/            (СТРОИТ агент)
+  stand.ts            раннер-диспетчер: prepare | seed | inject | run | judge | report | report:nollm | all
+  seed-task-feed.ts   Ф0+Ф1: мир из fixtures.json + baseline-задачи + генерит манифест
+  inject.ts           Ф2: грузит scenarios.json (100), подаёт через реальный конвейер (RawEvent/adapter) + прямые вызовы извлекателей (изоляция Т1)
   assert.ts           Ф3: детерминированные ассерты (создалось? кандидат? relation? count? поля) → per-scenario исход
   judge.ts            Ф4: панель majority-of-3 (линзы форма / поля / исход) через directLlmCall
   report.ts           Ф4/Ф5: scorecard по категориям+механизмам + оси + инварианты + Т1–Т10 + конфиг + было→стало
 docs/testing/
-  task-stand-scenarios.json        банк 85 (транскрипция из .md по схеме §0.2) — ГОТОВИТ агент, потом НЕ трогать
-  task-stand-scenarios-fresh.json  свежие ~15 (антиоверфит)
-  task-stand-manifest.json         ground truth по построению (setup-задачи, ожидаемые исходы) — генерит seed-task-feed
-  task-stand-report.md / .json     baseline-отчёт (+ per-run архив task-stand-runs/<stamp>/)
-  task-stand.md                    README стенда (по образцу probe-stand.md / clone-stand.md)
+  task-stand-scenarios.json        банк 100 — ГОТОВ (грузит раннер, не трогать)
+  task-stand-scenarios-fresh.json  свежие 15 (антиоверфит) — ГОТОВ
+  task-stand-fixtures.json         мир: люди/проекты/статусы + 19 setup-задач (ключи для сценариев) — ГОТОВ
+  task-stand.md                    README стенда — ГОТОВ (секцию результатов заполнить после baseline)
+  task-stand-manifest.json         ground truth прогона (setup-ID + ожидаемые исходы) — ГЕНЕРИТ seed-task-feed
+  task-stand-report.md / .json     baseline-отчёт (+ per-run архив task-stand-runs/<stamp>/) — ГЕНЕРИТ report
 ```
 
 **Регистрация:** добавить строку в реестр стендов `docs/testing/stand-methodology.md` §5. **НЕ** добавлять в
@@ -153,7 +154,7 @@ answer-кэш `dlg:ans:<org>:*`, `probe:dedup/ratelimit:*`, Redis SETNX прог
 - Между инъекциями — чистка Redis-гигиены (§3), учёт rate-limit/dedup probe.
 - Триаж: для авто-приёма ждать `IntakeAutoTriageWorker`; для route-to-human — фиксировать `IntakeIssue(pending)`.
 
-**Acceptance 2:** все 85 входов поданы; конвейер устоялся (`RawEvent.received=0`); снят сырой результат каждого
+**Acceptance 2:** все 100 входов поданы; конвейер устоялся (`RawEvent.received=0`); снят сырой результат каждого
 (созданные Issue/IntakeIssue/TaskClosureCandidate/IssueProgressUpdate/IssueRelation/ProbeEvent) в трассу
 `task-stand-runs/<stamp>/raw.json`; замер Т1 (какой извлекатель жив) зафиксирован.
 
@@ -201,7 +202,7 @@ journal/closure); оси C/D/G/J/X/P (среднее); **статус INV-1..4**
 
 ## 9. Фаза 5 — baseline-прогон + отчёт владельцу
 
-Чистка кэшей/дедупов (§3) → `run` → `judge` → `report` на 85 + свежие ~15. Зафиксировать конфигурацию.
+Чистка кэшей/дедупов (§3) → `run` → `judge` → `report` на 100 + свежие 15. Зафиксировать конфигурацию.
 
 **Отчёт владельцу** (`task-stand-report.md` + разбор): scorecard по механизмам; **вердикт по Т1–Т10** (что
 подтвердилось как баг → в ТЗ фикса, что снято); статус инвариантов; честный разбор потолка (что лечится
@@ -209,7 +210,7 @@ journal/closure); оси C/D/G/J/X/P (среднее); **статус INV-1..4**
 резкое расхождение → сначала диагноз `ruler-defect`.
 
 **Acceptance ТЗ (общая):**
-- [ ] `bun run scripts/task-stand/stand.ts all` гоняет 85 сценариев по-фазно и целиком;
+- [ ] `bun run scripts/task-stand/stand.ts all` гоняет 100 сценариев по-фазно и целиком;
 - [ ] setup-задачи + манифест ground truth на месте; эмбеддинги готовы;
 - [ ] замер Т1 снят (какой извлекатель жив/мёртв) — явно в отчёте;
 - [ ] baseline-отчёт: scorecard по 4 механизмам + оси + **статус INV-1..4** + **таблица Т1–Т10** + конфиг;
@@ -228,7 +229,7 @@ journal/closure); оси C/D/G/J/X/P (среднее); **статус INV-1..4**
 - **Т1 неопределённость** — обязательно раздельный прямой вызов трёх извлекателей; не полагаться на то, что
   штатный поток создаст задачу.
 - **jobId-дедуп/answer-кэш/probe-dedup/SETNX** — чистить перед каждым прогоном (§3).
-- **Недетерминизм LLM** ±3-5 п.п. на 85 — дельта такого размера не вывод; целевые сценарии чинятся поимённо.
+- **Недетерминизм LLM** ±3-5 п.п. на 100 — дельта такого размера не вывод; целевые сценарии чинятся поимённо.
   `loadPersonSubgraph`/KNN без стабильного orderBy — фиксировать, кратные прогоны для near-threshold (D-12/D-13).
 - **assertNotProd первым**; ORG из ENV (не хардкод); per-run архив, не перезапись.
 - **Стендовые скрипты — НЕ прод:** в `apply-prod-deploy.ts STEPS` и `prod-deploy-log` не вносить (кроме
@@ -244,6 +245,6 @@ journal/closure); оси C/D/G/J/X/P (среднее); **статус INV-1..4**
 
 ## Итог
 
-Реализовано: —/— (по фазам). Стенд меряет 4 механизма трекинга на 85 синтетических входах через реальный
+Реализовано: —/— (по фазам). Стенд меряет 4 механизма трекинга на 100 синтетических входах через реальный
 конвейер, сверяет с ground-truth манифестом, судит панелью и печатает baseline с атрибуцией по механизму +
 статусом инвариантов R13/изоляции/инъекции/идемпотентности + вердиктом по 10 гипотезам-багам.

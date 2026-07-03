@@ -282,6 +282,12 @@ const REFERENCE_SUBGROUP: NavConfigSubgroup = {
       matchPrefix: "/documents",
     },
     {
+      href: "/tables",
+      label: "Таблицы",
+      icon: Table2,
+      matchPrefix: "/tables",
+    },
+    {
       href: "/roles",
       label: "Должности",
       icon: IdCard,

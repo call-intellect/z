@@ -19,7 +19,7 @@ import {
   buildUnderstandUserPrompt,
 } from '../prompts/understand.prompt';
 
-import { type PeriodExpr, resolvePeriod } from './period-resolver';
+import { detectPeriodExpr, type PeriodExpr, resolvePeriod } from './period-resolver';
 import { classifyQueryClass, isQueryClass, type QueryClass } from './query-classifier.service';
 
 export interface QueryPlanFilters {
@@ -228,6 +228,11 @@ export class QueryPlanExtractorService {
       };
     }
 
+    const deterministicPeriod =
+      (await this.cfg
+        .getDynamic<boolean>('knowledge.chatV2DeterministicPeriod', undefined, true)
+        .catch(() => true)) ?? true;
+
     const queries = this.buildQueries(input.question, parsed.queries);
     const queryPlan = this.buildPlanFromRaw(
       parsed.plan,
@@ -236,6 +241,7 @@ export class QueryPlanExtractorService {
       orgTimezone,
       startedAt,
       input.question,
+      deterministicPeriod,
     );
     return { queries, queryPlan };
   }
@@ -286,6 +292,11 @@ export class QueryPlanExtractorService {
       return this.failOpen(startedAt, input.questions.join(' '));
     }
 
+    const deterministicPeriod =
+      (await this.cfg
+        .getDynamic<boolean>('knowledge.chatV2DeterministicPeriod', undefined, true)
+        .catch(() => true)) ?? true;
+
     return this.buildPlanFromRaw(
       parsed,
       this.coerceConfidence(parsed.confidence),
@@ -293,6 +304,7 @@ export class QueryPlanExtractorService {
       orgTimezone,
       startedAt,
       input.questions.join(' '),
+      deterministicPeriod,
     );
   }
 
@@ -323,9 +335,23 @@ export class QueryPlanExtractorService {
     orgTimezone: string,
     startedAt: number,
     question: string,
+    deterministicPeriod: boolean,
   ): QueryPlanResult {
-    const periodExpr = this.coercePeriodExpr(raw.periodExpr);
-    const periodDays = this.coercePeriodDays(raw.periodDays);
+    let periodExpr = this.coercePeriodExpr(raw.periodExpr);
+    let periodDays = this.coercePeriodDays(raw.periodDays);
+    let effectiveConfidence = confidence;
+
+    if (deterministicPeriod) {
+      const det = detectPeriodExpr(question);
+      if (det.expr !== 'none') {
+        periodExpr = det.expr;
+        if (det.expr === 'last_n_days' && det.periodDays != null) {
+          periodDays = det.periodDays;
+        }
+        effectiveConfidence = Math.max(effectiveConfidence, QUERY_PLAN_MIN_CONFIDENCE);
+      }
+    }
+
     const signalTypes = this.sanitizeEnumArray(raw.signalTypes, this.validSignalTypes);
     const themeBranches = this.sanitizeEnumArray(raw.themeBranches, this.validThemeBranches);
     const entityHints = this.sanitizeEntityHints(raw.entityHints);
@@ -348,7 +374,7 @@ export class QueryPlanExtractorService {
       personScope ||
       activeNow;
 
-    const applied = hasAnyFilter && confidence >= QUERY_PLAN_MIN_CONFIDENCE;
+    const applied = hasAnyFilter && effectiveConfidence >= QUERY_PLAN_MIN_CONFIDENCE;
     const durationSeconds = (Date.now() - startedAt) / 1000;
 
     if (!applied) {
@@ -356,7 +382,7 @@ export class QueryPlanExtractorService {
         filters: this.emptyFilters(),
         queryClass,
         queryClassConfidence,
-        confidence,
+        confidence: effectiveConfidence,
         applied: false,
         durationSeconds,
       };
@@ -377,7 +403,7 @@ export class QueryPlanExtractorService {
       },
       queryClass,
       queryClassConfidence,
-      confidence,
+      confidence: effectiveConfidence,
       applied: true,
       durationSeconds,
     };

@@ -31,6 +31,8 @@ import { BudgetAlertCron } from './economics/budget-alert.cron';
 import { CurrencyRateSyncCron } from './economics/currency-rate-sync.cron';
 import { CurrencyRateModule } from './economics/currency-rate.module';
 import { DailyCostAggregatorCron } from './economics/daily-cost-aggregator.cron';
+import { LlmCostDashboardController } from './economics/llm-cost-dashboard.controller';
+import { LlmCostDashboardService } from './economics/llm-cost-dashboard.service';
 import { OrgEconomicsController } from './economics/org-economics.controller';
 import { OrgEconomicsCron } from './economics/org-economics.cron';
 import { ProviderSmokeTestCron } from './economics/provider-smoke-test.cron';
@@ -110,6 +112,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminLlmModelsController,
     AdminEmbeddingProvidersController,
     AdminEconomicsController,
+    LlmCostDashboardController,
     OrgEconomicsController,
     AdminTelegramBotController,
     LlmPreferenceDatasetController,
@@ -134,6 +137,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminLlmModelsService,
     AdminEmbeddingProvidersService,
     UnitEconomicsService,
+    LlmCostDashboardService,
     DailyCostAggregatorCron,
     OrgEconomicsCron,
     BudgetAlertCron,

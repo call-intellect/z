@@ -1659,14 +1659,23 @@ function TasksTab({
         return (
           <article
             key={issue.id}
-            className="rounded-md border border-border-subtle bg-bg-card p-4"
+            className="relative rounded-md border border-border-subtle bg-bg-card p-4"
           >
+            <Link
+              href={`/issues/${encodeURIComponent(issue.id)}`}
+              className="absolute inset-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              aria-label={`Открыть задачу: ${issue.title}`}
+            />
             <div className="flex items-start gap-3">
               <button
                 type="button"
-                onClick={() => void onToggleDone(issue)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void onToggleDone(issue);
+                }}
                 className={cn(
-                  'mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors',
+                  'relative z-10 mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors',
                   done
                     ? 'border-accent bg-accent text-accent-fg'
                     : 'border-border-strong text-transparent hover:border-accent',

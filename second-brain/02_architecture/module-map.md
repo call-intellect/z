@@ -194,6 +194,14 @@ LiveKit чистит атрибуты автоматически при disconne
     concurrency=1.
   - `workers/entity-resolver.cron.ts` — `@Cron('*/5 * * * *')`,
     сканирует пары Entity и enqueue'ит, лимит 50 пар на тик.
+  - `workers/entity-consolidate-same-name.cron.ts` (`EntityConsolidateSameNameCronService`,
+    `@Cron('40 * * * *')`, Ф1 консолидации извлечения, 2026-07-03) — кросс-типовая
+    консолидация одноимённых Entity (кроме `person`): SQL-группировка по
+    `LOWER(canonicalName)` → negative-cache `isEntityPairDistinct` → тот же LLM-арбитр
+    `entity-merge-arbiter` (разный тип НЕ повод для distinct) → `mergeEntities(canonicalType)`
+    с каноном из `resolveCanonicalType` (services/entity-type-priority.ts, domain>generic).
+    Kill-switch `knowledge.entityConsolidateSameNameEnabled`, батч
+    `knowledge.entityConsolidateSameNameBatchSize`. Регистрируется в `ai/workers.module.ts`.
   - `api/search.controller.ts` — `POST /api/v1/knowledge/search`.
   - `api/search.service.ts` — гибридный SQL (cosine + bm25, веса из ENV).
   - `api/blocks.controller.ts` — `GET /api/v1/knowledge/blocks/:id`.

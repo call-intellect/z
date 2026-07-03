@@ -25,7 +25,7 @@ RawEvent (Фаза 1)
 block-ingest.worker
    ├─ SegmentBuilder      — разбивает payload на скользящие окна (≤2000 токенов)
    ├─ BlockExtraction     — LLM вызов с JSON Schema strict, taskType='block-ingest'
-   ├─ KnowledgeEmbedding  — батч-эмбеддинг (text-embedding-3-small, 1536-dim)
+   ├─ KnowledgeEmbedding  — батч-эмбеддинг embed(criticalQuestion + trustedAnswer), header-less (text-embedding-3-small, 1536-dim)
    └─ persist             — Prisma transaction: IdeaBlock(draft) + Evidence + Entity (findOrCreate)
    ↓ enqueueBlockDistill (debounce 30s)
 block-distill.worker
@@ -39,6 +39,12 @@ entity-resolver.cron     (раз в 5 мин — ищет пары и enqueue'и
    ├─ EntityMerge.findCandidates — KNN cosine top-5 entities того же type, > 0.88
    └─ EntityMerge.judgeMerge     — LLM 'entity-merge-arbiter', metadata + контекст 5 блоков
                                    → перенос IdeaBlockEntity на canonical (skip P2002)
+   ↓
+entity-consolidate-same-name.cron (@Cron('40 * * * *'), kill-switch knowledge.entityConsolidateSameNameEnabled)
+   ├─ SQL group by LOWER(canonicalName), type <> 'person', HAVING COUNT>1 → одноимённые Entity любых типов
+   ├─ resolution.isEntityPairDistinct (negative-cache) → skip уже-разведённых
+   ├─ EntityMerge.judgeMerge — тот же 'entity-merge-arbiter' (кросс-типовой: разный тип сам по себе НЕ distinct)
+   └─ resolveCanonicalType(from,into) (domain>generic; спорное → арбитр canonicalType) → mergeEntities(canonicalType)
    ↓
 Search API (POST /api/v1/knowledge/search)
    └─ гибрид cosine (0.7) + BM25 (0.3) → top-10
@@ -348,6 +354,17 @@ ideas-closing-loop (IdeasClosingLoopHandler — @OnEvent 'idea.status_changed') 
 - **F-1.** `resolvePersonByEmbedding` чинён: `FROM "Person"` → `persons` (@@map); тихий `catch→[]` теперь логирует warn.
 - **Прод-лечение (idempotent):** `backfill-entity-tenant-companions` (заполнить NULL-компаньоны) + `backfill-reconcile-merged-entity-refs` (перепривязать осиротевшие ссылки на уже-слитые к канону через тот же `migrateEntityRefs`). ТЗ [`plans/tz/2026-07-01-package-a-person-entity-integrity.md`](../../plans/tz/2026-07-01-package-a-person-entity-integrity.md).
 
+### Кросс-типовая консолидация одноимённых сущностей (Ф1 консолидации извлечения, 2026-07-03)
+
+Инвариант: *«`EntityType` — атрибут объекта, а НЕ ключ его идентичности; один реальный объект под одним именем — одна Entity, даже если разные слои классифицировали его разными типами; мерж мигрирует ВСЕ FK-ссылки на сущность, включая типизированные 1:1-сабрекорды, — без сирот»*.
+
+- **Тип перестал расщеплять идентичность.** До этого тип входил в ключ резолва/мёржа на нескольких уровнях (`findOrCreateEntity` по `(tenantId, type, lower(name))`, `findCandidates` KNN «того же type», hard-guard разных типов в `mergeEntities`, правило арбитра «разный вид → distinct»), из-за чего один и тот же клиент/продукт под одним именем жил как 2+ Entity разных типов и никогда не схлопывался. Теперь: правило 2 промпта `entity-merge-arbiter` переписано — **разный вид сущности сам по себе НЕ повод для distinct**; при кросс-типовом merge арбитр возвращает `canonicalType` (лучший вид объекта).
+- **Матрица приоритета типов** `resolveCanonicalType(a,b)` ([entity-type-priority.ts](../../backend/src/modules/knowledge-core/services/entity-type-priority.ts)): `normalizeEntityType` детерминированно сводит `client→customer`; domain-типы (person/customer/vendor/project/product/document/goal/event/market/org_unit/technology/location) приоритетнее generic (metric/topic/custom по порядку); одинаковые/один-domain — решаемо детерминированно; спорное (оба domain, разные) → `{disputed:true}` → канон берётся от арбитра (`verdict.canonicalType`).
+- **Крон-консолидатор** `EntityConsolidateSameNameCronService` ([workers/entity-consolidate-same-name.cron.ts](../../backend/src/modules/knowledge-core/workers/entity-consolidate-same-name.cron.ts), `@Cron('40 * * * *')`, kill-switch `knowledge.entityConsolidateSameNameEnabled`, батч `knowledge.entityConsolidateSameNameBatchSize`=200, до 50 членов на группу): SQL-группировка по `LOWER(canonicalName)` (кроме `type='person'` — люди вне авто-мержа) → `isEntityPairDistinct` (negative-cache пропускает уже-разведённых) → тот же `judgeMerge` арбитр → `mergeEntities(canonicalType)`. Идёт по всем Org, per-org gate; race с параллельным merge — `debug`-skip.
+- **`mergeEntities` принимает `canonicalType`** и обновляет `into.type`, если он отличается; **hard-guard разных типов снят**. `migrateEntityRefs` расширен со всех предыдущих таблиц до **17 Entity-FK**: к `IdeaBlockEntity`/`EntityLink`/`SourceEntity`/`ThemeEntity`/`Card`/`Person` добавлены типизированные 1:1-сабрекорды `Vendor`/`Customer`/`Event`/`Goal`/`Document`/`Market`/`OrgUnit`/`Role`/`Department` (find-or-delete-on-conflict, companion где есть) + `CustomerRiskSnapshot` (по `customerEntityId`) + `ThemeExclusion` — сабрекорды теперь переезжают/схлопываются, а не остаются сиротами. `countTypedSubrecords>0` после миграции → `error` (BUG-сигнал).
+- **Детерминированный `client→customer`** в `findOrCreateEntity` (`normalizeEntityType`) + прод-backfill.
+- **Прод-лечение:** `backfill-client-to-customer.ts` (свести legacy `client`→`customer`), `backfill-entity-consolidate-same-name.ts` (прогон крона по Org / всем, `--dry-run`).
+
 ### Диагностика сбоя: AGE vs LLM-extract (F7, 2026-06-22)
 
 `block-ingest.worker` теперь разводит throw-текст по реальному источнику отказа: провал LLM-извлечения → `llm_extraction`, недоступность графовой базы Apache AGE → `age_unavailable`. Раньше текст «системный отказ графа AGE» кидался и при провале LLM — диагностика ложно винила AGE; метрика `age_unavailable` теперь растёт только при реальном сбое AGE. ТЗ [`meeting-to-tracker-and-models-unified-fix`](../../plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md) F7.
@@ -530,7 +547,7 @@ chat-v2 retrieval теперь умеет применять **recall-safe ст�
 - **Эпизод-узел (`sourceTitle`).** `RawEvent` получил человекочитаемый заголовок эпизода (например «Созвон с клиентом, 2026-06-20») — заполняется meeting/report-адаптерами через `ingest/adapters/episode-title.util.ts`. Нужен, чтобы поиск группировал результаты по эпизоду и показывал понятный источник.
 - **Провенанс-инвариант (machine-guard).** Блок без непустой evidence-цитаты **НЕ пишется** — `persistBlock` в `block-ingest.worker` режет блоки-«призраки» без подтверждения цитатой; метрика `kc_block_without_evidence_total`. Усиливает правило «нет цитаты — нет факта».
 - **Контекст чанка перед извлечением.** В промпт `block-ingest` теперь подаются дата / тип / участники встречи (в USER, prompt-cache сохранён — стабильный SYSTEM не тронут); инвариант **R13** — многосторонний факт (автор + адресат + срок) не схлопывать в один обезличенный блок. Нарезка под-чанков: размер `knowledge.segment_max_tokens` (600) + overlap `knowledge.segment_overlap_ratio` (0.2).
-- **`ChunkContextService`** (`services/chunk-context.service.ts`) — контекст-заголовок перед эмбеддингом блока (поднимает recall на узких запросах): детерминированная метастрока добавляется **всегда** + LLM-предложение заголовка за kill-switch `knowledge.contextual_header_enabled` (taskType `chunk-context`). Метод `embedBlocks(blocks, contextHeader)`.
+- **Чистый дедуп-вектор блока (Ф2 консолидации извлечения, 2026-07-03).** `IdeaBlock.embedding` = `embed(criticalQuestion + " " + trustedAnswer)` **БЕЗ** контекст-хедера (`KnowledgeEmbeddingService.embedBlocks` — сигнатура без `contextHeader`). До этого в вектор печатался хедер (источник/участники/тип/дата), поэтому один и тот же факт из разных каналов или дней давал РАЗНЫЕ векторы → block-distill не схлопывал дубли, а поисковый рекол проседал: запросы (`embedQuery`) эмбеддятся без хедера, а корпус — с хедером (рассинхрон query-space ↔ doc-space). Header-less вектор выравнивает обе стороны и восстанавливает кросс-канальный дедуп. Header-building (LLM-таск `chunk-context`) убран из `block-ingest.worker` как мёртвый код; `contextHeaderVersion='noheader-v1'` (`EMBED_NO_HEADER_VERSION` в `chunk-context.service.ts`) — гейт идемпотентности ре-эмбеддинга. **`ChunkContextService`** (`services/chunk-context.service.ts`) теперь **дормантен** (не вызывается из ingest; сохранён как заготовка). Прод-backfill `backfill-reembed-blocks-no-header.ts` — пере-эмбеддинг header-ful блоков + `REINDEX` HNSW.
 - **«Суть встречи» как retrievable holistic-блок.** Для отчёта создаётся отдельный блок `signalType=fact` из `reportSummaryMarkdown`, освобождённый от report-confidence-cap (флаг `isMeetingSummary`) — служит parent-document'ом для поиска (запрос «о чём была встреча» находит сводку, а не осколок).
 - **Cross-source идентичность (`EntityAlias`).** Новая таблица — per-Org кэш «псевдоним → Person/Entity». Каскад `resolvePersonByHint`: exact → alias-cache → fuzzy → эмбеддинг-склейка (порог `knowledge.entity_name_resolve_threshold` 0.9) → LLM-арбитр (taskType `entity-name-resolve`) → **fail-closed null** (инвариант **R-2**: разных людей не склеиваем — при сомнении не сливаем).
 - **Гибрид рёбер графа.** Структурные рёбра без LLM: `shares_entity` (на ingest, `createdBy=system`) и `shares_topic` (при кластеризации тем). Смысловые рёбра `block-linker` с риск-тирингом (`knowledge.edge_confidence_high` 0.85 / `edge_confidence_low` 0.6, `linker_min_canonical`, `linker_candidate_topk`) и **композитным судьёй-скептиком** для опасных типов `contradicts` / `supersedes` / `causes` (taskType `block-link-confirm`, **fail-closed** — при сомнении ребро отвергаем; метрика `kc_risk_edge_total`). Fact-supersede тоже под скептиком (инвариант **R-1**: ложное «устарело» не должно прятать живой факт). enum `LinkCreatedBy` получил значение `system`.
@@ -1025,6 +1042,8 @@ ReportIngestListener (@OnEvent, в ingest/knowledge-core)
 - **К4 (обзор/карта тем)** — `selectTopThemes` (top-N тем по `Theme.embedding <=> qvec`, lazy, query-time, крутилка `overview_top_themes` 5) → `runOverviewBranch` подаёт `Theme.summary` в синтез + погружение в блоки выбранных тем (`poolByThemes` в RRF). Без предрасчитанной community-иерархии — вязка на embedding-близость.
 
 ### Contextual-header v2 (Ф7)
+
+> **Отменено Ф2 консолидации извлечения (2026-07-03).** Контекст-хедер больше НЕ встраивается в дедуп-вектор блока — он рассинхронил doc-space с query-space (запросы эмбеддятся без хедера) и ломал кросс-канальный дедуп. Актуальное поведение — header-less вектор `embed(criticalQuestion + trustedAnswer)`, см. «Чистый дедуп-вектор блока» выше. Ниже — историческое описание.
 
 `buildMetaLine` обогащён упомянутыми компаниями (`SourceEntity`), полным составом участников (`SourceParticipant`), `RawEvent.sourceTitle` — встроено в эмбеддинг блока для recall класса К2. Header — стабильный префикс (prompt-cache). Поле `IdeaBlock.contextHeaderVersion` — гейт идемпотентности ре-эмбеддинга. Backfill `scripts/backfill-context-header-reembed.ts` (ре-эмбеддинг старых блоков + REINDEX HNSW-партиций).
 

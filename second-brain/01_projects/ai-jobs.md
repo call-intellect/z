@@ -10,6 +10,10 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 
 Файл создан 2026-05-25 как часть финального handoff Wave 1-3.
 
+## `analyze.worker` — главный отчёт о встрече на `LlmRouterService` (2026-07-03)
+
+`AnalyzeWorker.callLlm()` (`backend/src/modules/ai/workers/analyze.worker.ts`) — источник главного AI-отчёта о встрече (5 операций: `summary`/`report-by-type`/`follow-up`/`custom-prompt`(agentType `custom`)/`client-meeting-split`(agentType `client_protocol`)) — теперь по умолчанию маршрутизируется через `LlmRouterService.call()` вместо отдельного legacy `LlmFallbackService` (ТЗ [`2026-07-03-analyze-worker-llm-router-migration.md`](../../plans/tz/2026-07-03-analyze-worker-llm-router-migration.md)). Модели на первом шаге — строго 1:1 как в легаси (`deepseek-v4-pro`→`minimax:MiniMax-M2.5`→`openai-via-proxy:gpt-5-mini`, зафиксировано патч-скриптом `patch-llm-routes-analyze-worker-1to1.ts` как tier-строки `editedByAdmin=true`) — экономия на более дешёвых моделях для менее критичных операций (`summary`/`follow-up`/`custom-prompt`) отложена как отдельное будущее решение владельца. Временный аварийный рубильник `aiFeatures.analyzeWorkerRouterEnabled` (default ON) — откат на legacy `LlmFallbackService`/`callLlmLegacy()` без релиза; снимается вместе с выводом `LlmFallbackService` из эксплуатации после периода стабилизации (см. `second-brain/04_не-сделано/README.md`). Побочный эффект: главный отчёт впервые получил корректную `tenantId`-атрибуцию расходов (раньше `AiUsageLog.tenantId` для этих вызовов был всегда `NULL`).
+
 ## Провайдеры (verified 2026-05-25)
 
 | Провайдер | Статус | Чем используется | Примечание |

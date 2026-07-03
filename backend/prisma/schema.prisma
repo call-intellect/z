@@ -11762,6 +11762,7 @@ model Table {
   /// Если строки таблицы автоматически создают/линкуются с Entity графа,
   /// формат: `{ type: 'org'|'person'|..., autoCreate: bool, primaryProperty: string }`.
   entitySync       Json?
+  graphSync        Json?
   /// id дефолтного TableView (открывается, если в URL не передан viewId).
   defaultViewId    String?
   /// Soft-delete: archivedAt = когда пользователь нажал «архивировать»;
@@ -11874,9 +11875,14 @@ model TableRow {
   /// Embedded mini-document внутри карточки строки (ProseMirror doc JSON).
   /// Опционально — заполняется в Фазе 2 (карточка строки как документ).
   pageContent Json?
+  sourceObjectType String?
+  sourceObjectId   String?
+  status           String    @default("active")
+  draftExpiresAt   DateTime?
 
   table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
 
+  @@unique([tableId, sourceObjectType, sourceObjectId])
   @@index([tableId, order])
   @@index([tableId, archivedAt])
   @@index([entityId])

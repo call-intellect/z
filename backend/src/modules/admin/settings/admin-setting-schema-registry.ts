@@ -192,6 +192,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['table.agent.max_concurrent_enrich_jobs_per_org', POSITIVE_INT],
   ['table.agent.max_daily_tokens', POSITIVE_INT],
 
+  ['table.graphsync.enabled', z.boolean()],
+  ['table.graphsync.min_confidence', UNIT_INTERVAL],
+
   ['table.import.dedup_threshold', UNIT_INTERVAL],
 
   ['tracker.autoAcceptConfidenceThreshold', UNIT_INTERVAL],

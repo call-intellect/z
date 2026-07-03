@@ -363,6 +363,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-admin-setting-entity-consolidate.ts',
     hint: 'knowledge.entityConsolidateSameName{Enabled,BatchSize} — kill-switch + батч крон-консолидатора одноимённых сущностей (Ф1b кросс-типовая консолидация)',
   },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-table-graphsync.ts',
+    hint: 'table.graphsync.{enabled,min_confidence} — kill-switch + порог авто-создания строк умных таблиц из графа (smart-tables Ф4)',
+  },
 
   ...[
     'phase-B',
@@ -927,6 +932,12 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-entity-consolidate-same-name.ts',
     skipBootstrap: true,
     hint: 'Ф1b: кросс-типовая консолидация одноимённых сущностей (после client→customer); LLM-арбитр + матрица приоритета типов',
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-table-graphsync.ts',
+    skipBootstrap: true,
+    hint: 'smart-tables Ф4: проставить Table.graphSync системным таблицам из каталога + reconcile строк из графа (Goal/Experiment/IdeaBlock) по всем Org; идемпотентно',
   },
 ];
 

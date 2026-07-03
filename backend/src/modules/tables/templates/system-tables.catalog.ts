@@ -15,11 +15,19 @@ export interface SystemTableEntitySync {
   entityTypes?: string[];
 }
 
+export interface SystemTableGraphSync {
+  source: 'idea_block' | 'goal' | 'experiment';
+  signalType?: string;
+  fieldMap: Record<string, string>;
+  autoCreate: boolean;
+}
+
 export interface SystemTableTemplate {
   systemKey: string;
   name: string;
   icon: string;
   entitySync: SystemTableEntitySync | null;
+  graphSync?: SystemTableGraphSync | null;
   properties: SystemTablePropertyTemplate[];
 }
 
@@ -120,6 +128,11 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     name: 'Гипотезы и эксперименты',
     icon: '🧪',
     entitySync: null,
+    graphSync: {
+      source: 'experiment',
+      fieldMap: { 'Формулировка': 'name', 'Дата старта': 'startedAt', 'Результат': 'currentResult' },
+      autoCreate: true,
+    },
     properties: [
       { name: 'Формулировка', type: 'longtext', isPrimary: true },
       {
@@ -210,6 +223,12 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     name: 'Идеи и бэклог',
     icon: '💡',
     entitySync: null,
+    graphSync: {
+      source: 'idea_block',
+      signalType: 'idea',
+      fieldMap: { 'Формулировка': 'name' },
+      autoCreate: true,
+    },
     properties: [
       { name: 'Формулировка', type: 'longtext', isPrimary: true },
       {
@@ -249,6 +268,12 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     name: 'Обещания и обязательства',
     icon: '🤞',
     entitySync: null,
+    graphSync: {
+      source: 'idea_block',
+      signalType: 'commitment',
+      fieldMap: { 'Что': 'name', 'Срок': 'commitmentDueDate' },
+      autoCreate: true,
+    },
     properties: [
       { name: 'Что', type: 'longtext', isPrimary: true },
       { name: 'Кому', type: 'person' },
@@ -349,6 +374,11 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     name: 'Цели и метрики',
     icon: '🎯',
     entitySync: null,
+    graphSync: {
+      source: 'goal',
+      fieldMap: { 'Формулировка': 'name', 'Срок': 'targetDate' },
+      autoCreate: true,
+    },
     properties: [
       { name: 'Формулировка', type: 'longtext', isPrimary: true },
       { name: 'Метрика', type: 'text' },

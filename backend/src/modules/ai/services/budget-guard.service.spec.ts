@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { CurrencyRateService } from '../../admin/economics/currency-rate.service';
 
 import { BudgetGuardService } from './budget-guard.service';
 
@@ -10,6 +11,7 @@ interface BuildOpts {
   mtdRub?: number;
   capThrows?: boolean;
   ttlSec?: number;
+  fxRate?: number;
 }
 
 function build(opts: BuildOpts = {}) {
@@ -17,19 +19,21 @@ function build(opts: BuildOpts = {}) {
     if (opts.capThrows) throw new Error('db down');
     return opts.cap === undefined ? null : opts.cap;
   });
-  const aggregate = vi.fn(async () => ({
-    _sum: { costRub: opts.mtdRub ?? 0 },
-  }));
+  const queryRaw = vi.fn(async () => [{ total_rub: String(opts.mtdRub ?? 0) }]);
   const prisma = {
     orgBudgetCap: { findUnique },
-    aiUsageLog: { aggregate },
+    $queryRaw: queryRaw,
   } as unknown as PrismaService;
 
   const getDynamic = vi.fn(async (_key: string, _env: unknown, def: unknown) => opts.ttlSec ?? def);
   const cfg = { getDynamic } as unknown as TypedConfigService;
 
-  const guard = new BudgetGuardService(prisma, cfg);
-  return { guard, findUnique, aggregate, getDynamic };
+  const currencyRate = {
+    getCurrentUsdRubRate: vi.fn(async () => opts.fxRate ?? 90),
+  } as unknown as CurrencyRateService;
+
+  const guard = new BudgetGuardService(prisma, cfg, currencyRate);
+  return { guard, findUnique, queryRaw, getDynamic, currencyRate };
 }
 
 describe('BudgetGuardService', () => {
@@ -38,7 +42,7 @@ describe('BudgetGuardService', () => {
     const res = await ctx.guard.evaluate(null);
     expect(res).toEqual({ over: false, mtdRub: 0, capRub: null, capKind: 'soft' });
     expect(ctx.findUnique).not.toHaveBeenCalled();
-    expect(ctx.aggregate).not.toHaveBeenCalled();
+    expect(ctx.queryRaw).not.toHaveBeenCalled();
   });
 
   it('нет cap-записи → over=false, capRub=null', async () => {
@@ -46,7 +50,7 @@ describe('BudgetGuardService', () => {
     const res = await ctx.guard.evaluate('t1');
     expect(res.over).toBe(false);
     expect(res.capRub).toBeNull();
-    expect(ctx.aggregate).not.toHaveBeenCalled();
+    expect(ctx.queryRaw).not.toHaveBeenCalled();
   });
 
   it('monthlyCapRub=null (без лимита) → over=false', async () => {
@@ -54,7 +58,7 @@ describe('BudgetGuardService', () => {
     const res = await ctx.guard.evaluate('t1');
     expect(res.over).toBe(false);
     expect(res.capRub).toBeNull();
-    expect(ctx.aggregate).not.toHaveBeenCalled();
+    expect(ctx.queryRaw).not.toHaveBeenCalled();
   });
 
   it('soft-cap при mtd≥cap → over=false (soft = только alert)', async () => {
@@ -80,11 +84,11 @@ describe('BudgetGuardService', () => {
     expect(res.over).toBe(false);
   });
 
-  it('кэш MTD: 2 evaluate подряд в пределах TTL → aggregate вызван 1 раз', async () => {
+  it('кэш MTD: 2 evaluate подряд в пределах TTL → queryRaw вызван 1 раз', async () => {
     const ctx = build({ cap: { monthlyCapRub: 100, capKind: 'hard' }, mtdRub: 50, ttlSec: 60 });
     await ctx.guard.evaluate('t1');
     await ctx.guard.evaluate('t1');
-    expect(ctx.aggregate).toHaveBeenCalledTimes(1);
+    expect(ctx.queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('ошибка prisma (БД недоступна) → over=false (fail-open)', async () => {
@@ -101,5 +105,27 @@ describe('BudgetGuardService', () => {
     const res = await ctx.guard.evaluate('t1');
     expect(res.over).toBe(true);
     expect(res.mtdRub).toBe(120);
+  });
+
+  it('смешанный месяц — построчный COALESCE учитывает NULL-строки через fxRate', async () => {
+    const findUnique = vi.fn(async () => ({ monthlyCapRub: 100, capKind: 'hard' }));
+    const queryRaw = vi.fn(async () => [{ total_rub: '140' }]);
+    const prisma = {
+      orgBudgetCap: { findUnique },
+      $queryRaw: queryRaw,
+    } as unknown as PrismaService;
+    const getDynamic = vi.fn(async (_key: string, _env: unknown, def: unknown) => def);
+    const cfg = { getDynamic } as unknown as TypedConfigService;
+    const currencyRate = {
+      getCurrentUsdRubRate: vi.fn(async () => 90),
+    } as unknown as CurrencyRateService;
+
+    const guard = new BudgetGuardService(prisma, cfg, currencyRate);
+    const res = await guard.evaluate('t1');
+
+    expect(currencyRate.getCurrentUsdRubRate).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(res.mtdRub).toBe(140);
+    expect(res.over).toBe(true);
   });
 });

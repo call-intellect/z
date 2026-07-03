@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { TrackerModule } from '../tracker/tracker.module';
 
 import { KnowledgeBlocksController } from './api/blocks.controller';
+import { KnowledgeBranchesController } from './api/branches.controller';
 import { KnowledgeEntitiesController } from './api/entities.controller';
 import { KnowledgeGraphController } from './api/graph.controller';
 import { ProvenanceController } from './api/provenance.controller';
@@ -18,6 +19,7 @@ import { KnowledgeSnapshotModule } from './snapshot.module';
   controllers: [
     KnowledgeSearchController,
     KnowledgeBlocksController,
+    KnowledgeBranchesController,
     KnowledgeEntitiesController,
     KnowledgeGraphController,
     KnowledgeThemesController,

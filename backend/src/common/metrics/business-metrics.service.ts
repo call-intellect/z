@@ -66,6 +66,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private themeAutofillAddedTotal!: Counter<'tenant_top'>;
   private themeExclusionsTotal!: Counter<'tenant_top'>;
 
+  private branchesMapRequestsTotal!: Counter<string>;
+  private branchesMapMs!: Histogram<string>;
+
   private morningTasksDigestTotal!: Counter<'is_empty'>;
 
   // ── петля закрытия задачи (TZ task-loop Ф2b) ─────────────────────────
@@ -1314,6 +1317,16 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_theme_exclusions_total',
       help: 'Убранные привязки темы (unpin → ThemeExclusion). tenant_top — bucket.',
       labelNames: ['tenant_top'] as const,
+    });
+
+    this.branchesMapRequestsTotal = this.getOrCreateCounter({
+      name: 'z_branches_map_requests_total',
+      help: 'SBB Ф2 — число запросов карты 12 областей знаний (GET /api/v1/knowledge/branches).',
+    });
+    this.branchesMapMs = this.getOrCreateHistogram({
+      name: 'z_branches_map_ms',
+      help: 'SBB Ф2 — длительность агрегации карты областей знаний в миллисекундах.',
+      buckets: [10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
     });
 
     this.morningTasksDigestTotal = this.getOrCreateCounter({
@@ -4719,6 +4732,15 @@ export class BusinessMetricsService implements OnModuleInit {
   incThemeExclusions(args: { tenantTop: string; count: number }): void {
     if (args.count <= 0) return;
     this.themeExclusionsTotal?.inc({ tenant_top: args.tenantTop }, args.count);
+  }
+
+  incBranchesMapRequest(): void {
+    this.branchesMapRequestsTotal?.inc();
+  }
+
+  observeBranchesMapMs(ms: number): void {
+    if (!Number.isFinite(ms) || ms < 0) return;
+    this.branchesMapMs?.observe(ms);
   }
 
   incMorningTasksDigest(args: { isEmpty: boolean }): void {

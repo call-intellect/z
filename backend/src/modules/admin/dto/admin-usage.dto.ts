@@ -14,20 +14,6 @@ export const DashboardQuerySchema = z
   });
 export type DashboardQuery = z.infer<typeof DashboardQuerySchema>;
 
-export const UsersUsageQuerySchema = z
-  .object({
-    period: PeriodSchema.default('week'),
-    from: z.coerce.date().optional(),
-    to: z.coerce.date().optional(),
-    limit: z.coerce.number().int().min(1).max(200).default(50),
-    cursor: z.string().optional(),
-    search: z.string().min(1).max(100).optional(),
-  })
-  .refine((v) => v.period !== 'custom' || (v.from !== undefined && v.to !== undefined), {
-    message: 'period=custom требует from и to',
-  });
-export type UsersUsageQuery = z.infer<typeof UsersUsageQuerySchema>;
-
 export const CallsLogQuerySchema = z.object({
   taskType: z.string().min(1).max(100).optional(),
   userId: z.string().min(1).max(100).optional(),
@@ -59,7 +45,7 @@ export const ExportCsvQuerySchema = z
     period: PeriodSchema.default('week'),
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),
-    kind: z.enum(['calls', 'users', 'functions']).default('calls'),
+    kind: z.enum(['calls', 'functions']).default('calls'),
   })
   .refine((v) => v.period !== 'custom' || (v.from !== undefined && v.to !== undefined), {
     message: 'period=custom требует from и to',

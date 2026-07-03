@@ -227,7 +227,7 @@ function DashboardContent({
               filename="admin-functions"
             />
             <Button asChild variant="ghost" size="sm">
-              <Link href="/admin/usage/functions">
+              <Link href="/admin/analytics/functions">
                 Все функции <ArrowRight size={12} />
               </Link>
             </Button>
@@ -247,7 +247,7 @@ function DashboardContent({
                   className="flex items-center justify-between rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
                 >
                   <Link
-                    href={`/admin/usage/functions/${encodeURIComponent(t.taskType)}`}
+                    href={`/admin/analytics/functions/${encodeURIComponent(t.taskType)}`}
                     className="flex flex-col gap-0.5 hover:text-accent"
                   >
                     <span>{taskTypeLabel(t.taskType)}</span>

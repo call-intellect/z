@@ -96,17 +96,6 @@ export interface AdminDashboardResult {
   };
 }
 
-export interface AdminUsersUsageRow {
-  userId: string;
-  userEmail: string;
-  userName: string;
-  tenantId: string | null;
-  tenantName: string | null;
-  totalCostUsd: number;
-  totalCalls: number;
-  byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
-}
-
 export interface AdminCallLogItem {
   id: string;
   createdAt: string;
@@ -299,120 +288,6 @@ export class AdminUsageService {
         costUsd: decimalToNumber(r._sum.costUsd),
         calls: r._count._all,
       }));
-  }
-
-  async getUsersUsage(
-    args: ScopeArgs & PeriodArgs & { limit: number; cursor?: string; search?: string },
-  ): Promise<{ items: AdminUsersUsageRow[]; nextCursor: string | null }> {
-    const range = periodToRange(args);
-    const tenantWhere = this.buildTenantWhere(args);
-    const baseWhere: Prisma.AiUsageLogWhereInput = {
-      createdAt: { gte: range.gte, lt: range.lt },
-      userId: { not: null },
-      ...tenantWhere,
-    };
-
-    const grouped = await this.prisma.aiUsageLog.groupBy({
-      by: ['userId'],
-      where: baseWhere,
-      _sum: { costUsd: true },
-      _count: { _all: true },
-      orderBy: { _sum: { costUsd: 'desc' } },
-      take: args.limit + 1,
-    });
-
-    const userIds = grouped.map((r) => r.userId).filter((x): x is string => x !== null);
-    if (userIds.length === 0) {
-      return { items: [], nextCursor: null };
-    }
-
-    const usersFilter: Prisma.UserWhereInput = { id: { in: userIds } };
-    if (args.search) {
-      usersFilter.OR = [
-        { email: { contains: args.search, mode: 'insensitive' } },
-        { name: { contains: args.search, mode: 'insensitive' } },
-      ];
-    }
-    const users = await this.prisma.user.findMany({
-      where: usersFilter,
-      select: { id: true, email: true, name: true },
-    });
-    const usersById = new Map(users.map((u) => [u.id, u]));
-
-    const breakdownRows = await this.prisma.aiUsageLog.groupBy({
-      by: ['userId', 'taskType'],
-      where: { ...baseWhere, userId: { in: userIds } },
-      _sum: { costUsd: true },
-      _count: { _all: true },
-    });
-    const breakdownByUser = new Map<
-      string,
-      Array<{ taskType: string; costUsd: number; calls: number }>
-    >();
-    for (const r of breakdownRows) {
-      if (!r.userId) continue;
-      const existing = breakdownByUser.get(r.userId) ?? [];
-      existing.push({
-        taskType: r.taskType ?? 'unknown',
-        costUsd: decimalToNumber(r._sum.costUsd),
-        calls: r._count._all,
-      });
-      breakdownByUser.set(r.userId, existing);
-    }
-
-    const tenantNamesByUser = new Map<string, { id: string; name: string }>();
-    if (args.scope === 'global') {
-      const memberships = await this.prisma.membership.findMany({
-        where: { userId: { in: userIds } },
-        select: {
-          userId: true,
-          orgId: true,
-          org: { select: { name: true } },
-        },
-      });
-      for (const m of memberships) {
-        if (!tenantNamesByUser.has(m.userId)) {
-          tenantNamesByUser.set(m.userId, { id: m.orgId, name: m.org.name });
-        }
-      }
-    }
-
-    const visibleUserIds = new Set(users.map((u) => u.id));
-    const items: AdminUsersUsageRow[] = grouped
-      .filter((r) => r.userId && visibleUserIds.has(r.userId))
-      .map((r) => {
-        const userId = r.userId as string;
-        const user = usersById.get(userId);
-        const tenant =
-          args.scope === 'org'
-            ? args.tenantId
-              ? { id: args.tenantId, name: '' }
-              : null
-            : (tenantNamesByUser.get(userId) ?? null);
-        return {
-          userId,
-          userEmail: user?.email ?? '',
-          userName: user?.name ?? '',
-          tenantId: tenant?.id ?? null,
-          tenantName: tenant?.name ?? null,
-          totalCostUsd: decimalToNumber(r._sum.costUsd),
-          totalCalls: r._count._all,
-          byTaskType: (breakdownByUser.get(userId) ?? [])
-            .sort((a, b) => b.costUsd - a.costUsd)
-            .slice(0, 10),
-        };
-      });
-
-    const hasMore = items.length > args.limit;
-    const trimmed = hasMore ? items.slice(0, args.limit) : items;
-    const nextCursor =
-      hasMore && trimmed.length > 0
-        ? encodeCursor({
-            createdAt: new Date().toISOString(),
-            id: trimmed[trimmed.length - 1]!.userId,
-          })
-        : null;
-    return { items: trimmed, nextCursor };
   }
 
   async getCallsLog(

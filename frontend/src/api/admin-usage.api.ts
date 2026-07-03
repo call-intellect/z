@@ -6,19 +6,12 @@ import type {
   AdminDashboardApi,
   AdminFunctionsUsageApi,
   AdminPeriod,
-  AdminUsersUsageApi,
 } from "@/domain/admin-usage";
 
 export type DashboardRequest = {
   period: AdminPeriod;
   from?: string;
   to?: string;
-};
-
-export type UsersUsageRequest = DashboardRequest & {
-  limit?: number;
-  cursor?: string;
-  search?: string;
 };
 
 export type CallsLogRequest = {
@@ -39,18 +32,13 @@ export type ExportCsvRequest = {
   period: AdminPeriod;
   from?: string;
   to?: string;
-  kind?: "calls" | "users" | "functions";
+  kind?: "calls" | "functions";
 };
 
 export const adminUsageApi = {
   getDashboard: (req: DashboardRequest) =>
     apiClient.get<AdminDashboardApi>(
       `/api/v1/admin/usage/dashboard${buildQuery({ ...req })}`,
-    ),
-
-  getUsers: (req: UsersUsageRequest) =>
-    apiClient.get<AdminUsersUsageApi>(
-      `/api/v1/admin/usage/users${buildQuery({ ...req })}`,
     ),
 
   getCalls: (req: CallsLogRequest) =>

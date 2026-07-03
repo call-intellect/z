@@ -26,8 +26,6 @@ import {
   type FunctionCallsQuery,
   FunctionsUsageQuerySchema,
   type FunctionsUsageQuery,
-  UsersUsageQuerySchema,
-  type UsersUsageQuery,
 } from '../dto/admin-usage.dto';
 import { type AdminCallLogItem, AdminUsageService } from '../services/admin-usage.service';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
@@ -48,19 +46,6 @@ export class AdminUsageController {
       period: q.period,
       ...(q.from ? { from: q.from } : {}),
       ...(q.to ? { to: q.to } : {}),
-    });
-  }
-
-  @Get('users')
-  async users(@Query(new ZodValidationPipe(UsersUsageQuerySchema)) q: UsersUsageQuery) {
-    return this.svc.getUsersUsage({
-      scope: 'global',
-      period: q.period,
-      ...(q.from ? { from: q.from } : {}),
-      ...(q.to ? { to: q.to } : {}),
-      limit: q.limit,
-      ...(q.cursor ? { cursor: q.cursor } : {}),
-      ...(q.search ? { search: q.search } : {}),
     });
   }
 
@@ -127,14 +112,7 @@ export class AdminUsageController {
     const filename = `usage-${scope}-${q.period}-${Date.now()}.csv`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    if (q.kind === 'calls') {
-      const result = await this.svc.getCallsLog({
-        scope,
-        ...(tenantId !== undefined ? { tenantId } : {}),
-        limit: 1000,
-      });
-      streamUsageCsv(res, result.items as AdminCallLogItem[]);
-    } else if (q.kind === 'functions') {
+    if (q.kind === 'functions') {
       const result = await this.svc.getFunctionsUsage({
         scope,
         ...(tenantId !== undefined ? { tenantId } : {}),
@@ -144,15 +122,12 @@ export class AdminUsageController {
       });
       streamUsageCsv(res, result.items);
     } else {
-      const result = await this.svc.getUsersUsage({
+      const result = await this.svc.getCallsLog({
         scope,
         ...(tenantId !== undefined ? { tenantId } : {}),
-        period: q.period,
-        ...(q.from ? { from: q.from } : {}),
-        ...(q.to ? { to: q.to } : {}),
         limit: 1000,
       });
-      streamUsageCsv(res, result.items);
+      streamUsageCsv(res, result.items as AdminCallLogItem[]);
     }
     res.end();
   }

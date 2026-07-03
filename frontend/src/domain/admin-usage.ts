@@ -83,38 +83,6 @@ export function adminDashboardFromApi(
   };
 }
 
-export type AdminUsersUsageRowApi = {
-  userId: string;
-  userEmail: string;
-  userName: string;
-  tenantId: string | null;
-  tenantName: string | null;
-  totalCostUsd: number;
-  totalCalls: number;
-  byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
-};
-
-export type AdminUsersUsageApi = {
-  items: AdminUsersUsageRowApi[];
-  nextCursor: string | null;
-};
-
-export type AdminUsersUsageRowDomain = AdminUsersUsageRowApi;
-
-export type AdminUsersUsageDomain = {
-  items: AdminUsersUsageRowDomain[];
-  nextCursor: string | null;
-};
-
-export function adminUsersUsageFromApi(
-  api: AdminUsersUsageApi,
-): AdminUsersUsageDomain {
-  return {
-    items: api.items,
-    nextCursor: api.nextCursor,
-  };
-}
-
 export type AdminCallLogItemApi = {
   id: string;
   createdAt: string;

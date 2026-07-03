@@ -145,6 +145,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['aiFeatures.regulationMinMaterializeConfidence', UNIT_INTERVAL],
   ['aiFeatures.regulationConsolidatorEnabled', z.boolean()],
   ['aiFeatures.clientProtocolEnabled', z.boolean()],
+  ['aiFeatures.analyzeWorkerRouterEnabled', z.boolean()],
 
   ['llm.cacheSmokeEnabled', z.boolean()],
   ['llm.cacheHitRatioWarnThreshold', UNIT_INTERVAL],

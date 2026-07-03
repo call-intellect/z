@@ -545,6 +545,11 @@ export class TypedConfigService {
         'CLIENT_PROTOCOL_ENABLED',
         true,
       ),
+      analyzeWorkerRouterEnabled: this.resolveSync<boolean>(
+        'aiFeatures.analyzeWorkerRouterEnabled',
+        'ANALYZE_WORKER_ROUTER_ENABLED',
+        true,
+      ),
       docCompilerEnabled: this.resolveSync<boolean>(
         'aiFeatures.docCompilerEnabled',
         'DOC_COMPILER_ENABLED',

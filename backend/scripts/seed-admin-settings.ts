@@ -898,6 +898,12 @@ function buildSettings(): SettingSeed[] {
       'medium',
       'Legacy summary-агент в analyze.worker (false = сводка только из summaryFast / meeting-report-fast)',
     ],
+    [
+      'aiFeatures.analyzeWorkerRouterEnabled',
+      envBool('ANALYZE_WORKER_ROUTER_ENABLED', true),
+      'high',
+      'Аварийный рубильник: главный отчёт о встрече идёт через LlmRouterService (true, канон) или через легаси LlmFallbackService (false, откат при инциденте). Временный — снимается после периода стабилизации.',
+    ],
   ];
   for (const [key, value, severity, description] of aiFeatures) {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });

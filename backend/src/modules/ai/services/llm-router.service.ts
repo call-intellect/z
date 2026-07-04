@@ -1589,20 +1589,42 @@ export class LlmRouterService implements OnModuleInit {
       );
     }
 
-    // Pre-dispatch budget gate (ТЗ cost-safety Ф2). Best-effort, observe по умолчанию.
+    // Pre-dispatch budget gate (ТЗ cost-safety Ф2 + llm-budget-downgrade-tier Ф2).
     const bev = await this.budgetGuard?.evaluate(params.tenantId).catch(() => null);
+    let downgradeApplied = false;
     if (bev?.over) {
-      const enforce =
-        (await this.cfg?.getDynamic<boolean>('llm.budget.enforce_enabled', undefined, false)) ??
-        false;
-      this.metrics?.incLlmBudgetExceeded({ mode: enforce ? 'enforce' : 'observe' });
-      if (enforce) {
-        throw new LlmBudgetExceededError(params.tenantId, bev.mtdRub, bev.capRub);
+      if (bev.capKind === 'downgrade') {
+        const cheapnessScore = (model?: string): number => {
+          if (!model) return Number.POSITIVE_INFINITY;
+          const price = MODEL_PRICES[model];
+          if (!price) return Number.POSITIVE_INFINITY;
+          return price.inputPer1M + price.outputPer1M;
+        };
+        const withCost = filtered.map((entry, idx) => ({
+          entry,
+          idx,
+          cost: cheapnessScore(entry.model),
+        }));
+        withCost.sort((a, b) => a.cost - b.cost || a.idx - b.idx);
+        const reordered = withCost.map((w) => w.entry);
+        if (reordered.length > 0 && reordered[0] !== filtered[0]) {
+          filtered.splice(0, filtered.length, ...reordered);
+          downgradeApplied = true;
+        }
+        this.metrics?.incLlmBudgetExceeded({ mode: 'downgrade' });
+      } else {
+        const enforce =
+          (await this.cfg?.getDynamic<boolean>('llm.budget.enforce_enabled', undefined, false)) ??
+          false;
+        this.metrics?.incLlmBudgetExceeded({ mode: enforce ? 'enforce' : 'observe' });
+        if (enforce) {
+          throw new LlmBudgetExceededError(params.tenantId, bev.mtdRub, bev.capRub);
+        }
+        this.logger.warn(
+          { tenantId: params.tenantId, mtdRub: bev.mtdRub, capRub: bev.capRub },
+          'LlmRouter: бюджет превышен, но enforce выключен — пропускаю (observe)',
+        );
       }
-      this.logger.warn(
-        { tenantId: params.tenantId, mtdRub: bev.mtdRub, capRub: bev.capRub },
-        'LlmRouter: бюджет превышен, но enforce выключен — пропускаю (observe)',
-      );
     }
 
     const errors: Array<{ provider: string; message: string }> = [];
@@ -1623,7 +1645,9 @@ export class LlmRouterService implements OnModuleInit {
       // иначе '<source-tier>_<кодError>'. Используется в аналитике admin'а.
       const fallbackReason: string | null =
         i === 0
-          ? null
+          ? downgradeApplied
+            ? 'budget_downgrade'
+            : null
           : `${lastFailTier ?? 'primary'}_${classifyError(errors[errors.length - 1]?.message ?? 'error')}`;
       try {
         // audit С30 (2026-05-29): hard-timeout. Если провайдер «висит»

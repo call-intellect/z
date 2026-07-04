@@ -149,6 +149,7 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['llm.budget.enforce_enabled', z.boolean()],
   ['llm.budget.currencyRateFallbackUsdRub', z.number().positive()],
+  ['llm.budget.default_monthly_cap_rub', z.number().nonnegative()],
 
   ['llm.cacheSmokeEnabled', z.boolean()],
   ['llm.cacheHitRatioWarnThreshold', UNIT_INTERVAL],

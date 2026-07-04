@@ -1,8 +1,12 @@
 import { z } from 'zod';
 
 export const UpdateOrgBudgetSchema = z.object({
-  monthlyCapRub: z.number().nonnegative().nullable(),
-  capKind: z.enum(['soft', 'hard']).default('soft'),
+  monthlyCapRub: z
+    .number()
+    .nonnegative()
+    .nullable()
+    .transform((v) => (v === 0 ? null : v)),
+  capKind: z.enum(['soft', 'hard', 'downgrade']).default('soft'),
   alertThresholds: z.array(z.number().int().positive().max(1000)).min(1).default([50, 80, 95]),
 });
 export type UpdateOrgBudgetDto = z.infer<typeof UpdateOrgBudgetSchema>;

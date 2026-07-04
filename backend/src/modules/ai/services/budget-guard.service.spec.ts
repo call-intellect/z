@@ -12,6 +12,7 @@ interface BuildOpts {
   capThrows?: boolean;
   ttlSec?: number;
   fxRate?: number;
+  defaultCapRub?: number;
 }
 
 function build(opts: BuildOpts = {}) {
@@ -25,7 +26,12 @@ function build(opts: BuildOpts = {}) {
     $queryRaw: queryRaw,
   } as unknown as PrismaService;
 
-  const getDynamic = vi.fn(async (_key: string, _env: unknown, def: unknown) => opts.ttlSec ?? def);
+  const getDynamic = vi.fn(async (key: string, _env: unknown, def: unknown) => {
+    if (key === 'llm.budget.default_monthly_cap_rub') {
+      return opts.defaultCapRub ?? def;
+    }
+    return opts.ttlSec ?? def;
+  });
   const cfg = { getDynamic } as unknown as TypedConfigService;
 
   const currencyRate = {
@@ -127,5 +133,46 @@ describe('BudgetGuardService', () => {
     expect(queryRaw).toHaveBeenCalledTimes(1);
     expect(res.mtdRub).toBe(140);
     expect(res.over).toBe(true);
+  });
+
+  it('downgrade-cap при mtd≥cap → over=true', async () => {
+    const ctx = build({ cap: { monthlyCapRub: 100, capKind: 'downgrade' }, mtdRub: 100 });
+    const res = await ctx.guard.evaluate('t1');
+    expect(res.over).toBe(true);
+    expect(res.mtdRub).toBe(100);
+    expect(res.capRub).toBe(100);
+    expect(res.capKind).toBe('downgrade');
+  });
+
+  it('downgrade-cap при mtd<cap → over=false', async () => {
+    const ctx = build({ cap: { monthlyCapRub: 100, capKind: 'downgrade' }, mtdRub: 99.99 });
+    const res = await ctx.guard.evaluate('t1');
+    expect(res.over).toBe(false);
+    expect(res.capKind).toBe('downgrade');
+  });
+
+  it('нет cap-записи, платформенный дефолт=5000, mtd<5000 → capRub=5000, capKind=soft, over=false', async () => {
+    const ctx = build({ cap: null, defaultCapRub: 5000, mtdRub: 1000 });
+    const res = await ctx.guard.evaluate('t1');
+    expect(res.capRub).toBe(5000);
+    expect(res.capKind).toBe('soft');
+    expect(res.over).toBe(false);
+    expect(res.mtdRub).toBe(1000);
+  });
+
+  it('нет cap-записи, платформенный дефолт=5000, mtd≥5000 → over=false (Р6: дефолт не включает блокировку сам по себе)', async () => {
+    const ctx = build({ cap: null, defaultCapRub: 5000, mtdRub: 6000 });
+    const res = await ctx.guard.evaluate('t1');
+    expect(res.capRub).toBe(5000);
+    expect(res.capKind).toBe('soft');
+    expect(res.over).toBe(false);
+  });
+
+  it('нет cap-записи, платформенный дефолт не настроен (0, код-фолбэк) → capRub=null, over=false', async () => {
+    const ctx = build({ cap: null, defaultCapRub: 0, mtdRub: 100 });
+    const res = await ctx.guard.evaluate('t1');
+    expect(res.capRub).toBeNull();
+    expect(res.over).toBe(false);
+    expect(ctx.queryRaw).not.toHaveBeenCalled();
   });
 });

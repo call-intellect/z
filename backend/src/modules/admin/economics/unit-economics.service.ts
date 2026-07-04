@@ -59,7 +59,7 @@ export class UnitEconomicsService {
     tenantId: string,
     args: {
       monthlyCapRub: number | null;
-      capKind: 'soft' | 'hard';
+      capKind: 'soft' | 'hard' | 'downgrade';
       alertThresholds: number[];
       setByUserId?: string;
     },

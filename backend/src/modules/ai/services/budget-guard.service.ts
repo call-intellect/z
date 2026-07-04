@@ -30,13 +30,18 @@ export class BudgetGuardService {
     if (!tenantId) return NONE;
     try {
       const cap = await this.prisma.orgBudgetCap.findUnique({ where: { tenantId } });
-      const capRub = cap?.monthlyCapRub != null ? Number(cap.monthlyCapRub) : null;
+      let capRub = cap?.monthlyCapRub != null ? Number(cap.monthlyCapRub) : null;
       const capKind = cap?.capKind ?? 'soft';
+      if (capRub == null) {
+        const defaultCapRub =
+          (await this.cfg?.getDynamic<number>('llm.budget.default_monthly_cap_rub', undefined, 0)) ?? 0;
+        capRub = defaultCapRub > 0 ? defaultCapRub : null;
+      }
       if (capRub == null || !Number.isFinite(capRub) || capRub <= 0) {
         return { over: false, mtdRub: 0, capRub, capKind };
       }
       const mtdRub = await this.getMtdRub(tenantId);
-      const over = capKind === 'hard' && mtdRub >= capRub;
+      const over = (capKind === 'hard' || capKind === 'downgrade') && mtdRub >= capRub;
       return { over, mtdRub, capRub, capKind };
     } catch {
       return NONE;

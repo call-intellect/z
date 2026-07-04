@@ -162,8 +162,8 @@ function BudgetForm({
   const [monthlyCap, setMonthlyCap] = useState(
     budget?.monthlyCapRub != null ? String(budget.monthlyCapRub) : "",
   );
-  const [capKind, setCapKind] = useState<"soft" | "hard">(
-    (budget?.capKind as "soft" | "hard") ?? "soft",
+  const [capKind, setCapKind] = useState<"soft" | "hard" | "downgrade">(
+    (budget?.capKind as "soft" | "hard" | "downgrade") ?? "soft",
   );
   const [thresholdsStr, setThresholdsStr] = useState(
     (budget?.alertThresholds ?? [80, 100]).join(","),
@@ -186,7 +186,7 @@ function BudgetForm({
     <div className="space-y-3">
       <div>
         <Label className="text-xs">
-          Месячный лимит, ₽ (пусто = без лимита)
+          Месячный лимит, ₽ (0 или пусто = без лимита)
         </Label>
         <Input
           value={monthlyCap}
@@ -198,11 +198,16 @@ function BudgetForm({
         <Label className="text-xs">Тип лимита</Label>
         <select
           value={capKind}
-          onChange={(e) => setCapKind(e.target.value as "soft" | "hard")}
+          onChange={(e) =>
+            setCapKind(e.target.value as "soft" | "hard" | "downgrade")
+          }
           className="block w-full rounded border border-border-subtle bg-bg-card px-2 py-1 text-sm"
         >
           <option value="soft">soft (только alert)</option>
           <option value="hard">hard (заблокировать AI)</option>
+          <option value="downgrade">
+            Экономный — переходить на более дешёвую модель
+          </option>
         </select>
       </div>
       <div>

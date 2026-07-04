@@ -48,6 +48,6 @@ export type AdminOrgBudgetApi = {
 
 export type UpdateOrgBudgetRequest = {
   monthlyCapRub: number | null;
-  capKind: "soft" | "hard";
+  capKind: "soft" | "hard" | "downgrade";
   alertThresholds: number[];
 };

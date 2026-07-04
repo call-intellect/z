@@ -71,6 +71,26 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-04 — Экономный режим лимита ИИ (ТЗ llm-budget-downgrade-tier, 4 фазы, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ [`2026-07-04-llm-budget-downgrade-tier.md`](../../plans/tz/2026-07-04-llm-budget-downgrade-tier.md) + архитектура [`2026-07-04-llm-budget-downgrade-tier.md`](../../plans/architecture/2026-07-04-llm-budget-downgrade-tier.md). Третий режим лимита расходов на ИИ `capKind='downgrade'` — при превышении месячного бюджета компании `LlmRouterService` переупорядочивает уже настроенную для задачи цепочку моделей по цене вместо блокировки (`hard`) или молчаливого наблюдения (`soft`). Плюс лимит «по умолчанию для всех компаний» (`llm.budget.default_monthly_cap_rub`, 0=безлимит), действующий только на компании без своего значения. `BudgetAlertCron` расширен на ВСЕ активные Org (было — только с явной строкой `OrgBudgetCap`), иначе уведомление о переходе в экономный режим не долетало бы до компаний без персональной настройки.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (`OrgBudgetCap.capKind` уже был `String`, не enum — третье значение не требует изменения схемы). **🟢 НОВЫХ ENV НЕТ** (новая крутилка — чистый `AdminSetting`, Ship-On, дефолт 0=безопасно). **🟢 Новых патчей/сидов/бэкафиллов нет.** Docker rebuild backend+frontend обязателен (новая опция формы на фронте).
+
+- **Шаг 1/4/5 — ENV/Prisma/postgres-init: не затронуты.** Новая крутилка `llm.budget.default_monthly_cap_rub` зарегистрирована в `admin-setting-schema-registry.ts` (Zod `z.number().nonnegative()`) — виден и редактируем через общий список настроек администратора без отдельного seed (code-fallback 0 работает сразу после рестарта).
+- **Шаг 6/7/8/9/10 — патчей/сидов/бэкафиллов/миграций/setup нет.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - `/admin/economics/orgs/[id]` под суперадмином → форма «Бюджет» показывает третий вариант «Экономный — переходить на более дешёвую модель» в select «Тип лимита»; сохранение с `capKind=downgrade` и `monthlyCapRub=0` → в ответе/при перезагрузке страницы лимит показывает «без лимита» (0 сохранился как NULL).
+  - Ручной прогон `PATCH /api/v1/admin/orgs/:id/budget` с `{monthlyCapRub: 5000, capKind: 'downgrade', alertThresholds:[80,100]}` под суперадмином → 200; следующий реальный вызов ИИ для этой Org при `mtdRub>=5000` уходит через более дешёвую модель настроенной цепочки (проверить `AiUsageLog` — новая запись с `fallbackReason='budget_downgrade'`).
+  - Новая крутилка `llm.budget.default_monthly_cap_rub` видна и редактируема в общем списке AdminSetting (`GET /api/v1/admin/settings` или соответствующий экран) — дефолт `0`.
+  - `BudgetAlertCron` (раз в 2 часа) — после выката первый прогон логирует `capsScanned` = число активных Org (было — только число Org с явной строкой `OrgBudgetCap`); не должно быть ошибок в логе про `org.findMany`/`orgBudgetCap.upsert`.
+- **Откат:** чисто аддитивная фича — новый режим `downgrade` просто не выбирается в UI при откате кода; существующие `soft`/`hard` компании не затронуты (ветки кода для них байт-в-байт прежние). Кода отката/kill-switch не требуется — не деньги/доступ по CLAUDE.md принципу 8 (безопасный дефолт 0 = без эффекта).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-03 — Расход на LLM: консолидированный дашборд (ТЗ llm-cost-dashboard, 9 фаз, ветка fix/invite-password-existing-user-multi-org)
 
 > ТЗ [`2026-07-03-llm-cost-dashboard.md`](../../plans/tz/2026-07-03-llm-cost-dashboard.md) + архитектура [`2026-07-03-llm-cost-dashboard.md`](../../plans/architecture/2026-07-03-llm-cost-dashboard.md). Новый экран `/admin/analytics/llm-cost` (5 уровней: общий → модель → раздел → компания → компания×модель, график по дням/неделям) поверх существующей `AiCostDaily` (копится с 24 мая 2026, до этого ТЗ ни один экран её не читал). Консолидирует 8 разрозненных путей расхода: 2 полный редирект (`/admin/analytics/economics`, `/admin/analytics/functions`), 3 хирургия — денежная часть вырезана, остальное осталось (`/admin/analytics/orgs`, `/admin/economics/orgs/[id]`, `/admin/analytics/functions/[taskType]` + попутный дедуп дублирующего редактора цепочки моделей), 3 мёртвых удалены насовсем (`/admin/economics`, `/admin/usage/functions(+[taskType])`, `/admin/usage/users` + `getUsersUsage`/`getFunctionsUsage`/`UnitEconomicsService.getGlobal()`).

@@ -331,7 +331,7 @@ const [capKind, setCapKind] = useState<"soft" | "hard" | "downgrade">(
 
 ## Фазы
 
-### Фаза 1 — Данные и контракт лимита (backend, без миграций)
+### [x] Фаза 1 — Данные и контракт лимита (backend, без миграций)
 
 **Ценность.** Как владелец платформы, получаю возможность выбрать «экономный» режим и задать лимит по умолчанию для всех компаний, чтобы не настраивать лимит вручную каждой компании отдельно.
 
@@ -352,7 +352,7 @@ const [capKind, setCapKind] = useState<"soft" | "hard" | "downgrade">(
 - Ручной прогон: `PATCH /api/v1/admin/orgs/:id/budget` с `{monthlyCapRub: 0, capKind: 'downgrade', alertThresholds:[80,100]}` → в БД `monthlyCapRub IS NULL`, `capKind='downgrade'`.
 - `bun run typecheck` (backend) — зелёный.
 
-### Фаза 2 — Экономный роутинг в LlmRouterService
+### [x] Фаза 2 — Экономный роутинг в LlmRouterService
 
 **Ценность.** Как сотрудник компании в экономном режиме, продолжаю получать AI-отчёты о встрече (просто через более простую модель), вместо ошибки «ИИ недоступен».
 
@@ -373,7 +373,7 @@ const [capKind, setCapKind] = useState<"soft" | "hard" | "downgrade">(
 - `bunx vitest run backend/src/modules/ai/services/llm-router.service.spec.ts backend/src/modules/ai/services/llm-router.tier-fallback.spec.ts backend/src/modules/ai/services/llm-router.budget-downgrade.spec.ts` — все зелёные (никаких регрессий в существующих спеках).
 - `bun run typecheck` (backend) — зелёный.
 
-### Фаза 3 — Уведомления (BudgetAlertCron)
+### [x] Фаза 3 — Уведомления (BudgetAlertCron)
 
 **Ценность.** Как владелец компании без собственной настройки лимита, я всё равно узнаю́, когда включился экономный режим — не только компании с явно заданной суммой.
 
@@ -391,7 +391,7 @@ const [capKind, setCapKind] = useState<"soft" | "hard" | "downgrade">(
   - Существующие кейсы (org с explicit `hard`/`soft` строкой, разные пороги) — без регрессий.
 - `grep -n "org.findMany" backend/src/modules/admin/economics/budget-alert.cron.ts` — запрос теперь по всем Org, не только по `orgBudgetCap`.
 
-### Фаза 4 — Frontend
+### [x] Фаза 4 — Frontend
 
 **Ценность.** Как владелец платформы, вижу и могу выбрать «экономный» режим в той же форме, где сегодня выбираю «мягкий»/«жёсткий», не обращаясь к API напрямую.
 
@@ -432,4 +432,17 @@ const [capKind, setCapKind] = useState<"soft" | "hard" | "downgrade">(
 
 ## Итог
 
-_Заполнит `tz-orchestrator` по завершении: реализовано целиком / частично, что осталось, ссылки на коммиты._
+**Реализовано целиком, все 4 фазы.** Коммиты на ветке `fix/invite-password-existing-user-multi-org`:
+- `b3257d3a` — Фаза 1 (DTO/budget-guard/AdminSetting registry)
+- `0ce443c5` — Фаза 2 (LlmRouterService downgrade-роутинг)
+- `f8eb61db` — Фаза 3 (BudgetAlertCron на все Org)
+- `67c292f8` — Фаза 4 (frontend BudgetForm)
+- `ca36e54c` — ревью-фикс (лог активации экономного режима, найдено `strict-production-review-gate`)
+
+Проверено: `bun run typecheck`/`lint`/`build` (backend+frontend) зелёные; module-wide `bunx vitest run src/modules/ai/services src/modules/admin/economics src/modules/admin/settings` — 64 файла / 797 тестов, все зелёные, регрессий нет. `strict-production-review-gate` — APPROVE (1 minor-находка про observability исправлена в этой же сессии).
+
+**Что НЕ сделано / осталось:**
+- Живая browser-проверка фронт-формы (выбор «Экономный» → сохранение → отображение) НЕ выполнена — в этом окружении второй раз подряд нет тестовых суперадмин-кредов (`.qa-cabinet.local.json` отсутствует, см. `second-brain/04_не-сделано/README.md`, запись 2026-07-04). Проверено только статически (typecheck/grep).
+- Реальный прод-прогон `BudgetAlertCron` с платформенным дефолт-лимитом на боевых Org не выполнялся (только unit-тесты с моками) — риск и мониторинг описаны в TZ §Pre-mortem.
+- Push ветки и мерж в `dev` — НЕ выполнены в рамках этой задачи (отдельное подтверждение владельца, см. историю сессии — ждём результата реальной QA дашборда llm-cost перед мержем).
+- `llm.budget.enforce_enabled` (общий рубильник жёсткого режима) по-прежнему НЕ включён — отдельное решение владельца, не в scope этого ТЗ.

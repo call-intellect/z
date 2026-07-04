@@ -61,6 +61,7 @@
 | ~~`CONCIERGE_DIALOG_LAYER_ENABLED`~~ | ENV (code-default) | _**снят с употребления 2026-06-15**_ | После переписи помощника (ТЗ `assistant-router-dedup`) concierge больше не зовёт dialog-layer (понимание/синтез — внутри chat-v2). Флаг ничего не гейтит, может быть удалён из `.env`. |
 | `knowledge.curationAutotuneEnabled` | AdminSetting (code-fallback) | code-fallback true + patch; с 2026-06-12 и seed-дефолт true (autonomy W3) | базовый kill-switch порогов и так активен. AdminSetting → false |
 | `knowledge.curationGrayZoneJudgeEnabled` | AdminSetting (code-fallback) | kill-switch (ON); code-fallback true + seed-дефолт true (A-Ф5 судья серой зоны) | судит некритичные карточки серой зоны вместо отправки человеку; при accept-консенсусе канонизирует как `provisional` (+аудит-выборка). AdminSetting → false вернёт весь поток серой зоны к людям как раньше |
+| `chat_v2.table_context_enabled` 🔴 A | AdminSetting (code-fallback true) | seed-дефолт true (`seed-admin-setting-chat-v2-tables.ts`, 2026-07-04) | kill-switch табличной ветки AI-чата «Мастер». ON: умные таблицы подаются в ответ гейтед-релевантно (структурный интент + матч таблица/сущность через entity-bridge, дедуп по source-block, малый кап). Авария → AdminSetting `false`: ветка молчит, граф отвечает как раньше. Владельца не касается |
 
 ### ⏸️ Остаётся OFF — осознанное решение владельца
 

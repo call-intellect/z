@@ -2,8 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { AppModule } from '../src/app.module';
+import { TypedConfigService } from '../src/common/config/typed-config.service';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { RedisService } from '../src/common/redis/redis.service';
+import { AdminSettingsService } from '../src/modules/admin/settings/admin-settings.service';
 import { ChatV2OrchestrationService } from '../src/modules/chat-v2/chat-v2.service';
 import { isRefusal, missingMustMention, mustMentionCoverage } from './eval/verdict/classify-outcome';
 
@@ -15,7 +17,8 @@ const STRUCTURAL = new Set(['goals', 'blockers', 'risks']);
 const POOL = 4;
 const REPEATS = Number(process.argv[2] ?? '3');
 const TABLES_ON = (process.argv[3] ?? 'on') !== 'off';
-const OUT = `/private/tmp/claude-501/-Users-sergrvmz-Documents-kora/e05457f2-60db-436d-bbd1-c5e75163b785/scratchpad/recall-run-${TABLES_ON ? 'on' : 'off'}.json`;
+const FLOOR_ON = (process.argv[4] ?? 'on') !== 'off';
+const OUT = `/private/tmp/claude-501/-Users-sergrvmz-Documents-kora/e05457f2-60db-436d-bbd1-c5e75163b785/scratchpad/recall-run-floor-${FLOOR_ON ? 'on' : 'off'}.json`;
 
 type GoldQ = {
   id: string;
@@ -67,12 +70,17 @@ async function main(): Promise<void> {
   const prisma = app.get(PrismaService);
   const redis = app.get(RedisService);
   const orch = app.get(ChatV2OrchestrationService);
+  const settings = app.get(AdminSettingsService);
+  const cfg = app.get(TypedConfigService);
+
+  await settings.set('knowledge.chatV2BaseRecallFloor', FLOOR_ON);
+  const floorEffective = await cfg.getDynamic<boolean>('knowledge.chatV2BaseRecallFloor', undefined, true);
 
   const gold: GoldQ[] = JSON.parse(readFileSync(GOLD, 'utf8')).questions;
   const solo = gold.filter((q) => !q.chain);
   const chainIds = [...new Set(gold.filter((q) => q.chain).map((q) => q.chain!))];
   console.log(
-    `RECALL · gold=${gold.length} (solo=${solo.length}, chains=${chainIds.length}) · repeats=${REPEATS} · таблицы ${TABLES_ON ? 'ON' : 'OFF'}`,
+    `RECALL · gold=${gold.length} (solo=${solo.length}, chains=${chainIds.length}) · repeats=${REPEATS} · таблицы ${TABLES_ON ? 'ON' : 'OFF'} · base-floor ${floorEffective ? 'ON' : 'OFF'}`,
   );
 
   async function ctxTextFor(trace: any): Promise<string> {
@@ -131,8 +139,10 @@ async function main(): Promise<void> {
     });
   }
   async function clearCache(): Promise<void> {
-    const keys = await redis.client.keys(`dlg:ans:${ORG}:*`);
-    if (keys.length) await redis.client.del(...keys);
+    const ans = await redis.client.keys(`dlg:ans:${ORG}:*`);
+    if (ans.length) await redis.client.del(...ans);
+    const ret = await redis.client.keys('dlg:ret:*');
+    if (ret.length) await redis.client.del(...ret);
   }
 
   const byId = new Map<string, Agg>();

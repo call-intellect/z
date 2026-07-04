@@ -1367,13 +1367,60 @@ export class ChatV2Service {
 
     const rrfK = await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60);
 
+    const baseFloorEnabled = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2BaseRecallFloor',
+      undefined,
+      true,
+    );
+    const hasTemporalFilter = !!(
+      input.structuralFilters?.dateFrom ||
+      input.structuralFilters?.dateTo ||
+      input.structuralFilters?.bitemporalActiveOnly
+    );
+    const basePromise: Promise<string[]> =
+      baseFloorEnabled && !hasTemporalFilter
+        ? this.retrieval
+            .fetchCandidates({
+              tenantId,
+              scope: ctx.scope,
+              scopeId: ctx.scopeId,
+              query,
+              limit: kRetrieve,
+              graphHops: 0,
+              graphAlwaysExpand: false,
+              filterMode: 'boost',
+              entityLinkHops: 0,
+              graphCypherRecall: false,
+              validAt: input.validAt ?? null,
+              accessWhere: ctx.accessWhere,
+            })
+            .then((ranked) => ranked.map((r) => r.blockId))
+            .catch((err) => {
+              this.logger.warn(
+                { err: err instanceof Error ? err.message : String(err) },
+                'chat-v2 runRetrieval: base-recall-floor упал — fail-open (пул без base)',
+              );
+              return [];
+            })
+        : Promise.resolve([]);
+
     if (!bothWays) {
-      const semantic = await this.runSemanticRoute(input, ctx, semanticQueries, rrfK, trace);
-      trace?.setPool(semantic.map((id) => ({ blockId: id, score: 0 })));
+      const [semantic, baseIds] = await Promise.all([
+        this.runSemanticRoute(input, ctx, semanticQueries, rrfK, trace),
+        basePromise,
+      ]);
+      const pool =
+        baseIds.length > 0
+          ? fuseRankedLists(
+              [semantic.map((id) => ({ id })), baseIds.map((id) => ({ id }))],
+              rrfK,
+            ).slice(0, kRetrieve)
+          : semantic;
+      trace?.setPool(pool.map((id) => ({ blockId: id, score: 0 })));
       const reranked = await this.conditionalRerank({
         tenantId,
         question: query,
-        blockIds: semantic,
+        blockIds: pool,
         conversationSummary: input.conversationSummary ?? null,
         history: input.history,
         reformulations: queries,
@@ -1382,10 +1429,13 @@ export class ChatV2Service {
       return this.applyCascade(input, ctx, reranked.slice(0, kContext), rrfK, trace);
     }
 
-    const [semanticSettled, structuralSettled] = await Promise.allSettled([
+    const [semanticSettled, structuralSettled, baseSettled] = await Promise.allSettled([
       this.runSemanticRoute(input, ctx, semanticQueries, rrfK, trace),
       this.runStructuralRoute(input, ctx, trace),
+      basePromise,
     ]);
+    const baseIds =
+      baseSettled.status === 'fulfilled' ? baseSettled.value : [];
 
     const semantic =
       semanticSettled.status === 'fulfilled' ? semanticSettled.value : [];
@@ -1404,28 +1454,18 @@ export class ChatV2Service {
       );
     }
 
+    const fusionLists: Array<Array<{ id: string }>> = [];
+    if (structural.length > 0) fusionLists.push(structural.map((id) => ({ id })));
+    fusionLists.push(semantic.map((id) => ({ id })));
+    if (baseIds.length > 0) fusionLists.push(baseIds.map((id) => ({ id })));
     const merged =
-      structural.length > 0
-        ? fuseRankedLists(
-            [
-              structural.map((id) => ({ id })),
-              semantic.map((id) => ({ id })),
-            ],
-            rrfK,
-          ).slice(0, kRetrieve)
+      fusionLists.length > 1
+        ? fuseRankedLists(fusionLists, rrfK).slice(0, kRetrieve)
         : semantic.slice(0, kRetrieve);
 
     if (trace) {
       const fusionScores =
-        structural.length > 0
-          ? reciprocalRankFusion(
-              [
-                structural.map((id) => ({ id })),
-                semantic.map((id) => ({ id })),
-              ],
-              rrfK,
-            )
-          : null;
+        fusionLists.length > 1 ? reciprocalRankFusion(fusionLists, rrfK) : null;
       trace.setPool(
         merged.map((id) => ({ blockId: id, score: fusionScores?.get(id) ?? 0 })),
       );

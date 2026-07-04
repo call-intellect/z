@@ -113,6 +113,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.chatV2DeterministicPeriod', z.boolean()],
   ['knowledge.chatV2GraphCypherRecall', z.boolean()],
   ['knowledge.chatV2GraphCypherMaxDepth', POSITIVE_INT],
+  ['knowledge.chatV2BaseRecallFloor', z.boolean()],
   ['knowledge.graphReconcileEnabled', z.boolean()],
   ['knowledge.graphReconcileBatchSize', POSITIVE_INT],
   ['knowledge.insightFrequencyWindowDays', POSITIVE_INT],

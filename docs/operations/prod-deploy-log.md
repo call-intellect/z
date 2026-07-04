@@ -71,6 +71,19 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-04 — graph-edge-enrichment: словарь judgeRelation 6→12 типов + direction + backfill рёбер (ветка work/2026-07-02)
+
+> ТЗ [`plans/tz/2026-07-04-graph-edge-enrichment.md`](../../plans/tz/2026-07-04-graph-edge-enrichment.md). Судья связей `entity-graph-builder` теперь ставит точные бизнес-типы (responsible_for/owned_by/manages/reports_to/collaborates_with/measured_by) вместо слабого `mentions_with` + направление `direction`. Промпт вынесен в `entity-graph-builder.prompt.ts` (code-fallback).
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (используется существующий enum `EntityLinkType`). **🟢 НОВЫХ ENV НЕТ.** **🟢 НОВЫХ ФЛАГОВ НЕТ** (крутилка, не флаг). **🟢 СИД — существующий** (`seed-admin-settings.ts`, +1 ключ `knowledge.entityGraphPairsPerOrg`=50, УЖЕ в STEPS `phase:'seed-base'`). **🟡 1 BACKFILL — РУЧНОЙ owner-gated (НЕ в авто-STEPS).** Docker rebuild backend+frontend (промпт в коде + admin UI-поле).
+
+- **Шаги 1/4/5/6/9/10 (ENV/Prisma/postgres-init/patch/migrate/setup) — НЕ затронуты.**
+- **Шаг 7 — Seed (существующий, идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** `scripts/seed-admin-settings.ts` — +1 ключ `knowledge.entityGraphPairsPerOrg`=`50` (кап пар со-упоминаний на Org в час; вынесен из хардкода `PAIRS_PER_ORG_LIMIT`). Защита admin-edited; повтор = no-op. Прогон агрегатора `--mode update` его доставит.
+- **Шаг 8 — Backfill (РУЧНОЙ, owner-gated, НЕ в авто-STEPS):** `docker compose exec backend bun run scripts/backfill-reclassify-entity-links.ts --org=<id> --apply` — пере-классифицирует накопленные `mentions_with` пары новым словарём (точный тип + direction), архивирует старый `mentions_with`. По умолчанию (без `--apply`) — DRY-RUN (граф не меняется, но LLM зовётся). **НЕ в авто-агрегаторе намеренно:** LLM-дорогой + мутирует живые рёбра + требует `--org` (нет per-org цикла в агрегаторе) → на каждом `up` гонять нельзя. Мутация рёбер необратима → **snapshot до прогона**. На проде НЕ обязателен: крон `entity-graph-builder` сам до-обогатит пары за ≤30 дней (после rebuild с новым промптом). Запускать вручную по тенанту при необходимости немедленного эффекта.
+- **Шаг 12 — Smoke:** после rebuild — `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (доставит крутилку); проверка админ-крутилки `knowledge.entityGraphPairsPerOrg` в AdminSetting; крон `entity-graph-builder` (@Cron '0 * * * *') с новым промптом. Опц. замер на «Стреле»: `backfill-reclassify-entity-links.ts --org=cmr1qbvpx… --apply` → доля `mentions_with` падает (было 55/98 → 37/98), точные типы появляются.
+
+---
+
 ### 📄 2026-07-04 — smart-tables Ф4: graphSync авто-наполнение строк умных таблиц из графа (ветка work/2026-07-02)
 
 > ТЗ [`plans/tz/2026-06-21-smart-tables-revive-and-autofill.md`](../../plans/tz/2026-06-21-smart-tables-revive-and-autofill.md) (Ф4 + Ф4.5 + Ф4.6). Строки 5 системных таблиц (Идеи/Обещания/Цели/Гипотезы/**Реестр рисков**) авто-создаются из графовых объектов (IdeaBlock signalType `idea`/`commitment` + набор риск-сигналов `risk`/`churn_risk`/`blocker`/`pain`/`resource_gap`/`*_friction`, Goal, Experiment) через `TableGraphSyncService` + reconcile-крон. Связка таблиц с чатом «Мастер» уже была — рычаг = наличие строк. **Ф4.6:** низкоуверенные объекты (<`min_confidence`) → строка `status='draft'` (вне чата, `draftExpiresAt`), промоушен draft→active при усилении, истечение — на reconcile; чат/фильтры читают только `status='active'`.

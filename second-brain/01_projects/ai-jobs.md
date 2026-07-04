@@ -385,6 +385,13 @@ Embedding темы считается на её создании (`ThemeWriteSer
 - **router `validate`-callback** — битый ответ primary-провайдера больше **не считается успехом**: `validate` бросает `LlmInvalidOutputError` → router падает на secondary (раньше HTTP 200 с мусором молча принимался). Метрика статуса `invalid_output`.
 - **Forced `tool_choice` для не-thinking deepseek** — за флагом `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED` (дефолт OFF) принудительно вызывает tool (вместо `'auto'`) + guard-откат на `'auto'` если модель не поддержала. Грабли арбитра/router — [[../02_architecture/code-pitfalls]], [[../02_architecture/knowledge-core]] §«Устойчивость арбитра графа».
 
+### Обогащение смысловых рёбер графа (2026-07-04)
+- **Словарь `judgeRelation` расширен 6→12 типов + `direction`.** Промпт вынесен из `entity-graph.service.ts` в `entity-graph-builder.prompt.ts` (admin-редактируемый, по методологии усиления). К works_at/belongs_to/part_of/opposes/depends_on/mentions_with добавлены `responsible_for`/`owned_by`/`manages`/`reports_to`/`collaborates_with`/`measured_by`. Раньше 56% рёбер были слабый `mentions_with` — граф не собирал multi-hop «кто отвечает за то, что блокирует X».
+- **Направление — по-типовой канон FROM** (не «субъект=актор»): owned_by from=метрика→to=владелец, reports_to from=подчинённый, responsible_for from=человек. Крон разворачивает from/to при `b_to_a` (кроме симметричных `mentions_with`/`collaborates_with`/`opposes`) и **архивирует старый `mentions_with`** при обогащении.
+- **Фикс Б30 (двунаправленная свежесть):** `findCoMentionedPairs` теперь исключает пару при свежем ребре в ЛЮБОМ направлении — иначе `b_to_a` рёбра пере-судились ежечасно.
+- **Кап пар** `PAIRS_PER_ORG_LIMIT` → AdminSetting `knowledge.entityGraphPairsPerOrg` (default 50).
+- **Backfill** `backfill-reclassify-entity-links.ts` (--org, default dry-run, --apply) — пере-классификация накопленных пар, idempotent, owner-gated на проде. На «Стреле»: mentions_with 55→37, responsible_for 0→9, owned_by 0→2, collaborates_with 0→5.
+
 ### ТЗ-6 — golden-измеритель качества извлечения (QA-инструмент)
 Golden-харнесс на инфре `combat-harness` (без Nest, prod-guard): `backend/scripts/fixtures/agent-golden/*.json` (4 фикстуры) + `backend/scripts/_lib/agent-scoring.ts` (метрики полноты/точности/дублей) + runner `backend/scripts/agent-quality-harness.ts`. Меряет качество извлечения задач/сущностей против эталона — инструмент для регрессий, не часть прод-пайплайна.
 

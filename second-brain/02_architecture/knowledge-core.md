@@ -586,6 +586,8 @@ chat-v2 retrieval теперь умеет применять **recall-safe ст�
 4. **Синтез** (`chat-v2`, DeepSeek pro) — ответ из 18 блоков; переспрос-при-вариантах помечает первую строку токеном `[[CLARIFY]]` → `needsClarification` течёт `ChatV2Output→SynthesisResult→ChatAnswer→контроллер/SSE`.
 5. **Контролёр заземления** (`rag-groundedness`, DeepSeek flash, режим `rag.groundedness_mode`) — анти-выдумка; при `needsClarification` **пропускается**, и оркестратор НЕ кэширует переспрос (`applyGroundednessGate` / `answerCache.set` обходятся).
 
+**Base-recall-floor (recall-to-99, 2026-07-04)** — kill-switch `knowledge.chatV2BaseRecallFloor` (default ON). Пул retrieval недетерминированно обваливался (30→1-4) из-за LLM-стадий upstream (multi-query дробит бюджет на `ceil(30/3)+2`, структурный фильтр планировщика ограничивает) → факты не доходили до LLM. `runRetrieval` теперь ВСЕГДА фьюзит в пул (RRF, ∥ параллельно с semantic/structural) детерминированный base-подъём СЫРОГО вопроса (`fetchCandidates` limit=`kRetrieve`, **без** структурного фильтра, `graphHops=0`) — recall-floor. Реранк+kContext сужают до 18 (точность держится). Temporal-guard: при `dateFrom/dateTo/bitemporalActiveOnly` base ПРОПУСКАЕТСЯ (не реинъектит superseded факты в обход фильтра). Fail-open. A/B на «Стреле»: CORRECT 74.8%→80.0% (+5.2 п.п.), 0 галлюц; атрибуция ПОСЛЕ — RETRIEVAL-доля схлопнулась, остаток — синтез-полнота. ⚠️ Retrieval-cache `dlg:ret` кэширует `usedBlockIds` и на кэш-хите МИНУЕТ base-floor (реестр не-сделанного).
+
 Модели по агентам — через `LlmTaskRoute` (сид `seed-llm-task-routes-edinyy-pomoshnik.ts`, diag `diag-llm-routes.ts`), не код. Промпты — `knowledge-core/prompts/rag-pipeline.prompts.ts`.
 
 Дополнительные эндпоинты:

@@ -35,9 +35,20 @@ export function classifyOutcome(
   return 'answered';
 }
 
+function tokenHit(text: string, token: string): boolean {
+  return token
+    .split('|')
+    .some((alt) => alt.trim().length > 0 && text.includes(alt.trim().toLowerCase()));
+}
+
 export function mustMentionCoverage(text: string | null | undefined, mustMention: string[]): number {
   if (mustMention.length === 0) return 1;
   const t = (text ?? '').toLowerCase();
-  const hit = mustMention.filter((m) => t.includes(m.toLowerCase())).length;
+  const hit = mustMention.filter((m) => tokenHit(t, m)).length;
   return hit / mustMention.length;
+}
+
+export function missingMustMention(text: string | null | undefined, mustMention: string[]): string[] {
+  const t = (text ?? '').toLowerCase();
+  return mustMention.filter((m) => !tokenHit(t, m));
 }

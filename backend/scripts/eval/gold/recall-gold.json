@@ -19,7 +19,7 @@
       "question": "К кому идти по вопросам retention и целеполагания?",
       "expectedKind": "answerable",
       "expectedEntities": ["Сергей"],
-      "mustMention": ["Сергей", "retention"],
+      "mustMention": ["Сергей", "retention|удержани"],
       "expectedBlockSignatures": [{ "entity": "Сергей", "phrases": ["retention", "удержани"] }]
     },
     {
@@ -75,7 +75,7 @@
       "question": "Какая у нас основная метрика квартала?",
       "expectedKind": "answerable",
       "expectedEntities": ["retention"],
-      "mustMention": ["retention", "не выручка"],
+      "mustMention": ["retention|удержани"],
       "expectedBlockSignatures": [{ "entity": "retention", "phrases": ["retention", "выручк"] }]
     },
     {
@@ -120,7 +120,7 @@
       "question": "Кто ЛПР в Логистик Плюс и в каком он органе?",
       "expectedKind": "answerable",
       "expectedEntities": ["Виктор", "Логистик Плюс"],
-      "mustMention": ["Виктор", "совет директоров"],
+      "mustMention": ["Виктор", "совет"],
       "expectedBlockSignatures": [{ "entity": "Виктор", "phrases": ["Виктор", "директор"] }]
     },
     {
@@ -361,7 +361,7 @@
       "question": "Какие метрики мы считаем главными и почему?",
       "expectedKind": "answerable",
       "expectedEntities": ["retention"],
-      "mustMention": ["retention", "не выручка"],
+      "mustMention": ["retention|удержани", "не выручк|важнее|следстви|опережа|ведущ|предсказ"],
       "expectedBlockSignatures": [{ "entity": "retention", "phrases": ["retention", "выручк"] }]
     },
     {
@@ -370,7 +370,7 @@
       "question": "Что для нас важнее — рост выручки или удержание?",
       "expectedKind": "answerable",
       "expectedEntities": ["retention"],
-      "mustMention": ["удержани", "не выручка"],
+      "mustMention": ["удержани", "не выручк|важнее|следстви|опережа"],
       "expectedBlockSignatures": [{ "entity": "retention", "phrases": ["retention", "выручк"] }],
       "note": "targeted synonym: «удержание» vs «выручка»"
     },

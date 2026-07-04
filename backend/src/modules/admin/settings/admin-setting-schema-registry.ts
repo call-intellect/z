@@ -87,6 +87,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.linkKnnTopK', POSITIVE_INT],
   ['knowledge.blockDynamicScoreDecayDays', POSITIVE_INT],
   ['knowledge.entityGraphMinComentions', POSITIVE_INT],
+  ['knowledge.entityGraphPairsPerOrg', POSITIVE_INT],
   ['knowledge.themeClusteringMinBlocks', POSITIVE_INT],
   ['knowledge.themeClusterMinSize', POSITIVE_INT],
   ['knowledge.cardRollupV2DebounceMs', POSITIVE_INT],

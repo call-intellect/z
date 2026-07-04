@@ -694,6 +694,11 @@ export class TypedConfigService {
         'ENTITY_GRAPH_MIN_COMENTIONS',
         2,
       ),
+      entityGraphPairsPerOrg: this.resolveSync<number>(
+        'knowledge.entityGraphPairsPerOrg',
+        undefined,
+        50,
+      ),
       themeClustererCron: this.get('THEME_CLUSTERER_CRON'),
       themeClusteringMinBlocks: this.resolveSync<number>(
         'knowledge.themeClusteringMinBlocks',

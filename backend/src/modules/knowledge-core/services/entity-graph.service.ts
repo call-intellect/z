@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { type Entity, type EntityLinkType, type IdeaBlock } from '@prisma/client';
-import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -8,9 +7,16 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
 import { LlmRouterService, maxDataClass } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import {
+  ENTITY_LINK_JSON_SCHEMA,
+  ENTITY_LINK_SYSTEM_PROMPT,
+  EntityLinkResponseSchema,
+  type EntityLinkDirection,
+} from '../prompts/entity-graph-builder.prompt';
 
 export interface EntityRelationVerdict {
   relationType: EntityLinkType | null;
+  direction: EntityLinkDirection;
   confidence: number;
   explanation: string;
   validFromHint?: string | null;
@@ -23,91 +29,6 @@ export interface CoMentionedPair {
   entityB: Entity;
   coMentions: number;
 }
-
-const ENTITY_LINK_TYPES: EntityLinkType[] = [
-  'works_at',
-  'belongs_to',
-  'part_of',
-  'opposes',
-  'depends_on',
-  'mentions_with',
-];
-
-const ENTITY_LINK_JSON_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'relationType',
-    'confidence',
-    'explanation',
-    'validFromHint',
-    'validUntilHint',
-    'attributes',
-  ],
-  properties: {
-    relationType: {
-      type: 'string',
-      enum: [...ENTITY_LINK_TYPES, 'none'],
-    },
-    confidence: { type: 'number', minimum: 0, maximum: 1 },
-    explanation: { type: 'string', maxLength: 500 },
-    validFromHint: { type: ['string', 'null'], maxLength: 40 },
-    validUntilHint: { type: ['string', 'null'], maxLength: 40 },
-    attributes: {
-      anyOf: [
-        { type: 'null' },
-        {
-          type: 'object',
-          additionalProperties: {
-            anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'null' }],
-          },
-        },
-      ],
-    },
-  },
-};
-
-const EntityLinkResponseSchema = z.object({
-  relationType: z.enum([
-    'works_at',
-    'belongs_to',
-    'part_of',
-    'opposes',
-    'depends_on',
-    'mentions_with',
-    'none',
-  ]),
-  confidence: z.number().min(0).max(1),
-  explanation: z.string().max(500),
-  validFromHint: z.string().max(40).nullable().optional(),
-  validUntilHint: z.string().max(40).nullable().optional(),
-  attributes: z
-    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
-    .nullable()
-    .optional(),
-});
-
-const ENTITY_LINK_SYSTEM_PROMPT = `Ты — эксперт по связям между сущностями (клиенты, люди, проекты, продукты, темы).
-На вход даются две сущности A и B + несколько последних блоков (фактов знания), где они упомянуты вместе.
-
-Твоя задача: определить, есть ли между A и B явное отношение, и если да — какого типа.
-
-Возможные типы (выбирай один):
-- "works_at" — A работает в B (или наоборот). Обычно person<>client/project/product.
-- "belongs_to" — A принадлежит / относится к B.
-- "part_of" — A — часть B (компонент, подпроект, член команды).
-- "opposes" — A противопоставлено B (конкурент, спорная сторона).
-- "depends_on" — A зависит от B (без B не работает).
-- "mentions_with" — A и B регулярно упоминаются вместе, но более конкретного отношения не видно.
-- "none" — связи нет, совместное упоминание случайно.
-
-Правила:
-- Если из контекста блоков НЕ видно явного отношения, ставь "none". "mentions_with" — последний резерв, когда ясно, что они связаны, но как именно — непонятно.
-- "confidence" ∈ [0,1]. 0.9+ только если связь прямо названа в блоках.
-- "explanation" — 1-2 короткие фразы на русском.
-- "validFromHint" / "validUntilHint" — ISO-дата (YYYY-MM-DD или YYYY-MM или YYYY), если в блоках явно указано «с такого-то момента» / «до такого-то момента». Иначе null. Не выдумывай.
-- "attributes" — плоский объект с дополнительными свойствами связи (role, share, since, intensity и т.п.), если они явно названы в блоках. Иначе null. Только примитивы (строки/числа/булевы). Не выдумывай.
-- Ответ — строго JSON по схеме. Никакого markdown.`;
 
 @Injectable()
 export class EntityGraphService {
@@ -145,11 +66,6 @@ export class EntityGraphService {
     minComentions: number;
     limit: number;
   }): Promise<CoMentionedPair[]> {
-    // Б30 [K6]: исключаем пары со свежим EntityLink (updatedAt > now-Nдней).
-    // upsertRichEdge пишет ребро с fromEntityId=меньший id, toEntityId=больший
-    // id (cron подаёт пары в том же порядке a.entityId<b.entityId), поэтому
-    // сопоставление NOT EXISTS by (from=a, to=b) корректно. Деактивированные
-    // (deletedAt) рёбра — не считаются свежими, пару пересмотрит арбитр.
     const linkFreshCutoff = new Date(
       Date.now() -
         EntityGraphService.LINK_REFRESH_DAYS * 24 * 60 * 60 * 1000,
@@ -175,8 +91,10 @@ export class EntityGraphService {
         AND NOT EXISTS (
           SELECT 1 FROM "EntityLink" el
           WHERE el."tenantId" = $1
-            AND el."fromEntityId" = a."entityId"
-            AND el."toEntityId" = b."entityId"
+            AND (
+              (el."fromEntityId" = a."entityId" AND el."toEntityId" = b."entityId")
+              OR (el."fromEntityId" = b."entityId" AND el."toEntityId" = a."entityId")
+            )
             AND el."deletedAt" IS NULL
             AND el."updatedAt" > $4
         )
@@ -301,7 +219,12 @@ export class EntityGraphService {
       { aId: args.entityA.id, bId: args.entityB.id },
       'entity-graph-builder: fallback на none после 2 попыток',
     );
-    return { relationType: null, confidence: 0, explanation: 'invalid LLM judge JSON' };
+    return {
+      relationType: null,
+      direction: 'a_to_b',
+      confidence: 0,
+      explanation: 'invalid LLM judge JSON',
+    };
   }
 
   private parseVerdict(text: string): EntityRelationVerdict | null {
@@ -311,12 +234,14 @@ export class EntityGraphService {
     if (parsed.data.relationType === 'none') {
       return {
         relationType: null,
+        direction: 'a_to_b',
         confidence: parsed.data.confidence,
         explanation: parsed.data.explanation,
       };
     }
     return {
       relationType: parsed.data.relationType,
+      direction: parsed.data.direction,
       confidence: parsed.data.confidence,
       explanation: parsed.data.explanation,
       validFromHint: parsed.data.validFromHint ?? null,

@@ -95,6 +95,14 @@ const GROUPS: SettingGroup[] = [
         schema: ratio01(0.86),
         defaultValue: 0.86,
       },
+      {
+        key: "knowledge.entityGraphPairsPerOrg",
+        label: "Кап пар на Org (графостроитель)",
+        description:
+          "Сколько топ-пар со-упоминаний обрабатывать за один прогон построителя графа сущностей.",
+        schema: positiveInt(50),
+        defaultValue: 50,
+      },
     ],
   },
   {

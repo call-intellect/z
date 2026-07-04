@@ -21,12 +21,16 @@ export interface SystemTableGraphSync {
   signalTypes?: string[];
   fieldMap: Record<string, string>;
   autoCreate: boolean;
+  preferredEntityTypes?: string[];
 }
+
+const EXTERNAL_PARTY_ENTITY_TYPES = ['customer', 'vendor', 'person', 'project', 'product'];
 
 export interface SystemTableTemplate {
   systemKey: string;
   name: string;
   icon: string;
+  description: string;
   entitySync: SystemTableEntitySync | null;
   graphSync?: SystemTableGraphSync | null;
   properties: SystemTablePropertyTemplate[];
@@ -49,6 +53,8 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'clients_deals',
     name: 'Клиенты и сделки',
     icon: '💼',
+    description:
+      'Клиенты и сделки: клиенты, заказчики, покупатели, контрагенты, воронка продаж, сделки, суммы и стадии сделок.',
     entitySync: { type: 'org', autoCreate: true, entityTypes: ['customer'] },
     properties: [
       {
@@ -89,6 +95,8 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'team',
     name: 'Команда',
     icon: '👥',
+    description:
+      'Команда и сотрудники: кто в команде, люди, роли, должности, отделы, навыки, руководители.',
     entitySync: { type: 'person', autoCreate: true, entityTypes: ['person'] },
     properties: [
       {
@@ -128,6 +136,8 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'hypotheses',
     name: 'Гипотезы и эксперименты',
     icon: '🧪',
+    description:
+      'Гипотезы и эксперименты: что проверяем, гипотезы, эксперименты, проверки предположений, результаты проверок.',
     entitySync: null,
     graphSync: {
       source: 'experiment',
@@ -156,6 +166,8 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'vendors',
     name: 'Поставщики и подрядчики',
     icon: '🤝',
+    description:
+      'Поставщики и подрядчики: поставщики, подрядчики, вендоры, партнёры, услуги, договоры.',
     entitySync: { type: 'org', autoCreate: true, entityTypes: ['vendor'] },
     properties: [
       {
@@ -185,6 +197,8 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'risks',
     name: 'Реестр рисков',
     icon: '⚠️',
+    description:
+      'Реестр рисков: риски, угрозы, блокеры, что мешает, что блокирует, что стопорит, узкие места, барьеры, проблемы, что горит, отток клиентов.',
     entitySync: null,
     graphSync: {
       source: 'idea_block',
@@ -199,6 +213,7 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
       ],
       fieldMap: { 'Описание': 'name' },
       autoCreate: true,
+      preferredEntityTypes: EXTERNAL_PARTY_ENTITY_TYPES,
     },
     properties: [
       { name: 'Описание', type: 'longtext', isPrimary: true },
@@ -237,12 +252,15 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'ideas',
     name: 'Идеи и бэклог',
     icon: '💡',
+    description:
+      'Идеи и бэклог: идеи, предложения, инициативы, бэклог, что можно улучшить, задумки.',
     entitySync: null,
     graphSync: {
       source: 'idea_block',
       signalType: 'idea',
       fieldMap: { 'Формулировка': 'name' },
       autoCreate: true,
+      preferredEntityTypes: EXTERNAL_PARTY_ENTITY_TYPES,
     },
     properties: [
       { name: 'Формулировка', type: 'longtext', isPrimary: true },
@@ -282,12 +300,15 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'promises',
     name: 'Обещания и обязательства',
     icon: '🤞',
+    description:
+      'Обещания и обязательства: обещания, обязательства, договорённости, кто что обещал, кто кому что должен, дедлайны.',
     entitySync: null,
     graphSync: {
       source: 'idea_block',
       signalType: 'commitment',
-      fieldMap: { 'Что': 'name', 'Срок': 'commitmentDueDate' },
+      fieldMap: { 'Что': 'name', 'Срок': 'commitmentDueDate', 'Источник': 'sourceLabel' },
       autoCreate: true,
+      preferredEntityTypes: EXTERNAL_PARTY_ENTITY_TYPES,
     },
     properties: [
       { name: 'Что', type: 'longtext', isPrimary: true },
@@ -310,6 +331,8 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'content_plan',
     name: 'Контент-план',
     icon: '📰',
+    description:
+      'Контент-план: публикации, посты, статьи, видео, рассылки, темы для контента, план публикаций.',
     entitySync: null,
     properties: [
       { name: 'Заголовок', type: 'text', isPrimary: true },
@@ -352,6 +375,8 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'regulations',
     name: 'Регламенты и документы',
     icon: '📋',
+    description:
+      'Регламенты и документы: регламенты, инструкции, правила, политики, процедуры, документы, стандарты.',
     entitySync: { type: 'document', autoCreate: true, entityTypes: ['document'] },
     properties: [
       {
@@ -388,6 +413,8 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'okr',
     name: 'Цели и метрики',
     icon: '🎯',
+    description:
+      'Цели и метрики: цели, OKR, KPI, метрики, целевые показатели, план на квартал, удержание, retention, рост.',
     entitySync: null,
     graphSync: {
       source: 'goal',

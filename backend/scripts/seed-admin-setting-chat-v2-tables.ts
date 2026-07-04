@@ -17,13 +17,22 @@ interface SettingSeed {
 
 const SEEDS: SettingSeed[] = [
   {
+    key: 'chat_v2.table_context_enabled',
+    value: true,
+    category: 'ai',
+    section: 'chat_v2',
+    severity: 'medium',
+    description:
+      'Рубильник (kill-switch) табличной ветки AI-чата: false — таблицы вообще не подмешиваются в ответ (граф отвечает как раньше). По умолчанию true.',
+  },
+  {
     key: 'chat_v2.table_context_max_rows',
-    value: 20,
+    value: 8,
     category: 'ai',
     section: 'chat_v2',
     severity: 'low',
     description:
-      'Сколько строк умных таблиц максимум подмешивается в контекст AI-чата (параллельная ветка таблиц). По умолчанию 20. На счётный вопрос («сколько…») cap поднимается ×2 в коде.',
+      'Сколько строк умных таблиц максимум подмешивается в контекст AI-чата (параллельная ветка таблиц). По умолчанию 8 (минимально достаточно — лишние строки вредят ответу). На счётный вопрос («сколько…») cap поднимается ×2 в коде.',
   },
   {
     key: 'chat_v2.table_context_max_tables',
@@ -32,7 +41,72 @@ const SEEDS: SettingSeed[] = [
     section: 'chat_v2',
     severity: 'low',
     description:
-      'Сколько релевантных умных таблиц максимум выбирает keyword-ветка chat_v2 (по name/description/именам колонок). По умолчанию 2.',
+      'Сколько релевантных умных таблиц максимум выбирает topic-ветка chat_v2 (скоринг по name+description, без generic-имён колонок). По умолчанию 2.',
+  },
+  {
+    key: 'chat_v2.table_context_max_rows_per_entity_table',
+    value: 3,
+    category: 'ai',
+    section: 'chat_v2',
+    severity: 'low',
+    description:
+      'Сколько строк максимум из одной пары (сущность, таблица) идёт в контекст entity-bridge. По умолчанию 3 — чтобы один клиент в 10 рисках не заспамил ответ.',
+  },
+  {
+    key: 'chat_v2.table_structural_query_classes',
+    value: ['list', 'overview', 'temporal'],
+    category: 'ai',
+    section: 'chat_v2',
+    severity: 'medium',
+    description:
+      'Классы вопроса, при которых разрешена topic-ветка таблиц (fail-closed gating). Для остальных классов (fact/prose) таблицы подаются только точным entity-bridge. По умолчанию list/overview/temporal.',
+  },
+  {
+    key: 'chat_v2.table_generic_stopwords',
+    value: [
+      'что',
+      'кто',
+      'где',
+      'как',
+      'какой',
+      'какая',
+      'какие',
+      'какое',
+      'сколько',
+      'когда',
+      'почему',
+      'зачем',
+      'чей',
+      'срок',
+      'сроки',
+      'статус',
+      'описание',
+      'дата',
+      'даты',
+      'владелец',
+      'ответственный',
+      'тип',
+      'имя',
+      'название',
+      'формулировка',
+      'источник',
+      'приоритет',
+      'значение',
+      'комментарий',
+      'компания',
+      'компании',
+      'вопрос',
+      'вопросы',
+      'данные',
+      'информация',
+      'задача',
+      'задачи',
+    ],
+    category: 'ai',
+    section: 'chat_v2',
+    severity: 'low',
+    description:
+      'Стоп-слова (вопросительные слова, generic-имена колонок, филлер), исключаемые из скоринга выбора таблицы — чтобы generic-колонка «Что» не перехватывала вопрос «Что горит?».',
   },
 ];
 

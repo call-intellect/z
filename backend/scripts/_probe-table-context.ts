@@ -24,6 +24,7 @@ async function main(): Promise<void> {
       entityIds: [],
       entityHints: [],
       aggregation: false,
+      structuralIntent: true,
     });
     const tables = [...new Set(rows.map((r) => r.tableName))];
     if (rows.length > 0) reached++;

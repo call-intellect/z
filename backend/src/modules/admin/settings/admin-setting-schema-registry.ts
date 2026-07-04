@@ -198,6 +198,13 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['table.import.dedup_threshold', UNIT_INTERVAL],
 
+  ['chat_v2.table_context_enabled', z.boolean()],
+  ['chat_v2.table_context_max_rows', POSITIVE_INT],
+  ['chat_v2.table_context_max_tables', POSITIVE_INT],
+  ['chat_v2.table_context_max_rows_per_entity_table', POSITIVE_INT],
+  ['chat_v2.table_structural_query_classes', z.array(z.string())],
+  ['chat_v2.table_generic_stopwords', z.array(z.string())],
+
   ['tracker.autoAcceptConfidenceThreshold', UNIT_INTERVAL],
   ['intake.autoAcceptSources', z.array(z.string())],
 

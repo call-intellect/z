@@ -76,6 +76,7 @@ describe('TableGraphSyncService', () => {
         signalTypes: ['risk', 'blocker', 'churn_risk'],
         fieldMap: { Описание: 'name' },
         autoCreate: true,
+        preferredEntityTypes: ['customer', 'vendor', 'person', 'project', 'product'],
       },
       properties: [{ id: 'p-desc', name: 'Описание', type: 'longtext', config: {} }],
     };
@@ -99,10 +100,13 @@ describe('TableGraphSyncService', () => {
   interface PrismaMock {
     table: { findMany: Fn };
     tableRow: { findFirst: Fn; findMany: Fn; create: Fn; update: Fn; updateMany: Fn };
-    tableCellProvenance: { create: Fn };
+    tableCellProvenance: { create: Fn; findMany: Fn };
     goal: { findMany: Fn };
     experiment: { findMany: Fn };
     ideaBlock: { findMany: Fn };
+    ideaBlockEntity: { findMany: Fn };
+    ideaBlockEvidence: { findMany: Fn };
+    person: { findMany: Fn };
   }
   let prisma: PrismaMock;
   let cfg: { getDynamic: Fn };
@@ -118,10 +122,16 @@ describe('TableGraphSyncService', () => {
         update: vi.fn().mockResolvedValue({ id: 'row-upd' }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
-      tableCellProvenance: { create: vi.fn().mockResolvedValue({ id: 'prov-1' }) },
+      tableCellProvenance: {
+        create: vi.fn().mockResolvedValue({ id: 'prov-1' }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       goal: { findMany: vi.fn().mockResolvedValue([]) },
       experiment: { findMany: vi.fn().mockResolvedValue([]) },
       ideaBlock: { findMany: vi.fn().mockResolvedValue([]) },
+      ideaBlockEntity: { findMany: vi.fn().mockResolvedValue([]) },
+      ideaBlockEvidence: { findMany: vi.fn().mockResolvedValue([]) },
+      person: { findMany: vi.fn().mockResolvedValue([]) },
     };
     cfg = {
       getDynamic: vi.fn(async (key: string, _e: unknown, fallback: unknown) => {
@@ -465,5 +475,198 @@ describe('TableGraphSyncService', () => {
     );
     expect(arg.where.draftExpiresAt.lte).toBeInstanceOf(Date);
     expect(arg.data.deletedAt).toBeInstanceOf(Date);
+  });
+
+  describe('pickPrimaryEntity (детерминированный выбор сущности)', () => {
+    const PREF = ['customer', 'vendor', 'person', 'project', 'product'];
+
+    it('type-приоритет ВЫШЕ роли: customer(mentioned) побеждает person(subject)', () => {
+      const picked = svc.pickPrimaryEntity(
+        [
+          { entityId: 'e-person', role: 'subject', type: 'person', mentionsCount: 9 },
+          { entityId: 'e-cust', role: 'mentioned', type: 'customer', mentionsCount: 1 },
+        ],
+        PREF,
+      );
+      expect(picked).toBe('e-cust');
+    });
+
+    it('при равных type+role — стабильный тай-брейк по entity.id ASC (детерминизм)', () => {
+      const links = [
+        { entityId: 'e-bbb', role: 'mentioned', type: 'customer', mentionsCount: 3 },
+        { entityId: 'e-aaa', role: 'mentioned', type: 'customer', mentionsCount: 3 },
+      ];
+      expect(svc.pickPrimaryEntity(links, PREF)).toBe('e-aaa');
+      expect(svc.pickPrimaryEntity([...links].reverse(), PREF)).toBe('e-aaa');
+    });
+
+    it('пустой список связей → null', () => {
+      expect(svc.pickPrimaryEntity([], PREF)).toBeNull();
+    });
+  });
+
+  it('entityId на create: risk-блок с customer-связью → row.entityId = customer (мост зажигается)', async () => {
+    prisma.table.findMany.mockResolvedValue([risksTable()]);
+    prisma.ideaBlockEntity.findMany.mockResolvedValue([
+      {
+        blockId: 'blk-risk',
+        entityId: 'e-person',
+        role: 'subject',
+        entity: { type: 'person', mentionsCount: 9, mergedIntoId: null },
+      },
+      {
+        blockId: 'blk-risk',
+        entityId: 'e-cust',
+        role: 'mentioned',
+        entity: { type: 'customer', mentionsCount: 2, mergedIntoId: null },
+      },
+    ]);
+
+    const res = await svc.syncObject({
+      tenantId: TENANT,
+      source: 'idea_block',
+      object: {
+        id: 'blk-risk',
+        name: 'Клиент грозит уходом из-за багов',
+        signalType: 'churn_risk',
+        confidence: new Prisma.Decimal(0.9),
+      },
+    });
+
+    expect(res).toBe('created');
+    const data = prisma.tableRow.create.mock.calls[0]![0].data;
+    expect(data.entityId).toBe('e-cust');
+  });
+
+  it('entityId reconcile fill: существующая плоская строка (entityId=null) дозаполняется resolved', async () => {
+    prisma.table.findMany.mockResolvedValue([risksTable()]);
+    prisma.ideaBlock.findMany.mockResolvedValue([
+      {
+        id: 'blk-risk',
+        name: 'Клиент грозит уходом',
+        signalType: 'churn_risk',
+        commitmentDueDate: null,
+        confidence: new Prisma.Decimal(0.9),
+        commitmentAuthorPersonId: null,
+        commitmentRecipientPersonId: null,
+      },
+    ]);
+    prisma.ideaBlockEntity.findMany.mockResolvedValue([
+      {
+        blockId: 'blk-risk',
+        entityId: 'e-cust',
+        role: 'mentioned',
+        entity: { type: 'customer', mentionsCount: 2, mergedIntoId: null },
+      },
+    ]);
+    prisma.tableRow.findFirst.mockResolvedValue({
+      id: 'row-flat',
+      status: 'active',
+      entityId: null,
+      cells: { 'p-desc': 'Клиент грозит уходом' },
+    });
+
+    const res = await svc.reconcileTenant(TENANT);
+
+    expect(res.updated).toBe(1);
+    expect(prisma.tableRow.update).toHaveBeenCalledTimes(1);
+    const data = prisma.tableRow.update.mock.calls[0]![0].data;
+    expect(data.entityId).toBe('e-cust');
+  });
+
+  it('entityId не перетирается: существующий entityId сохраняется (ручной перелинк)', async () => {
+    prisma.table.findMany.mockResolvedValue([risksTable()]);
+    prisma.ideaBlock.findMany.mockResolvedValue([
+      {
+        id: 'blk-risk',
+        name: 'Клиент грозит уходом',
+        signalType: 'churn_risk',
+        commitmentDueDate: null,
+        confidence: new Prisma.Decimal(0.9),
+        commitmentAuthorPersonId: null,
+        commitmentRecipientPersonId: null,
+      },
+    ]);
+    prisma.ideaBlockEntity.findMany.mockResolvedValue([
+      {
+        blockId: 'blk-risk',
+        entityId: 'e-graph',
+        role: 'mentioned',
+        entity: { type: 'customer', mentionsCount: 2, mergedIntoId: null },
+      },
+    ]);
+    prisma.tableRow.findFirst.mockResolvedValue({
+      id: 'row-linked',
+      status: 'active',
+      entityId: 'e-manual',
+      cells: { 'p-desc': 'Клиент грозит уходом' },
+    });
+
+    await svc.reconcileTenant(TENANT);
+
+    const updateData = prisma.tableRow.update.mock.calls[0]?.[0]?.data ?? {};
+    expect(updateData.entityId).toBeUndefined();
+  });
+
+  it('fill-empty guard: ячейка с человеческим провенансом не заливается', async () => {
+    prisma.table.findMany.mockResolvedValue([goalTable()]);
+    prisma.tableRow.findFirst.mockResolvedValue({
+      id: 'row-existing',
+      status: 'active',
+      entityId: null,
+      cells: { 'p-name': 'Цель А' },
+    });
+    prisma.tableCellProvenance.findMany.mockResolvedValue([
+      { propertyId: 'p-due', appliedBy: 'user-42', rolledBackAt: null },
+    ]);
+
+    const res = await svc.syncObject({
+      tenantId: TENANT,
+      source: 'goal',
+      object: {
+        id: 'goal-1',
+        name: 'Цель А',
+        targetDate: new Date('2026-09-01T00:00:00.000Z'),
+        confidence: new Prisma.Decimal(0.9),
+      },
+    });
+
+    expect(res).toBe('updated');
+    if (prisma.tableRow.update.mock.calls.length > 0) {
+      const cells = prisma.tableRow.update.mock.calls[0]![0].data.cells;
+      expect(cells?.['p-due']).toBeUndefined();
+    }
+  });
+
+  it('provenance sourceLink: risk из встречи → deep-link /meetings/.../result и метка «Встреча»', async () => {
+    prisma.table.findMany.mockResolvedValue([risksTable()]);
+    prisma.ideaBlock.findMany.mockResolvedValue([
+      {
+        id: 'blk-risk',
+        name: 'База упала',
+        signalType: 'risk',
+        commitmentDueDate: null,
+        confidence: new Prisma.Decimal(0.9),
+        commitmentAuthorPersonId: null,
+        commitmentRecipientPersonId: null,
+      },
+    ]);
+    prisma.ideaBlockEvidence.findMany.mockResolvedValue([
+      {
+        blockId: 'blk-risk',
+        startMs: 120000,
+        sourceTimestamp: new Date('2026-06-30T09:00:00.000Z'),
+        rawEvent: { sourceType: 'meeting', sourceExternalId: 'meet-77' },
+      },
+    ]);
+
+    const res = await svc.reconcileTenant(TENANT);
+
+    expect(res.created).toBe(1);
+    const prov = prisma.tableCellProvenance.create.mock.calls[0]![0].data;
+    expect(prov.sourceLink).toBe('/meetings/meet-77/result?t=120');
+    expect(prov.sourceLabel).toContain('Встреча');
+    expect(prov.sourceType).toBe('idea_block');
+    expect(prov.sourceId).toBe('blk-risk');
   });
 });

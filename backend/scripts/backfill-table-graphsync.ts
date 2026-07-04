@@ -22,6 +22,25 @@ function graphSyncBySystemKey(systemKey: string): Prisma.InputJsonValue | null {
   return tpl.graphSync as unknown as Prisma.InputJsonValue;
 }
 
+async function backfillDescriptions(prisma: PrismaService): Promise<number> {
+  const tables = await prisma.table.findMany({
+    where: { isSystem: true, systemKey: { not: null } },
+    select: { id: true, systemKey: true, description: true },
+  });
+  let patched = 0;
+  for (const t of tables) {
+    if (!t.systemKey) continue;
+    const tpl = SYSTEM_TABLES_CATALOG.find((x) => x.systemKey === t.systemKey);
+    if (!tpl?.description || t.description === tpl.description) continue;
+    await prisma.table.update({
+      where: { id: t.id },
+      data: { description: tpl.description },
+    });
+    patched++;
+  }
+  return patched;
+}
+
 async function backfillConfig(prisma: PrismaService): Promise<number> {
   const tables = await prisma.table.findMany({
     where: {
@@ -56,6 +75,9 @@ async function main(args: RunArgs): Promise<void> {
 
     const patchedConfig = await backfillConfig(prisma);
     console.log(`config: proставлено graphSync у ${patchedConfig} системных таблиц`);
+
+    const patchedDesc = await backfillDescriptions(prisma);
+    console.log(`descriptions: обновлено описаний у ${patchedDesc} системных таблиц`);
 
     const orgs = args.orgId
       ? [{ id: args.orgId }]

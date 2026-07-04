@@ -39,7 +39,10 @@ import {
   type ChatV2Scope,
   type RankedBlockId,
 } from './chat-v2-retrieval.service';
-import { ChatV2TableContextService } from './chat-v2-table-context.service';
+import {
+  ChatV2TableContextService,
+  type TableContextRow,
+} from './chat-v2-table-context.service';
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { ACTIVE_LINK_FILTER } from './link-read-filter';
 import { ProvenanceService } from './provenance.service';
@@ -992,7 +995,7 @@ export class ChatV2Service {
       );
     }
     // tableRows — fail-safe: ветка таблиц никогда не должна валить ответ.
-    const tableRows: Array<{ tableName: string; cells: string }> =
+    const tableRowsRaw: TableContextRow[] =
       tableSettled.status === 'fulfilled' ? tableSettled.value : [];
     // Ф5 мост К3 — temporal-свёртки (ValueRecapSnapshot/WeeklyOperationsDigest).
     // Best-effort: rejected/нет свёртки → []. Не валит ответ — both-ways семантика
@@ -1019,6 +1022,25 @@ export class ChatV2Service {
       kaEnforcement,
       'chat',
     );
+
+    // ЧАСТЬ B — дедуп по source-block: строку таблицы, чей исходный IdeaBlock уже
+    // пришёл в графовый контекст, второй раз НЕ подаём (убираем двойной счёт;
+    // таблица докрывает ПРОБЕЛЫ графа, а не дублирует его факты — см. ТЗ Ф1.3).
+    const contextBlockIds = new Set(contextBlocks.map((b) => b.id));
+    const tableRows = tableRowsRaw.filter(
+      (r) =>
+        !(
+          r.sourceObjectType === 'idea_block' &&
+          r.sourceObjectId != null &&
+          contextBlockIds.has(r.sourceObjectId)
+        ),
+    );
+    if (tableRowsRaw.length !== tableRows.length) {
+      this.logger.debug(
+        { tenantId, deduped: tableRowsRaw.length - tableRows.length },
+        'chat-v2 ask: табличные строки дедуплицированы по source-block (граф уже покрыл)',
+      );
+    }
 
     // 3) Если контекст пуст — отвечаем без LLM.
     //    Ф4 (R10): если применялся структурный фильтр — отвечаем честно,
@@ -1734,18 +1756,26 @@ export class ChatV2Service {
    *    значит вызов идёт из старого chat-модуля без dialog-layer'а.
    * Никогда не бросает — fail-safe внутри сервиса; здесь дополнительный try.
    */
-  private async runTableBranch(
-    input: ChatV2Input,
-    tenantId: string,
-  ): Promise<Array<{ tableName: string; cells: string }>> {
+  private async runTableBranch(input: ChatV2Input, tenantId: string): Promise<TableContextRow[]> {
     if (!this.tableContext) return [];
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'chat_v2.table_context_enabled',
+      undefined,
+      true,
+    );
+    if (enabled === false) return [];
+
     const entityIds = input.tableEntityIds ?? [];
     const entityHints = input.tableEntityHints ?? [];
     const queries = input.queries && input.queries.length > 0 ? input.queries : [];
-    // Нет обогащённого понимания — ветку не запускаем (см. ТЗ §7).
-    if (entityIds.length === 0 && entityHints.length === 0 && queries.length === 0) {
-      return [];
-    }
+    const structuralIntent = await this.isStructuralTableIntent(input);
+
+    // Fail-closed gating: подаём таблицы ТОЛЬКО когда есть точная сущность
+    // (entity-bridge) ИЛИ структурный интент вопроса. Иначе (fact/broad/prose
+    // без сущности) — ветку не запускаем: keyword-путь тут только вредит.
+    if (entityIds.length === 0 && !structuralIntent) return [];
+    if (entityIds.length === 0 && entityHints.length === 0 && queries.length === 0) return [];
+
     try {
       return await this.tableContext.fetchTableContext({
         tenantId,
@@ -1753,6 +1783,7 @@ export class ChatV2Service {
         entityIds: [...entityIds],
         entityHints: [...entityHints],
         aggregation: input.tableAggregation ?? false,
+        structuralIntent,
       });
     } catch (err) {
       this.logger.warn(
@@ -1761,6 +1792,17 @@ export class ChatV2Service {
       );
       return [];
     }
+  }
+
+  private async isStructuralTableIntent(input: ChatV2Input): Promise<boolean> {
+    if (input.tableAggregation === true) return true;
+    const raw = await this.cfg.getDynamic<string[]>(
+      'chat_v2.table_structural_query_classes',
+      undefined,
+      ['list', 'overview', 'temporal'],
+    );
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : ['list', 'overview', 'temporal'];
+    return input.queryClass != null && list.includes(input.queryClass);
   }
 
   private async runTemporalBranch(

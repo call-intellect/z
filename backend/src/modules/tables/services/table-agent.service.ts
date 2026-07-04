@@ -6,7 +6,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { buildTableArchitectPassPrompt } from '../../ai/services/prompts/table-architect-pass.prompt';
-import { buildTableEntityCheckPrompt } from '../../ai/services/prompts/table-entity-check.prompt';
 import { buildTableInferSchemaPrompt } from '../../ai/services/prompts/table-infer-schema.prompt';
 import { EmbeddingFallbackService } from '../../embeddings/services/embedding-fallback.service';
 import { SYSTEM_TABLES_CATALOG } from '../templates/system-tables.catalog';
@@ -205,27 +204,7 @@ export class TableAgentService {
       );
     }
 
-    let entityRaw: RawLlmSchema = architectRaw;
-    const entityPrompt = buildTableEntityCheckPrompt({
-      schema: architectRaw,
-      availableSyncTypes,
-    });
-    const entityParsed = await this.callJson({
-      taskType: 'table-entity-check',
-      tenantId: args.tenantId,
-      system: entityPrompt.system,
-      user: entityPrompt.user,
-    });
-    if (entityParsed) {
-      entityRaw = entityParsed;
-    } else {
-      this.logger.warn(
-        { tenantId: args.tenantId },
-        'table-agent: ENTITY-CHECK pass вернул невалидный JSON, используем ARCHITECT',
-      );
-    }
-
-    return this.normalize(entityRaw, availableSyncTypes);
+    return this.normalize(architectRaw, availableSyncTypes);
   }
 
   private buildTabularPrompt(headers: string[], sampleRows: string[][]): string {

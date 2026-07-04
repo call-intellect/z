@@ -65,6 +65,21 @@ describe('TableGraphSyncService', () => {
       properties: IDEA_PROPS,
     };
   }
+  function risksTable() {
+    return {
+      id: 't-risks',
+      tenantId: TENANT,
+      deletedAt: null,
+      archivedAt: null,
+      graphSync: {
+        source: 'idea_block',
+        signalTypes: ['risk', 'blocker', 'churn_risk'],
+        fieldMap: { Описание: 'name' },
+        autoCreate: true,
+      },
+      properties: [{ id: 'p-desc', name: 'Описание', type: 'longtext', config: {} }],
+    };
+  }
   function expTable() {
     return {
       id: 't-hyp',
@@ -340,6 +355,60 @@ describe('TableGraphSyncService', () => {
     expect(prisma.tableRow.create).toHaveBeenCalledTimes(1);
     expect(prisma.goal.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ tenantId: TENANT, archivedAt: null }) }),
+    );
+  });
+
+  it('риски: IdeaBlock signalType=blocker (в наборе signalTypes) → строка «Реестр рисков» (Описание←name)', async () => {
+    prisma.table.findMany.mockResolvedValue([risksTable()]);
+
+    const res = await svc.syncObject({
+      tenantId: TENANT,
+      source: 'idea_block',
+      object: {
+        id: 'blk-risk',
+        name: 'Ошибка 429 Битрикс блокирует синк',
+        signalType: 'blocker',
+        confidence: new Prisma.Decimal(0.9),
+      },
+    });
+
+    expect(res).toBe('created');
+    const data = prisma.tableRow.create.mock.calls[0]![0].data;
+    expect(data.tableId).toBe('t-risks');
+    expect(data.cells['p-desc']).toBe('Ошибка 429 Битрикс блокирует синк');
+  });
+
+  it('риски: signalType вне набора (fact) → не матчится, строки нет', async () => {
+    prisma.table.findMany.mockResolvedValue([risksTable()]);
+
+    const res = await svc.syncObject({
+      tenantId: TENANT,
+      source: 'idea_block',
+      object: { id: 'blk-fact', name: 'Просто факт', signalType: 'fact', confidence: new Prisma.Decimal(0.9) },
+    });
+
+    expect(res).toBe('skipped');
+    expect(prisma.tableRow.create).not.toHaveBeenCalled();
+  });
+
+  it('риски reconcile: ideaBlock.findMany фильтрует signalType по набору (in)', async () => {
+    prisma.table.findMany.mockResolvedValue([risksTable()]);
+    prisma.ideaBlock.findMany.mockResolvedValue([
+      { id: 'blk-risk', name: 'База контактов устарела', signalType: 'churn_risk', commitmentDueDate: null, confidence: new Prisma.Decimal(0.8) },
+    ]);
+
+    const res = await svc.reconcileTenant(TENANT);
+
+    expect(res.created).toBe(1);
+    expect(prisma.ideaBlock.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: TENANT,
+          signalType: { in: ['risk', 'blocker', 'churn_risk'] },
+          status: 'canonical',
+          mergedIntoId: null,
+        }),
+      }),
     );
   });
 

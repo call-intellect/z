@@ -18,6 +18,7 @@ export interface SystemTableEntitySync {
 export interface SystemTableGraphSync {
   source: 'idea_block' | 'goal' | 'experiment';
   signalType?: string;
+  signalTypes?: string[];
   fieldMap: Record<string, string>;
   autoCreate: boolean;
 }
@@ -185,6 +186,20 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     name: 'Реестр рисков',
     icon: '⚠️',
     entitySync: null,
+    graphSync: {
+      source: 'idea_block',
+      signalTypes: [
+        'risk',
+        'churn_risk',
+        'blocker',
+        'pain',
+        'resource_gap',
+        'process_friction',
+        'team_friction',
+      ],
+      fieldMap: { 'Описание': 'name' },
+      autoCreate: true,
+    },
     properties: [
       { name: 'Описание', type: 'longtext', isPrimary: true },
       {

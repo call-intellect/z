@@ -9,6 +9,7 @@ export type GraphSyncSource = 'idea_block' | 'goal' | 'experiment';
 export interface GraphSyncConfig {
   source: GraphSyncSource;
   signalType?: string;
+  signalTypes?: string[];
   fieldMap: Record<string, string>;
   autoCreate: boolean;
 }
@@ -97,12 +98,23 @@ export class TableGraphSyncService {
     for (const [k, val] of Object.entries(fieldMapRaw as Record<string, unknown>)) {
       if (typeof val === 'string' && val.length > 0) fieldMap[k] = val;
     }
+    const signalTypesRaw = obj['signalTypes'];
+    const signalTypes = Array.isArray(signalTypesRaw)
+      ? signalTypesRaw.filter((s): s is string => typeof s === 'string' && s.length > 0)
+      : undefined;
     return {
       source,
       signalType: typeof obj['signalType'] === 'string' ? (obj['signalType'] as string) : undefined,
+      signalTypes: signalTypes && signalTypes.length > 0 ? signalTypes : undefined,
       fieldMap,
       autoCreate: obj['autoCreate'] === true,
     };
+  }
+
+  private effectiveSignalTypes(graphSync: GraphSyncConfig): string[] | null {
+    if (graphSync.signalTypes && graphSync.signalTypes.length > 0) return graphSync.signalTypes;
+    if (graphSync.signalType) return [graphSync.signalType];
+    return null;
   }
 
   async findGraphSyncTables(tenantId: string): Promise<GraphSyncTable[]> {
@@ -220,9 +232,12 @@ export class TableGraphSyncService {
     object: GraphSyncObject,
   ): boolean {
     if (graphSync.source !== source) return false;
-    if (source === 'idea_block' && graphSync.signalType) {
-      const signalType = typeof object['signalType'] === 'string' ? object['signalType'] : null;
-      if (signalType !== graphSync.signalType) return false;
+    if (source === 'idea_block') {
+      const types = this.effectiveSignalTypes(graphSync);
+      if (types) {
+        const signalType = typeof object['signalType'] === 'string' ? object['signalType'] : null;
+        if (!signalType || !types.includes(signalType)) return false;
+      }
     }
     return true;
   }
@@ -464,10 +479,11 @@ export class TableGraphSyncService {
       }));
     }
 
+    const types = this.effectiveSignalTypes(graphSync);
     const blocks = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId,
-        ...(graphSync.signalType ? { signalType: graphSync.signalType as SignalType } : {}),
+        ...(types ? { signalType: { in: types as SignalType[] } } : {}),
         status: 'canonical',
         mergedIntoId: null,
       },

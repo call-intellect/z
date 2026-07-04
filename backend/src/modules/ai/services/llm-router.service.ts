@@ -1610,6 +1610,10 @@ export class LlmRouterService implements OnModuleInit {
         if (reordered.length > 0 && reordered[0] !== filtered[0]) {
           filtered.splice(0, filtered.length, ...reordered);
           downgradeApplied = true;
+          this.logger.log(
+            { tenantId: params.tenantId, taskType: params.taskType, mtdRub: bev.mtdRub, capRub: bev.capRub },
+            'LlmRouter: бюджет превышен, включён экономный режим — переход на более дешёвую модель',
+          );
         }
         this.metrics?.incLlmBudgetExceeded({ mode: 'downgrade' });
       } else {

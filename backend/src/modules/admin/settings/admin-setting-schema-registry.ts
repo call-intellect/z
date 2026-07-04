@@ -189,6 +189,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge_base.redesign.enabled', z.boolean()],
 
   ['table.agent.confirmation_threshold', UNIT_INTERVAL],
+  ['table.agent.draft_ttl_days', POSITIVE_INT],
   ['table.agent.max_concurrent_enrich_jobs_per_org', POSITIVE_INT],
   ['table.agent.max_daily_tokens', POSITIVE_INT],
 

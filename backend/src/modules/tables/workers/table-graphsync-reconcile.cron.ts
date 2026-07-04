@@ -9,6 +9,7 @@ export interface ReconcileSweepSummary {
   created: number;
   updated: number;
   skipped: number;
+  expired: number;
   errors: number;
 }
 
@@ -40,6 +41,7 @@ export class TableGraphsyncReconcileCronService {
       created: 0,
       updated: 0,
       skipped: 0,
+      expired: 0,
       errors: 0,
     };
     if (!(await this.graphSync.isEnabled())) return summary;
@@ -58,6 +60,7 @@ export class TableGraphsyncReconcileCronService {
         summary.created += r.created;
         summary.updated += r.updated;
         summary.skipped += r.skipped;
+        summary.expired += await this.graphSync.expireDrafts(org.id);
         summary.scannedOrgs++;
       } catch (err) {
         summary.errors++;

@@ -29,9 +29,11 @@ interface GraphSyncTable {
 interface ExistingRow {
   id: string;
   cells: Prisma.JsonValue;
+  status: string;
 }
 
 export type SyncOutcome = 'created' | 'updated' | 'skipped';
+export type RowStatus = 'active' | 'draft';
 
 export interface ReconcileResult {
   created: number;
@@ -41,6 +43,8 @@ export interface ReconcileResult {
 
 const DEFAULT_GRAPHSYNC_ENABLED = true;
 const DEFAULT_MIN_CONFIDENCE = 0.5;
+const DEFAULT_DRAFT_TTL_DAYS = 14;
+const MS_PER_DAY = 86_400_000;
 const RECONCILE_PAGE_SIZE = 500;
 const DATE_FIELDS = new Set<string>(['commitmentDueDate', 'targetDate', 'startedAt', 'completedAt']);
 
@@ -70,6 +74,16 @@ export class TableGraphSyncService {
     );
     const n = typeof v === 'number' && Number.isFinite(v) ? v : DEFAULT_MIN_CONFIDENCE;
     return Math.min(Math.max(n, 0), 1);
+  }
+
+  async draftTtlDays(): Promise<number> {
+    const v = await this.cfg.getDynamic<number>(
+      'table.agent.draft_ttl_days',
+      undefined,
+      DEFAULT_DRAFT_TTL_DAYS,
+    );
+    const n = typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : DEFAULT_DRAFT_TTL_DAYS;
+    return Math.max(n, 1);
   }
 
   parseGraphSync(json: unknown): GraphSyncConfig | null {
@@ -122,9 +136,18 @@ export class TableGraphSyncService {
     if (targets.length === 0) return 'skipped';
 
     const min = await this.minConfidence();
+    const ttlDays = await this.draftTtlDays();
+    const now = Date.now();
     let outcome: SyncOutcome = 'skipped';
     for (const table of targets) {
-      const single = await this.applyObject({ tenantId: args.tenantId, table, object: args.object, min });
+      const single = await this.applyObject({
+        tenantId: args.tenantId,
+        table,
+        object: args.object,
+        min,
+        ttlDays,
+        now,
+      });
       if (single === 'created') outcome = 'created';
       else if (single === 'updated' && outcome !== 'created') outcome = 'updated';
     }
@@ -136,13 +159,15 @@ export class TableGraphSyncService {
     if (!(await this.isEnabled())) return result;
 
     const min = await this.minConfidence();
+    const ttlDays = await this.draftTtlDays();
+    const now = Date.now();
     const tables = await this.findGraphSyncTables(tenantId);
     for (const table of tables) {
       let offset = 0;
       for (;;) {
         const objects = await this.loadLiveObjectsPage(tenantId, table.graphSync, offset);
         for (const object of objects) {
-          const outcome = await this.applyObject({ tenantId, table, object, min });
+          const outcome = await this.applyObject({ tenantId, table, object, min, ttlDays, now });
           result[outcome]++;
         }
         if (objects.length < RECONCILE_PAGE_SIZE) break;
@@ -152,22 +177,40 @@ export class TableGraphSyncService {
     return result;
   }
 
+  async expireDrafts(tenantId: string, now: number = Date.now()): Promise<number> {
+    const res = await this.prisma.tableRow.updateMany({
+      where: {
+        tenantId,
+        status: 'draft',
+        deletedAt: null,
+        draftExpiresAt: { lte: new Date(now) },
+      },
+      data: { deletedAt: new Date(now) },
+    });
+    return res.count;
+  }
+
   private async applyObject(args: {
     tenantId: string;
     table: GraphSyncTable;
     object: GraphSyncObject;
     min: number;
+    ttlDays: number;
+    now: number;
   }): Promise<SyncOutcome> {
     const raw = args.object.confidence;
     const effConf = raw === null || raw === undefined ? 1 : Number(raw.toString());
     const confidence = Number.isFinite(effConf) ? effConf : 1;
-    if (confidence < args.min) return 'skipped';
+    const status: RowStatus = confidence >= args.min ? 'active' : 'draft';
+    const draftExpiresAt = status === 'draft' ? new Date(args.now + args.ttlDays * MS_PER_DAY) : null;
     return this.syncIntoTable({
       tenantId: args.tenantId,
       source: args.table.graphSync.source,
       object: args.object,
       table: args.table,
       confidence,
+      status,
+      draftExpiresAt,
     });
   }
 
@@ -190,6 +233,8 @@ export class TableGraphSyncService {
     object: GraphSyncObject;
     table: GraphSyncTable;
     confidence: number;
+    status: RowStatus;
+    draftExpiresAt: Date | null;
   }): Promise<SyncOutcome> {
     const filledCells = this.buildCells(args.table, args.object);
     if (Object.keys(filledCells).length === 0) return 'skipped';
@@ -205,6 +250,7 @@ export class TableGraphSyncService {
         object: args.object,
         sourceLabel,
         confidence: args.confidence,
+        status: args.status,
       });
     }
 
@@ -218,7 +264,8 @@ export class TableGraphSyncService {
           entityId: null,
           order: new Prisma.Decimal(order),
           createdBy: 'system',
-          status: 'active',
+          status: args.status,
+          draftExpiresAt: args.draftExpiresAt,
           sourceObjectType: args.source,
           sourceObjectId: args.object.id,
         },
@@ -246,6 +293,7 @@ export class TableGraphSyncService {
             object: args.object,
             sourceLabel,
             confidence: args.confidence,
+            status: args.status,
           });
         }
       }
@@ -261,7 +309,7 @@ export class TableGraphSyncService {
   ): Promise<ExistingRow | null> {
     return this.prisma.tableRow.findFirst({
       where: { tenantId, tableId, sourceObjectType: source, sourceObjectId, deletedAt: null },
-      select: { id: true, cells: true },
+      select: { id: true, cells: true, status: true },
     });
   }
 
@@ -273,6 +321,7 @@ export class TableGraphSyncService {
     object: GraphSyncObject;
     sourceLabel: string;
     confidence: number;
+    status: RowStatus;
   }): Promise<SyncOutcome> {
     const currentCells = (args.existing.cells as Record<string, unknown> | null) ?? {};
     const toFill: Record<string, unknown> = {};
@@ -281,22 +330,31 @@ export class TableGraphSyncService {
         toFill[propertyId] = value;
       }
     }
-    if (Object.keys(toFill).length === 0) return 'updated';
+    const hasCellFill = Object.keys(toFill).length > 0;
+    const promote = args.existing.status === 'draft' && args.status === 'active';
+    if (!hasCellFill && !promote) return 'updated';
 
-    const merged = { ...currentCells, ...toFill };
+    const data: Record<string, unknown> = {};
+    if (hasCellFill) data.cells = { ...currentCells, ...toFill } as Prisma.InputJsonValue;
+    if (promote) {
+      data.status = 'active';
+      data.draftExpiresAt = null;
+    }
     await this.prisma.tableRow.update({
       where: { id: args.existing.id },
-      data: { cells: merged as Prisma.InputJsonValue },
+      data: data as Prisma.TableRowUpdateInput,
     });
-    await this.writeProvenance({
-      tenantId: args.tenantId,
-      rowId: args.existing.id,
-      cells: toFill,
-      source: args.source,
-      object: args.object,
-      sourceLabel: args.sourceLabel,
-      confidence: args.confidence,
-    });
+    if (hasCellFill) {
+      await this.writeProvenance({
+        tenantId: args.tenantId,
+        rowId: args.existing.id,
+        cells: toFill,
+        source: args.source,
+        object: args.object,
+        sourceLabel: args.sourceLabel,
+        confidence: args.confidence,
+      });
+    }
     return 'updated';
   }
 

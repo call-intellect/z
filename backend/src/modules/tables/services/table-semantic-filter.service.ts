@@ -101,6 +101,7 @@ export class TableSemanticFilterService {
         where: {
           tableId: args.tableId,
           tenantId: args.tenantId,
+          status: 'active',
           archivedAt: null,
           deletedAt: null,
         },

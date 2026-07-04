@@ -9,7 +9,7 @@ type Fn = ReturnType<typeof vi.fn>;
 
 describe('TableGraphsyncReconcileCronService', () => {
   let prisma: { org: { findMany: Fn } };
-  let graphSync: { isEnabled: Fn; reconcileTenant: Fn };
+  let graphSync: { isEnabled: Fn; reconcileTenant: Fn; expireDrafts: Fn };
   let svc: TableGraphsyncReconcileCronService;
 
   beforeEach(() => {
@@ -17,6 +17,7 @@ describe('TableGraphsyncReconcileCronService', () => {
     graphSync = {
       isEnabled: vi.fn().mockResolvedValue(true),
       reconcileTenant: vi.fn().mockResolvedValue({ created: 1, updated: 0, skipped: 2 }),
+      expireDrafts: vi.fn().mockResolvedValue(1),
     };
     svc = new TableGraphsyncReconcileCronService(
       prisma as unknown as PrismaService,
@@ -35,9 +36,11 @@ describe('TableGraphsyncReconcileCronService', () => {
   it('reconcile по каждому Org, агрегирует счётчики', async () => {
     const r = await svc.runForAllOrgs();
     expect(graphSync.reconcileTenant).toHaveBeenCalledTimes(2);
+    expect(graphSync.expireDrafts).toHaveBeenCalledTimes(2);
     expect(r.scannedOrgs).toBe(2);
     expect(r.created).toBe(2);
     expect(r.skipped).toBe(4);
+    expect(r.expired).toBe(2);
   });
 
   it('ошибка на одном Org → продолжает остальные, errors++', async () => {

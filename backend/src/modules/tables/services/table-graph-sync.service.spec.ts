@@ -83,7 +83,7 @@ describe('TableGraphSyncService', () => {
   type Fn = ReturnType<typeof vi.fn>;
   interface PrismaMock {
     table: { findMany: Fn };
-    tableRow: { findFirst: Fn; findMany: Fn; create: Fn; update: Fn };
+    tableRow: { findFirst: Fn; findMany: Fn; create: Fn; update: Fn; updateMany: Fn };
     tableCellProvenance: { create: Fn };
     goal: { findMany: Fn };
     experiment: { findMany: Fn };
@@ -101,6 +101,7 @@ describe('TableGraphSyncService', () => {
         findMany: vi.fn().mockResolvedValue([]),
         create: vi.fn().mockResolvedValue({ id: 'row-new' }),
         update: vi.fn().mockResolvedValue({ id: 'row-upd' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       tableCellProvenance: { create: vi.fn().mockResolvedValue({ id: 'prov-1' }) },
       goal: { findMany: vi.fn().mockResolvedValue([]) },
@@ -212,6 +213,7 @@ describe('TableGraphSyncService', () => {
     prisma.table.findMany.mockResolvedValue([goalTable()]);
     prisma.tableRow.findFirst.mockResolvedValue({
       id: 'row-existing',
+      status: 'active',
       cells: { 'p-name': 'Вырасти на 30%', 'p-due': '2026-09-01T00:00:00.000Z' },
     });
 
@@ -231,7 +233,7 @@ describe('TableGraphSyncService', () => {
     expect(prisma.tableRow.update).not.toHaveBeenCalled();
   });
 
-  it('гейт: confidence < min_confidence → skipped, строка не создаётся', async () => {
+  it('гейт: confidence < min_confidence → created как черновик (status=draft, draftExpiresAt задан)', async () => {
     prisma.table.findMany.mockResolvedValue([goalTable()]);
 
     const res = await svc.syncObject({
@@ -240,8 +242,11 @@ describe('TableGraphSyncService', () => {
       object: { id: 'goal-low', name: 'Слабая цель', confidence: new Prisma.Decimal(0.3) },
     });
 
-    expect(res).toBe('skipped');
-    expect(prisma.tableRow.create).not.toHaveBeenCalled();
+    expect(res).toBe('created');
+    expect(prisma.tableRow.create).toHaveBeenCalledTimes(1);
+    const data = prisma.tableRow.create.mock.calls[0]![0].data;
+    expect(data.status).toBe('draft');
+    expect(data.draftExpiresAt).toBeInstanceOf(Date);
   });
 
   it('confidence null (ручной объект) → created (эфф. 1.0)', async () => {
@@ -261,6 +266,7 @@ describe('TableGraphSyncService', () => {
     prisma.table.findMany.mockResolvedValue([goalTable()]);
     prisma.tableRow.findFirst.mockResolvedValue({
       id: 'row-existing',
+      status: 'active',
       cells: { 'p-name': 'Правка руками' },
     });
 
@@ -311,6 +317,7 @@ describe('TableGraphSyncService', () => {
     ]);
     prisma.tableRow.findFirst.mockResolvedValue({
       id: 'row-existing',
+      status: 'active',
       cells: { 'p-name': 'Цель А' },
     });
 
@@ -334,5 +341,60 @@ describe('TableGraphSyncService', () => {
     expect(prisma.goal.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ tenantId: TENANT, archivedAt: null }) }),
     );
+  });
+
+  it('промоушен: существующий draft + новый объект ≥ порога → status=active, draftExpiresAt=null', async () => {
+    prisma.table.findMany.mockResolvedValue([goalTable()]);
+    prisma.tableRow.findFirst.mockResolvedValue({
+      id: 'row-draft',
+      status: 'draft',
+      cells: { 'p-name': 'Цель А' },
+    });
+
+    const res = await svc.syncObject({
+      tenantId: TENANT,
+      source: 'goal',
+      object: { id: 'goal-1', name: 'Цель А', confidence: new Prisma.Decimal(0.9) },
+    });
+
+    expect(res).toBe('updated');
+    expect(prisma.tableRow.create).not.toHaveBeenCalled();
+    expect(prisma.tableRow.update).toHaveBeenCalledTimes(1);
+    const data = prisma.tableRow.update.mock.calls[0]![0].data;
+    expect(data.status).toBe('active');
+    expect(data.draftExpiresAt).toBeNull();
+  });
+
+  it('не-демоция: существующий active + новый объект < порога → статус не трогается, update не вызывается', async () => {
+    prisma.table.findMany.mockResolvedValue([goalTable()]);
+    prisma.tableRow.findFirst.mockResolvedValue({
+      id: 'row-active',
+      status: 'active',
+      cells: { 'p-name': 'Цель А' },
+    });
+
+    const res = await svc.syncObject({
+      tenantId: TENANT,
+      source: 'goal',
+      object: { id: 'goal-1', name: 'Цель А', confidence: new Prisma.Decimal(0.3) },
+    });
+
+    expect(res).toBe('updated');
+    expect(prisma.tableRow.update).not.toHaveBeenCalled();
+  });
+
+  it('expireDrafts: soft-delete просроченных черновиков через updateMany, возвращает count', async () => {
+    prisma.tableRow.updateMany.mockResolvedValue({ count: 3 });
+
+    const count = await svc.expireDrafts(TENANT, Date.parse('2026-07-10T00:00:00.000Z'));
+
+    expect(count).toBe(3);
+    expect(prisma.tableRow.updateMany).toHaveBeenCalledTimes(1);
+    const arg = prisma.tableRow.updateMany.mock.calls[0]![0];
+    expect(arg.where).toEqual(
+      expect.objectContaining({ tenantId: TENANT, status: 'draft', deletedAt: null }),
+    );
+    expect(arg.where.draftExpiresAt.lte).toBeInstanceOf(Date);
+    expect(arg.data.deletedAt).toBeInstanceOf(Date);
   });
 });

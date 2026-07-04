@@ -88,6 +88,7 @@ export class ChatV2TableContextService {
       where: {
         tenantId,
         entityId: { in: entityIds },
+        status: 'active',
         archivedAt: null,
         deletedAt: null,
         table: { archivedAt: null, deletedAt: null },

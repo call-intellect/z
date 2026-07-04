@@ -87,6 +87,8 @@ export class TableEnrichService {
 
     const threshold = await this.getConfirmationThreshold();
     const meetingLabel = this.meetingLabel(meeting.title);
+    const meetingDate = meeting.startedAt ?? meeting.createdAt;
+    const meetingDateIso = meetingDate ? meetingDate.toISOString().slice(0, 10) : null;
 
     let applied = 0;
     let pending = 0;
@@ -125,6 +127,7 @@ export class TableEnrichService {
           propSchema,
           entityLabel,
           transcriptChunk: transcriptText,
+          meetingDateIso,
         });
         if (facts.length === 0) continue;
 
@@ -599,11 +602,13 @@ export class TableEnrichService {
     propSchema: ExtractRowsPropertySchemaItem[];
     entityLabel: string;
     transcriptChunk: string;
+    meetingDateIso?: string | null;
   }): Promise<ExtractedFact[]> {
     const prompt = buildTableExtractRowsPrompt({
       propertySchema: args.propSchema,
       entityLabel: args.entityLabel,
       transcriptChunk: args.transcriptChunk,
+      meetingDateIso: args.meetingDateIso,
     });
     let text: string;
     try {

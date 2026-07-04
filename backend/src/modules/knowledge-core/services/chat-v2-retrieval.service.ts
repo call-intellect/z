@@ -723,7 +723,7 @@ export class ChatV2RetrievalService {
     const pTenant = pushParam(tenantId);
     const pVec = pushParam(toVectorLiteral(qvec));
     const branchClause = branches
-      ? ` AND "branch" = ANY(${pushParam(branches)}::text[])`
+      ? ` AND "branch"::text = ANY(${pushParam(branches)}::text[])`
       : '';
     const pLimit = pushParam(limit);
 

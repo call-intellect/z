@@ -1,7 +1,7 @@
 {
   "meta": {
     "name": "regulation-stand-ruler",
-    "version": "1.0-full",
+    "version": "1.1-with-ownership",
     "date": "2026-07-03",
     "about": "Эталон (ground truth) под каждый сценарий regulation-stand-corpus.json. Авторский — при прогоне кросс-проверяется слепой разметкой (annotate.ts). Пороги первого прогона = baseline (non-regression), не абсолют.",
     "corpus": "docs/testing/regulation-stand-corpus.json",
@@ -13,7 +13,7 @@
       "compiler.byOrder[n]": "mode(create|extend|null), contentMustContain[], contentMustPreserve[], noDuplicatePoint, steps[]",
       "final": "cardsByType(активные карточки по типу), conflictItems[], deprecated(сколько задепрекейчено)"
     },
-    "rulerCount": 493
+    "rulerCount": 509
   },
   "rulers": {
     "A1.1-regulation-clean": {
@@ -17904,6 +17904,398 @@
         "conflictItems": [],
         "deprecated": 0,
         "note": "СК7 x A1.4: ответственный назван (Аркадий), но это норма клиента → карточки нет → резолв owner не выполняется вовсе"
+      }
+    },
+    "a4-owner-named": {
+      "extractor": {
+        "byOrder": {
+          "1": {
+            "kind": "regulation",
+            "materialized": true
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "ownerResolved": "Иван",
+            "subjectPersons": [
+              "Иван"
+            ]
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "ownerPersonId": "Иван"
+      }
+    },
+    "a4-owner-role-only-null": {
+      "extractor": {
+        "byOrder": {
+          "1": {
+            "kind": "regulation",
+            "materialized": true
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "ownerResolved": null,
+            "subjectPersons": []
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "ownerPersonId": null,
+        "note": "роль без имени и без person-упоминания -> owner НЕ резолвится, НЕ выдумывать"
+      }
+    },
+    "a4-subject-lawyer-grows": {
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "subjectPersons": [
+              "Иван"
+            ],
+            "growsClone": "Иван"
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "personSubjectIds": [
+          "Иван"
+        ],
+        "note": "норма растёт к клону юриста Ивана (γ-1 SkillProfile)"
+      }
+    },
+    "a4-subject-marketer-grows": {
+      "extractor": {
+        "byOrder": {
+          "1": {
+            "kind": "policy",
+            "severity": "mandatory",
+            "materialized": true
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "subjectPersons": [
+              "Дарья"
+            ],
+            "growsClone": "Дарья"
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "policy": 1
+        },
+        "personSubjectIds": [
+          "Дарья"
+        ]
+      }
+    },
+    "a4-no-cross-clone": {
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "subjectPersons": [
+              "Иван"
+            ],
+            "mustNotInclude": [
+              "Дарья"
+            ],
+            "growsClone": "Иван"
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "personSubjectIds": [
+          "Иван"
+        ],
+        "note": "упоминание Дарьей НЕ делает норму её — не тащить в клон маркетолога (no_cross_clone_leak)"
+      }
+    },
+    "a4-owner-vs-subject-distinct": {
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "ownerResolved": "Иван",
+            "subjectPersons": [
+              "Сергей",
+              "Иван"
+            ]
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "note": "owner(ответственный)=Иван ≠ subject-проговоривший=Сергей; различать owner и subject"
+      }
+    },
+    "a4-orphan-owner": {
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "ownerResolved": null,
+            "subjectPersons": []
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "ownerPersonId": null,
+        "personSubjectIds": [],
+        "note": "нет ни имени, ни person-упоминания -> НЕ прицеплять к случайному клону (orphan owner)"
+      }
+    },
+    "a4-subject-multi": {
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "subjectPersons": [
+              "Иван",
+              "Сергей"
+            ]
+          }
+        }
+      },
+      "final": {
+        "note": "двое person-упоминаний -> оба в personSubjectIds (растут оба клона)"
+      }
+    },
+    "a4-carry-on-merge": {
+      "arbiter": {
+        "byOrder": {
+          "2": {
+            "verdict": "merge",
+            "targetIsOrder": 1
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "2": {
+            "ownerResolved": "Иван",
+            "subjectPersons": [
+              "Иван"
+            ]
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "deprecated": 1,
+        "ownerPersonId": "Иван",
+        "note": "при merge owner=Иван и subject сохраняются на канонической; депрекейт не тащит владение"
+      }
+    },
+    "a4-reassign-clears-old": {
+      "arbiter": {
+        "byOrder": {
+          "2": {
+            "verdict": "extension",
+            "targetIsOrder": 1
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "2": {
+            "ownerResolved": "Сергей",
+            "staleOwnerCleared": "Иван"
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "ownerPersonId": "Сергей",
+        "note": "переназначение -> активная карточка owner=Сергей; старый Иван НЕ остаётся владельцем актуальной"
+      }
+    },
+    "a4-desync-bearer-change": {
+      "arbiter": {
+        "byOrder": {
+          "2": {
+            "verdict": "extension",
+            "targetIsOrder": 1
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "subjectPersons": [
+              "Елена"
+            ]
+          },
+          "2": {
+            "subjectPersons": [
+              "Игорь"
+            ],
+            "ownerReassignedFrom": "Елена",
+            "ownerReassignedTo": "Игорь"
+          }
+        }
+      },
+      "cloneTrace": {
+        "staleOwnerCloneMustNotClaim": "Елена",
+        "newOwnerCloneShouldLink": "Игорь",
+        "usedRegulationNamesNotFabricated": true
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "note": "КОРЕНЬ ФАБРИКАЦИИ: при смене носителя владение перетекает Елена->Игорь. Клон Елены (старый снимок) НЕ должен продолжать называть этот регламент как свой (usedRegulationNames Елены не течёт). Клон Игоря — актуальный владелец."
+      }
+    },
+    "a4-desync-stale-name-fabrication": {
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "ownerResolved": null,
+            "subjectPersons": []
+          }
+        }
+      },
+      "cloneTrace": {
+        "usedRegulationNamesNotFabricated": true,
+        "expectedUsedRegulationNames": [],
+        "note": "клон, чьи текущие регламенты не привязаны, ДОЛЖЕН вернуть usedRegulationNames=[] (честно), а НЕ выдумать имя из старого снимка"
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "ownerPersonId": null
+      }
+    },
+    "a4-policy-owner-security": {
+      "extractor": {
+        "byOrder": {
+          "1": {
+            "kind": "policy",
+            "severity": "blocking",
+            "materialized": true
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "ownerResolved": "Пётр",
+            "subjectPersons": [
+              "Пётр"
+            ]
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "policy": 1
+        },
+        "ownerPersonId": "Пётр"
+      }
+    },
+    "a4-instruction-owner-role": {
+      "extractor": {
+        "byOrder": {
+          "1": {
+            "kind": "instruction",
+            "materialized": true,
+            "scope": "role:поддержка"
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "ownerResolved": "Дарья"
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "instruction": 1
+        },
+        "ownerPersonId": "Дарья"
+      }
+    },
+    "a4-carry-on-extension": {
+      "arbiter": {
+        "byOrder": {
+          "2": {
+            "verdict": "extension",
+            "targetIsOrder": 1
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "2": {
+            "ownerResolved": "Дарья",
+            "subjectPersons": [
+              "Дарья"
+            ]
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "regulation": 1
+        },
+        "ownerPersonId": "Дарья",
+        "note": "при extension владелец Дарья консистентен, старое сохранено"
+      }
+    },
+    "a4-speaker-implicit-subject": {
+      "extractor": {
+        "byOrder": {
+          "1": {
+            "kind": "instruction",
+            "materialized": true
+          }
+        }
+      },
+      "ownership": {
+        "byOrder": {
+          "1": {
+            "subjectPersons": [
+              "Дарья"
+            ],
+            "growsClone": "Дарья"
+          }
+        }
+      },
+      "final": {
+        "cardsByType": {
+          "instruction": 1
+        },
+        "note": "проговаривающий от 1-го лица -> subject автор (Дарья), норма растёт к её клону"
       }
     }
   }

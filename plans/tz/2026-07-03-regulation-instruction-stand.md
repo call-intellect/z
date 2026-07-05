@@ -150,7 +150,12 @@ merge/extension/contradicts — дубль приходит ПОСЛЕ ориг�
 - **arbiter-фокус:** `verdict ∈ {new,merge,extension,contradicts,distinct}`, `targetIsOrder`.
 - **compiler-фокус:** `contentMustContain[]` (пункты, что обязаны быть), `contentMustPreserve[]` (старые пункты
   сохранены), `noDuplicatePoint`, `steps[]` (для process), `mode ∈ {create,extend}`.
-- **final:** `cardsByType`, `conflictItems`, `deprecated`.
+- **ownership-фокус (A4):** `ownership.byOrder[n]` — `ownerResolved` (имя человека или null), `subjectPersons[]`
+  (кто растёт), `mustNotInclude[]` (кого НЕ должно быть — анти-кросс-клон), `growsClone`, `ownerReassignedFrom/To`,
+  `staleOwnerCleared`; `cloneTrace` — `usedRegulationNamesNotFabricated`, `expectedUsedRegulationNames`.
+- **final:** `cardsByType`, `conflictItems`, `deprecated`, `ownerPersonId`, `personSubjectIds`.
+- **Сценарии A4 требуют посеянных персон** (`scenario.requiresPersons`): Иван-юрист, Дарья-маркетолог,
+  Елена/Игорь-поддержка, Сергей-директор, Пётр-безопасник; `scenario.ownershipEvent` — событие смены носителя.
 
 **Правила эталона (методология §2, три против тавтологии):**
 1. Эталон авторский (пишем мы, зная замысел сценария) — но **кросс-проверяется слепой разметкой** (`annotate.ts`):
@@ -177,6 +182,15 @@ merge/extension/contradicts — дубль приходит ПОСЛЕ ориг�
 - `preservation` (**ключевой** — старое не потеряно при дополнении), `no_duplication`, `structure_fidelity`
   (шаблон типа), `steps_sync` (process ↔ ProcessStep), `conflict_signal`.
 
+**A4 Владение (owner + subject → клон):**
+- `owner_accuracy` — верно ли резолвится `ownerPersonId` (по имени; роль-без-имени → null, не выдумка);
+- `subject_accuracy` — верно ли `personSubjectIds` (норма растёт к правильному человеку/клону);
+- `no_cross_clone_leak` (**ключевой**) — норма НЕ прицепляется к чужому клону (упоминание ≠ владение);
+- `ownership_carry` — при merge/extension/supersede/переназначении владелец+субъект переносятся консистентно, депрекейт не тащит старое;
+- `desync_no_fabrication` (**корень**) — при смене носителя/сироте: старый снимок клона НЕ продолжает называть
+  регламент как свой; клон без привязанных правил даёт `usedRegulationNames=[]` (честно), а не выдуманное имя из
+  старого снимка. (Требует построить клон и снять трассу `usedRegulationNames` — мост к clone-stand; ось L.)
+
 **Сквозные:** `final_card_count` vs эталон · `conflict_items` vs эталон · `idempotency` (второй прогон Δ=0) ·
 `versioning_integrity` (история версий полна) · `deprecation` (проигравший при merge).
 
@@ -185,8 +199,11 @@ A3 (content-loss / dup / structure) · pipeline (candidate-miss / route / infra)
 
 ## 7. Фазы
 
-- **Ф0 prepare** (`seed-reg-feed prepare`): throwaway-тенант (новый org), посев Person + ролей (для `ownerHint`),
-  tenant-scoped конфиг §3, `assertNotProd`. Печатает `ORG_ID=`.
+- **Ф0 prepare** (`seed-reg-feed prepare`): throwaway-тенант (новый org), **посев именованных Person + ролей**
+  (Иван-юрист, Дарья-маркетолог, Елена/Игорь-поддержка, Сергей-директор, Пётр-безопасник — для резолва
+  `ownerHint`/subject в оси A4; person-упоминания в блоках через `IdeaBlockEntity type=person`), tenant-scoped
+  конфиг §3, `assertNotProd`. Печатает `ORG_ID=`. Для A4.4 (смена носителя) — провести `role.bearer_changed`
+  Елена→Игорь между блоками сценария (как в clone-stand).
 - **Ф1 build** (`build`): посев блоков корпуса ПО ПОРЯДКУ → триггер специалиста на каждый → ждать устаканивания →
   прогон `consolidateTenant` (свод). Логировать что материализовалось.
 - **Ф2 annotate** (`annotate`): слепые разметчики корпуса → манифест ожидаемого + agreement; сверка с авторским
@@ -244,8 +261,10 @@ A3 (content-loss / dup / structure) · pipeline (candidate-miss / route / infra)
 
 - [ ] стенд гоняется по-фазно и **батчами по 50** (`stand.ts run --batch N`) с гейтом решения (§7.1);
 - [ ] корпус покрывает карту 360° (каждая ячейка ≥1, критические ≥3); эталон кросс-проверен слепой разметкой;
-- [ ] baseline снят: scorecard по A1/A2/A3 + confusion-матрицы + ловушки + финальные счётчики + идемпотентность;
-- [ ] провалы атрибутированы к агенту (A1/A2/A3/pipeline); конфигурация прогона (флаги + модели) зафиксирована;
+- [ ] baseline снят: scorecard по A1/A2/A3/**A4 владение** + confusion-матрицы + ловушки + финальные счётчики + идемпотентность;
+- [ ] **ось A4 проверена:** owner/subject-резолв, no_cross_clone_leak, ownership_carry, и **desync_no_fabrication**
+  (смена носителя → старый снимок не выдумывает `usedRegulationNames`);
+- [ ] провалы атрибутированы к агенту (A1/A2/A3/A4/pipeline); конфигурация прогона (флаги + модели) зафиксирована;
 - [ ] `typecheck/lint/build` зелёные по затронутому; прод не тронут; README `regulation-stand.md` написан;
 - [ ] хэндофф-промпт `regulation-stand-agent-prompt.md` готов (свежий агент берёт и запускает).
 

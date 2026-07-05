@@ -1,15 +1,16 @@
 {
   "meta": {
     "name": "regulation-stand-corpus",
-    "version": "1.0-full",
+    "version": "1.1-with-ownership",
     "date": "2026-07-03",
     "about": "Стартовый синтетический корпус для стенда агентов регламентов/инструкций. Покрывает критические ячейки карты 360° (A1 границы+фильтры, A2 все исходы, A3 создание/дополнение, СК1 жизненный цикл). РАСШИРЯТЬ по plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md (каждая ячейка >=1, критические >=3).",
     "matrix": "plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md",
     "ruler": "docs/testing/regulation-stand-ruler.json",
     "blockFields": "signalType(regulation|process_step|policy), name, criticalQuestion, trustedAnswer, evidenceQuotes[], tags[], ownerCompanyPrior(наша|клиент|гость|неизвестно), meetingExternalLikely, order",
     "note": "order управляет консолидацией: кандидат приходит ПОСЛЕ оригинала. Для арбитр-сценариев order=1 оригинал, order=2 приходящий черновик.",
-    "scenarioCount": 493,
-    "generatedBy": "fan-out workflow wf_2a0fd48d-29d (18 веток + проверка эталона + критик пробелов) + стартовые 26"
+    "scenarioCount": 509,
+    "generatedBy": "fan-out workflow wf_2a0fd48d-29d (18 веток + проверка эталона + критик пробелов) + стартовые 26",
+    "ownershipNote": "A4 — ось «Владение»: регламент/инструкция/политика ВСЕГДА привязана к человеку (ownerPersonId) и растёт к клону (personSubjectIds). Корень фабрикации usedRegulationNames — рассогласование владельца при смене носителя. prepare обязан посеять персон requiresPersons."
   },
   "scenarios": [
     {
@@ -17304,6 +17305,594 @@
           "ownerCompanyPrior": "клиент",
           "meetingExternalLikely": true
         }
+      ]
+    },
+    {
+      "id": "a4-owner-named",
+      "cell": "A4.1",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": false,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Юрпроверка договоров",
+          "criticalQuestion": "Кто отвечает за юрпроверку договоров?",
+          "trustedAnswer": "За юридическую проверку договоров отвечает юрист Иван: каждый договор к нему до подписания, ответ за 3 дня.",
+          "evidenceQuotes": [
+            "ответственный — юрист Иван"
+          ],
+          "tags": [
+            "договоры",
+            "юрист"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-owner-role-only-null",
+      "cell": "A4.1",
+      "agentFocus": "ownership",
+      "channel": "chat",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Приёмка товара",
+          "criticalQuestion": "Кто отвечает за приёмку?",
+          "trustedAnswer": "За приёмку товара отвечает кладовщик — сверить накладную, пересчитать, оприходовать.",
+          "evidenceQuotes": [
+            "ответственный — кладовщик"
+          ],
+          "tags": [
+            "склад"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-subject-lawyer-grows",
+      "cell": "A4.2",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": false,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Проверка контрагентов",
+          "criticalQuestion": "Как проверяем контрагентов?",
+          "trustedAnswer": "Иван (юрист) проверяет каждого нового контрагента по ЕГРЮЛ и санкционным спискам до заключения договора.",
+          "evidenceQuotes": [
+            "Иван проверяет контрагента по ЕГРЮЛ"
+          ],
+          "tags": [
+            "юрист",
+            "контрагенты"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-subject-marketer-grows",
+      "cell": "A4.2",
+      "agentFocus": "ownership",
+      "channel": "document",
+      "trap": false,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "policy",
+          "name": "Тон бренда в рассылках",
+          "criticalQuestion": "Какой тон в рассылках?",
+          "trustedAnswer": "Дарья (маркетолог) держит правило: рассылки без капса и без давления, обращение на «вы» — это обязательная норма бренда.",
+          "evidenceQuotes": [
+            "Дарья: рассылки без капса, на вы"
+          ],
+          "tags": [
+            "маркетинг",
+            "бренд"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-no-cross-clone",
+      "cell": "A4.3",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Согласование НДА",
+          "criticalQuestion": "Кто согласует НДА?",
+          "trustedAnswer": "НДА согласует юрист Иван; Дарья лишь упомянула это на планёрке, но норма — юридическая.",
+          "evidenceQuotes": [
+            "НДА согласует юрист Иван"
+          ],
+          "tags": [
+            "нда",
+            "юрист"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-owner-vs-subject-distinct",
+      "cell": "A4.2",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Подпись крупных договоров",
+          "criticalQuestion": "Кто отвечает и кто подписывает?",
+          "trustedAnswer": "Директор Сергей проговорил порядок, но ответственным за контроль назначен юрист Иван.",
+          "evidenceQuotes": [
+            "ответственный — юрист Иван",
+            "Сергей проговорил"
+          ],
+          "tags": [
+            "договоры"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-orphan-owner",
+      "cell": "A4.5",
+      "agentFocus": "ownership",
+      "channel": "chat",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Порядок эскалации",
+          "criticalQuestion": "Как эскалируем инциденты?",
+          "trustedAnswer": "Инциденты эскалируем по цепочке дежурный → старший → руководитель в течение часа.",
+          "evidenceQuotes": [
+            "эскалация в течение часа"
+          ],
+          "tags": [
+            "эскалация"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-subject-multi",
+      "cell": "A4.2",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": false,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "process_step",
+          "name": "Ревью релиза",
+          "criticalQuestion": "Как ревьюим релиз?",
+          "trustedAnswer": "Иван и Сергей вдвоём договорились: релиз выкатывается после ревью обоих и зелёных тестов.",
+          "evidenceQuotes": [
+            "Иван и Сергей: ревью обоих"
+          ],
+          "tags": [
+            "релиз"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-carry-on-merge",
+      "cell": "A4.6",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Проверка договоров (Иван)",
+          "criticalQuestion": "Кто и как проверяет договоры?",
+          "trustedAnswer": "Юрист Иван проверяет каждый договор до подписания за 3 дня.",
+          "evidenceQuotes": [
+            "Иван проверяет договор за 3 дня"
+          ],
+          "tags": [
+            "договоры",
+            "юрист"
+          ]
+        },
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 2,
+          "signalType": "regulation",
+          "name": "Юрпроверка договоров (та же, иначе)",
+          "criticalQuestion": "Как устроена юрпроверка?",
+          "trustedAnswer": "Каждый договор уходит юристу Ивану на проверку до подписи, срок ответа — три рабочих дня.",
+          "evidenceQuotes": [
+            "договор юристу Ивану до подписи, три дня"
+          ],
+          "tags": [
+            "договоры"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-reassign-clears-old",
+      "cell": "A4.6",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Ответственный за закупки",
+          "criticalQuestion": "Кто отвечает за закупки?",
+          "trustedAnswer": "За закупки отвечает Иван.",
+          "evidenceQuotes": [
+            "ответственный за закупки — Иван"
+          ],
+          "tags": [
+            "закупки"
+          ]
+        },
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 2,
+          "signalType": "regulation",
+          "name": "Смена ответственного за закупки",
+          "criticalQuestion": "Кто теперь отвечает за закупки?",
+          "trustedAnswer": "Ответственным за закупки теперь назначен Сергей вместо Ивана.",
+          "evidenceQuotes": [
+            "теперь ответственный — Сергей"
+          ],
+          "tags": [
+            "закупки",
+            "смена"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-desync-bearer-change",
+      "cell": "A4.4",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Регламент обработки обращений",
+          "criticalQuestion": "Как поддержка обрабатывает обращения?",
+          "trustedAnswer": "Елена (руководитель поддержки) держит правило: первый ответ в течение 4 часов, критичные — эскалация в тот же день.",
+          "evidenceQuotes": [
+            "Елена: первый ответ за 4 часа"
+          ],
+          "tags": [
+            "поддержка",
+            "обращения"
+          ]
+        },
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 2,
+          "signalType": "regulation",
+          "name": "Регламент обращений (новый носитель)",
+          "criticalQuestion": "Что с регламентом обращений после смены руководителя?",
+          "trustedAnswer": "Игорь (новый руководитель поддержки) уточняет: первый ответ теперь за 2 часа, критичные — эскалация немедленно.",
+          "evidenceQuotes": [
+            "Игорь: первый ответ за 2 часа"
+          ],
+          "tags": [
+            "поддержка",
+            "смена-носителя"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ],
+      "ownershipEvent": "role.bearer_changed: поддержка Елена -> Игорь МЕЖДУ order=1 и order=2"
+    },
+    {
+      "id": "a4-desync-stale-name-fabrication",
+      "cell": "A4.4",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Регламент возвратов (осиротевший владелец)",
+          "criticalQuestion": "Как оформляем возвраты?",
+          "trustedAnswer": "Возвраты оформляются по акту в течение 5 дней — но ответственный уволился, привязка к человеку потеряна.",
+          "evidenceQuotes": [
+            "ответственный уволился"
+          ],
+          "tags": [
+            "возвраты",
+            "осиротевший"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ],
+      "ownershipEvent": "owner рассинхронизирован: у клона нет актуально привязанных регламентов"
+    },
+    {
+      "id": "a4-policy-owner-security",
+      "cell": "A4.1",
+      "agentFocus": "ownership",
+      "channel": "document",
+      "trap": false,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "policy",
+          "name": "Хранение персональных данных",
+          "criticalQuestion": "Где храним ПДн?",
+          "trustedAnswer": "Пётр (безопасник) держит правило: персональные данные только на серверах РФ, нарушение блокирует запуск.",
+          "evidenceQuotes": [
+            "Пётр: ПДн только серверы РФ"
+          ],
+          "tags": [
+            "данные",
+            "безопасность"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-instruction-owner-role",
+      "cell": "A4.1",
+      "agentFocus": "ownership",
+      "channel": "document",
+      "trap": false,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "process_step",
+          "name": "Ответ на обращение",
+          "criticalQuestion": "Как оператор отвечает на обращение?",
+          "trustedAnswer": "Оператор отвечает на обращение за 4 часа; ответственная за инструкцию — Дарья.",
+          "evidenceQuotes": [
+            "ответственная — Дарья"
+          ],
+          "tags": [
+            "поддержка",
+            "инструкция"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-carry-on-extension",
+      "cell": "A4.6",
+      "agentFocus": "ownership",
+      "channel": "planerka",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "regulation",
+          "name": "Приёмка обращений (Дарья)",
+          "criticalQuestion": "Как принимаем обращения?",
+          "trustedAnswer": "Дарья: первый ответ за 4 часа.",
+          "evidenceQuotes": [
+            "Дарья: ответ за 4 часа"
+          ],
+          "tags": [
+            "поддержка"
+          ]
+        },
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 2,
+          "signalType": "regulation",
+          "name": "Дополнение приёмки (Дарья)",
+          "criticalQuestion": "Что с критичными?",
+          "trustedAnswer": "Дарья дополняет: критичные обращения эскалируются старшему в тот же день.",
+          "evidenceQuotes": [
+            "Дарья: критичные — старшему в тот же день"
+          ],
+          "tags": [
+            "поддержка",
+            "эскалация"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
+      ]
+    },
+    {
+      "id": "a4-speaker-implicit-subject",
+      "cell": "A4.2",
+      "agentFocus": "ownership",
+      "channel": "interview",
+      "trap": false,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "process_step",
+          "name": "Как я веду сделку",
+          "criticalQuestion": "Как ведёшь сделку?",
+          "trustedAnswer": "Дарья от первого лица: я завожу сделку, ставлю стадию, после каждого звонка обновляю статус — это мой постоянный порядок.",
+          "evidenceQuotes": [
+            "я завожу сделку и обновляю статус"
+          ],
+          "tags": [
+            "сделки",
+            "от-первого-лица"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Иван",
+        "Дарья",
+        "Елена",
+        "Игорь",
+        "Сергей",
+        "Пётр"
       ]
     }
   ]

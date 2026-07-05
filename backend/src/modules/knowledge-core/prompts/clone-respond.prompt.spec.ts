@@ -56,45 +56,13 @@ describe('CLONE_RESPOND_USER_TEMPLATE — applicable_regulations', () => {
   });
 });
 
-describe('CLONE_RESPOND_USER_TEMPLATE — regulations_index', () => {
-  it('без regulationsIndex → нет блока', () => {
-    const out = CLONE_RESPOND_USER_TEMPLATE({ ...baseArgs });
-    expect(out).not.toContain('<regulations_index>');
-  });
-
-  it('пустой массив → нет блока', () => {
-    const out = CLONE_RESPOND_USER_TEMPLATE({ ...baseArgs, regulationsIndex: [] });
-    expect(out).not.toContain('<regulations_index>');
-  });
-
-  it('с элементами → блок присутствует с метками и severity', () => {
-    const out = CLONE_RESPOND_USER_TEMPLATE({
-      ...baseArgs,
-      regulationsIndex: [
-        { kind: 'policy', name: 'Политика А', severity: 'blocking' },
-        { kind: 'regulation', name: 'Регламент Б', severity: null },
-        { kind: 'process', name: 'Процесс В' },
-        { kind: 'instruction', name: 'Инструкция Г' },
-      ],
-    });
-    expect(out).toContain('<regulations_index>');
-    expect(out).toContain('Политика');
-    expect(out).toContain('Регламент');
-    expect(out).toContain('Процесс');
-    expect(out).toContain('Инструкция');
-    expect(out).toContain('[blocking]');
-    expect(out).toContain('Политика А');
-  });
-
-  it('regulations_index идёт ПОСЛЕ applicable_regulations, когда оба заданы', () => {
+describe('CLONE_RESPOND_USER_TEMPLATE — regulations_index удалён (анти-фабрикация)', () => {
+  it('блок regulations_index не выводится никогда — клон не видит имён невставленных правил', () => {
     const out = CLONE_RESPOND_USER_TEMPLATE({
       ...baseArgs,
       applicableRegulations: [{ kind: 'policy', severity: 'blocking', name: 'X', text: 'Y' }],
-      regulationsIndex: [{ kind: 'policy', name: 'X', severity: 'blocking' }],
     });
-    const applicableIdx = out.indexOf('<applicable_regulations>');
-    const indexIdx = out.indexOf('<regulations_index>');
-    expect(applicableIdx).toBeGreaterThanOrEqual(0);
-    expect(indexIdx).toBeGreaterThan(applicableIdx);
+    expect(out).not.toContain('<regulations_index>');
+    expect(out).not.toContain('Полный перечень записанных правил');
   });
 });

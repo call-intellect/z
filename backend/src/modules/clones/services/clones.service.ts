@@ -22,7 +22,6 @@ import {
   CLONE_RESPOND_USER_TEMPLATE,
   type CloneRespondPracticeSkill,
   type CloneRespondRegulation,
-  type CloneRespondRegulationIndexItem,
   buildCloneRespondSystemPrompt,
 } from '../../knowledge-core/prompts/clone-respond.prompt';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
@@ -2660,7 +2659,6 @@ export class ClonesService {
         },
         practiceSkills: args.practiceSkills,
         applicableRegulations: args.applicableRegulations,
-        regulationsIndex: toRegulationsIndex(args.persona.applicableRegulationsSnapshot),
       }),
       tenantId: args.tenantId,
       sourceRef: { type: 'executable_persona', id: args.persona.id },
@@ -2898,25 +2896,6 @@ function toPromptSkills(
       steps,
       redFlags: flags,
     });
-  }
-  return out;
-}
-
-function toRegulationsIndex(raw: unknown): CloneRespondRegulationIndexItem[] {
-  if (!Array.isArray(raw)) return [];
-  const out: CloneRespondRegulationIndexItem[] = [];
-  for (const it of raw) {
-    if (!it || typeof it !== 'object') continue;
-    const o = it as Record<string, unknown>;
-    const kind = o.kind;
-    if (kind !== 'policy' && kind !== 'regulation' && kind !== 'process' && kind !== 'instruction')
-      continue;
-    const name = typeof o.name === 'string' ? o.name : '';
-    if (!name) continue;
-    const sev = o.severity;
-    const severity =
-      sev === 'advisory' || sev === 'mandatory' || sev === 'blocking' ? sev : null;
-    out.push({ kind, name, severity });
   }
   return out;
 }

@@ -47,6 +47,7 @@ import { ReasoningChainService } from './services/reasoning-chain.service';
 import { RegulationConsolidatorService } from './services/regulation-consolidator.service';
 import { RoleClonePersonaVersioningHandler } from './services/role-clone-persona-versioning.handler';
 import { RolePrincipleSynthesisService } from './services/role-principle-synthesis.service';
+import { RegulationSummaryService } from './services/regulation-summary.service';
 import { RoleRegulationRetrievalService } from './services/role-regulation-retrieval.service';
 import { RouterService } from './services/router.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
@@ -96,6 +97,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     KnowledgeEmbeddingService,
     ChunkContextService,
     RoleRegulationRetrievalService,
+    RegulationSummaryService,
     EntityResolutionService,
     RegulationConsolidatorService,
     BlockMergeService,
@@ -173,6 +175,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     KnowledgeEmbeddingService,
     ChunkContextService,
     RoleRegulationRetrievalService,
+    RegulationSummaryService,
     EntityResolutionService,
     RegulationConsolidatorService,
     BlockMergeService,

@@ -2839,6 +2839,7 @@ model Org {
   chatboxChats          ChatboxChat[]
   chatboxChatSessions   ChatboxChatSession[]
   chatboxMessages       ChatboxMessage[]
+  ruleSummaries         RuleSummary[]
 
   // ── Bitrix24-интеграция (plans/tz/2026-06-09-bitrix24-integration-install.md) ──
   bitrixIntegrations   BitrixIntegration[]
@@ -6350,6 +6351,24 @@ model Policy {
   @@index([currentVersionId])
   @@index([tenantId, deletedAt])
   @@map("policies")
+}
+
+model RuleSummary {
+  id          String   @id @default(cuid())
+  tenantId    String
+  kind        String   @db.VarChar(20)
+  ruleId      String
+  summary     String   @db.Text
+  sourceHash  String   @db.VarChar(40)
+  model       String?  @db.VarChar(120)
+  generatedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kind, ruleId])
+  @@index([tenantId, kind])
+  @@map("rule_summaries")
 }
 
 /// Tool — инструмент / система / шаблон (Фаза 0a, группа Б).

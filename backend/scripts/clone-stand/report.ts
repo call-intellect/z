@@ -63,6 +63,7 @@ export async function judgeRun(
   q: BankQuestion,
   run: RunResult,
   ctx: ManifestCtx,
+  regulationTexts: string[] = [],
 ): Promise<Omit<JudgedResult, 'run'>> {
   const isBoundary = ANSWERABLE_EXCLUDED_CATEGORIES.has(q.category);
   const layer = computeLayerHit(q.expectedLayer, run.trace);
@@ -95,6 +96,7 @@ export async function judgeRun(
       retrievedTexts: run.retrievedTexts,
       statusFacts: ctx.statusFacts,
       absentFacts: ctx.absentFacts,
+      regulationTexts,
     }).catch((): LensG => ({ fabricated: false, fabricatedClaim: '', rationale: JUDGE_ERROR })),
   ]);
 

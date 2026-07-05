@@ -467,6 +467,7 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-backfill-entity-id-person.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-person-relationship.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-backfill-card-versions.ts', skipBootstrap: true },
+  { phase: 'patch', script: 'scripts/backfill-rule-summaries.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-document-use-cases-default.ts', skipBootstrap: true },
   {
     phase: 'patch',

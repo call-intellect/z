@@ -298,17 +298,46 @@ async function modeRun(): Promise<void> {
   });
 }
 
+async function loadRegulationTextMap(orgId: string): Promise<Map<string, string>> {
+  const prisma = (await import('../_lib/prisma')).createPrismaClient();
+  try {
+    const base = { tenantId: orgId, deletedAt: null };
+    const [regs, instrs, pols, procs] = await Promise.all([
+      prisma.regulation.findMany({ where: base, select: { name: true, statement: true, contentMd: true } }),
+      prisma.instruction.findMany({ where: base, select: { name: true, statement: true, contentMd: true } }),
+      prisma.policy.findMany({ where: base, select: { name: true, contentMd: true } }),
+      prisma.process.findMany({ where: base, select: { name: true, description: true } }),
+    ]);
+    const map = new Map<string, string>();
+    const put = (name: string, text: string): void => {
+      const t = (text ?? '').trim();
+      if (t && !map.has(name)) map.set(name, t);
+    };
+    for (const r of regs) put(r.name, r.statement?.trim() || r.contentMd || '');
+    for (const r of instrs) put(r.name, r.statement?.trim() || r.contentMd || '');
+    for (const r of pols) put(r.name, r.contentMd ?? '');
+    for (const r of procs) put(r.name, r.description ?? '');
+    return map;
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 async function modeJudge(): Promise<void> {
-  const parsed = JSON.parse(readFileSync(RESULTS, 'utf8')) as { results: RunResult[] };
+  const parsed = JSON.parse(readFileSync(RESULTS, 'utf8')) as { results: RunResult[]; orgId?: string };
   const ctx = loadManifest();
   const bank = loadBank();
   const bankById = new Map(bank.map((q) => [q.id, q]));
-  log(`judge: ${parsed.results.length} результатов, панель линз (deepseek-v4-pro)`);
+  const regMap = await loadRegulationTextMap(parsed.orgId ?? requireOrg());
+  log(`judge: ${parsed.results.length} результатов, панель линз (deepseek-v4-pro), карта регламентов=${regMap.size}`);
   let done = 0;
   const judged = await mapLimit(parsed.results, 2, async (run) => {
     const q = bankById.get(run.id);
     if (!q) throw new Error(`вопрос ${run.id} не найден в банке`);
-    const parts = await judgeRun(q, run, ctx);
+    const regTexts = (run.trace?.usedRegulationNames ?? [])
+      .map((n) => regMap.get(n))
+      .filter((t): t is string => !!t && t.length > 0);
+    const parts = await judgeRun(q, run, ctx, regTexts);
     done++;
     if (done % 10 === 0) log(`  ...judged ${done}/${parsed.results.length}`);
     return { run, ...parts } as JudgedResult;

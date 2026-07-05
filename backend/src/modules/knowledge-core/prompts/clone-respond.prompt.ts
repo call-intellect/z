@@ -130,12 +130,6 @@ export interface CloneRespondRegulation {
   scope?: string | null;
 }
 
-export interface CloneRespondRegulationIndexItem {
-  kind: 'policy' | 'regulation' | 'process' | 'instruction';
-  name: string;
-  severity?: 'advisory' | 'mandatory' | 'blocking' | null;
-}
-
 export const CLONE_RESPOND_USER_TEMPLATE = (args: {
   question: string;
   roleName?: string | null;
@@ -148,7 +142,6 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
   };
   practiceSkills?: ReadonlyArray<CloneRespondPracticeSkill>;
   applicableRegulations?: ReadonlyArray<CloneRespondRegulation>;
-  regulationsIndex?: ReadonlyArray<CloneRespondRegulationIndexItem>;
 }): string => {
   const roleName =
     args.roleName && args.roleName.trim().length > 0
@@ -209,25 +202,6 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
           '</applicable_regulations>',
         ].join('\n')
       : '';
-  const regulationsIndexBlock =
-    args.regulationsIndex && args.regulationsIndex.length > 0
-      ? [
-          '',
-          `Полный перечень записанных правил должности (${args.regulationsIndex.length}) — это то, что у роли вообще есть; подробности по релевантным даны выше:`,
-          '<regulations_index>',
-          ...args.regulationsIndex.map((r) => {
-            const label = {
-              policy: 'Политика',
-              regulation: 'Регламент',
-              process: 'Процесс',
-              instruction: 'Инструкция',
-            }[r.kind];
-            const sev = r.severity ? ` [${r.severity}]` : '';
-            return `  • (${label}${sev}) ${r.name}`;
-          }),
-          '</regulations_index>',
-        ].join('\n')
-      : '';
   const parts = [
     '── КЛОН ДОЛЖНОСТИ ──',
     `Должность (роль): ${roleName}`,
@@ -249,7 +223,6 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
   ];
   if (skillsBlock) parts.push(skillsBlock);
   if (regulationsBlock) parts.push(regulationsBlock);
-  if (regulationsIndexBlock) parts.push(regulationsIndexBlock);
   parts.push(
     '',
     `── ВОПРОС ──`,

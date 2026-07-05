@@ -305,6 +305,10 @@ export class ClonesService {
         tier: llmResult.tier ?? null,
         personaVersion: persona.version,
         practiceSkillsCount: retrievedSkills.length,
+        usedBlockIds: subgraph.reasoningBlocks.map((b) => b.id),
+        usedSkillIds: retrievedSkills.map((s) => s.id),
+        usedRegulationNames: [],
+        topicMatchedBlocks: topicDensity.matchedBlocks,
       },
     });
 
@@ -556,6 +560,10 @@ export class ClonesService {
         scopeKind: 'role',
         roleId: args.roleId,
         practiceSkillsCount: retrievedSkills.length,
+        usedBlockIds: subgraph.reasoningBlocks.map((b) => b.id),
+        usedSkillIds: retrievedSkills.map((s) => s.id),
+        usedRegulationNames: applicableRegulations.map((r) => r.name),
+        topicMatchedBlocks: topicDensity.matchedBlocks,
       },
     });
 
@@ -782,6 +790,10 @@ export class ClonesService {
         dialogConfidence: dialog.confidence,
         dialogQueriesCount: dialog.queries.length,
         practiceSkillsCount: retrievedSkillsV2.length,
+        usedBlockIds: subgraph.reasoningBlocks.map((b) => b.id),
+        usedSkillIds: retrievedSkillsV2.map((s) => s.id),
+        usedRegulationNames: [],
+        topicMatchedBlocks: topicDensity.matchedBlocks,
       },
     });
 
@@ -1017,6 +1029,10 @@ export class ClonesService {
         dialogConfidence: dialog.confidence,
         dialogQueriesCount: dialog.queries.length,
         practiceSkillsCount: retrievedSkillsV2Role.length,
+        usedBlockIds: subgraph.reasoningBlocks.map((b) => b.id),
+        usedSkillIds: retrievedSkillsV2Role.map((s) => s.id),
+        usedRegulationNames: applicableRegulationsV2.map((r) => r.name),
+        topicMatchedBlocks: topicDensity.matchedBlocks,
       },
     });
 

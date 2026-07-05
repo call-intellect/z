@@ -1,8 +1,12 @@
+import { writeFileSync } from 'node:fs';
+
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/common/prisma/prisma.service';
+import { RedisService } from '../../src/common/redis/redis.service';
 import { ConversationalIngestAdapter } from '../../src/modules/conversational/adapters/conversational-ingest.adapter';
+import { ConversationalService } from '../../src/modules/conversational/conversational.service';
 import { ClonesAdminService } from '../../src/modules/clones/services/clones-admin.service';
 import { ExecutablePersonaBuildService } from '../../src/modules/knowledge-core/services/executable-persona-build.service';
 import { RegulationConsolidatorService } from '../../src/modules/knowledge-core/services/regulation-consolidator.service';
@@ -10,8 +14,12 @@ import { RoleClonePersonaVersioningHandler } from '../../src/modules/knowledge-c
 import { Specialist37Service } from '../../src/modules/knowledge-core/services/specialist-3-7-skill.service';
 import { PersonsService } from '../../src/modules/persons/services/persons.service';
 import { RolesDomainService } from '../../src/modules/roles-domain/services/roles-domain.service';
+import { IssuesService } from '../../src/modules/tracker/services/issues.service';
+import { ProjectsService } from '../../src/modules/tracker/services/projects.service';
 
 import { assertNotProd, pseudoUlid, readConfig, sleep } from '../_lib/combat-harness';
+import { createPrismaClient } from '../_lib/prisma';
+import { ABSENT_FACTS, CLONES, STATUS_FACTS, type CloneDef } from './clone-seed-data';
 
 const DAY_MS = 24 * 60 * 60_000;
 
@@ -26,285 +34,195 @@ function requireOrg(): string {
   return org;
 }
 
-interface Formulation {
-  daysAgo: number;
-  text: string;
+const REGULATIONS: Array<{ name: string; scopeKey: 'support-role' | 'org'; body: string }> = [
+  { name: 'Регламент обработки обращений v2', scopeKey: 'support-role', body: 'Регламент обработки клиентских обращений v2. Первый ответ клиенту — в пределах 4 часов. Классификация по severity: критичные (блокирует работу клиента) эскалируются владельцу в тот же день. После инцидента — обязательный пост-мортем с правкой регламента.' },
+  { name: 'Политика хранения данных клиентов', scopeKey: 'org', body: 'Данные клиентов хранятся только на серверах в РФ. [blocking] Нарушение недопустимо.' },
+  { name: 'Рекомендация по тону общения', scopeKey: 'org', body: 'Рекомендуется вежливый тон в клиентской переписке. [advisory]' },
+  { name: 'Рекомендация по код-ревью', scopeKey: 'org', body: 'Желательно ревью каждого PR вторым инженером. [advisory]' },
+];
+
+interface ChannelBMethod {
+  methodId: string;
+  title: string;
+  answers: string[];
 }
 
-interface MethodDef {
-  id: string;
-  gist: string;
-  question: string;
-  formulations: Formulation[];
+interface ChannelBClone {
+  key: CloneDef['key'];
+  bearer: string;
+  methods: ChannelBMethod[];
 }
 
-interface BearerDef {
-  name: string;
-  methods: MethodDef[];
-}
-
-interface CloneDef {
-  key: 'ceo' | 'integrator' | 'marketer' | 'support';
-  roleName: string;
-  bearers: BearerDef[];
-}
-
-function f(daysAgo: number, text: string): Formulation {
-  return { daysAgo, text };
-}
-
-const CLONES: CloneDef[] = [
+const CHANNEL_B: ChannelBClone[] = [
   {
     key: 'ceo',
-    roleName: 'Генеральный директор',
-    bearers: [
+    bearer: 'Сергей',
+    methods: [
       {
-        name: 'Сергей',
-        methods: [
-          {
-            id: 'ceo-data',
-            gist: 'Решения по данным и когортам, не по средним и не по ощущениям',
-            question: 'Как ты принимаешь продуктовые и стратегические решения?',
-            formulations: [
-              f(47, 'Я не смотрю на средний чек — среднее врёт. Разбиваю на когорты по давности и смотрю поведение внутри группы, только тогда решаю.'),
-              f(33, 'Решение о раскатке я принимаю по цифрам когорт, а не по ощущению команды: ощущения обманывают, данные — нет.'),
-              f(19, 'Когда спорят «на глаз», я прошу разложить по сегментам и показать метрику — без когортных данных я решение не подписываю.'),
-              f(6, 'Средние прячут провалы: я всегда смотрю распределение и когорты, иначе можно радоваться среднему при мёртвом ядре.'),
-            ],
-          },
-          {
-            id: 'ceo-nodeadline',
-            gist: 'Не называет срок без замеров и пробного прогона',
-            question: 'Почему ты не называешь сроки сразу, когда просят оценку?',
-            formulations: [
-              f(45, 'Я принципиально не даю срок, пока мы не сняли замеры на пробном прогоне — иначе это гадание, а не оценка.'),
-              f(31, 'Меня обжигали оценки без замеров, поэтому теперь: сначала метрики и пробный батч, потом коммит по дате.'),
-              f(18, 'Когда просят срок здесь и сейчас, я беру паузу: пока не измерил зависимости, любая цифра — фантазия.'),
-            ],
-          },
-          {
-            id: 'ceo-pilot',
-            gist: 'Перед раскаткой обкатывает на узкой группе',
-            question: 'Как ты относишься к раскатке новых функций на всех сразу?',
-            formulations: [
-              f(44, 'Прежде чем катить на всех, я запускаю на узкой группе и смотрю метрику — пилот дешевле отката.'),
-              f(20, 'Новую механику сначала обкатаем на одном сегменте, замерим эффект, и только потом общая раскатка.'),
-              f(7, 'Я не выкатываю широко без пилота: маленькая группа ловит проблему до того, как её увидят все.'),
-            ],
-          },
-          {
-            id: 'ceo-retention',
-            gist: 'Приоритизирует по эффекту на удержание',
-            question: 'Как ты расставляешь приоритеты в квартале?',
-            formulations: [
-              f(46, 'Приоритет ставлю по влиянию на удержание: если фича не двигает retention когорты, она уходит вниз, даже если красивая.'),
-              f(32, 'Главный критерий для меня — удержание: всё, что не влияет на retention, я двигаю ниже по списку.'),
-              f(5, 'Я приоритизирую через retention-эффект: рост без удержания — это ведро с дырками, сначала латаем дно.'),
-            ],
-          },
+        methodId: 'ceo-data',
+        title: 'Разобрать спор о раскатке фичи на всех',
+        answers: [
+          'Сначала я запросил разбивку метрики по когортам давности, а не общий средний показатель. Потом сравнил поведение внутри свежей и старой групп. Только увидев, что различие устойчиво, согласовал следующий шаг.',
+          'Начал с того, что попросил разложить аудиторию на сегменты и показать метрику по каждому. Затем проверил, не прячет ли среднее провал в ядре. И уже после этого принял решение по цифрам, а не по настроению команды.',
+          'Мой порядок был такой: собрать когортные данные, отсеять шум, сверить гипотезу с фактическим поведением сегмента. Решение подписал тогда, когда данные подтвердили эффект, а не раньше.',
+        ],
+      },
+      {
+        methodId: 'ceo-nodeadline',
+        title: 'Оценить срок по запросу партнёра',
+        answers: [
+          'Первым делом я отказался называть дату вслепую. Снял замеры на пробном прогоне узкого объёма, оценил зависимости и только по факту измерений дал коммит по сроку.',
+          'Порядок был: не давать цифру сходу, прогнать пробный батч, измерить реальную скорость и узкие места, и уже из замеров вывести реалистичный срок с запасом.',
+          'Я взял паузу вместо мгновенной оценки: сначала измерил, сколько реально занимает шаг на малом объёме, потом экстраполировал и назвал дату, которую готов защищать.',
+        ],
+      },
+      {
+        methodId: 'ceo-pilot',
+        title: 'Подготовить запуск новой механики',
+        answers: [
+          'Я запланировал сначала обкатку на узкой группе, замер эффекта на ней, и лишь при подтверждении — общую раскатку. Пилот дешевле отката, поэтому широко без него не иду.',
+          'Шаги: выбрать небольшой сегмент, включить механику только на нём, снять метрику, сравнить с контролем. Раскатываю на всех только после зелёного пилота.',
+          'Начал с пилота на одном сегменте, чтобы поймать проблему до того, как её увидят все. Замерил, поправил, и только затем расширил охват.',
+        ],
+      },
+      {
+        methodId: 'ceo-retention',
+        title: 'Сформировать приоритеты квартала',
+        answers: [
+          'Я отсортировал инициативы по влиянию на удержание когорт. То, что не двигает retention, ушло вниз списка, даже если выглядело эффектно. Сначала латаем дно, потом наливаем сверху.',
+          'Критерий приоритизации был один — эффект на удержание. Прогнал каждую идею через вопрос «двигает ли она retention», и по ответу расставил порядок работ.',
+          'Порядок задач я вывел из retention-эффекта: рост без удержания — ведро с дырками, поэтому наверх встало то, что удерживает ядро.',
         ],
       },
     ],
   },
   {
     key: 'integrator',
-    roleName: 'Разработчик-интегратор',
-    bearers: [
+    bearer: 'Михаил',
+    methods: [
       {
-        name: 'Михаил',
-        methods: [
-          {
-            id: 'int-logs',
-            gist: 'До фикса диагностирует по логам',
-            question: 'С чего ты начинаешь, когда что-то сломалось в интеграции?',
-            formulations: [
-              f(45, 'Я не трогаю код, пока не прочитал логи — сначала нахожу причину по логам, потом чиню, иначе лечу симптом.'),
-              f(28, 'Диагностику начинаю с логов и метрик, а не с гипотез: данные раньше догадок, так быстрее нахожу корень.'),
-              f(12, 'Прежде чем править, я поднимаю логи за период сбоя и ищу первопричину — фикс без диагноза это лотерея.'),
-            ],
-          },
-          {
-            id: 'int-backoff',
-            gist: 'На rate-limit ставит exponential backoff (опыт 429 Битрикс)',
-            question: 'Как ты решаешь проблему, когда внешний API душит по частоте запросов?',
-            formulations: [
-              f(44, 'Когда Битрикс отдал 429 на массовом синке, я поставил exponential backoff с джиттером — душат по частоте, значит отступаем по нарастающей.'),
-              f(27, 'Если внешняя система лимитирует по частоте, мой ответ — backoff по экспоненте, а не тупой ретрай в лоб.'),
-              f(10, 'На 429 я не бью повторами сразу: наращиваю паузу экспоненциально с джиттером, так лимит не долбится и синк доходит.'),
-            ],
-          },
-          {
-            id: 'int-monitor',
-            gist: 'После фикса вешает мониторинг/алерт',
-            question: 'Что ты делаешь после того, как починил проблему?',
-            formulations: [
-              f(43, 'После того как починил синк, я сразу повесил алерт на частоту ошибок — фикс без мониторинга слепой.'),
-              f(25, 'Любой фикс закрываю мониторингом: алерт на ошибку и дашборд, чтобы увидеть регресс раньше клиента.'),
-              f(9, 'Я не считаю задачу закрытой без наблюдаемости: поставил метрику и алерт — тогда починка настоящая.'),
-            ],
-          },
-          {
-            id: 'int-stage',
-            gist: 'Не выкатывает на прод без стейджа',
-            question: 'Как ты относишься к выкату изменений сразу на прод?',
-            formulations: [
-              f(42, 'Я не выкачу такое на прод без прогона на стейдже — сначала стейдж под нагрузкой, потом прод.'),
-              f(23, 'Стейдж обязателен: выкат без обкатки — это ставка на удачу, я так не работаю.'),
-              f(5, 'Любое изменение интеграции я сперва гоняю на стейдж-копии, и только зелёный прогон едет в прод.'),
-            ],
-          },
+        methodId: 'int-logs',
+        title: 'Упал синк с внешней системой',
+        answers: [
+          'Я не полез сразу в код: поднял логи за окно сбоя, нашёл первую ошибку по времени, проследил цепочку до корня. Только определив причину, стал чинить, а не лечить симптом.',
+          'Порядок был: собрать логи и метрики за период инцидента, локализовать первопричину по трассе, и лишь потом трогать код. Фикс без диагноза — лотерея, так не работаю.',
+          'Начал с диагностики по данным, а не с гипотез: прочитал логи, сопоставил с метриками, вычислил корневую ошибку. Причина найдена — тогда фикс.',
+        ],
+      },
+      {
+        methodId: 'int-backoff',
+        title: 'Внешний API отдаёт 429 на массовом обмене',
+        answers: [
+          'Раз душат по частоте — я поставил exponential backoff с джиттером вместо ретрая в лоб. Пауза растёт по нарастающей, лимит не долбится, обмен доходит до конца.',
+          'Мой ответ на 429 — не бить повторами сразу, а наращивать задержку экспоненциально с разбросом. Так внешняя система не блокирует, а синк устаивается.',
+          'Ввёл backoff по экспоненте: на каждую ошибку лимита увеличиваю паузу, добавляю джиттер, чтобы не бить синхронно. Это снимает 429 и не теряет данные.',
+        ],
+      },
+      {
+        methodId: 'int-monitor',
+        title: 'Закрыть задачу по починке интеграции',
+        answers: [
+          'После фикса я повесил алерт на частоту ошибок и дашборд, чтобы увидеть регресс раньше клиента. Починку без наблюдаемости не считаю завершённой.',
+          'Замкнул задачу мониторингом: метрика на ошибку, порог, оповещение. Пока нет наблюдаемости — задача открыта, даже если код исправлен.',
+          'Порядок закрытия: поставить метрику, настроить алерт, проверить, что срабатывает. Только тогда фикс настоящий, а не «до следующего раза».',
+        ],
+      },
+      {
+        methodId: 'int-stage',
+        title: 'Выкатить изменение интеграции',
+        answers: [
+          'Я прогнал изменение на стейдж-копии под нагрузкой, дождался зелёного результата и лишь потом выкатил в прод. Без обкатки выкат — ставка на удачу.',
+          'Порядок: собрать на стейдже, воспроизвести боевой сценарий, проверить пределы, и только зелёный прогон едет в прод. Так у меня всегда.',
+          'Сначала стейдж, потом прод — правило без исключений. Обкатал под нагрузкой, убедился, что не ломается, затем релиз.',
         ],
       },
     ],
   },
   {
     key: 'marketer',
-    roleName: 'Маркетолог',
-    bearers: [
+    bearer: 'Дарья',
+    methods: [
       {
-        name: 'Дарья',
-        methods: [
-          {
-            id: 'mkt-base',
-            gist: 'Перед кампанией чистит и валидирует базу',
-            question: 'С чего ты начинаешь подготовку рассылки или кампании?',
-            formulations: [
-              f(44, 'Я не запускаю рассылку на грязную базу — сначала чищу дубли и валидирую адреса, иначе слив бюджета и репутации домена.'),
-              f(30, 'Первый шаг любой кампании — валидация и чистка базы: на мёртвых контактах метрики врут.'),
-              f(11, 'Перед стартом я всегда прогоняю базу через чистку: удаляю невалидные и дубли, только потом отправка.'),
-            ],
-          },
-          {
-            id: 'mkt-segment',
-            gist: 'Сегментирует до рассылки, не бьёт по всем',
-            question: 'Как ты решаешь, кому и что отправлять в кампании?',
-            formulations: [
-              f(43, 'Бить по всей базе одним сообщением — зря; я сегментирую по поведению и шлю релевантное каждому сегменту.'),
-              f(17, 'Перед отправкой всегда режу базу на сегменты: у разных групп разный триггер, общий текст проигрывает.'),
-              f(8, 'Я не делаю массовую рассылку одним оффером: сначала сегментация, потом сообщение под сегмент.'),
-            ],
-          },
-          {
-            id: 'mkt-ab',
-            gist: 'Проверяет на A/B до масштабирования',
-            question: 'Как ты проверяешь новую гипотезу перед масштабированием?',
-            formulations: [
-              f(42, 'Новый оффер я сначала гоняю на A/B на маленькой доле, и только победивший вариант масштабирую.'),
-              f(24, 'Не масштабирую гипотезу без A/B: интуиция без теста часто дороже, чем сам тест.'),
-              f(6, 'Прежде чем лить бюджет, я ставлю A/B на небольшой выборке и смотрю значимость, потом раскатка.'),
-            ],
-          },
-          {
-            id: 'mkt-unit',
-            gist: 'Считает юнит-экономику канала до бюджета',
-            question: 'Как ты решаешь, сколько бюджета дать на канал?',
-            formulations: [
-              f(41, 'Прежде чем заливать бюджет в канал, я считаю юнит-экономику: CAC против LTV, иначе это покупка убытка.'),
-              f(22, 'Бюджет на канал даю только после расчёта юнит-экономики — окупаемость считаю до, а не после.'),
-              f(7, 'Я не открываю канал без модели юнит-экономики: если LTV не бьёт CAC, канал закрыт, сколько ни лей.'),
-            ],
-          },
+        methodId: 'mkt-base',
+        title: 'Подготовить крупную рассылку',
+        answers: [
+          'Первый шаг — чистка и валидация базы: удалила дубли, отсеяла невалидные адреса, проверила консент. Только по живой базе метрики честные, поэтому грязную не трогаю.',
+          'Начала с прогона базы через валидацию: мёртвые контакты вон, дубли схлопнуты. Иначе слив бюджета и удар по репутации домена. Потом уже отправка.',
+          'Порядок: выгрузить базу, вычистить невалидные и повторы, проверить свежесть, и лишь по очищенному списку готовить кампанию.',
+        ],
+      },
+      {
+        methodId: 'mkt-segment',
+        title: 'Решить, кому и что отправлять',
+        answers: [
+          'Я не била по всей базе одним текстом: порезала на сегменты по поведению и подготовила релевантное сообщение под каждый. У разных групп разный триггер.',
+          'Сначала сегментация по активности и интересам, затем оффер под сегмент. Общий текст на всех проигрывает адресному почти всегда.',
+          'Порядок: определить сегменты, для каждого выбрать свой посыл, и только потом рассылка. Массовый одинаковый оффер я не отправляю.',
+        ],
+      },
+      {
+        methodId: 'mkt-ab',
+        title: 'Проверить новую гипотезу оффера',
+        answers: [
+          'Прежде чем масштабировать, я запустила A/B на маленькой доле трафика, дождалась значимости и раскатала только победивший вариант. Интуиция без теста дороже теста.',
+          'Порядок: сформулировать гипотезу, поставить A/B на небольшой выборке, дождаться статзначимости, масштабировать выигравший. Без теста широко не лью.',
+          'Сначала контролируемый эксперимент на части аудитории, потом решение по данным. Проигравший вариант не масштабирую, даже если он мне нравился.',
+        ],
+      },
+      {
+        methodId: 'mkt-unit',
+        title: 'Определить бюджет на новый канал',
+        answers: [
+          'Перед бюджетом я посчитала юнит-экономику канала: CAC против LTV. Если окупаемость не бьётся, канал закрыт, сколько в него ни лей.',
+          'Порядок: собрать модель юнит-экономики, оценить CAC и LTV, проверить окупаемость до вливания денег, а не после. Бюджет даю только по сходящейся модели.',
+          'Начала с расчёта окупаемости канала: сколько стоит клиент и сколько приносит. Открываю канал, только если LTV перекрывает CAC с запасом.',
         ],
       },
     ],
   },
   {
     key: 'support',
-    roleName: 'Руководитель поддержки',
-    bearers: [
+    bearer: 'Игорь',
+    methods: [
       {
-        name: 'Елена',
-        methods: [
-          {
-            id: 'sup-severity',
-            gist: 'Эскалирует по шкале severity',
-            question: 'Как ты решаешь, какое обращение эскалировать и как срочно?',
-            formulations: [
-              f(48, 'Я эскалирую по severity: критичное, что блокирует работу клиента, уходит владельцу в тот же день, остальное — по очереди.'),
-              f(32, 'Шкала severity — основа: я не даю команде решать на глаз, критичность определяет маршрут и срок.'),
-              f(14, 'Каждое обращение я классифицирую по severity, и от класса зависит, кому и когда оно эскалируется.'),
-            ],
-          },
-          {
-            id: 'sup-sla4h',
-            gist: 'Первый ответ клиенту в пределах 4 часов',
-            question: 'Какой у вас норматив по времени первого ответа клиенту?',
-            formulations: [
-              f(46, 'Первый ответ клиенту мы обязаны дать в пределах четырёх часов — не решение, но живой контакт, чтобы человек не висел в тишине.'),
-              f(30, 'Четыре часа на первый ответ — это не «когда получится», а обязательство; не успеваем — значит проблема в расстановке смен.'),
-              f(12, 'SLA на первый отклик у нас четыре часа: клиент не должен ждать в пустоте дольше, даже если решение ещё в работе.'),
-            ],
-          },
-          {
-            id: 'sup-postmortem',
-            gist: 'После инцидента проводит пост-мортем',
-            question: 'Что ты делаешь после серьёзного сбоя или потерянного обращения?',
-            formulations: [
-              f(45, 'После каждого серьёзного сбоя я собираю пост-мортем: что произошло, почему проскочило, какой регламент меняем.'),
-              f(28, 'Разбор инцидента без назначенных действий бесполезен — я закрываю пост-мортем конкретными правками в регламент.'),
-              f(13, 'Потерянное обращение для меня повод для пост-мортема: без разбора причины оно повторится.'),
-            ],
-          },
+        methodId: 'sup-postmortem-i',
+        title: 'Разобрать серьёзный инцидент в поддержке',
+        answers: [
+          'После инцидента я собрал пост-мортем: что произошло, почему проскочило, какой пункт регламента правим. Разбор без назначенных действий бесполезен, поэтому закрыл его конкретными правками.',
+          'Порядок: зафиксировать факты инцидента, найти причину, назначить владельцев исправлений и внести правку в процесс. Эту практику пост-мортемов держу постоянно.',
+          'Каждый серьёзный сбой закрываю разбором с действиями и правкой регламента. Без пост-мортема команда наступит на те же грабли.',
         ],
       },
       {
-        name: 'Игорь',
-        methods: [
-          {
-            id: 'sup-postmortem-i',
-            gist: 'Игорь: сохраняет практику пост-мортемов',
-            question: 'Как ты работаешь с инцидентами в поддержке?',
-            formulations: [
-              f(20, 'Практику пост-мортемов я сохраняю: после инцидента разбираем причину и правим регламент, это работает.'),
-              f(14, 'После сбоя обязательно собираю разбор с действиями — без пост-мортема команда наступает на те же грабли.'),
-              f(6, 'Каждый серьёзный инцидент я закрываю пост-мортемом и правкой процесса, эту практику от Елены оставил.'),
-            ],
-          },
-          {
-            id: 'sup-early',
-            gist: 'Игорь: эскалирует раньше — при первом риске SLA',
-            question: 'В какой момент ты поднимаешь тревогу по обращению?',
-            formulations: [
-              f(19, 'Я эскалирую раньше: не жду, пока SLA нарушен, поднимаю тревогу уже при первом риске просрочки.'),
-              f(11, 'Мой принцип — ранняя эскалация: риск нарушить SLA поднимаю сразу, тишина до просрочки недопустима.'),
-              f(4, 'Как только вижу, что обращение может не уложиться в срок, я эскалирую немедленно, а не по факту срыва.'),
-            ],
-          },
-          {
-            id: 'sup-strict',
-            gist: 'Игорь: держит SLA жёстче',
-            question: 'Как ты управляешь нагрузкой, чтобы держать SLA?',
-            formulations: [
-              f(18, 'Я держу SLA жёстче: если очередь растёт, добавляю руки заранее, а не после срыва срока.'),
-              f(10, 'SLA для меня твёрдая граница, не ориентир; лучше перебдеть с ресурсом, чем объяснять клиенту срыв.'),
-              f(4, 'При росте нагрузки я усиливаю смену на упреждение, чтобы SLA не поплыл, — терпеть просрочки не готов.'),
-            ],
-          },
+        methodId: 'sup-early',
+        title: 'Обращение под риском срыва срока',
+        answers: [
+          'Я эскалировал не по факту просрочки, а при первом признаке риска. Как только увидел, что можем не уложиться, поднял тревогу сразу, а не когда SLA уже нарушен.',
+          'Порядок: оценить риск срыва рано, при первом сигнале эскалировать вверх, не ждать нарушения. Тишина до просрочки для меня недопустима.',
+          'Мой принцип — ранняя эскалация: риск просрочки поднимаю немедленно, чтобы успеть перераспределить силы до срыва.',
+        ],
+      },
+      {
+        methodId: 'sup-strict',
+        title: 'Держать SLA при росте нагрузки',
+        answers: [
+          'При росте очереди я усилил смену заранее, на упреждение, а не после срыва срока. SLA для меня твёрдая граница, поэтому лучше перебдеть с ресурсом.',
+          'Порядок: следить за длиной очереди, при её росте добавлять руки до того, как поплывёт срок. Просрочки не терплю, объяснять их клиенту не готов.',
+          'Держу SLA жёстко: как только нагрузка растёт, укрепляю смену на упреждение. Ресурс дешевле сорванного обязательства.',
         ],
       },
     ],
   },
 ];
 
-const STATUS_FACTS = [
-  'База контактов НЕ актуализирована на текущий момент (чистка не завершена).',
-  'Zoom: вхождение в roadmap Q3 выясняется, решение не принято.',
-  'Контракт с «Логистик Плюс»: НЕ подписан (на стадии КП).',
-  'Онбординг «Ромашки»: НЕ завершён, жалоба открыта.',
-];
-
-const ABSENT_FACTS = [
-  'Регламента про работу в выходные — НЕТ.',
-  'Регламента согласования КП — НЕТ.',
-  'Регламента про подрядчиков — НЕТ.',
-  'Прецедента выхода на новый рынок — НЕТ.',
-];
-
-const REGULATIONS: Array<{ name: string; scopeKey: 'support-role' | 'org'; body: string }> = [
-  { name: 'Регламент обработки обращений v2', scopeKey: 'support-role', body: 'Регламент обработки клиентских обращений v2. Первый ответ клиенту — в пределах 4 часов. Классификация по severity: критичные (блокирует работу клиента) эскалируются владельцу в тот же день. После инцидента — обязательный пост-мортем с правкой регламента.' },
-  { name: 'Политика хранения данных клиентов', scopeKey: 'org', body: 'Данные клиентов хранятся только на серверах в РФ. [blocking] Нарушение недопустимо.' },
-  { name: 'Рекомендация по тону общения', scopeKey: 'org', body: 'Рекомендуется вежливый тон в клиентской переписке. [advisory]' },
-  { name: 'Рекомендация по код-ревью', scopeKey: 'org', body: 'Желательно ревью каждого PR вторым инженером. [advisory]' },
+const CHANNELB_KNOBS: Array<{ key: string; value: unknown; category: string; section: string }> = [
+  { key: 'tracker.methodCaptureMinComplexity', value: 0, category: 'ai', section: 'tracker' },
+  { key: 'probe.semanticDedupEnabled', value: false, category: 'ai', section: 'probe' },
+  { key: 'probe.coldStartModeHours', value: 0, category: 'ai', section: 'probe' },
+  { key: 'probe.adaptiveFatigueEnabled', value: false, category: 'ai', section: 'probe' },
+  { key: 'probe.rateLimitPerHour', value: 1000, category: 'ai', section: 'probe' },
+  { key: 'probe.rateLimitPerDay', value: 1000, category: 'ai', section: 'probe' },
+  { key: 'probe.dialogEnabled', value: false, category: 'ai', section: 'probe' },
 ];
 
 interface PersonRec {
@@ -364,7 +282,7 @@ async function modePrepare(app: AppCtx, orgId: string): Promise<void> {
     const existing = await prisma.role.findFirst({ where: { tenantId: orgId, name: c.roleName, deletedAt: null }, select: { id: true } });
     const roleId = existing?.id ?? (await roles.create({ tenantId: orgId, userId: owner, body: { name: c.roleName } })).id;
     if (c.key === 'support') supportRoleId = roleId;
-    const bearer = people.get(initialBearer[c.key]);
+    const bearer = people.get(initialBearer[c.key] ?? '');
     if (bearer) await persons.update({ tenantId: orgId, userId: owner, id: bearer.personId, body: { roleId } });
     log(`  role «${c.roleName}» → ${roleId.slice(0, 10)} bearer=${initialBearer[c.key]}`);
   }
@@ -384,11 +302,11 @@ async function modePrepare(app: AppCtx, orgId: string): Promise<void> {
   log('=== prepare: CloneAccessGrant владельцу ===');
   for (const c of CLONES) {
     const role = await prisma.role.findFirst({ where: { tenantId: orgId, name: c.roleName, deletedAt: null }, select: { id: true } });
-    if (role) await clonesAdmin.createAccessGrant({ tenantId: orgId, actorUserId: owner, dto: { grantedToUserId: owner, cloneType: 'role', cloneRefId: role.id } }).catch((e: unknown) => log(`  grant role ${c.key} skip: ${(e as Error).message}`));
+    if (role) await clonesAdmin.createAccessGrant({ tenantId: orgId, actorUserId: owner, dto: { grantedToUserId: owner, cloneType: 'role', cloneRefId: role.id, expiresAt: null } }).catch((e: unknown) => log(`  grant role ${c.key} skip: ${(e as Error).message}`));
   }
   for (const name of ['Сергей', 'Михаил', 'Дарья', 'Игорь']) {
     const rec = people.get(name);
-    if (rec) await clonesAdmin.createAccessGrant({ tenantId: orgId, actorUserId: owner, dto: { grantedToUserId: owner, cloneType: 'person', cloneRefId: rec.personId } }).catch((e: unknown) => log(`  grant person ${name} skip: ${(e as Error).message}`));
+    if (rec) await clonesAdmin.createAccessGrant({ tenantId: orgId, actorUserId: owner, dto: { grantedToUserId: owner, cloneType: 'person', cloneRefId: rec.personId, expiresAt: null } }).catch((e: unknown) => log(`  grant person ${name} skip: ${(e as Error).message}`));
   }
   log('✓ prepare готов');
 }
@@ -487,6 +405,142 @@ async function modeBuild(app: AppCtx, orgId: string): Promise<void> {
   log('✓ build готов');
 }
 
+const SKILL_SUBJECT_SIGNAL_TYPES = ['reasoning', 'rationale', 'decision_basis', 'methodology_step'];
+
+function taskDesc(title: string, answerHint: string): string {
+  const base = `По задаче «${title}» уже была переписка с уточнениями и промежуточными шагами. Нужно зафиксировать подход исполнителя по шагам для передачи в базу знаний команды: как именно решалась задача, в каком порядке, на что опирался. Контекст: ${answerHint}. Приоритет высокий, работа заняла несколько дней, есть активность в комментариях.`;
+  return base.length >= 290 ? base : `${base} ${'Требуется подробный разбор метода. '.repeat(3)}`.slice(0, 700);
+}
+
+async function cleanProbeRedis(redis: RedisService, orgId: string, userId: string): Promise<void> {
+  const patterns = [
+    `probe:dedup:${orgId}:*`,
+    `probe:cooldown:${orgId}:*`,
+    `probe:ratelimit:${userId}:*`,
+    `probe:engagement:${userId}`,
+  ];
+  for (const p of patterns) {
+    const keys = await redis.client.keys(p);
+    if (keys.length > 0) await redis.client.del(...keys);
+  }
+}
+
+interface ProbeState {
+  status: string;
+  dispatchedNotificationId: string | null;
+}
+
+async function pollProbeDispatched(
+  prisma: PrismaService,
+  orgId: string,
+  issueId: string,
+  timeoutMs: number,
+): Promise<ProbeState | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ev = await prisma.probeEvent.findFirst({
+      where: { tenantId: orgId, reason: 'task.method_capture', payload: { path: ['contextCardId'], equals: issueId } },
+      select: { status: true, dispatchedNotificationId: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (ev) {
+      if (ev.status === 'dispatched' && ev.dispatchedNotificationId) return ev;
+      if (ev.status !== 'pending') return ev;
+    }
+    await sleep(700);
+  }
+  return null;
+}
+
+async function modeConfigure(orgId: string): Promise<void> {
+  const prisma = createPrismaClient();
+  try {
+    log('=== configure: knobs Канала Б (глобально в dev-БД, до boot) ===');
+    for (const k of CHANNELB_KNOBS) {
+      await prisma.adminSetting.upsert({
+        where: { key: k.key },
+        update: { value: k.value as never },
+        create: { key: k.key, value: k.value as never, category: k.category, section: k.section, severity: 'medium' },
+      });
+      log(`  ${k.key} = ${JSON.stringify(k.value)}`);
+    }
+    log(`✓ configure готов (orgId=${orgId})`);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+async function modeChannelB(app: AppCtx, orgId: string): Promise<void> {
+  const prisma = app.get(PrismaService);
+  const issues = app.get(IssuesService);
+  const projects = app.get(ProjectsService);
+  const conv = app.get(ConversationalService);
+  const redis = app.get(RedisService);
+  const owner = await ownerUserId(prisma, orgId);
+  const people = await loadPeople(prisma, orgId);
+
+  const projectId = await projects.ensureInboxProjectId(orgId);
+  if (!projectId) throw new Error('ensureInboxProjectId вернул null (нет owner?)');
+
+  const limit = Number(process.env['CHANNELB_LIMIT'] ?? '0');
+  log(`=== channelB: задача → probe method_capture → ответ (limit=${limit || 'все'}) ===`);
+
+  const startedAt = new Date();
+  const funnel = { closed: 0, dispatched: 0, dropped: {} as Record<string, number>, answered: 0, notDispatched: 0 };
+
+  let total = 0;
+  for (const c of CHANNEL_B) {
+    const rec = people.get(c.bearer);
+    if (!rec?.userId) { log(`  ! ${c.bearer} без userId — пропуск клона ${c.key}`); continue; }
+    let cloneAnswered = 0;
+    for (const m of c.methods) {
+      for (const answer of m.answers) {
+        if (limit > 0 && total >= limit) break;
+        total++;
+        const title = `${m.title} #${total}`;
+        const issue = await issues.create(
+          projectId,
+          { title, descriptionStripped: taskDesc(m.title, answer.slice(0, 60)), priority: 'high', assigneeUserIds: [rec.userId], sortOrder: 0, labelIds: [] },
+          orgId,
+          owner,
+        );
+        await cleanProbeRedis(redis, orgId, rec.userId);
+        await issues.transitionToCategory(issue.id, 'completed', orgId, owner);
+        funnel.closed++;
+        const probe = await pollProbeDispatched(prisma, orgId, issue.id, 30_000);
+        if (!probe) { funnel.notDispatched++; log(`  · ${title}: probe не появился за 30с`); continue; }
+        if (probe.status !== 'dispatched' || !probe.dispatchedNotificationId) {
+          funnel.dropped[probe.status] = (funnel.dropped[probe.status] ?? 0) + 1;
+          log(`  · ${title}: probe ${probe.status} (не dispatched)`);
+          continue;
+        }
+        funnel.dispatched++;
+        await conv
+          .respondToProbe({ notificationId: probe.dispatchedNotificationId, userId: rec.userId, payload: { text: answer } })
+          .then(() => { funnel.answered++; cloneAnswered++; })
+          .catch((e: unknown) => log(`  · ${title}: respondToProbe FAIL ${(e as Error).message}`));
+        await sleep(300);
+      }
+      if (limit > 0 && total >= limit) break;
+    }
+    log(`  ${c.key}/${c.bearer}: ответов дано ${cloneAnswered}`);
+    if (limit > 0 && total >= limit) break;
+  }
+
+  log('=== channelB: воронка (до дренажа ингеста) ===');
+  log(`  задач закрыто: ${funnel.closed}`);
+  log(`  probe задиспатчено: ${funnel.dispatched} (${funnel.closed ? Math.round((funnel.dispatched / funnel.closed) * 100) : 0}%)`);
+  log(`  probe не задиспатчено (таймаут): ${funnel.notDispatched}`);
+  log(`  probe drop-статусы: ${JSON.stringify(funnel.dropped)}`);
+  log(`  ответов дано: ${funnel.answered}`);
+
+  const blocks = await prisma.ideaBlock.count({
+    where: { tenantId: orgId, signalType: { in: SKILL_SUBJECT_SIGNAL_TYPES as never }, createdAt: { gte: startedAt } },
+  });
+  log(`  клон-блоков создано пока (растёт по мере ингеста): ${blocks}`);
+  log('✓ channelB готов (ингест ответов идёт воркерами; окончательную воронку смотри в status после дренажа)');
+}
+
 async function modeStatus(prisma: PrismaService, orgId: string): Promise<void> {
   log(`=== status: клон-готовность org ${orgId} ===`);
   const people = await loadPeople(prisma, orgId);
@@ -530,7 +584,7 @@ async function modeManifest(prisma: PrismaService, orgId: string): Promise<void>
     absentFacts: ABSENT_FACTS,
   };
   const path = `${process.cwd()}/../docs/testing/clone-feed-manifest.json`;
-  await Bun.write(path, JSON.stringify(manifest, null, 2));
+  writeFileSync(path, JSON.stringify(manifest, null, 2), 'utf8');
   const methodCount = CLONES.reduce((a, c) => a + c.bearers.reduce((b2, b) => b2 + b.methods.length, 0), 0);
   log(`✓ manifest → docs/testing/clone-feed-manifest.json (${methodCount} методов, ${STATUS_FACTS.length} statusFacts, ${ABSENT_FACTS.length} absentFacts)`);
   void prisma;
@@ -541,16 +595,22 @@ async function main(): Promise<void> {
   const orgId = requireOrg();
   assertNotProd(readConfig());
 
+  if (mode === 'configure') {
+    await modeConfigure(orgId);
+    return;
+  }
+
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['warn', 'error'] });
   try {
     const prisma = app.get(PrismaService);
     switch (mode) {
       case 'prepare': await modePrepare(app, orgId); break;
       case 'channelA': await modeChannelA(app, orgId); break;
+      case 'channelB': await modeChannelB(app, orgId); break;
       case 'build': await modeBuild(app, orgId); break;
       case 'status': await modeStatus(prisma, orgId); break;
       case 'manifest': await modeManifest(prisma, orgId); break;
-      default: throw new Error(`неизвестный режим: ${mode} (prepare|channelA|build|status|manifest)`);
+      default: throw new Error(`неизвестный режим: ${mode} (configure|prepare|channelA|channelB|build|status|manifest)`);
     }
   } finally {
     await Promise.race([app.close(), sleep(5000)]);

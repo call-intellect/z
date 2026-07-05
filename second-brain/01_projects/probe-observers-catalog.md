@@ -293,6 +293,7 @@ related:
 ## См. также
 
 - [[probe-agent]] — движок доставки probe (suggest → dispatcher → digest → priority), история фаз, крутилки и метрики.
+- [[task-closure-method-capture-flow]] — сквозная карта одного наблюдателя целиком: закрытие задачи → `task.method_capture` → доставка → ответ → ветвление в граф/клон.
 - [[probe-question-flow]] — процесс «вопрос → ответ → запись в память».
 - [[workers-queues]] — расписание cron и очередей.
 - [[knowledge-core]] — специалисты Слоя 3 и pipeline ingest.

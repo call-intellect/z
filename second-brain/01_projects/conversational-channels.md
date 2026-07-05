@@ -494,4 +494,8 @@ Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты с�
 - **`CHANNEL_TOOL_WHITELIST_SELF`** обновлён: −`search_knowledge`, +`create_task`/`search_tasks`/`ingest_note` (к памяти по-прежнему только `ask_chat_v2`).
 - **Клон должности — НЕ канальный путь.** Через Telegram/MAX отвечает только общий помощник; ролевые клоны выбираются человеком в кабинете (см. [[frontend-pages]] селектор на `/chat`).
 
+## См. также
+
+- [[task-closure-method-capture-flow]] — сквозной пример этого слоя от начала до конца: `sendNotification(probe.question)` → доставка через Telegram-адаптер (proxy) → приём ответа (`ingestUpdate` / `respondToProbe`) → `notification.responded` → ветвление.
+
 [[../index|← index]]

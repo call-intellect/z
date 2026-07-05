@@ -133,6 +133,37 @@ export class Specialist37Service {
     }
   }
 
+  private static extractGroundedVerdict(text: string): { grounded: boolean } | null {
+    const stripped = text.replace(/```(?:json)?/gi, '').trim();
+    const candidates: string[] = [];
+    let depth = 0;
+    let startIdx = -1;
+    for (let i = 0; i < stripped.length; i++) {
+      const ch = stripped[i];
+      if (ch === '{') {
+        if (depth === 0) startIdx = i;
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0 && startIdx >= 0) {
+          candidates.push(stripped.slice(startIdx, i + 1));
+          startIdx = -1;
+        }
+      }
+    }
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      const cand = candidates[i];
+      if (cand === undefined) continue;
+      try {
+        const obj = JSON.parse(cand) as { grounded?: unknown };
+        if (typeof obj.grounded === 'boolean') return { grounded: obj.grounded };
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+
   async verifyPendingTraits(
     limit = 100,
   ): Promise<{ checked: number; promoted: number; held: number }> {
@@ -205,7 +236,12 @@ export class Specialist37Service {
             dataClass: 'internal',
           });
 
-          const parsed = JSON.parse(res.text) as { grounded?: unknown };
+          const parsed = Specialist37Service.extractGroundedVerdict(res.text);
+          if (parsed === null) {
+            throw new Error(
+              `verify: JSON с полем grounded не извлечён из ответа: ${res.text.slice(0, 200)}`,
+            );
+          }
           const grounded = parsed.grounded === true;
           if (grounded) {
             await this.prisma.skillTrait.update({

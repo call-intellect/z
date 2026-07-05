@@ -14,6 +14,7 @@ supersedes: plans/archive/2026-06-02-brain-visualization-people.md
 ---
 > Архитектура (одобрена владельцем, карт-бланш): `plans/architecture/2026-07-05-brain-viz-wow.md` · Анализ: `plans/analysis/2026-07-05-brain-viz-wow/99-synthesis.md` (research-complete, red-team пройден) · Согласовано: 2026-07-05.
 > **Эталон визуала — живой прототип** `plans/analysis/2026-07-05-brain-viz-wow/prototype/index.html` (верифицирован в браузере; скриншоты рядом). Реализация обязана визуально соответствовать прототипу, код переносится из сниппетов ниже.
+> **Ревизия эталона v2 (2026-07-05, фидбек владельца):** первая версия забракована — «слепит, мыльно, подписи нечитаемы». Канон теперь: узел = тёмный диск + светящийся ободок (НЕ полная светящаяся заливка), рендер в native-DPR + OutputPass (резкость), подписи никогда не попадают под bloom, камера мгновенно отдаётся пользователю. Все сниппеты ниже уже v2.
 > Принцип: не пересматривать принятые решения (§«Принятые решения»); не «оптимизировать» архитектуру по-своему; номера строк — на момент написания, перед правкой перечитать файл по якорю-символу.
 
 # ТЗ: «Карта мозга» — вау-3D-визуализация второго мозга + практичная навигация
@@ -58,14 +59,15 @@ supersedes: plans/archive/2026-06-02-brain-visualization-people.md
 | Б12 | Ship-On: выкат включённым всем с `feature.graph`; kill-switch `brain.map.enabled` (default true) | CLAUDE.md принцип 8; строка в feature-flags.md |
 | Б13 | Фаза 0 — обязательный спайк производительности ДО остального | нет свежих независимых FPS-бенчей [ограничения 05/06/07]; red-team: пере-бенчить reagraph и сборку three-render-objects |
 | Б14 | Мобайл — деградация (без bloom/частиц/звёзд, те же данные), не вау | архитектура §6 |
+| Б15 | Узел = **тёмный диск + светящийся ободок** (rim), NormalBlending; полная светящаяся заливка запрещена; подписи по яркости всегда ниже bloom-порога; рендер native-DPR (cap 2) + OutputPass + ACESFilmic | фидбек владельца 2026-07-05 по прототипу v1: «слепит, весь кружок светится — плохо; текст светится и нечитаем; мыльно, как пиксели». Проверено на прототипе v2 |
 
 **Доказательство выбора** (полные состязательные таблицы, матрица 4 движков с источниками каждой оценки, red-team-вердикты) — [99-synthesis.md §3, §8](../analysis/2026-07-05-brain-viz-wow/99-synthesis.md). Здесь не дублируется.
 
 ## Требования (EARS)
 
 - **R1.** Когда пользователь с entitlement `feature.graph` открывает «Память» → вкладку «Мозг», система shall отрисовать 3D-сцену из снапшота (области+темы+сущности) с готовой раскладкой; время до первого осмысленного кадра на «Стреле» ≤ 3 с (без учёта первой загрузки JS-чанка).
-- **R2.** Система shall рисовать узлы glow-спрайтами: размер и яркость = f(kind, maturity/facts); подписи SpriteText — у областей и тем всегда, у сущностей — при hover/подсветке.
-- **R3.** Система shall применять bloom ко всей сцене (strength 2.2, radius 0.85, threshold 0.08 — стартовые из прототипа, крутилки admin) на фоне `#000003` со звёздным слоем ≥3000 точек.
+- **R2.** Система shall рисовать узлы спрайтами «тёмный диск + светящийся ободок цвета области» (Б15, канон-текстура `nodeTexture` из сниппетов): размер и непрозрачность = f(kind, maturity/facts); подписи SpriteText (с тёмной обводкой strokeColor) — у областей и тем всегда, у сущностей — при hover/подсветке.
+- **R3.** Система shall применять bloom ко всей сцене (strength 1.45, radius 0.62, threshold 0.62 — стартовые из прототипа v2, крутилки admin) на фоне `#000003` со звёздным фоном в 2 слоя ≥3000 точек суммарно; цепочка пост-обработки обязана быть `RenderPass → UnrealBloomPass(resolution с учётом DPR) → OutputPass`, pixelRatio рендера и composer = `min(devicePixelRatio, 2)`, toneMapping = ACESFilmic (exposure 1.25), лёгкий `FogExp2(0x000308, 0.00035)`.
 - **R4.** Когда пользователь наводит курсор на узел, система shall подсветить узел+соседей+их рёбра, включить частицы (3 шт/ребро) только на этих рёбрах и пригасить остальное; при уходе курсора — вернуть всё за ≤300 мс.
 - **R5.** Когда пользователь кликает узел, система shall выполнить полёт камеры `cameraPosition(..., node, 1600 мс)` и открыть правую карточку узла (drawer).
 - **R6.** Карточка узла shall содержать: тип (рус.), название, область, полосу наполненности (%), счётчик фактов, до 5 последних фактов с провенансом (название встречи/источника + дата [+ спикер, если доступен] + переход к источнику), до 5 соседей-карточек (клик = перелёт + новая карточка), кнопки «Спросить Кору про это», «Открыть страницу», для пустых — «Попросить подлить знания».
@@ -85,6 +87,8 @@ supersedes: plans/archive/2026-06-02-brain-visualization-people.md
 - **R20.** При mount/unmount сцены ≥10 раз подряд (e2e) рост heap после GC shall быть < 25 МБ относительно первого mount (защита от известного семейства утечек #62/#202/#255: обязательный `_destructor`/dispose путь).
 - **R21.** Если WebGL-контекст недоступен ИЛИ user-agent мобильный (`brain.mobile.degrade`=true), система shall показать деградированный режим: та же сцена без bloom/звёзд/частиц (мобайл) или fallback-заглушку со ссылками на карту областей (нет WebGL) — не пустой экран.
 - **R22.** Весь UI — русский; DOM-оверлеи — только парные токены (`bg-*`+`text-*-fg`, без `text-white`/сырых hex); hex-цвета допустимы ТОЛЬКО внутри canvas/WebGL-рендера (материалы three.js).
+- **R23.** Подписи узлов shall никогда не светиться: relative luminance цвета любой подписи (`#bcc8e6` области / `#95a4ca` темы / `#66708c` ghost) < `brain.fx.bloomThreshold`; ободки узлов — выше порога (пик кольца `mix(color, #fff, 0.68)`). Машинная проверка: unit-тест на luminance констант подписей против дефолта порога.
+- **R24.** Когда пользователь начинает управлять камерой (wheel/drag/pinch по сцене), система shall в том же кадре отдать управление: остановить интро-полёт, авто-орбиту и запланированные `zoomToFit`; контролы — OrbitControls (`controlType: 'orbit'`) c damping 0.08 и постоянным `controls().update()` в rAF-цикле.
 
 ## Scope
 
@@ -111,6 +115,8 @@ supersedes: plans/archive/2026-06-02-brain-visualization-people.md
 Backend (backend/package.json): `"graphology": "0.26.0"`, `"d3-force-3d": "3.0.6"`.
 [verified npm registry 2026-07-05; Context7 в сессии недоступен — перед `bun add` быстрый `npm view <pkg> version` на свежий patch]. **Грабля №1 (обязательно):** `three` — прямая dependency 3d-force-graph (`>=0.179 <1`); в lock-файле обязан остаться **один** экземпляр three, иначе UnrealBloomPass падает shader-ошибкой `luminance: no matching overloaded function` (issue #558). После установки: `grep -c '"three@' frontend/bun.lock` → ровно 1 версия.
 **Грабля №2:** `three-render-objects@1.42` импортирует `three/webgpu` — под bundler Next это резолвится из пакета three автоматически (проверено в спайке Ф0); в чистых importmap-страницах нужен маппинг (поймано в прототипе).
+**Грабля №3 (мыло):** `new UnrealBloomPass()` без аргумента resolution считает свечение в буфере 256×256 и растягивает на экран — гигантские мыльные ореолы. Передавать `new THREE.Vector2(w*DPR, h*DPR)` ИЛИ вызывать `composer.setPixelRatio(DPR)` после добавления pass'а (он прокинет setSize во все passes). Поймано на прототипе v1.
+**Грабля №4 (пересвет/«дешёвые» цвета):** composer без финального `OutputPass` выводит linear-цвет без tone mapping и sRGB-конверсии — картинка пересвеченная и грязная; `renderer.toneMapping` при рендере через composer игнорируется, пока в конце цепочки нет OutputPass. Поймано на прототипе v1.
 
 ### Prisma: новая модель (файл миграции, НЕ push!)
 
@@ -190,7 +196,7 @@ export function seedPositions(nodes: LayoutNode[]) {          // детерми�
 export function runLayout(nodes: LayoutNode[], links: LayoutLink[], ticks = 300) {
   const sim = forceSimulation(nodes, 3)
     .force('link', forceLink(links).id((d: LayoutNode) => d.id)
-      .distance((l: LayoutLink) => l.kind === 'branch-adj' ? 150 : l.kind === 'in-branch' ? 34 : 60))
+      .distance((l: LayoutLink) => l.kind === 'branch-adj' ? 110 : l.kind === 'in-branch' ? 30 : 52))
     .force('charge', forceManyBody().strength(-70))
     .force('collide', forceCollide((d: LayoutNode) => 4 + Math.cbrt(d.facts + 1) * 3))
     .force('center', forceCenter(0, 0, 0))
@@ -235,9 +241,9 @@ export class BrainController {
 ['brain.ghost.threshold', UNIT_INTERVAL],                 // 0.1
 ['brain.delta.pollSeconds', NON_NEGATIVE_INT],            // 60 (0=выкл)
 ['brain.nudge.maxPerPersonPerWeek', POSITIVE_INT],        // 2
-['brain.fx.bloomStrength', z.number().min(0).max(6)],     // 2.2
-['brain.fx.bloomRadius', UNIT_INTERVAL],                  // 0.85
-['brain.fx.bloomThreshold', UNIT_INTERVAL],               // 0.08
+['brain.fx.bloomStrength', z.number().min(0).max(6)],     // 1.45
+['brain.fx.bloomRadius', UNIT_INTERVAL],                  // 0.62
+['brain.fx.bloomThreshold', UNIT_INTERVAL],               // 0.62 (подписи обязаны быть ниже — R23)
 ['brain.mobile.degrade', z.boolean()],                    // true
 ```
 Никаких новых ENV; `process.env.*` запрещён.
@@ -271,45 +277,82 @@ export const BrainScene = dynamic(() => import('./BrainSceneInner'), {
   ssr: false, loading: () => <BrainSkeleton /> });
 ```
 
-**Bloom (официальный пример react-force-graph bloom-effect, дословно + наши числа):**
+**Bloom + резкость (официальный bloom-пример + Грабли №3/№4; v2 после фидбека владельца):**
 ```tsx
-// BrainSceneInner.tsx (фрагмент)
+// BrainSceneInner.tsx (фрагмент); ForceGraph3D с controlType="orbit"
 import ForceGraph3D, { type ForceGraphMethods } from 'react-force-graph-3d';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
 useEffect(() => {
   if (fx.degrade) return;
-  const bloom = new UnrealBloomPass();
-  bloom.strength = fx.bloomStrength; bloom.radius = fx.bloomRadius; bloom.threshold = fx.bloomThreshold;
-  fgRef.current?.postProcessingComposer().addPass(bloom);
-  return () => { fgRef.current?.postProcessingComposer().removePass?.(bloom); };  // MIGRATION-MARKER: TSL/RenderPipeline (three r183+), см. Б6
+  const fg = fgRef.current; if (!fg) return;
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const renderer = fg.renderer();
+  renderer.setPixelRatio(DPR);                                   // Грабля: без этого на Retina мыло
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.25;
+  const bloom = new UnrealBloomPass(
+    new THREE.Vector2(innerWidth * DPR, innerHeight * DPR),      // Грабля №3: дефолт 256×256
+    fx.bloomStrength, fx.bloomRadius, fx.bloomThreshold);        // v2: 1.45 / 0.62 / 0.62
+  const output = new OutputPass();                               // Грабля №4: tone mapping + sRGB
+  const composer = fg.postProcessingComposer();
+  composer.addPass(bloom); composer.addPass(output);
+  composer.setPixelRatio(DPR);
+  fg.scene().fog = new THREE.FogExp2(0x000308, 0.00035);
+  const controls = fg.controls();
+  controls.enableDamping = true; controls.dampingFactor = 0.08;
+  let raf = requestAnimationFrame(function tick() { controls.update?.(); raf = requestAnimationFrame(tick); });
+  return () => { cancelAnimationFrame(raf); composer.removePass?.(output); composer.removePass?.(bloom); };
+  // MIGRATION-MARKER: TSL/RenderPipeline (three r183+), см. Б6
 }, [fx]);
 ```
 
-**Glow-спрайт с кэшем материалов (канон прототипа; hex внутри canvas разрешён R22):**
+**Передача управления камерой (R24, канон прототипа v2):** на `fg.controls().addEventListener('start', releaseCamera)` — `releaseCamera()` очищает таймеры интро-полёта, `zoomToFit`-отложки и авто-орбиту (interval). Любое колесо/драг = пользователь главный.
+
+**Текстура узла «тёмный диск + светящийся ободок» с кэшем (Б15, канон прототипа v2; hex внутри canvas разрешён R22):**
 ```ts
-const glowCache = new Map<string, THREE.SpriteMaterial>();
-function glowMaterial(color: string, dim: boolean): THREE.SpriteMaterial {
-  const key = color + (dim ? 'd' : '');
-  let m = glowCache.get(key);
-  if (m) return m;
-  const c = document.createElement('canvas'); c.width = c.height = 128;
+const texCache = new Map<string, THREE.CanvasTexture>();
+const mixColor = (a: string, b: string, t: number) =>
+  '#' + new THREE.Color(a).lerp(new THREE.Color(b), t).getHexString();
+function nodeTexture(color: string, ghost: boolean): THREE.CanvasTexture {
+  const key = color + (ghost ? 'g' : '');
+  const hit = texCache.get(key); if (hit) return hit;
+  const c = document.createElement('canvas'); c.width = c.height = 256;
   const x = c.getContext('2d')!;
-  const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
-  g.addColorStop(0, '#ffffff'); g.addColorStop(0.25, dim ? color + '66' : color);
-  g.addColorStop(0.6, color + (dim ? '22' : '88')); g.addColorStop(1, 'transparent');
-  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
-  m = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c),
-    blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
-  glowCache.set(key, m); return m;
+  if (ghost) {                                    // пунктирный контур, без свечения
+    x.strokeStyle = 'rgba(148,163,184,0.55)'; x.setLineDash([12, 9]); x.lineWidth = 4;
+    x.beginPath(); x.arc(128, 128, 84, 0, Math.PI * 2); x.stroke(); x.setLineDash([]);
+    const g = x.createRadialGradient(128, 128, 0, 128, 128, 84);
+    g.addColorStop(0, 'rgba(148,163,184,0.12)'); g.addColorStop(1, 'rgba(148,163,184,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(128, 128, 84, 0, Math.PI * 2); x.fill();
+  } else {
+    const disk = x.createRadialGradient(128, 128, 0, 128, 128, 82);   // тёмная сердцевина
+    disk.addColorStop(0, mixColor('#0a0f1e', color, 0.42));
+    disk.addColorStop(0.72, mixColor('#0a0f1e', color, 0.2));
+    disk.addColorStop(1, mixColor('#0a0f1e', color, 0.1));
+    x.fillStyle = disk; x.beginPath(); x.arc(128, 128, 82, 0, Math.PI * 2); x.fill();
+    const rim = x.createRadialGradient(128, 128, 66, 128, 128, 116);  // светящееся кольцо
+    rim.addColorStop(0, 'rgba(0,0,0,0)');
+    rim.addColorStop(0.42, mixColor(color, '#ffffff', 0.68));         // пик > bloomThreshold (R23)
+    rim.addColorStop(0.62, color + '88');
+    rim.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = rim; x.beginPath(); x.arc(128, 128, 116, 0, Math.PI * 2); x.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  texCache.set(key, tex); return tex;
 }
-// nodeThreeObject: THREE.Group = Sprite(glowMaterial(цвет области, dim)) [+ SpriteText для branch/theme]
-// размер: (branch 24 | theme 12 | entity 8) * (0.7 + 0.6*maturity); ghost → opacity 0.18
+// nodeThreeObject: Group = Sprite(SpriteMaterial{ map: nodeTexture(цвет, ghost), NormalBlending (НЕ Additive),
+//   depthWrite:false, opacity: dim? .12 : ghost? .85 : .68+.32*maturity }) [+ SpriteText для branch/theme]
+// размер: (branch 26 | theme 13 | entity 9) * (0.7 + 0.6*maturity)
+// подписи: color area '#bcc8e6' / theme '#95a4ca' / ghost '#66708c' / dim '#333a55';
+//   strokeColor '#060913', strokeWidth 0.8, fontWeight 600 — luminance ниже порога (R23)
 ```
 
-**Звёздный фон (свой, Б8 — канон прототипа):** сфера из `THREE.Points` (N=`3500`, радиус 600–3200, равномерно по сфере через `acos(2u-1)`, сплюснута по Y×0.55), `PointsMaterial{size:2.2, vertexColors, AdditiveBlending, depthWrite:false, opacity:.8}`, цвет lerp `#7f9dff→#1b2440` по радиусу; добавить в `fgRef.current.scene()`.
+**Звёздный фон (свой, Б8 — канон прототипа v2):** ДВА слоя `THREE.Points` (мелкий: N=2600, size 1.3, opacity .5, радиус 700–3200; крупный: N=600, size 2.1, opacity .75, радиус 600–2400), равномерно по сфере через `acos(2u-1)`, сплюснуто по Y×0.55, `PointsMaterial{vertexColors, sizeAttenuation, AdditiveBlending, depthWrite:false}`, цвет lerp `#93a8ff→#182137` по радиусу; добавить в `fgRef.current.scene()`.
 
-**Hover-подсветка соседей + частицы только на подсвеченном (официальный highlight-пример, адаптация из прототипа):** предрассчитать `node.neighbors`/`node.links` при загрузке; `Set highlightNodes/Links`; в `onNodeHover` перезаполнить и дёрнуть переприменение аксессоров (`fg.nodeThreeObject(fg.nodeThreeObject())` и т.д.); `linkDirectionalParticles(l => highlightLinks.has(l) ? 3 : 0)`, width 1.8, speed 0.008; не-соседей глушить dim-материалом.
+**Hover-подсветка соседей + частицы только на подсвеченном (официальный highlight-пример, адаптация из прототипа):** предрассчитать `node.neighbors`/`node.links` при загрузке; `Set highlightNodes/Links`; в `onNodeHover` перезаполнить и дёрнуть переприменение аксессоров (`fg.nodeThreeObject(fg.nodeThreeObject())` и т.д.); `linkDirectionalParticles(l => highlightLinks.has(l) ? 3 : 0)`, particleWidth 1.35, speed 0.008; ширина подсвеченного ребра 1.05 (не толще — вблизи превращается в «трубу», фидбек v2), обычного 0.5, aggregate 0.25; не-соседей глушить dim-opacity (.12).
 
 **Полёт камеры (официальный click-to-focus):**
 ```ts
@@ -326,7 +369,7 @@ function flyTo(n: NodeObject, ms = 1600) {
 
 **Дельта-прорастание (официальный dynamic-пример + emit-particles):** `setGraph(prev => ({nodes:[...prev.nodes, ...added], links:[...prev.links, ...addedLinks]}))`; по каждому новому ребру `fgRef.current.emitParticle(linkObj)`; мягкий `flyTo` к первому новому узлу, если пользователь не взаимодействовал ≥30 с.
 
-**Дефолт сил клиента** (совпадает с сервером — визуальная преемственность): `d3Force('charge').strength(-70)`; `d3Force('link').distance(l => l.kind==='branch-adj'?150: l.kind==='in-branch'?34:60)`.
+**Дефолт сил клиента** (совпадает с сервером — визуальная преемственность; v2 — плотнее, «организм» не разваливается): `d3Force('charge').strength(-70)`; `d3Force('link').distance(l => l.kind==='branch-adj'?110: l.kind==='in-branch'?30:52)`.
 
 ### Единый источник фронт↔бэк перечней
 
@@ -363,8 +406,8 @@ function flyTo(n: NodeObject, ms = 1600) {
 **Мини-картография:** [BranchMapClient.tsx:142-155](../../frontend/app/(authenticated)/memory/BranchMapClient.tsx) (третий TabsTrigger `brain` «Мозг», TabsContent с lazy-mount сцены только при активации таба); новые: `app/(authenticated)/memory/brain/` (BrainTab.tsx — оркестрация состояния: SWR graph, линзы, demo, фокус; BrainScene.tsx фасад; BrainSceneInner.tsx; BrainSkeleton.tsx; starfield.ts; glow.ts; bloom.ts); `src/api/brain.api.ts` (через api-client) → `src/domain/brain.ts` (ApiDto→Domain→Ui: недельные индексы для таймлапса из createdAt, цвета областей, neighbors-прошивка) — слои по frontend-rules.
 **Что входит:** сцена по контракту фасада + ВСЕ сниппеты-каноны §Контракты (bloom-модуль с MIGRATION-MARKER, звёзды, glow-кэш, hover-подсветка+частицы, flyTo/fitAll/орбита, замороженный layout, линзы R8 как клиент-фильтр, демо-режим R18 с Esc, легенда, `?tab=brain&focus=` парсинг R19 частично — полёт после onReady); чтение fx-крутилок с бэка (прокинуть в конфиг-ответ graph-эндпоинта поле `fx` из AdminSetting — добавить в Ф1 DTO `fx: {bloomStrength, bloomRadius, bloomThreshold}`); деградация R21 (детект мобильного/WebGL, упрощённый режим); пустое состояние «собираем карту» на `BRAIN_SNAPSHOT_NOT_READY` (правила NN/g: статус+объяснение+CTA «подключить встречи»).
 **Что НЕ входит:** drawer/поиск/hover-карточка (Ф3), gaps/таймлапс/дельта (Ф4).
-**Acceptance:** `[ ]` `bun run typecheck && lint && build` зелёные (build ловит SSR/three-грабли); `[ ]` вкладка «Мозг» видна и лениво монтируется; `[ ]` Playwright-смоук: открыть /memory?tab=brain на «Стреле» — canvas присутствует, console errors = 0, скриншот визуально соответствует prototype/screenshot-overview.png (те же элементы: шапка-счётчик, чипы, легенда, светящиеся подписанные области); `[ ]` hover по узлу подсвечивает соседей ≤300 мс (визуально, смоук-видео/скрин); `[ ]` клик — полёт 1.6 с; `[ ]` unit domain/brain.ts: маппинг ApiDto→Ui, недельные индексы, прошивка neighbors; `[ ]` grep: `text-white` в новых файлах = 0; английских строк UI = 0; `dynamic(` + `ssr: false` присутствуют; `[ ]` вкладка скрыта при `brain.map.enabled=false` (kill-switch), плитки областей не задеты.
-**Закрывает:** R1–R5, R8, R18, R21, R22, часть R19.
+**Acceptance:** `[ ]` `bun run typecheck && lint && build` зелёные (build ловит SSR/three-грабли); `[ ]` вкладка «Мозг» видна и лениво монтируется; `[ ]` Playwright-смоук: открыть /memory?tab=brain на «Стреле» — canvas присутствует, console errors = 0, скриншот визуально соответствует prototype/screenshot-overview.png (те же элементы: шапка-счётчик, чипы, легенда; узлы = тёмный диск + светящийся ободок, подписи чёткие без ореола); `[ ]` hover по узлу подсвечивает соседей ≤300 мс (визуально, смоук-видео/скрин); `[ ]` клик — полёт 1.6 с; `[ ]` смоук R24: включить орбиту → `mouse.wheel` → орбита остановилась (кнопка сброшена), камера приблизилась; `[ ]` unit domain/brain.ts: маппинг ApiDto→Ui, недельные индексы, прошивка neighbors; `[ ]` unit R23: luminance констант подписей < дефолта `brain.fx.bloomThreshold` (0.62); `[ ]` grep: `text-white` в новых файлах = 0; английских строк UI = 0; `dynamic(` + `ssr: false` + `OutputPass` + `setPixelRatio` присутствуют; `[ ]` вкладка скрыта при `brain.map.enabled=false` (kill-switch), плитки областей не задеты.
+**Закрывает:** R1–R5, R8, R18, R21, R22, R23, R24, часть R19.
 
 ### Фаза 3 — Практичный слой: поиск, карточка узла, hover, история `[ ]`
 
@@ -387,7 +430,7 @@ function flyTo(n: NodeObject, ms = 1600) {
 ### Фаза 5 — Надёжность, деградация, прод `[ ]`
 
 **Ценность:** как компания, получаю фичу, которая не течёт, не падает в чужих браузерах и выкатывается штатно.
-**Что входит:** e2e-тест утечки R20 (Playwright: 10× переключение вкладки Мозг↔Карта, замер `performance.memory.usedJSHeapSize` после принудительного GC-хинта; починка через dispose-путь Inner: `fgRef.current._destructor?.()` + очистка glowCache/starfield-геометрий в cleanup); кросс-браузерный смоук-чеклист (Chrome/Safari/Brave/Firefox — R-набор: рендер, hover, drawer; Brave — известный риск #597); мобильный режим R21 финально; presentation-режим отполирован (скрыть всё, курсор auto-hide 3 c); заполнение прод-артефактов (ниже); second-brain-обновления (ниже); строка kill-switch в [docs/operations/feature-flags.md](../../docs/operations/feature-flags.md).
+**Что входит:** e2e-тест утечки R20 (Playwright: 10× переключение вкладки Мозг↔Карта, замер `performance.memory.usedJSHeapSize` после принудительного GC-хинта; починка через dispose-путь Inner: `fgRef.current._destructor?.()` + очистка texCache/starfield-геометрий в cleanup); кросс-браузерный смоук-чеклист (Chrome/Safari/Brave/Firefox — R-набор: рендер, hover, drawer; Brave — известный риск #597); мобильный режим R21 финально; presentation-режим отполирован (скрыть всё, курсор auto-hide 3 c); заполнение прод-артефактов (ниже); second-brain-обновления (ниже); строка kill-switch в [docs/operations/feature-flags.md](../../docs/operations/feature-flags.md).
 **Что НЕ входит:** новые фичи.
 **Acceptance:** `[ ]` e2e утечки зелёный с порогом R20; `[ ]` чеклист браузеров заполнен в Итоге (4 браузера × ок/деградация); `[ ]` `bun run test:unit` + `test:integration` зелёные целиком; `[ ]` Swagger smoke: 6 эндпоинтов видны в /api/docs; `[ ]` prod-deploy-log и feature-flags.md обновлены (grep строк `brain.map.enabled`, `brain_graph_snapshot`); `[ ]` рефлексия-заметка по триггеру push (процесс проекта).
 **Закрывает:** R20, R21 финально; DoD.

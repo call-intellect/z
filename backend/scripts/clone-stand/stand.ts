@@ -30,6 +30,14 @@ const BEARER_BY_KEY: Record<CloneKey, string> = {
   support: 'Игорь',
 };
 
+const STAND_KNOBS: Array<{ key: string; value: unknown; category: string; section: string }> = [
+  { key: 'clone.v2.enabled', value: true, category: 'ai', section: 'clone' },
+  { key: 'clone.topic.similarityThreshold', value: 0.35, category: 'ai', section: 'clone' },
+  { key: 'clone.topic.similarityThresholdJudgmental', value: 0.33, category: 'ai', section: 'clone' },
+  { key: 'clone.topic.minBlocks', value: 1, category: 'ai', section: 'clone' },
+  { key: 'clone.retrieval.topK', value: 20, category: 'ai', section: 'clone' },
+];
+
 const CONCURRENCY = 3;
 const FIRST_PERSON = /(^|[^а-яё])(я|мне|меня|мной|мой|моя|моё|мои|моего|моих|нас|наш|наши|нашей)([^а-яё]|$)/i;
 const DISCLAIMER = /(клон|цифров\w* двойник|цифров\w* копи|как клон|как цифров|ai[- ]двойник|я —? клон)/i;
@@ -128,6 +136,7 @@ function traceFromMeta(meta: Record<string, unknown>): RunTrace {
     usedSkillIds: strArr(meta['usedSkillIds']),
     usedRegulationNames: strArr(meta['usedRegulationNames']),
     topicMatchedBlocks: typeof meta['topicMatchedBlocks'] === 'number' ? (meta['topicMatchedBlocks'] as number) : null,
+    topicTopCosine: typeof meta['topicTopCosine'] === 'number' ? (meta['topicTopCosine'] as number) : null,
     reasoningMode: mode === 'factual' || mode === 'judgmental' ? mode : null,
     personaVersion: typeof meta['personaVersion'] === 'number' ? (meta['personaVersion'] as number) : null,
   };
@@ -191,6 +200,7 @@ async function askOne(clones: ClonesService, prisma: PrismaService, orgId: strin
       usedSkillIds: [...new Set([...trace.usedSkillIds, ...m2.usedSkillIds])],
       usedRegulationNames: [...new Set([...trace.usedRegulationNames, ...m2.usedRegulationNames])],
       topicMatchedBlocks: trace.topicMatchedBlocks ?? m2.topicMatchedBlocks,
+      topicTopCosine: trace.topicTopCosine ?? m2.topicTopCosine,
       reasoningMode: trace.reasoningMode ?? m2.reasoningMode,
       personaVersion: trace.personaVersion ?? m2.personaVersion,
     };
@@ -295,7 +305,7 @@ async function modeJudge(): Promise<void> {
   const bankById = new Map(bank.map((q) => [q.id, q]));
   log(`judge: ${parsed.results.length} результатов, панель линз (deepseek-v4-pro)`);
   let done = 0;
-  const judged = await mapLimit(parsed.results, 4, async (run) => {
+  const judged = await mapLimit(parsed.results, 2, async (run) => {
     const q = bankById.get(run.id);
     if (!q) throw new Error(`вопрос ${run.id} не найден в банке`);
     const parts = await judgeRun(q, run, ctx);
@@ -305,6 +315,29 @@ async function modeJudge(): Promise<void> {
   });
   writeFileSync(JUDGED, JSON.stringify({ stamp: stamp(), judged }, null, 2), 'utf8');
   log(`✓ judge: → ${JUDGED}`);
+}
+
+async function modeConfigure(): Promise<void> {
+  const prisma = (await import('../_lib/prisma')).createPrismaClient();
+  try {
+    for (const k of STAND_KNOBS) {
+      await prisma.adminSetting.upsert({
+        where: { key: k.key },
+        update: { value: k.value as never },
+        create: {
+          key: k.key,
+          value: k.value as never,
+          category: k.category,
+          section: k.section,
+          severity: 'medium',
+        },
+      });
+      log(`  knob ${k.key} = ${JSON.stringify(k.value)}`);
+    }
+    log('✓ configure: STAND_KNOBS выставлены в AdminSetting');
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
 async function readRunConfig(): Promise<RunConfig> {
@@ -324,7 +357,11 @@ async function readRunConfig(): Promise<RunConfig> {
       skillClusterSimilarityThreshold: await knob('knowledge.skillClusterSimilarityThreshold'),
       cloneRespondModel: route[0] ? `${route[0].provider}/${route[0].model}` : '(route не найден)',
       extra: {
-        CLONE_TOPIC_MIN_BLOCKS: process.env['CLONE_TOPIC_MIN_BLOCKS'] ?? '(default)',
+        'clone.v2.enabled': await knob('clone.v2.enabled'),
+        'clone.topic.similarityThreshold': await knob('clone.topic.similarityThreshold'),
+        'clone.topic.similarityThresholdJudgmental': await knob('clone.topic.similarityThresholdJudgmental'),
+        'clone.topic.minBlocks': await knob('clone.topic.minBlocks'),
+        'clone.retrieval.topK': await knob('clone.retrieval.topK'),
         CLONE_RESPOND_GROUNDING_ENABLED: process.env['CLONE_RESPOND_GROUNDING_ENABLED'] ?? '(default)',
       },
     };
@@ -348,11 +385,12 @@ async function main(): Promise<void> {
   const mode = process.argv[2] ?? 'run';
   assertNotProd(readConfig());
   switch (mode) {
+    case 'configure': await modeConfigure(); break;
     case 'run': await modeRun(); break;
     case 'judge': await modeJudge(); break;
     case 'report': await modeReport(); break;
-    case 'all': await modeRun(); await modeJudge(); await modeReport(); break;
-    default: throw new Error(`режим: run|judge|report|all (дано ${mode})`);
+    case 'all': await modeConfigure(); await modeRun(); await modeJudge(); await modeReport(); break;
+    default: throw new Error(`режим: configure|run|judge|report|all (дано ${mode})`);
   }
 }
 

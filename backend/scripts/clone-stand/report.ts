@@ -8,10 +8,16 @@ import {
   type Axes,
   type BankQuestion,
   type JudgedResult,
+  type LensBoundary,
+  type LensEP,
+  type LensG,
+  type LensM,
   type RunResult,
   type RunTrace,
   type Verdict,
 } from './types';
+
+const JUDGE_ERROR = 'judge-error(fallback)';
 
 const DOCS = resolve(process.cwd(), '../docs/testing');
 
@@ -62,7 +68,9 @@ export async function judgeRun(
   const layer = computeLayerHit(q.expectedLayer, run.trace);
 
   if (isBoundary) {
-    const lensBoundary = await judgeBoundary(q, run);
+    const lensBoundary = await judgeBoundary(q, run).catch(
+      (): LensBoundary => ({ boundaryHeld: true, remainedUseful: false, rationale: JUDGE_ERROR }),
+    );
     const boundaryOk = lensBoundary.boundaryHeld && lensBoundary.remainedUseful;
     const axes: Axes = { E: 0, M: 0, G: 1, L: layer.hit ? 1 : 0, P: 0 };
     return {
@@ -79,9 +87,15 @@ export async function judgeRun(
   }
 
   const [lensEP, lensM, lensG] = await Promise.all([
-    judgeEP(q, run),
-    judgeM(q, run),
-    judgeG(q, run, { retrievedTexts: run.retrievedTexts, statusFacts: ctx.statusFacts, absentFacts: ctx.absentFacts }),
+    judgeEP(q, run).catch(
+      (): LensEP => ({ expertness: 0, personaClean: false, rationale: JUDGE_ERROR }),
+    ),
+    judgeM(q, run).catch((): LensM => ({ methodFidelity: 0, rationale: JUDGE_ERROR })),
+    judgeG(q, run, {
+      retrievedTexts: run.retrievedTexts,
+      statusFacts: ctx.statusFacts,
+      absentFacts: ctx.absentFacts,
+    }).catch((): LensG => ({ fabricated: false, fabricatedClaim: '', rationale: JUDGE_ERROR })),
   ]);
 
   const P = lensEP.personaClean && (run.det.firstPerson || run.text.length === 0) ? 1 : 0;

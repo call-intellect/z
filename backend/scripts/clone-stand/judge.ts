@@ -19,7 +19,7 @@ async function llmJson<T>(args: {
   validate: (parsed: T) => boolean;
 }): Promise<T> {
   let lastErr: unknown;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 6; attempt++) {
     try {
       const res = await directLlmCall({
         provider: 'deepseek',
@@ -39,6 +39,7 @@ async function llmJson<T>(args: {
       return parsed;
     } catch (err) {
       lastErr = err;
+      if (attempt < 6) await new Promise((r) => setTimeout(r, attempt * 1200));
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));

@@ -36,6 +36,7 @@ export interface RunTrace {
   usedSkillIds: string[];
   usedRegulationNames: string[];
   topicMatchedBlocks: number | null;
+  topicTopCosine: number | null;
   reasoningMode: 'factual' | 'judgmental' | null;
   personaVersion: number | null;
 }

@@ -80,6 +80,14 @@ function buildAskService(opts?: {
     },
     knowledgeAccess: { enforcement: 'off' },
     cloneV2: { enabled: opts?.cloneV2Enabled ?? false },
+    getDynamic: async (key: string, _env?: string, def?: unknown) => {
+      if (key === 'clone.topic.similarityThreshold') return 0.7;
+      if (key === 'clone.topic.minBlocks') return 2;
+      if (key === 'clone.retrieval.topK') return 20;
+      return def;
+    },
+    resolveSync: (key: string, _env?: string, def?: unknown) =>
+      key === 'clone.v2.enabled' ? (opts?.cloneV2Enabled ?? false) : def,
   } as unknown as TypedConfigService;
 
   const llmCall = vi.fn(async () => ({

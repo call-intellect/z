@@ -62,10 +62,10 @@ export class ClonesService {
   private static readonly MIN_TRAITS_FOR_ANSWER = 3;
 
   static readonly TOPIC_STARVED_REFUSAL_TEXT =
-    'У оригинала недостаточно высказываний по этой теме, чтобы я мог отвечать в его стиле без выдумывания. Спроси напрямую.';
+    'По этой теме у меня в роли пока нет достаточной опоры, чтобы ответить как эксперт, — придумывать за носителя не стану. Если это в зоне моей должности — точнее подскажет сам носитель роли; если вопрос вне моей должности, его лучше адресовать профильному специалисту.';
 
   static readonly UNGROUNDED_REFUSAL_TEXT =
-    'По этому вопросу у меня нет наблюдений в памяти роли — отвечать без опоры не буду, чтобы не выдумывать. Спроси носителя напрямую. (ответ — от клона должности)';
+    'По этому вопросу у меня нет опоры в памяти роли — без неё отвечать не буду, чтобы не выдумывать. Точнее подскажет сам носитель роли или профильный специалист по теме.';
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -198,15 +198,24 @@ export class ClonesService {
     const subgraph = await this.loadPersonSubgraph({
       tenantId: args.tenantId,
       personId: args.personId,
+      question: args.question,
       accessCtx,
       enforcement: enf,
+    });
+
+    const retrievedSkills = await this.retrievePracticeSkills({
+      tenantId: args.tenantId,
+      scope: 'person',
+      scopeRefId: args.personId,
+      question: args.question,
+      conversationId: args.conversationId ?? null,
     });
 
     const topicDensity = await this.assertTopicDensity({
       question: args.question,
       reasoningBlocks: subgraph.reasoningBlocks,
     });
-    if (topicDensity.refused) {
+    if (topicDensity.refused && retrievedSkills.length === 0) {
       const refusalText = ClonesService.TOPIC_STARVED_REFUSAL_TEXT;
       const { conversationId, messageId } = await this.persistMessage({
         tenantId: args.tenantId,
@@ -224,6 +233,7 @@ export class ClonesService {
           topicMatchedBlocks: topicDensity.matchedBlocks,
           topicRequiredBlocks: topicDensity.requiredBlocks,
           topicSimilarityThreshold: topicDensity.similarityThreshold,
+          topicTopCosine: topicDensity.topCosine,
         },
       });
 
@@ -253,14 +263,6 @@ export class ClonesService {
         refusalReason: 'topic_starved',
       };
     }
-
-    const retrievedSkills = await this.retrievePracticeSkills({
-      tenantId: args.tenantId,
-      scope: 'person',
-      scopeRefId: args.personId,
-      question: args.question,
-      conversationId: args.conversationId ?? null,
-    });
 
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
@@ -309,6 +311,7 @@ export class ClonesService {
         usedSkillIds: retrievedSkills.map((s) => s.id),
         usedRegulationNames: [],
         topicMatchedBlocks: topicDensity.matchedBlocks,
+        topicTopCosine: topicDensity.topCosine,
       },
     });
 
@@ -442,15 +445,34 @@ export class ClonesService {
     const subgraph = await this.loadRoleSubgraph({
       tenantId: args.tenantId,
       roleId: args.roleId,
+      question: args.question,
       accessCtx,
       enforcement: enf,
+    });
+
+    const retrievedSkills = await this.retrievePracticeSkills({
+      tenantId: args.tenantId,
+      scope: 'role',
+      scopeRefId: args.roleId,
+      question: args.question,
+      conversationId: args.conversationId ?? null,
+    });
+
+    const applicableRegulations = await this.retrieveRoleRegulations({
+      tenantId: args.tenantId,
+      roleId: args.roleId,
+      question: args.question,
     });
 
     const topicDensity = await this.assertTopicDensity({
       question: args.question,
       reasoningBlocks: subgraph.reasoningBlocks,
     });
-    if (topicDensity.refused) {
+    if (
+      topicDensity.refused &&
+      applicableRegulations.length === 0 &&
+      retrievedSkills.length === 0
+    ) {
       const refusalText = ClonesService.TOPIC_STARVED_REFUSAL_TEXT;
       const { conversationId, messageId } = await this.persistMessage({
         tenantId: args.tenantId,
@@ -499,20 +521,6 @@ export class ClonesService {
 
     const bearerName: string | null =
       persona.publicName ?? `Клон ${role.name} v${persona.roleVersion ?? 1}`;
-
-    const retrievedSkills = await this.retrievePracticeSkills({
-      tenantId: args.tenantId,
-      scope: 'role',
-      scopeRefId: args.roleId,
-      question: args.question,
-      conversationId: args.conversationId ?? null,
-    });
-
-    const applicableRegulations = await this.retrieveRoleRegulations({
-      tenantId: args.tenantId,
-      roleId: args.roleId,
-      question: args.question,
-    });
 
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
@@ -564,6 +572,7 @@ export class ClonesService {
         usedSkillIds: retrievedSkills.map((s) => s.id),
         usedRegulationNames: applicableRegulations.map((r) => r.name),
         topicMatchedBlocks: topicDensity.matchedBlocks,
+        topicTopCosine: topicDensity.topCosine,
       },
     });
 
@@ -598,9 +607,9 @@ export class ClonesService {
 
   private isCloneV2Enabled(): boolean {
     try {
-      return this.cfg.cloneV2?.enabled === true;
+      return this.cfg.resolveSync<boolean>('clone.v2.enabled', 'CLONE_V2_ENABLED', true);
     } catch {
-      return false;
+      return true;
     }
   }
 
@@ -706,16 +715,26 @@ export class ClonesService {
     const subgraph = await this.loadPersonSubgraph({
       tenantId: args.tenantId,
       personId: args.personId,
+      question: dialog.standaloneQuestion,
       accessCtx,
       enforcement: enf,
+    });
+
+    const retrievedSkillsV2 = await this.retrievePracticeSkills({
+      tenantId: args.tenantId,
+      scope: 'person',
+      scopeRefId: args.personId,
+      question: dialog.standaloneQuestion,
+      conversationId: args.conversationId ?? null,
     });
 
     const topicDensity = await this.assertTopicDensity({
       question: dialog.standaloneQuestion,
       reasoningBlocks: subgraph.reasoningBlocks,
       requiredBlocksOverride: null,
+      mode,
     });
-    if (topicDensity.refused) {
+    if (topicDensity.refused && retrievedSkillsV2.length === 0) {
       return this.persistTopicStarvedRefusal({
         tenantId: args.tenantId,
         requesterUserId: args.requesterUserId,
@@ -729,14 +748,6 @@ export class ClonesService {
         isOwner: profile.person.userId !== null && profile.person.userId === args.requesterUserId,
       });
     }
-
-    const retrievedSkillsV2 = await this.retrievePracticeSkills({
-      tenantId: args.tenantId,
-      scope: 'person',
-      scopeRefId: args.personId,
-      question: dialog.standaloneQuestion,
-      conversationId: args.conversationId ?? null,
-    });
 
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
@@ -794,6 +805,7 @@ export class ClonesService {
         usedSkillIds: retrievedSkillsV2.map((s) => s.id),
         usedRegulationNames: [],
         topicMatchedBlocks: topicDensity.matchedBlocks,
+        topicTopCosine: topicDensity.topCosine,
       },
     });
 
@@ -933,16 +945,36 @@ export class ClonesService {
     const subgraph = await this.loadRoleSubgraph({
       tenantId: args.tenantId,
       roleId: args.roleId,
+      question: dialog.standaloneQuestion,
       accessCtx,
       enforcement: enf,
+    });
+
+    const retrievedSkillsV2Role = await this.retrievePracticeSkills({
+      tenantId: args.tenantId,
+      scope: 'role',
+      scopeRefId: args.roleId,
+      question: dialog.standaloneQuestion,
+      conversationId: args.conversationId ?? null,
+    });
+
+    const applicableRegulationsV2 = await this.retrieveRoleRegulations({
+      tenantId: args.tenantId,
+      roleId: args.roleId,
+      question: dialog.standaloneQuestion,
     });
 
     const topicDensity = await this.assertTopicDensity({
       question: dialog.standaloneQuestion,
       reasoningBlocks: subgraph.reasoningBlocks,
       requiredBlocksOverride: null,
+      mode,
     });
-    if (topicDensity.refused) {
+    if (
+      topicDensity.refused &&
+      applicableRegulationsV2.length === 0 &&
+      retrievedSkillsV2Role.length === 0
+    ) {
       return this.persistTopicStarvedRefusal({
         tenantId: args.tenantId,
         requesterUserId: args.requesterUserId,
@@ -959,20 +991,6 @@ export class ClonesService {
 
     const bearerName: string | null =
       persona.publicName ?? `Клон ${role.name} v${persona.roleVersion ?? 1}`;
-
-    const retrievedSkillsV2Role = await this.retrievePracticeSkills({
-      tenantId: args.tenantId,
-      scope: 'role',
-      scopeRefId: args.roleId,
-      question: dialog.standaloneQuestion,
-      conversationId: args.conversationId ?? null,
-    });
-
-    const applicableRegulationsV2 = await this.retrieveRoleRegulations({
-      tenantId: args.tenantId,
-      roleId: args.roleId,
-      question: dialog.standaloneQuestion,
-    });
 
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
@@ -1033,6 +1051,7 @@ export class ClonesService {
         usedSkillIds: retrievedSkillsV2Role.map((s) => s.id),
         usedRegulationNames: applicableRegulationsV2.map((r) => r.name),
         topicMatchedBlocks: topicDensity.matchedBlocks,
+        topicTopCosine: topicDensity.topCosine,
       },
     });
 
@@ -1207,6 +1226,7 @@ export class ClonesService {
       matchedBlocks: number;
       requiredBlocks: number;
       similarityThreshold: number;
+      topCosine?: number | null;
     };
     scopeKind: 'person' | 'role';
     isOwner: boolean;
@@ -1230,6 +1250,7 @@ export class ClonesService {
         topicMatchedBlocks: args.topicDensity.matchedBlocks,
         topicRequiredBlocks: args.topicDensity.requiredBlocks,
         topicSimilarityThreshold: args.topicDensity.similarityThreshold,
+        topicTopCosine: args.topicDensity.topCosine ?? null,
       },
     });
     this.metrics.incCloneAskRefused({ reason: 'topic_starved' });
@@ -2172,6 +2193,7 @@ export class ClonesService {
   private async loadPersonSubgraph(args: {
     tenantId: string;
     personId: string;
+    question: string;
     accessCtx?: KnowledgeAccessContext | null;
     enforcement?: 'off' | 'shadow' | 'enforce';
   }): Promise<CloneSubgraph> {
@@ -2207,8 +2229,10 @@ export class ClonesService {
       });
       const blockIds = [...new Set(mentions.map((m) => m.blockId))];
       if (blockIds.length > 0) {
+        const topK = await this.cfg.getDynamic<number>('clone.retrieval.topK', undefined, 20);
+        const rankedIds = await this.rankBlockIdsByQuestion(blockIds, args.question, topK);
         const blocks = await this.prisma.ideaBlock.findMany({
-          where: { id: { in: blockIds } },
+          where: { id: { in: rankedIds } },
           select: {
             id: true,
             name: true,
@@ -2222,10 +2246,11 @@ export class ClonesService {
               take: 1,
             },
           },
-          orderBy: { createdAt: 'desc' },
-          take: 20,
         });
-        for (const b of blocks) {
+        const byId = new Map(blocks.map((b) => [b.id, b]));
+        for (const id of rankedIds) {
+          const b = byId.get(id);
+          if (!b) continue;
           const evidence = b.evidence[0];
           reasoningBlocks.push({
             id: b.id,
@@ -2295,6 +2320,7 @@ export class ClonesService {
   private async loadRoleSubgraph(args: {
     tenantId: string;
     roleId: string;
+    question: string;
     accessCtx?: KnowledgeAccessContext | null;
     enforcement?: 'off' | 'shadow' | 'enforce';
   }): Promise<CloneSubgraph> {
@@ -2343,18 +2369,21 @@ export class ClonesService {
       });
       const blockIds = [...new Set(mentions.map((m) => m.blockId))];
       if (blockIds.length > 0) {
+        const topK = await this.cfg.getDynamic<number>('clone.retrieval.topK', undefined, 20);
+        const rankedIds = await this.rankBlockIdsByQuestion(blockIds, args.question, topK);
         const blocks = await this.prisma.ideaBlock.findMany({
-          where: { id: { in: blockIds } },
+          where: { id: { in: rankedIds } },
           select: {
             id: true,
             name: true,
             trustedAnswer: true,
             evidence: { select: { quote: true }, take: 1 },
           },
-          orderBy: { createdAt: 'desc' },
-          take: 20,
         });
-        for (const b of blocks) {
+        const byId = new Map(blocks.map((b) => [b.id, b]));
+        for (const id of rankedIds) {
+          const b = byId.get(id);
+          if (!b) continue;
           const evidence = b.evidence[0];
           reasoningBlocks.push({
             id: b.id,
@@ -2432,17 +2461,30 @@ export class ClonesService {
     question: string;
     reasoningBlocks: ReadonlyArray<{ id: string; text: string }>;
     requiredBlocksOverride?: number | null;
+    mode?: 'factual' | 'judgmental';
   }): Promise<{
     refused: boolean;
     matchedBlocks: number;
     requiredBlocks: number;
     similarityThreshold: number;
+    topCosine: number | null;
   }> {
-    const similarityThreshold = this.cfg.skill.cloneTopicSimilarityThreshold;
+    const similarityThreshold =
+      args.mode === 'judgmental'
+        ? await this.cfg.getDynamic<number>(
+            'clone.topic.similarityThresholdJudgmental',
+            undefined,
+            0.33,
+          )
+        : await this.cfg.getDynamic<number>(
+            'clone.topic.similarityThreshold',
+            'CLONE_TOPIC_SIMILARITY_THRESHOLD',
+            0.5,
+          );
     const requiredBlocks =
       args.requiredBlocksOverride !== undefined && args.requiredBlocksOverride !== null
         ? args.requiredBlocksOverride
-        : this.cfg.skill.cloneTopicMinBlocks;
+        : await this.cfg.getDynamic<number>('clone.topic.minBlocks', 'CLONE_TOPIC_MIN_BLOCKS', 2);
 
     if (requiredBlocks <= 0) {
       return {
@@ -2450,6 +2492,7 @@ export class ClonesService {
         matchedBlocks: args.reasoningBlocks.length,
         requiredBlocks,
         similarityThreshold,
+        topCosine: null,
       };
     }
 
@@ -2459,6 +2502,7 @@ export class ClonesService {
         matchedBlocks: 0,
         requiredBlocks,
         similarityThreshold,
+        topCosine: null,
       };
     }
 
@@ -2475,6 +2519,7 @@ export class ClonesService {
         matchedBlocks: args.reasoningBlocks.length,
         requiredBlocks,
         similarityThreshold,
+        topCosine: null,
       };
     }
     if (!questionEmbedding) {
@@ -2486,16 +2531,19 @@ export class ClonesService {
         matchedBlocks: args.reasoningBlocks.length,
         requiredBlocks,
         similarityThreshold,
+        topCosine: null,
       };
     }
 
     const blockEmbeddings = await this.loadBlockEmbeddings(args.reasoningBlocks.map((b) => b.id));
 
     let matched = 0;
+    let topCosine: number | null = null;
     for (const block of args.reasoningBlocks) {
       const vec = blockEmbeddings.get(block.id);
       if (!vec) continue;
       const sim = cosineSim(questionEmbedding, vec);
+      if (topCosine === null || sim > topCosine) topCosine = sim;
       if (sim >= similarityThreshold) matched += 1;
     }
 
@@ -2504,6 +2552,7 @@ export class ClonesService {
       matchedBlocks: matched,
       requiredBlocks,
       similarityThreshold,
+      topCosine,
     };
   }
 
@@ -2530,6 +2579,53 @@ export class ClonesService {
         'clones.loadBlockEmbeddings: упал — fallback на пустую мапу (консервативно)',
       );
       return new Map();
+    }
+  }
+
+  private async rankBlockIdsByQuestion(
+    candidateIds: string[],
+    question: string,
+    topK: number,
+  ): Promise<string[]> {
+    if (candidateIds.length === 0) return [];
+    let qvec: number[] | null;
+    try {
+      qvec = await this.embedder.embedQuery(question);
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'clones.rankBlockIdsByQuestion: embedQuery упал — fallback на исходный порядок',
+      );
+      return candidateIds.slice(0, topK);
+    }
+    if (!qvec || qvec.length === 0 || !qvec.every((n) => Number.isFinite(n))) {
+      return candidateIds.slice(0, topK);
+    }
+    try {
+      const literal = `[${qvec.join(',')}]`;
+      const params: unknown[] = [literal, ...candidateIds];
+      const placeholders = candidateIds.map((_, i) => `$${i + 2}`).join(',');
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "IdeaBlock"
+         WHERE "id" IN (${placeholders}) AND "embedding" IS NOT NULL
+         ORDER BY "embedding" <=> $1::vector
+         LIMIT ${Math.max(1, Math.floor(topK))}`,
+        ...params,
+      );
+      const ranked = rows.map((r) => r.id);
+      if (ranked.length >= topK) return ranked;
+      const seen = new Set(ranked);
+      for (const id of candidateIds) {
+        if (ranked.length >= topK) break;
+        if (!seen.has(id)) ranked.push(id);
+      }
+      return ranked;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'clones.rankBlockIdsByQuestion: pgvector-ранжирование упало — fallback на исходный порядок',
+      );
+      return candidateIds.slice(0, topK);
     }
   }
 

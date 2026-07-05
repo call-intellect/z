@@ -29,7 +29,7 @@ Specialist 3.5 — пятый специалист Слоя 3 (после α-6 S
 2. Считает embedding query из `name + trustedAnswer`.
 3. KNN top-10 существующих Insight того же Org через cosine на embedding (порог `INSIGHT_CLUSTER_THRESHOLD=0.78`).
 4. **Если match** — обновляет existing Insight (sourceBlockIds.push, lastObservedAt), пересчитывает frequency/dynamic, при `dynamicLabel='spike'` или при `status='mitigated'+новое упоминание` эмиттит probe.
-5. **Если нет match** — LLM-вызов `insight-extract` (DeepSeek-flash → OpenAI gpt-5.4-mini → Ollama qwen3:30b) → черновик `{kind, statement, severity, affectedEntityHints, mitigationSuggestion?, confidence}`.
+5. **Если нет match** — LLM-вызов `insight-extract` (DeepSeek V4 pro → OpenAI gpt-5.4-mini → kie:gemini-3.1-pro; primary поднят на pro патчем `patch-task-extractor-route-pro.ts`, ollama выведён 2026-06-05) → черновик `{kind, statement, severity, affectedEntityHints, mitigationSuggestion?, confidence}`.
 6. Резолв `affectedEntityIds`: для hint'ов с типами {customer, project, product, vendor} — `EntityResolutionService.findOrCreate`. `process` пока не поддерживается.
 7. LLM-арбитр `insight-link-to-decisions` (опц.): top-10 KNN-Decision'ов того же Org → отбор тех, что могли спровоцировать сигнал → `relatedDecisionIds[]`.
 8. Дополнительный источник linking — существующие `IdeaBlockLink.relationType='consequences_of'`: для блоков-источников Insight'а ищем link на блоки, которые включены в `Decision.sourceBlockIds`. Добавляем тех Decision'ов в `relatedDecisionIds`.

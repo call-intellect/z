@@ -3,7 +3,7 @@ type: architecture
 feature: knowledge-core
 status: active
 created: 2026-05-10
-updated: 2026-05-10
+updated: 2026-07-05
 phase: 4
 ---
 
@@ -298,6 +298,8 @@ specialist-3-6-ideas.worker (consumer core.specialist-routing, jobName='3-6-idea
    │    6. createIdea (status='captured').
    │    7. tryWriteEmbedding + CurationService.triage.
    │    8. EventEmitter 'idea.created' + enqueueIdeaClusterer.
+
+> **Полный набор специалистов на 2026-07 (10, `core.specialist-routing`):** выше расписаны 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.15; ещё три — **3.7 Skill** (клоны ролей, см. [[../01_projects/skill-and-clone]]), **3.9 Experiments** (`specialist-3-9-experiments.service.ts`), **3.14 Goals** (см. [[../01_projects/goals-and-strategic-alignment]]). Роутинг `signalType`→специалист — таблица ниже. 3.8 Helpfulness — отдельный модуль вне этой очереди; 3.10–3.13 не существуют.
 
 idea-clusterer.cron (`30 *‎/4 * * *` — IdeaClustererCron.sweep) — SBA β-5
    ├─ Для каждой Org → Idea без clusterId (batch 100).

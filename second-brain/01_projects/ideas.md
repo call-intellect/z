@@ -13,6 +13,11 @@ related:
 
 Шестой специалист Слоя 3. Превращает блоки `signalType ∈ {idea, feature_request}` в структурированные карточки `Idea` с поддерживающими, динамическим весом и статусом.
 
+## Два пути рождения идеи
+
+1. **Через Specialist 3.6** (основной, описан ниже) — блок `signalType ∈ {idea, feature_request}` → Router → `Specialist36IdeasWorker`.
+2. **Direct-path на ingest** (2026-06-08) — `block-ingest.worker.ts` (~стр. 656) материализует `Idea` прямо в момент ingest'а блока, минуя специалиста, при включённом флаге `knowledge.ideaDirectPathEnabled` (AdminSetting). CurationItem прямо из direct-path не создаётся — идея идёт тем же triage-путём.
+
 ## Зачем
 
 Раньше идеи терялись: сотрудник высказал на встрече — и забыли. Клиент попросил фичу — диалог ушёл в архив. Теперь:
@@ -73,18 +78,25 @@ Specialist36Service.changeStatus:
     • Notify supporters (person → User.id; customer → admin fallback) и автора.
 ```
 
+`IdeaStatusAutoAdvanceService` (knowledge-core, `specialist-3-6.module.ts`) авто-продвигает статус идеи по событию `issue.status_changed_to_done` — задача по идее закрыта в трекере → статус идеи двигается сам (гонки с ручным изменением статуса разведены).
+
 ## REST API
 
 | Метод | Эндпоинт | Доступ |
 |---|---|---|
 | GET | `/api/v1/ideas?kind=&status=&q=&clusterId=` | member (read) |
 | GET | `/api/v1/ideas/:id` | member (read) |
+| GET | `/api/v1/ideas/top` | member (лента с rerank) |
 | GET | `/api/v1/me/ideas?role=author\|supporter` | self |
 | POST | `/api/v1/ideas/:id/status` | owner/admin |
 | POST | `/api/v1/ideas/:id/support` | member |
 | POST | `/api/v1/me/ideas/:id/withdraw` | автор |
+| POST | `/api/v1/ideas/:id/goal` | owner/admin (привязать к существующей цели — `linkGoal`) |
+| POST | `/api/v1/ideas/:id/promote-to-goal` | owner/admin (принять идею → создать цель — `promoteToGoal`) |
 | GET | `/api/v1/idea-clusters` | member |
 | GET | `/api/v1/idea-clusters/:id` | member |
+
+**Лента (rerank).** `GET /ideas/top` отдаёт переранжированную ленту: `ideas.service.getTop()` + `ideas-rerank.scoring.ts` со взвешенным скорингом (веса `ideas.feed.rerank.weight` / `.freshness` / `.goal_link` из AdminSetting).
 
 ## Probe-trigger'ы (Specialist 3.6)
 
@@ -113,6 +125,8 @@ IDEA_CLUSTERER_CRON="30 */4 * * *"
 IDEA_MIN_SUPPORTERS_FOR_CLUSTER=2
 ```
 
+> Пороги идей — крутилки **AdminSetting** (`knowledge.ideaClusterThreshold` / `knowledge.ideaMinSupportersForCluster` / `knowledge.ideasExtractMinConfidence`, плюс `ideas.feed.rerank.*`), резолв через `getDynamic` (admin→ENV→code-fallback); ENV выше — только code-fallback. Реестр — `admin-setting-schema-registry.ts`.
+
 ## Метрики
 
 - `core_specialist_pipeline_duration_seconds{type='idea'}`
@@ -128,4 +142,5 @@ IDEA_MIN_SUPPORTERS_FOR_CLUSTER=2
 ## См. также
 
 - [[probe-agent]] — без него идеи превращаются в кладбище.
+- [[goals-and-strategic-alignment]] — `Idea.goalId` + `POST /ideas/:id/goal` / `/promote-to-goal`: мост «гипотеза → цель».
 - [[../02_architecture/module-map|02_architecture/module-map.md]] — раздел «SBA β-5».

@@ -1,7 +1,7 @@
 ---
 title: SBA α-5 — Chat-v2 Omnichannel
-status: in-progress
-phase: alpha
+status: living
+phase: production
 covers: AI-чат компании поверх knowledge-core, omnichannel inbound/outbound
 parent_tz: plans/archive/2026-05-21-sba-alpha-5-layer5-chat-v2.md
 ---
@@ -88,7 +88,7 @@ Push-pattern: каждый специалист в `onModuleInit` зовёт `re
 
 Старый модуль `backend/src/modules/chat/` помечен `@deprecated`. Endpoint'ы `/api/v1/chat`, `/api/v1/chat/v2`, `/api/v1/meetings/:id/chat`, `/api/v1/cards/:id/chat` остаются для обратной совместимости с фронтом `/chat` и API-клиентами. Удаление — отдельный sub-TZ в β/γ. Switching между legacy/v2 в старых endpoint'ах — через `CHAT_V2_ENABLED` (см. `cfg.knowledgeCore.chatV2Enabled`).
 
-UI `/chat` показывает баннер с приглашением попробовать `/chat-v2`.
+Единый вход — `/chat` («Помощник компании», концьерж). Отдельного master-detail UI `/chat-v2` больше нет: `frontend/app/(authenticated)/chat-v2/page.tsx` — это `redirect('/chat')` (проброс `conversationId`); `/assistant` тоже редиректит на `/chat`. RAG-движок chat-v2 жив в production (расширен Query Understanding 2026-06-10 и Пакетом B 2026-07-02).
 
 ## Query Understanding Волна 1 (понимание структуры запроса) — 2026-06-10
 
@@ -139,7 +139,7 @@ UI `/chat` показывает баннер с приглашением поп�
 - `backend/src/common/metrics/business-metrics.service.ts` — 6 новых метрик.
 
 **Frontend:**
-- `frontend/app/(authenticated)/chat-v2/` — master-detail UI.
+- `frontend/app/(authenticated)/chat-v2/page.tsx` — **только `redirect('/chat')`** (отдельного UI больше нет; единый дом Мастера — `/chat`).
 - `frontend/src/api/chat-v2.api.ts`, `frontend/src/domain/chat-v2.ts`.
 - `frontend/src/ui/components/chat-v2/ChatPanel.tsx` — компонент для встраивания.
 

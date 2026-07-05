@@ -1,10 +1,12 @@
 ---
 type: project
-status: in_progress
+status: done
 phase: 8
 ---
 
 # CronManagerService + UI управления кронами
+
+> Реализовано: `backend/src/modules/admin/crons/cron-manager.service.ts` + `admin-crons.controller.ts`, модели `CronSchedule` / `CronRunHistory` в схеме.
 
 > Управление 25+ `@Cron`-джобами Z без редеплоя: включить / отключить / поменять расписание / запустить вручную. Часть редизайна админки (Фаза 8). См. [admin-z-global.md](admin-z-global.md).
 

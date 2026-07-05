@@ -26,16 +26,16 @@ related_projects:
 
 Специалист 3.3 решает эту проблему: каждое произнесённое на встрече решение фиксируется как **отдельная запись** в реестре решений компании — со ссылкой на цитату, автора, обоснование, отвергнутые альтернативы и срок. Если позже принимается **новое решение, которое отменяет старое** (например, «теперь скидки до 20%»), платформа сама замечает это и связывает решения в цепочку — старое помечается «отменено», новое получает ссылку «заменяет такое-то».
 
-Когда есть **конкурирующие версии** («одна команда говорит — закрыли проект, другая — продолжаем»), специалист задаёт **пробный вопрос**: «какое из этих решений сейчас актуально?» — и пишет его именно тому человеку, кто это решение принимал. Дополнительно есть фоновые проверки: «у этого решения срок прошёл, а статус не сменился», «решение реализовано, но никто не записал результат». Так реестр **сам поддерживает себя в живом состоянии**.
+Когда есть **конкурирующие версии** («одна команда говорит — закрыли проект, другая — продолжаем»), специалист связывает решения в supersede-цепочку и триажит в курацию. Фоновые проактивные проверки («срок прошёл, а статус не сменился», «решение реализовано, но результат не записан») **пока не работают в проде** — probe-эмиттер решений не реализован (см. §5 шаги 9–10 и §8), очередь просроченных решений человеку сама не приходит.
 
 ## 2. Что запускает (триггер)
 
-- **Тип:** событие + расписание.
-- **Кто инициирует:** маршрутизатор знаний (на событие) или daily-cron (фоновые проверки).
+- **Тип:** событие (+ ручное действие).
+- **Кто инициирует:** маршрутизатор знаний (на событие) или owner/admin (ручное ведение).
 - **Технический источник:**
   - Событие: очередь `core.specialist-routing`, jobName `'3-3-decisions'` (source: `signalType ∈ {decision, rationale, decision_basis}`).
-  - Cron: `Specialist33ProbeService.runDailyChecks` (`@Cron('0 5 * * *')`).
   - Manual: `POST /api/v1/decisions` (owner/admin).
+  - **Фоновый cron проверок задуман, но НЕ реализован** — сервиса `Specialist33ProbeService.runDailyChecks` / `@Cron('0 5 * * *')` в коде нет (см. §5 шаги 9–10).
 
 ## 3. Шаги процесса (общий список)
 
@@ -68,8 +68,8 @@ related_projects:
 | 6 | Apply verdict | **new** → новый Decision. **merge** → существующий обновляется (alternatives мерджатся, sourceBlockIds/decidedBy/affectsEntity объединяются, rationale append-only). **supersedes** → новый Decision с `supersedesId=existing.id` + `validFrom`; старый помечается `status='superseded'` + `validUntil` | `services/specialist-3-3-decisions.service.ts` | — | `Decision`, `CardVersion` | ✅ |
 | 7 | ConflictItem evolving (если supersede) | `ConflictService.report({resourceType: 'decision', relationType: 'supersedes'})` с suggested resolution='evolving' | `services/specialist-3-3-decisions.service.ts` + `backend/src/modules/curation/services/conflict.service.ts` | — | `ConflictItem` | ✅ |
 | 8 | Triage в Curation (всегда deep review) | `CurationService.triage({resourceType: 'decision'})` — `decision` в `CURATION_CRITICAL_TYPES_DEFAULT` → всегда CurationItem | `services/specialist-3-3-decisions.service.ts` + `backend/src/modules/curation/` | — | `CurationItem` | ✅ |
-| 9 | Probe sync trigger'ы | `Specialist33ProbeService.checkAndEmitForDecision`: `decision.missing_decider` (decidedByPersonIds[] пуст AND status='approved'), `decision.no_deadline_critical` (status='approved' AND deadline=null AND есть блок с тегом 'critical' в sourceBlockIds) → `ConversationalService.sendNotification(eventType='specialist.probe')` | `backend/src/modules/knowledge-core/services/specialist-3-3-probe.service.ts:151` | — | `ConversationalEvent`, `Notification` | ✅ |
-| 10 | Probe cron trigger'ы | `Specialist33ProbeService.runDailyChecks` обходит все Org, по 100 кандидатов на Org: `decision.overdue` (deadline < now AND status ∉ {implemented, cancelled, rejected, superseded}); `decision.outcome_unknown` (status='implemented' AND actualOutcomes=null AND decidedAt < now − 3 мес) | `backend/src/modules/knowledge-core/services/specialist-3-3-probe.service.ts:114,123` | `@Cron('0 5 * * *')` | — | ✅ |
+| 9 | Probe sync trigger'ы | **❌ dormant — прод-эмиттера НЕТ.** Задумано: `decision.missing_decider` (decidedByPersonIds[] пуст AND status='approved'), `decision.no_deadline_critical` (status='approved' AND deadline=null AND есть блок с тегом 'critical'). Файла `specialist-3-3-probe.service.ts` в `knowledge-core` **нет**; `Specialist33ProbeService`/`checkAndEmitForDecision` в коде не встречаются. Эти поводы живут только в тест-спеках и демо-сиде `onboarding/demo-data/extras.ts` | — (сервис отсутствует) | — | — | ❌ dormant |
+| 10 | Probe cron trigger'ы | **❌ dormant — прод-эмиттера НЕТ.** Задумано: `decision.overdue` (deadline < now AND status ∉ {implemented, cancelled, rejected, superseded}); `decision.outcome_unknown` (status='implemented' AND actualOutcomes=null AND decidedAt < now − 3 мес). Ни `runDailyChecks`, ни соответствующего `@Cron` в коде нет — `decision.overdue`/`outcome_unknown`/`missing_decider` в проде **не генерятся**. Проактивной доставки очереди решений нет | — (сервис отсутствует) | — | — | ❌ dormant |
 | 11 | REST + UI + RBAC | `DecisionsController` — 8 endpoint'ов (list / detail / history / supersede-chain / manual create / supersede / status / outcomes). UI master-detail. RBAC: read=member, write=owner/admin | `backend/src/modules/decisions/decisions.controller.ts:68,74,89,109,121,133,147,169,191` + `services/decisions.service.ts` + `frontend/app/(authenticated)/decisions/{page.tsx,DecisionsListClient.tsx}` | `GET /api/v1/decisions`, `POST /api/v1/decisions`, `GET /:id`, `GET /:id/history`, `GET /:id/supersede-chain`, `POST /:id/supersede`, `POST /:id/status`, `POST /:id/outcomes` | — | ✅ |
 
 ### 5.1 Структуры данных, через которые проходит процесс
@@ -89,8 +89,7 @@ Decision (new | merge | supersedes)
   ↓ CurationService.triage (всегда deep review)
   ↓ ConflictService.report (если supersedes — evolving)
 CurationItem + ConflictItem? + CardVersion
-  ↓ Specialist33ProbeService (2 sync + 2 cron + 1 manual trigger)
-ConversationalEvent (eventType='specialist.probe', dataClass='sensitive')
+  ✗ probe-эмиттер решений (2 sync + 2 cron) — задуман, НЕ реализован (нет Specialist33ProbeService)
 ```
 
 ### 5.2 LLM-вызовы внутри процесса
@@ -116,7 +115,7 @@ ConversationalEvent (eventType='specialist.probe', dataClass='sensitive')
 
 **BullMQ очереди** (видно в `/admin/platform/workers`): `core.specialist-routing`.
 
-**Логи:** `Specialist33DecisionsWorker`, `Specialist33Service`, `Specialist33ProbeService`.
+**Логи:** `Specialist33DecisionsWorker`, `Specialist33Service`. (`Specialist33ProbeService` в коде нет — probe-эмиттер решений не реализован.)
 
 **Известные грабли** (см. [[02_architecture/code-pitfalls]]):
 - LLM иногда формулирует rationale в виде «потому что Х», теряя контекст блока — fallback на blocks-evidence-cite в провенансе.
@@ -130,7 +129,9 @@ ConversationalEvent (eventType='specialist.probe', dataClass='sensitive')
 
 - [[raw-event-to-graph]] — Шаг 0 (как `IdeaBlock` со `signalType='decision'` появляется).
 - [[meeting-post-processing]] — основной поставщик блоков.
-- [[probe-question-flow]] — Шаги 9, 10 (5 типов probe-events декомпозированы там).
+- [[probe-question-flow]] — общий probe-конвейер; **но** decision-поводы (Шаги 9–10) в проде не эмитятся — эмиттера нет.
+- [[pending-actions]] — куда на деле «уходят» решения, требующие действия: очередь действий живёт здесь, а не в 3-3 (probe-эмиттер решений отсутствует).
+- [[proactive-watcher]] — проактивные нуджи по графу (единственный работающий проактивный слой); проактивной доставки очереди решений в 3-3 нет.
 - [[specialist-3-1-regulations]], [[specialist-3-4-project-customer]] — параллельные специалисты Слоя 3, тот же контракт §5.
 - [[specialist-3-5-insights]] — β-4 будет читать Decision'ы, чтобы связать «эта проблема — следствие решения X».
 - [[specialist-gamma-1-skill-clone]] — γ-1 будет использовать `rationale` как главный источник «как сотрудник принимает решения».
@@ -144,7 +145,7 @@ ConversationalEvent (eventType='specialist.probe', dataClass='sensitive')
 - ⚠️ **В router'е явно есть только `decision`** — для `rationale` и `decision_basis` явного `dispatch` я в `router.service.ts` не нашёл (worker всё равно проверяет эти signalType в `if`-блоке, но Router их не диспатчит → они приходят через другой путь или вообще не приходят). Это потенциальный gap покрытия.
 
 **Заложено в ТЗ, реализовано частично:**
-- **`decision.competing_versions`** — на β-3 НЕ вызывается автоматически; оставлено для будущей админ-страницы (документ `01_projects/decisions.md` это явно указывает). 4 из 5 probe-trigger'ов работают.
+- **Probe-эмиттер решений отсутствует (dormant).** `Specialist33ProbeService` (sync `checkAndEmitForDecision` + cron `runDailyChecks`) в `knowledge-core` **не написан**: `decision.missing_decider` / `no_deadline_critical` / `decision.overdue` / `decision.outcome_unknown` / `decision.competing_versions` в проде **не генерятся** (встречаются только в тест-спеках и демо-сиде `onboarding/demo-data/extras.ts`). Ни один из 5 задуманных probe-trigger'ов не активен.
 - **`affectsEntityIds` для `process`** — пока skip (Process не Entity), решения о процессах не получают связь.
 - **Workflow согласования (proposed → approved через approvals)** — отложено в γ+.
 

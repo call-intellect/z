@@ -140,6 +140,17 @@ SkillTrait.status='misleading' + (опц.) ExecutablePersonaTriggerWatcher.criti
 | 9 (v1) | `clone-respond` | DeepSeek V4 Flash | OpenAI gpt-5.4-mini → Ollama qwen3:30b | `backend/src/modules/clones/prompts/clone-respond.prompt.ts` |
 | 9 (v2) | `dialog-multi-query-clone` | DeepSeek V4 Pro | OpenAI gpt-5.4 → Ollama qwen3.5:9b | `backend/src/modules/chat-v2/prompts/clone-style.prompt.ts`, под флагом `CLONE_V2_ENABLED` |
 
+### 5.3 Ремесло клона поверх черт (ТЗ clone-method 2026-06-11)
+
+Над «навыковыми чертами» (§3–§4) достроен слой **выполнимого ремесла** — не «какой сотрудник», а «как он это делает» и «по каким принципам»:
+
+- **`practice-skills` (выполнимые процедуры).** Модуль `backend/src/modules/practice-skills`: `PracticeSkillExtractorService` (worker `practice-skill-extract.worker.ts` по `@OnEvent('skill-trait-concept.normalized')`) достаёт из наблюдений процедуры-как-делать → `PracticeSkillRetrievalService` подмешивает релевантные в промпт клона на ASK (`clones.service.ts` кладёт `practiceSkills: toPromptSkills(...)`, логирует `practiceSkillsCount`) → `PracticeSkillEvaluatorService` (`practice-skill-evaluate.cron.ts` `@Cron('0 4 * * *')`) через shadow/active-эволюцию promote/archive/hold по `evalPromoteDelta`, taskType `practice-skill-adversarial-verify`. Модель `PracticeSkill` (`schema.prisma:8736`). Kill-switch `PRACTICE_SKILLS_ENABLED` (default true). **Своего UI нет** (только admin-контроллер `admin-practice-skills.controller.ts`).
+- **`RolePrinciple` (синтез принципов роли).** `RolePrincipleSynthesisService` + `role-principle-synthesis.cron.ts` (`@Cron('30 5 * * *')` = 05:30) — сводит принципы принятия решений по роли. Модель `RolePrinciple` (`schema.prisma:8655`).
+- **`CloneQueryLog` (лог всех запросов к клону).** Модель `schema.prisma:8695` — пишется на каждый ask, **включая отказы**; читается через `GET /api/v1/clones/...` (`getCloneQueryLog`, `clones.controller.ts:106`).
+- **Усиленный grounding `clone-respond`.** Поверх старой антифальшивки «≥2 блока cos≥0.70» (Шаг 9, отказ `topic_starved`) добавлен цитатный грудинг: при `cloneRespondGroundingEnabled` (`CLONE_RESPOND_GROUNDING_ENABLED`) `parseCitations` требует `[BLOCK]`-цитаты в ответе LLM — без них программный отказ `ungrounded` (LLM-текст НЕ возвращается), метрика `clone_ask_refused_total{reason='ungrounded'}`.
+
+**Грабля продвижения:** `SkillUsage.outcome`/`editDistance` не backfill'ятся, поэтому эволюция shadow→active у practice-skills голодает без сигнала реального использования.
+
 ## 6. Точки отказа и наблюдаемость
 
 **Prometheus метрики:**
@@ -180,6 +191,7 @@ SkillTrait.status='misleading' + (опц.) ExecutablePersonaTriggerWatcher.criti
 - [[raw-event-to-graph]] — общий конвейер `IdeaBlock` (Шаг 1 здесь — выход оттуда).
 - [[probe-question-flow]] — probe-trigger'ы `skill.profile_starved`, `skill.contradicting_traits`, `skill.concepts_merged` уходят отсюда.
 - [[notification-dispatch]] — manager digest и in-app/Telegram уведомления о grants.
+- [[practice-skills]] — слой выполнимого ремесла клона (PracticeSkill/RolePrinciple), подмешивается в ответ клона на ASK (см. §5.3).
 
 ## 8. Расхождения «задумано vs реализовано»
 

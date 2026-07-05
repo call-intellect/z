@@ -2153,4 +2153,19 @@ enum PersonaStatus {
 
 **Удаление аккаунта (App Review 5.1.1(v)):** `POST /api/v1/account/delete` → `AccountsService.deleteAccount` в транзакции: `User.deletedAt=now()` (идемпотентно — если уже удалён, не перетирается) + `PushToken.deleteMany` + `ChannelBinding.deleteMany` + `ConversationMember.deleteMany` + revoke всех `UserSession`. Полная анонимизация PII (email/name) — осознанный follow-up (см. `04_не-сделано`).
 
+## COS-слой — модели (указатель, 2026-07-05)
+
+Модели проактивного/операционного слоя, существующие в `schema.prisma`, но не расписанные подробно выше (краткие карточки — назначение · писатель → читатель):
+
+- **`PracticeSkill` / `SkillUsage`** — извлечённые выполнимые процедуры («как делать X») и лог их применения. Пишет `practice-skills/` (extractor), читает retrieval/evaluator. Дыра: `SkillUsage.outcome/editDistance` не backfill'ятся → продвижение shadow→active голодает.
+- **`BlockerSynthesis`** — свод блокеров по Org. Пишет `operations/` (`blocker-synthesis-summary`), читает дайджест/дашборд.
+- **`CrossFunctionalFrictionReport`** — отчёт о меж-функциональном трении. Пишет операционный анализатор, читает дашборд руководителя.
+- **`RecurringTopic`** — повторяющиеся темы разговоров. Пишет операционный агрегатор, читает пульс/дайджесты.
+- **`ForecastSnapshot`** — срез прогноза. Пишет `dashboard/agents/forecaster.cron` (`forecast-weekly`), читает дашборд.
+- **`MeetingBehaviorMetrics`** — метрики поведения на встрече. Пишет `behavior-metrics/`, читает KPI/дашборд.
+- **`ValueRecapSnapshot`** — срез ценности (value recap). Пишет `operations/` (`value-recap-narrative`), читает дайджест/бриф.
+- **`ProactiveNotification`** — проактивные нотификации/нуджи. Пишет `proactive/` (watcher + message-craft), читает доставку каналов.
+- **`PromptCandidate` / `PromptRule` / `PromptFeedback`** — инфраструктура эволюции промптов (GEPA/AutoRule). Пишет/читает `prompt-evolution/` — **DORMANT** (`PROMPT_EVOLUTION_ENABLED=false`, `AUTORULE_ENABLED=false`).
+- **`OrchestratorRun`** — прогон multi-agent research. Пишет/читает `orchestrator/` — **DORMANT** (`ORCHESTRATOR_ENABLED=false`).
+
 [[../index|← index]]

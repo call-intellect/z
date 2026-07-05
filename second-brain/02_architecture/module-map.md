@@ -55,7 +55,7 @@ PostgreSQL + Redis  ←─────────────────  ре
 транскрипт готов (merge.worker) ──┤                                    → пользователь видит отчёт
                                   │
                                   └── [A] ai.analyze → block-ingest ──→ IdeaBlock + Entity + Theme
-                                      (5 LLM-вызовов, ~7 мин)           → специалисты 3-1...3-9
+                                      (5 LLM-вызовов, ~7 мин)           → специалисты 3.1–3.7, 3.9, 3.14, 3.15
                                                                         → граф знаний компании
                                                                         + legacy summaryV2/chapters-v2/tasks-v2
                                                                           (живёт до свёртки в Фазе 6)
@@ -2706,5 +2706,20 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **WS** — расширен `tracker/gateways/tracker.gateway.ts` (`conversation.*` + staff-под-room для access-изоляции); `common/ws/redis-io.adapter.ts` (`@socket.io/redis-adapter`, свои pub/sub из cfg).
 - **Пересажено на ядро:** support (`support/*` → Conversation/Message+SupportTicket, 0 Issue-пути), чат задачи (`tracker` comments → Message под work_chat).
 - **Push:** `push/` расширен транспорт-агностичным `PushService` (PushToken apns/fcm/rustore/webpush). **Mobile:** `kora-mobile/` (Expo RN scaffold).
+
+## COS-слой — проактивные модули (указатель, 2026-07-05)
+
+Карта выше не описывала подробно операционный слой «Кора = AI операционный директор». Боевые модули (код-истина — `backend/src/modules/`):
+
+- **`operations/`** — дайджесты день/неделя/месяц, `personal-daily-brief` (+`personal-brief-hint`), `exec-morning-push.cron`, `blocker-synthesis-summary`, `value-recap-narrative`, `checkin-parse`, `decision-hygiene`.
+- **`proactive/`** — `proactive-watcher.cron` (правила контроля по всем Org) + `proactive-message-craft` + dedup. Тумблер `PROACTIVE_WATCHER_ENABLED`.
+- **`pending-actions/`** — агрегатор очереди решений из нескольких источников.
+- **`decisions`** — реестр решений (специалист 3.3). Профиль — [[../01_projects/decisions]].
+- **`goals/`** — цели + стратегическое выравнивание, `goals-pulse-summarize`. Профиль — [[../01_projects/goals-and-strategic-alignment]].
+- **`practice-skills/`** — extractor/retrieval/evaluator + `PracticeSkill`/`SkillUsage` (флаг `PRACTICE_SKILLS_ENABLED=true`). Известная дыра: `SkillUsage.outcome/editDistance` не backfill'ятся → продвижение shadow→active голодает.
+- **`kpi/`**, **`behavior-metrics/`** — KPI-агрегаты и метрики поведения на встречах (`MeetingBehaviorMetrics`).
+- **DORMANT (флаг OFF):** `orchestrator/` (`ORCHESTRATOR_ENABLED=false`, multi-agent research), `prompt-evolution/` (GEPA + AutoRule + `PromptCandidate`/`PromptRule`/`PromptFeedback` — `PROMPT_EVOLUTION_ENABLED=false`, `AUTORULE_ENABLED=false`).
+
+Карта агентов по способу запуска — [[ai-agents-map]]; функциональные модули — [[agent-modules]].
 
 [[../index|← index]]

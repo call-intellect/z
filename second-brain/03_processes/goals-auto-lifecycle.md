@@ -36,8 +36,8 @@ related_projects:
 - **Кто инициирует:** маршрутизатор знаний (когда на встрече прозвучало обещание/план), ежедневный/еженедельный cron, либо владелец/админ через UI.
 - **Технический источник:**
   - Событие: очередь `core.specialist-routing`, jobName `'3-14-goals'` (source: `signalType ∈ {commitment, plan_item}`).
-  - Cron авто-прогресса: `GoalKrProgressCron` (`@Cron('0 5 * * *')`).
-  - Cron пульса: `GoalsPulseCron` (`@Cron('0 6 * * 1')` = пн 09:00 МСК).
+  - Cron авто-прогресса: `GoalKrProgressCron` (`@Cron('0 5 * * *', { timeZone: 'Europe/Moscow' })` = 05:00 МСК).
+  - Cron пульса: `GoalsPulseCron` (`@Cron('0 6 * * 1', { timeZone: 'Europe/Moscow' })` = пн 06:00 МСК).
   - Manual: `POST /goals`, `POST/PATCH/DELETE /goals/:id/key-results[/:krId]`, `POST /goals/:id/supersede`, `PATCH /goals/:id` (owner/admin).
 
 ## 3. Шаги процесса (общий список)
@@ -70,9 +70,9 @@ related_projects:
 | 3 | Поиск похожих целей (dedup) | KNN-дедуп против существующих целей; у `Goal` нет embedding-колонки → ILIKE-fallback. Совпадение → promote существующей `suggested`, не плодит дубль. Cap=7 active+suggested на горизонт | `services/specialist-3-14-goals.service.ts` | — | `Goal` | ✅ |
 | 4 | Создание цели-черновика / промоут | Создаёт `Goal(source='ai', promotionState='suggested', sourceBlockIds, confidence, createdById=owner Org)`. При `confidence≥0.8` или повторе → `promotionState='active'`. Нет owner → skip | `services/specialist-3-14-goals.service.ts` | — | `Goal` | ✅ |
 | 5 | Пристроить в дерево | LLM-арбитр `goal-hierarchy-link` (KNN + cheap) → проставляет `parentGoalId` | `services/specialist-3-14-goals.service.ts` + `prompts/goal-hierarchy-link.prompt.ts` | LLM `goal-hierarchy-link` (cheap) | `Goal.parentGoalId` | ✅ |
-| 6 | Авто-обновление чисел KR | `GoalKrProgressCron` по `sourceKind`: `meeting_count`→`meeting.count(completed)`, `issue_rollup`→`issue.count(state.category=completed, goalId)`, `metric_entity`→`Entity.mentionsCount`, `manual`→skip. Checkpoint(`recordedBy='auto'`) только при изменении значения, в `$transaction`. **M0:** `manualOverride` уважается | `goals/cron/goal-kr-progress.cron.ts` + `GoalKrProgressService` | `@Cron('0 5 * * *')` (05:00 UTC) | `GoalKeyResult.currentValue`, `GoalKeyResultCheckpoint` | ⚠️ работает, проверено юнит-тестами; прод-прогон по расписанию |
+| 6 | Авто-обновление чисел KR | `GoalKrProgressCron` по `sourceKind`: `meeting_count`→`meeting.count(completed)`, `issue_rollup`→`issue.count(state.category=completed, goalId)`, `metric_entity`→`Entity.mentionsCount`, `manual`→skip. Checkpoint(`recordedBy='auto'`) только при изменении значения, в `$transaction`. **M0:** `manualOverride` уважается | `goals/cron/goal-kr-progress.cron.ts:15` + `GoalKrProgressService` | `@Cron('0 5 * * *', Europe/Moscow)` (05:00 МСК) | `GoalKeyResult.currentValue`, `GoalKeyResultCheckpoint` | ⚠️ работает, проверено юнит-тестами; прод-прогон по расписанию |
 | 7 | Пересчёт статуса движения | Из тренда checkpoints за 14 дней: `achieved`(≥100%) / `stalled`(goalDelta≤0) / `at_risk`(отставание >25 п.п.) / `on_track`. `dropped` авто не выставляется. `progressStatus`∈`Goal.manualOverride` → skip | `GoalKrProgressService` | — | `Goal.progressStatus` | ⚠️ работает, юнит-тесты; прод-прогон по расписанию |
-| 8 | Еженедельный пульс | `GoalsPulseCron` → `GoalsPulseService.getOrGenerate` (агрегат счётчиков по `progressStatus` + `newThisWeek` + LLM `goals-pulse-summarize`, сухой fallback). Идемпотентно `(tenantId, isoWeek)`. Доставка owner/coo через `ConversationalService.sendNotification(eventType='goals.pulse')` при тумблерах `goals.pulse.enabled`/`deliver_to_telegram` | `goals/cron/goals-pulse.cron.ts` + `GoalsPulseService` + `prompts/goals-pulse-summarize` + `common/utils/iso-week.ts` | `@Cron('0 6 * * 1')` (пн 09:00 МСК) | `WeeklyGoalsPulseDigest`, `Notification` | ⚠️ работает, юнит-тесты; реальная доставка по расписанию на проде |
+| 8 | Еженедельный пульс | `GoalsPulseCron` → `GoalsPulseService.getOrGenerate` (агрегат счётчиков по `progressStatus` + `newThisWeek` + LLM `goals-pulse-summarize`, сухой fallback). Идемпотентно `(tenantId, isoWeek)`. Доставка owner/coo через `ConversationalService.sendNotification(eventType='goals.pulse')` при тумблерах `goals.pulse.enabled`/`deliver_to_telegram` | `goals/cron/goals-pulse.cron.ts:26` + `GoalsPulseService` + `prompts/goals-pulse-summarize` + `common/utils/iso-week.ts` | `@Cron('0 6 * * 1', Europe/Moscow)` (пн 06:00 МСК) | `WeeklyGoalsPulseDigest`, `Notification` | ⚠️ работает, юнит-тесты; реальная доставка по расписанию на проде; **у `WeeklyGoalsPulseDigest` нет ни REST-endpoint, ни страницы в кабинете** — виден только при доставке в Telegram/in-app |
 | 9 | Ручное ведение | `GoalKeyResultsService` (CRUD KR + checkpoint `recordedBy='manual'`), `GoalsService.supersede` (новая версия + старой `validUntil`), reparent `PATCH parentGoalId` с `assertNoCycle`/`assertParentExists`, `mergeManualOverride` на каждой правке | `goals/services/goal-key-results.service.ts` + `goals.service.ts` + `goals.controller.ts` + frontend `GoalsClient/GoalDetailClient.tsx` | `POST/PATCH/DELETE /goals/:id/key-results[/:krId]`, `POST /goals/:id/supersede`, `PATCH /goals/:id` | `Goal`, `GoalKeyResult`, `GoalKeyResultCheckpoint`, `AuditLog` | ✅ |
 | 10 | Связь со спринтами/гипотезами | `POST /ideas/:id/goal` (`IdeasService.linkGoal`), `primaryGoalId` в `PATCH /cycles/:id`; `GoalsCheckpointProbeHandler` (`@OnEvent('idea.status_changed')`) при `shipped`+`goalId` → `ProbeService.suggest(reason='goal.kr_checkpoint_suggested')` — НЕ авто-запись KR | `ideas/...`, `tracker/...`, `knowledge-core/...GoalsCheckpointProbeHandler` + frontend `GoalPickerDialog` | `POST /ideas/:id/goal`, `PATCH /cycles/:id` | `Idea.goalId`, `Cycle.primaryGoalId`, probe `Notification` | ✅ |
 
@@ -113,7 +113,7 @@ Notification (owner/coo)
 
 **BullMQ очереди** (видно в `/admin/platform/workers`): `core.specialist-routing` (jobName `3-14-goals`).
 
-**Cron'ы** (видно в `/admin/crons`): `goal-kr-progress` (05:00 UTC), `goals-pulse` (пн 06:00 UTC). Оба под `WorkerOrgGate` — admin может выключить per-Org.
+**Cron'ы** (видно в `/admin/crons`): `goal-kr-progress` (05:00 МСК, Europe/Moscow), `goals-pulse` (пн 06:00 МСК, Europe/Moscow). Оба под `WorkerOrgGate` — admin может выключить per-Org.
 
 **Тумблеры пульса:** `AdminSetting.goals.pulse.enabled` (default true), `goals.pulse.deliver_to_telegram` (default false) — редактируются super_admin через UI настроек.
 
@@ -139,7 +139,10 @@ Notification (owner/coo)
 - ✅ Все фазы: typecheck/lint/build/vitest зелёные.
 
 **Работает, но прод-прогон только по расписанию:**
-- ⚠️ Cron'ы `goal-kr-progress` (05:00 UTC) и `goals-pulse` (пн 06:00 UTC) и доставка пульса через `ConversationalService` проверены **юнит-тестами**; реальный прогон и доставка в Telegram/in-app произойдут на проде по расписанию (на момент аудита фича только что выкачена в ветку).
+- ⚠️ Cron'ы `goal-kr-progress` (05:00 МСК) и `goals-pulse` (пн 06:00 МСК, оба `timeZone: 'Europe/Moscow'`) и доставка пульса через `ConversationalService` проверены **юнит-тестами**; реальный прогон и доставка в Telegram/in-app произойдут на проде по расписанию (на момент аудита фича только что выкачена в ветку).
+
+**Gap доставки пульса:**
+- `WeeklyGoalsPulseDigest` не имеет ни REST-endpoint, ни отдельной страницы в кабинете — при `goals.pulse.deliver_to_telegram=false` (дефолт) пульс генерится в БД, но пользователь его нигде не видит. Просмотр только через доставку в Telegram/in-app.
 
 **Осознанные отсрочки (vNext, §9 ТЗ):**
 - `Goal.departmentId` (цели отдела) — пока только Org-уровень + дерево.

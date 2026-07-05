@@ -93,11 +93,14 @@ UI: `/persons/:id` — двухстадийный диалог (введи ФИ�
 
 Поле `LlmTaskRoute.requiredDataClass: DataClass?` (null = `internal`).
 
-Конфиг провайдеров (см. `llm-router.service.ts`):
-- `anthropic-direct`: `maxDataClass='sensitive', localOnly=false`.
-- `openai-via-proxy`: `maxDataClass='internal', localOnly=false`.
+Конфиг провайдеров — `PROVIDER_CAPABILITY` в `llm-router.service.ts` (7 каналов, факт по коду 2026-07; см. [llm-router.md](../01_projects/llm-router.md)):
+- `anthropic`: `maxDataClass='sensitive', localOnly=false`.
 - `minimax`: `maxDataClass='internal', localOnly=false`.
-- `local-llm` (если подключён): `maxDataClass='private', localOnly=true`.
+- `grsai`: `maxDataClass='internal', localOnly=false`.
+- `openai-via-proxy`: `maxDataClass='private', localOnly=false`.
+- `deepseek`: `maxDataClass='private', localOnly=false`.
+- `kie`: `maxDataClass='private', localOnly=false`.
+- `ollama`: `maxDataClass='private', localOnly=true`.
 
 Порядок: `public < internal < sensitive < private`.
 

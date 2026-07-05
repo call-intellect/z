@@ -108,7 +108,7 @@ const res = await curation.triage({
 
 ## Открытые вопросы / TODO
 
-- **LLM-арбитр** `curation-conflict-suggest-resolution` — пропущен на α-4 (sub-TZ §11). TODO-комментарий оставлен в `ConflictService.resolve`. Цепочка из 3 provider'ов через seed-script появится в γ+.
+- **LLM-арбитр конфликтов — РЕАЛИЗОВАН** (не «пропущен на α-4», как было раньше). Автономный ночной арбитр `backend/src/modules/curation/workers/conflict-arbiter.cron.ts` (ежедневно ~02:00, импортирован в `curation.module.ts`) прогоняет открытые `ConflictItem` через `MultiAgentDebateService` (taskFamily `conflict-arbiter`) и при консенсусе авто-резолвит `keep_old`/`accept_new`/`merge` + пуш владельцу; `escalate`/`evolving`-случаи уходят человеку. Kill-switch `knowledge.curationConflictArbiterEnabled` (ON, AdminSetting), пороги `curationConflictArbiterMinConfidence` (0.7) / `curationConflictArbiterBatchSize` (20). См. [[config-knobs-catalog]] §Курация.
 - **Реальная пометка карточек как stale** — на α-4 cron только создаёт CurationItem. Действительная пометка `status='stale'` в моделях карточек специалистов — задача sub-TZ Слоя 3 (δ+), когда у них появится поле `lastConfirmedAt`.
 - **Лимит на CardVersion.payload** (sub-TZ §13.4) — на α-4 без ограничений, мониторим размер таблицы; ограничение «храним последние N версий» — в δ+ если будет проблема.
 - **Skill-карточки** (sub-TZ §3.6 «Skill — особый case») — без pre-approval, mark_as_misleading. Будет реализовано в γ-1 SkillProfile.

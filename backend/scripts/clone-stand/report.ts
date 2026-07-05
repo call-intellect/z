@@ -21,6 +21,37 @@ const JUDGE_ERROR = 'judge-error(fallback)';
 
 const DOCS = resolve(process.cwd(), '../docs/testing');
 
+const RECALL_CATS = new Set([
+  'direct_method',
+  'procedure',
+  'knowledge',
+  'regulation',
+  'stale_topic',
+  'paraphrase',
+  'former_bearer',
+]);
+const ANALOGY_CATS = new Set(['analogy_transfer', 'expert_advice', 'values_tradeoff', 'chain']);
+
+function sideScorecard(label: string, target: string, group: JudgedResult[]): string[] {
+  if (group.length === 0) return [];
+  const c = (v: Verdict): number => group.filter((j) => j.verdict === v).length;
+  const expert = c('EXPERT_PASS');
+  const answered = group.filter((j) => !j.run.refused);
+  const out: string[] = [];
+  out.push(`### ${label} — ${expert}/${group.length} (${pct(expert, group.length)}) EXPERT · планка ${target}`);
+  out.push('');
+  out.push('| Вердикт | n |');
+  out.push('|---|---:|');
+  out.push(`| EXPERT_PASS | ${expert} |`);
+  out.push(`| WEAK | ${c('WEAK')} |`);
+  out.push(`| REFUSED | ${c('REFUSED')} |`);
+  out.push(`| FABRICATED (инв.=0) | ${c('FABRICATED')} |`);
+  out.push('');
+  out.push(`Оси (на отвеченных): E ${mean(answered.map((j) => j.axes.E)).toFixed(2)} · M ${mean(answered.map((j) => j.axes.M)).toFixed(2)} · G ${mean(group.map((j) => j.axes.G)).toFixed(2)} · P ${mean(answered.map((j) => j.axes.P)).toFixed(2)}`);
+  out.push('');
+  return out;
+}
+
 export interface ManifestCtx {
   statusFacts: string[];
   absentFacts: string[];
@@ -240,6 +271,17 @@ export function buildReport(args: {
   lines.push('');
   lines.push(`**Планка:** EXPERT_PASS ≥95% на отвечаемых · FABRICATED=0 · BOUNDARY_OK=${boundary.length}/${boundary.length} · REFUSED=0 на отвечаемых · ср. M≥0.7.`);
   lines.push('');
+
+  const recall = answerable.filter((j) => RECALL_CATS.has(j.run.category));
+  const analogy = answerable.filter((j) => ANALOGY_CATS.has(j.run.category));
+  const other = answerable.filter((j) => !RECALL_CATS.has(j.run.category) && !ANALOGY_CATS.has(j.run.category));
+  lines.push('## Две стороны медали (C2)');
+  lines.push('');
+  lines.push('ПАМЯТЬ (recall) — «как было / почему так решал», должно сходиться почти всегда. АНАЛОГИЯ (transfer) — «похожая ситуация, как быть», перенос принципа.');
+  lines.push('');
+  lines.push(...sideScorecard('ПАМЯТЬ (recall)', 'CORRECT ~99% (это память)', recall));
+  lines.push(...sideScorecard('АНАЛОГИЯ (transfer)', 'EXPERT ≥ согласовать', analogy));
+  if (other.length > 0) lines.push(...sideScorecard('ПРОЧЕЕ (не размечено)', '—', other));
 
   lines.push('## Оси (среднее на отвеченных, не отказанных)');
   const answered = answerable.filter((j) => !j.run.refused);

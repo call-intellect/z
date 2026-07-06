@@ -83,12 +83,16 @@ const CHUNK_SETTINGS: SettingSpec<unknown>[] = [
   {
     key: "embeddings.chunkTargetTokens",
     label: "Целевой размер чанка (токены)",
+    description:
+      "На сколько токенов делится длинный текст (документ, транскрипт) перед расчётом эмбеддинга. Меньше — точнее поиск, но больше кусков и дороже; больше — грубее поиск, но дешевле.",
     schema: z.number().int().min(64).max(2000).default(512),
     defaultValue: 512,
   },
   {
     key: "embeddings.chunkOverlapTokens",
     label: "Перекрытие чанков (токены)",
+    description:
+      "Сколько токенов конца предыдущего чанка повторяется в начале следующего — не даёт потерять смысл фразы, разрезанной ровно по границе чанка.",
     schema: z.number().int().min(0).max(500).default(64),
     defaultValue: 64,
   },

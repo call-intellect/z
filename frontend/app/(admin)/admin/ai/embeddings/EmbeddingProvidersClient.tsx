@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Info,
   Pencil,
   Plus,
   Power,
@@ -44,6 +45,12 @@ import {
 } from "@/ui/shadcn/select";
 import { Switch } from "@/ui/shadcn/switch";
 import { Textarea } from "@/ui/shadcn/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/ui/shadcn/tooltip";
 
 import {
   AdminEmpty,
@@ -425,15 +432,33 @@ function ProviderCard({
 function Field({
   label,
   hint,
+  tooltip,
   children,
 }: {
   label: string;
   hint?: string;
+  tooltip?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-xs">{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label className="text-xs">{label}</Label>
+        {tooltip && (
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                tabIndex={-1}
+                className="text-fg-tertiary"
+              >
+                <Info size={13} />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">{tooltip}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+      </div>
       {children}
       {hint && <span className="text-[11px] text-fg-tertiary">{hint}</span>}
     </div>
@@ -560,6 +585,7 @@ function ProviderFormDialog({
             <Field
               label="Идентификатор (slug)"
               hint="Стабильный ключ: строчные латиница, цифры, дефис. Изменить позже нельзя."
+              tooltip="Уникальный идентификатор провайдера в системе (slug). Используется в коде и логах для ссылки на этого провайдера эмбеддингов."
             >
               <Input
                 value={name}
@@ -568,21 +594,30 @@ function ProviderFormDialog({
               />
             </Field>
           )}
-          <Field label="Отображаемое имя">
+          <Field
+            label="Отображаемое имя"
+            tooltip="Человекочитаемое имя провайдера — отображается в админке и списках, не участвует в вызовах API."
+          >
             <Input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Мой провайдер эмбеддингов"
             />
           </Field>
-          <Field label="Адрес API">
+          <Field
+            label="Адрес API"
+            tooltip="Базовый URL API эмбеддингов — адрес, на который система отправляет запросы для расчёта векторов."
+          >
             <Input
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="https://api.example.com/v1/embeddings"
             />
           </Field>
-          <Field label="Тип протокола">
+          <Field
+            label="Тип протокола"
+            tooltip="Формат запроса к API эмбеддингов — определяет, как система формирует HTTP-запрос и разбирает ответ (OpenAI-совместимый или Ollama)."
+          >
             <Select
               value={protocolKind}
               onValueChange={(v) =>
@@ -609,6 +644,7 @@ function ProviderFormDialog({
                 ? "Оставьте пустым, чтобы не менять текущий ключ."
                 : "Необязательно для self-hosted без авторизации."
             }
+            tooltip="Ключ доступа к API провайдера. Хранится в БД в зашифрованном виде (AES-256-GCM) и никогда не отображается повторно."
           >
             <Input
               type="password"
@@ -619,14 +655,21 @@ function ProviderFormDialog({
             />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Приоритет" hint="Меньше — раньше в fallback-цепочке.">
+            <Field
+              label="Приоритет"
+              hint="Меньше — раньше в fallback-цепочке."
+              tooltip="Определяет порядок провайдеров в fallback-цепочке при расчёте эмбеддингов: провайдеры перебираются от меньшего приоритета к большему, пока запрос не выполнится успешно."
+            >
               <Input
                 type="number"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value)}
               />
             </Field>
-            <Field label="Активен">
+            <Field
+              label="Активен"
+              tooltip="Определяет, участвует ли провайдер в fallback-цепочке расчёта эмбеддингов. Отключённые провайдеры пропускаются при резолве."
+            >
               <div className="flex h-9 items-center">
                 <Switch checked={isActive} onCheckedChange={setIsActive} />
               </div>
@@ -635,6 +678,7 @@ function ProviderFormDialog({
           <Field
             label="Доп. HTTP-заголовки (JSON)"
             hint='Необязательно. Пример: {"X-Custom": "value"}'
+            tooltip="Дополнительные HTTP-заголовки, отправляемые с каждым запросом к API (например, кастомная авторизация или версия API)."
           >
             <Textarea
               value={headers}
@@ -765,6 +809,7 @@ function ModelFormDialog({
             <Field
               label="Идентификатор модели"
               hint="Передаётся в запросе к API. Изменить позже нельзя."
+              tooltip="Идентификатор модели, который передаётся в запросе к API эмбеддингов (например, text-embedding-3-small)."
             >
               <Input
                 value={modelKey}
@@ -773,14 +818,21 @@ function ModelFormDialog({
               />
             </Field>
           )}
-          <Field label="Отображаемое имя">
+          <Field
+            label="Отображаемое имя"
+            tooltip="Человекочитаемое имя модели для отображения в админке — не участвует в вызове API."
+          >
             <Input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
             />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Размерность вектора" hint="От 64 до 4096.">
+            <Field
+              label="Размерность вектора"
+              hint="От 64 до 4096."
+              tooltip="Размерность вектора эмбеддинга (число компонентов). Должна совпадать с размерностью существующих pgvector-колонок для активации; при смене размерности у провайдера потребуется полная переиндексация."
+            >
               <Input
                 type="number"
                 value={dimensions}
@@ -791,6 +843,7 @@ function ModelFormDialog({
             <Field
               label="Цена за 1M токенов (₽)"
               hint="Справочно. Не влияет на биллинг."
+              tooltip="Ориентировочная цена провайдера за 1 миллион входных токенов, в рублях. Нужна только для сравнения провайдеров в админке."
             >
               <Input
                 type="number"
@@ -801,12 +854,18 @@ function ModelFormDialog({
               />
             </Field>
           </div>
-          <Field label="Активна">
+          <Field
+            label="Активна"
+            tooltip="Определяет, может ли модель быть выбрана для расчёта эмбеддингов у этого провайдера. У провайдера должна быть хотя бы одна активная модель, иначе он не участвует в fallback-цепочке."
+          >
             <div className="flex h-9 items-center">
               <Switch checked={isActive} onCheckedChange={setIsActive} />
             </div>
           </Field>
-          <Field label="Заметки">
+          <Field
+            label="Заметки"
+            tooltip="Свободный текст-заметка о статусе модели, например ограничения или особенности провайдера. Не влияет на логику работы."
+          >
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}

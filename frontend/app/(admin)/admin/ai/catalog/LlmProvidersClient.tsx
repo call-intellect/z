@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CheckCircle2,
+  Info,
   Pencil,
   Plus,
   Power,
@@ -48,6 +49,12 @@ import {
 } from "@/ui/shadcn/select";
 import { Switch } from "@/ui/shadcn/switch";
 import { Textarea } from "@/ui/shadcn/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/ui/shadcn/tooltip";
 
 import {
   AdminEmpty,
@@ -528,15 +535,33 @@ function ProviderCard({
 function Field({
   label,
   hint,
+  tooltip,
   children,
 }: {
   label: string;
   hint?: string;
+  tooltip?: string;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-xs">{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label className="text-xs">{label}</Label>
+        {tooltip ? (
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                tabIndex={-1}
+                className="text-fg-tertiary"
+              >
+                <Info size={13} />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">{tooltip}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : null}
+      </div>
       {children}
       {hint && <span className="text-[11px] text-fg-tertiary">{hint}</span>}
     </div>
@@ -771,6 +796,7 @@ function ProviderFormDialog({
             <Field
               label="Идентификатор (slug)"
               hint="Стабильный ключ: строчные латиница, цифры, дефис. Изменить позже нельзя."
+              tooltip="Уникальное короткое имя провайдера (slug), например «deepseek» или «openai-proxy». Используется в коде как стабильный идентификатор — менять после создания нельзя."
             >
               <Input
                 value={name}
@@ -779,21 +805,30 @@ function ProviderFormDialog({
               />
             </Field>
           )}
-          <Field label="Отображаемое имя">
+          <Field
+            label="Отображаемое имя"
+            tooltip="Человекочитаемое имя провайдера — отображается в интерфейсе админки."
+          >
             <Input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Мой провайдер"
             />
           </Field>
-          <Field label="Адрес API (baseUrl)">
+          <Field
+            label="Адрес API (baseUrl)"
+            tooltip="Базовый адрес API провайдера — куда система отправляет запросы (endpoint)."
+          >
             <Input
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="https://api.example.com/v1"
             />
           </Field>
-          <Field label="Тип протокола">
+          <Field
+            label="Тип протокола"
+            tooltip="Формат протокола: как система формирует запрос и разбирает ответ этого провайдера (openai-chat / openai-responses / anthropic-messages / ollama-native / kie-native / grsai-native / custom-http)."
+          >
             <Select
               value={protocolKind}
               onValueChange={(v) => setProtocolKind(v as LlmProtocolKind)}
@@ -810,7 +845,10 @@ function ProviderFormDialog({
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Класс данных (capability)">
+          <Field
+            label="Класс данных (capability)"
+            tooltip="Влияет на маршрутизацию запросов по dataClass через LlmRouterService: «sensitive»/«private» допускаются для чувствительных данных, «public» — только для не чувствительных."
+          >
             <Select
               value={capability}
               onValueChange={(v) => setCapability(v as LlmProviderCapability)}
@@ -834,6 +872,7 @@ function ProviderFormDialog({
                 ? "Оставьте пустым, чтобы не менять текущий ключ."
                 : "Необязательно для self-hosted без авторизации."
             }
+            tooltip="Хранится в зашифрованном виде (AES-256-GCM). Можно оставить пустым для self-hosted провайдеров без авторизации (например, Ollama)."
           >
             <Input
               type="password"
@@ -846,9 +885,27 @@ function ProviderFormDialog({
           <div className="rounded-md border border-border-subtle p-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <Label className="text-xs">
-                  {useProxy ? "Через прокси" : "Напрямую"}
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs">
+                    {useProxy ? "Через прокси" : "Напрямую"}
+                  </Label>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger
+                        type="button"
+                        tabIndex={-1}
+                        className="text-fg-tertiary"
+                      >
+                        <Info size={13} />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        Ходить к провайдеру через внутренний прокси: итоговый
+                        адрес строится из PROXY_BASE_URL и пути на прокси, а
+                        ключ передаётся с префиксом PROXY_PREFIX.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <p className="text-[11px] text-fg-tertiary">
                   Ходить к провайдеру через внутренний прокси вместо прямого
                   подключения.
@@ -861,6 +918,7 @@ function ProviderFormDialog({
                 <Field
                   label="Путь на прокси (proxyPath)"
                   hint="Слаг пути на прокси, например 'grsai'. Пусто — корневой прокси (для OpenAI)."
+                  tooltip="Слаг пути на прокси — добавляется к адресу прокси, например «grsai» → адрес-прокси/grsai/v1. Пусто — используется корневой upstream-прокси (для OpenAI)."
                 >
                   <Input
                     value={proxyPath}
@@ -875,6 +933,7 @@ function ProviderFormDialog({
             <Field
               label="Таймаут (мс)"
               hint="Переопределение таймаута dispatch. Пусто = глобальный дефолт."
+              tooltip="Переопределяет глобальный таймаут запроса к провайдеру (в мс). Если не задано — используется общий дефолт из настроек (LLM_ROUTER_DISPATCH_TIMEOUT_MS)."
             >
               <Input
                 type="number"
@@ -883,7 +942,11 @@ function ProviderFormDialog({
                 placeholder="необязательно"
               />
             </Field>
-            <Field label="Лимит запросов (rps)" hint="Необязательно.">
+            <Field
+              label="Лимит запросов (rps)"
+              hint="Необязательно."
+              tooltip="Ограничение частоты запросов к провайдеру (запросов в секунду) для самозащиты от перегрузки. Если не задано — лимита нет."
+            >
               <Input
                 type="number"
                 value={globalRps}
@@ -895,6 +958,7 @@ function ProviderFormDialog({
           <Field
             label="Модель по умолчанию"
             hint="Используется, когда модель не задали ни вызов, ни маршрут."
+            tooltip="Модель, которая используется, если ни сам вызов, ни маршрут не указали конкретную модель явно."
           >
             <div className="flex gap-2">
               <Input
@@ -967,7 +1031,10 @@ function ProviderFormDialog({
               </div>
             )}
           </Field>
-          <Field label="Активен">
+          <Field
+            label="Активен"
+            tooltip="Определяет, участвует ли провайдер в маршрутизации запросов. Отключённый провайдер не будет выбран для новых вызовов."
+          >
             <div className="flex h-9 items-center">
               <Switch checked={isActive} onCheckedChange={setIsActive} />
             </div>
@@ -975,6 +1042,7 @@ function ProviderFormDialog({
           <Field
             label="Доп. HTTP-заголовки (JSON)"
             hint='Необязательно. Пример: {"X-Custom": "value"}'
+            tooltip="Дополнительные HTTP-заголовки, отправляемые с каждым запросом к этому провайдеру (например, Anthropic-Version). Формат — JSON-объект строка→строка."
           >
             <Textarea
               value={headers}

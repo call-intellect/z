@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Info, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api/api-error";
@@ -38,6 +38,12 @@ import {
 } from "@/ui/shadcn/select";
 import { Switch } from "@/ui/shadcn/switch";
 import { Textarea } from "@/ui/shadcn/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/ui/shadcn/tooltip";
 
 import {
   AdminEmpty,
@@ -304,15 +310,33 @@ function ModelsTable({
 function Field({
   label,
   hint,
+  tooltip,
   children,
 }: {
   label: string;
   hint?: string;
+  tooltip?: string;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-xs">{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label className="text-xs">{label}</Label>
+        {tooltip && (
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                tabIndex={-1}
+                className="text-fg-tertiary"
+              >
+                <Info size={13} />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">{tooltip}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+      </div>
       {children}
       {hint && <span className="text-[11px] text-fg-tertiary">{hint}</span>}
     </div>
@@ -423,7 +447,10 @@ function ModelFormDialog({
         </DialogHeader>
         <div className="grid gap-3">
           {!isEdit && (
-            <Field label="Провайдер">
+            <Field
+              label="Провайдер"
+              tooltip="Провайдер LLM, к которому относится модель. После создания изменить нельзя."
+            >
               <Select value={providerId} onValueChange={setProviderId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите провайдера" />
@@ -442,6 +469,7 @@ function ModelFormDialog({
             <Field
               label="Идентификатор модели (modelKey)"
               hint="Передаётся в запросе к API провайдера. Изменить позже нельзя."
+              tooltip="Идентификатор модели в API провайдера — эта строка передаётся в запросе как есть."
             >
               <Input
                 value={modelKey}
@@ -450,14 +478,21 @@ function ModelFormDialog({
               />
             </Field>
           )}
-          <Field label="Отображаемое имя">
+          <Field
+            label="Отображаемое имя"
+            tooltip="Человекочитаемое имя модели, которое видно в интерфейсе."
+          >
             <Input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
             />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Контекстное окно (tokens)" hint="Необязательно.">
+            <Field
+              label="Контекстное окно (tokens)"
+              hint="Необязательно."
+              tooltip="Размер контекстного окна модели в токенах."
+            >
               <Input
                 type="number"
                 value={contextWindow}
@@ -465,7 +500,10 @@ function ModelFormDialog({
                 placeholder="необязательно"
               />
             </Field>
-            <Field label="Категория">
+            <Field
+              label="Категория"
+              tooltip="Категория модели для интерфейса: флагман, быстрая, рассуждающая, эмбеддинги или экспериментальная."
+            >
               <Select
                 value={category}
                 onValueChange={(v) => setCategory(v as CategoryOption)}
@@ -484,12 +522,18 @@ function ModelFormDialog({
               </Select>
             </Field>
           </div>
-          <Field label="Активна">
+          <Field
+            label="Активна"
+            tooltip="Участвует ли модель в маршрутизации запросов."
+          >
             <div className="flex h-9 items-center">
               <Switch checked={isActive} onCheckedChange={setIsActive} />
             </div>
           </Field>
-          <Field label="Заметки">
+          <Field
+            label="Заметки"
+            tooltip="Свободная заметка о статусе модели — например, об ограничениях или проблемах."
+          >
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}

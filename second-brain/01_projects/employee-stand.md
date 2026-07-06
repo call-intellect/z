@@ -23,8 +23,13 @@
 ## Что построено (Фаза 5 — весь backend `/me/*`)
 - `GET /me/night-ledger` (Кора за ночь: авто-черновики + задачи из встреч self + ответы клона) · `GET /me/requires-you` (**решения-без-задачи + мои просроченные обещания** — отдельным эндпоинтом, НЕ через pending-actions: интеграция в общий inbox сильно связана — enum/bySource/snoozed/confirm-switch — отложена, фронт совмещает с probe/intake) · `GET /me/clone-impact` (окупаемость клона) · `GET /me/company-blockers` (лента компании + isMine) + `GET /me/company-ideas` (топ + myIdeasThisMonth).
 
-## Осталось
-Фронт `/me` (борд + письмо + ленты + клик→трекер `/issues/{id}`) + сверка с прототипом. Опц.: интеграция requires-you в pending-actions как единый inbox; приватность-гейт закрытых групп для company-blockers (владелец решил «показывать всё»).
+## Фронт (Фаза 6)
+Экран **`/me/stand`** (`app/(authenticated)/me/stand/`): обложка-письмо (вердикт+4 оси+секции) · борд задач 4 колонки (карточка → `Link /issues/{id}`, **клик→трекер работает**) · «требует тебя» · «Кора за ночь» · ленты блокеров (isMine выделен) / идей · трастовый футер. API-слой `src/api/me-stand.api.ts` + домен `src/domain/me-stand.ts` (12 вызовов, SWR по `currentOrgId`). Токены oklch (accent уже мятный — совпадает с прототипом). Typecheck 0 ошибок.
+
+## Осталось (follow-ups)
+- **Роле-зависимая посадка:** login-редирект `isSuperAdmin?/admin:/meetings` общий для всех ролей — сменить сотруднику на `/me/stand` требует роль-чека на входе + решения владельца, где приземляются владелец/админ. Стенд пока по прямому урлу `/me/stand`.
+- Пункт в навигации сотрудника (nav-config).
+- Опц.: интеграция requires-you в pending-actions (единый inbox); приватность-гейт закрытых групп для company-blockers (владелец решил «показывать всё»); детализация виджетов «на твоей стороне»/«ты двигаешь» (эндпоинты load/stuck/plan-signal/expertise/clone-impact готовы, UI-карточки — по мере надобности).
 
 ## Связи
 Директорский дашборд — [[director-dashboard]] (образец агента `operations-daily-digest`). Захват метода → клоны (мостик probe→skill). Роль сотрудника = `manager` (не `member`).

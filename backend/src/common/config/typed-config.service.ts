@@ -149,7 +149,7 @@ export class TypedConfigService {
   get cors() {
     const allowed: string[] = [this.get('PUBLIC_FRONTEND_URL')];
     if (this.runtime.isDevelopment) {
-      allowed.push('http://localhost:3000', 'http://localhost:3001');
+      allowed.push('http://localhost:3000', 'http://localhost:3001', 'http://localhost:4000', 'http://localhost:4001');
     }
     return { allowed } as const;
   }

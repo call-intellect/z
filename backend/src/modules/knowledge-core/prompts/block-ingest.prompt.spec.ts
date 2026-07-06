@@ -43,6 +43,10 @@ describe('block-ingest prompt — signalType recall (Ф1)', () => {
     expect(system).toContain('Запрос фичи (feature_request) — просьба сделать конкретную функцию');
   });
 
+  it('дуальная эмиссия эксперимент+действие → hypothesis И action_item', () => {
+    expect(system).toContain('ЭКСПЕРИМЕНТ + ДЕЙСТВИЕ');
+  });
+
   // Маркеры методологии (acceptance Ф1) — блок различий, self-check, запрет кодов.
   it('содержит блок различий классов, самопроверку и запрет кодов', () => {
     expect(system).toContain('Главные различия классов');

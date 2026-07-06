@@ -63,6 +63,8 @@ describe('specialists-combined — system prompt snapshot', () => {
     expect(prompt).toContain('tasks[]');
     expect(prompt).toContain('ГРУППИРОВКА');
     expect(prompt).toContain('на чистом русском');
+    expect(prompt).toContain('эксперимент с конкретным действием');
+    expect(prompt).toContain('больше экспериментировать');
   });
 });
 

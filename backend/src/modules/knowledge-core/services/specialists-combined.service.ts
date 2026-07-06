@@ -1186,6 +1186,10 @@ export class SpecialistsCombinedService {
         sourceBlockId: t.sourceBlockId,
       }));
     if (drafts.length === 0) return 0;
+    this.logger.log(
+      { action: 'combo_task_linkage', channel, sourceId, drafts: drafts.length },
+      '[PIPE] combo task linkage',
+    );
     try {
       const created = await this.taskMaterializer.materialize({
         tenantId,

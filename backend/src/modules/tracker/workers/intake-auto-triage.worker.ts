@@ -340,6 +340,17 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    this.logger.log(
+      {
+        action: 'promote_assignee',
+        source: intake.source,
+        finalAssigneeId: effectiveAssigneeId,
+        assigneeUnresolved,
+        ownerHintRaw: intake.ownerHintRaw ?? null,
+      },
+      'intake-auto-triage: promote assignee',
+    );
+
     let effectiveProjectId = suggestedProjectId;
     let viaDefaultProject = false;
     if (

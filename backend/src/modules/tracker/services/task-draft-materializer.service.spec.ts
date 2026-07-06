@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -289,5 +290,78 @@ describe('TaskDraftMaterializerService', () => {
         data: expect.objectContaining({ meetingId: null }),
       }),
     );
+  });
+
+  it('Ф4-лог: meeting_report + hint-гость → assignee_resolve reason=guest_unassigned', async () => {
+    const { service } = makeDeps();
+    const logSpy = vi.spyOn(Logger.prototype, 'log');
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача Романа', suggestedAssigneeHint: 'Роман' }],
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'assignee_resolve',
+        hint: 'Роман',
+        resolverResult: 'not_found',
+        skillRoutingApplied: false,
+        finalAssigneeId: null,
+        reason: 'guest_unassigned',
+      }),
+      expect.anything(),
+    );
+    logSpy.mockRestore();
+  });
+
+  it('Ф4-лог: meeting_report + hint-сотрудник → assignee_resolve reason=name_hint', async () => {
+    const { service, resolve } = makeDeps();
+    resolve.mockResolvedValueOnce({ kind: 'resolved', userId: 'user-sergey' });
+    const logSpy = vi.spyOn(Logger.prototype, 'log');
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача Сергея', suggestedAssigneeHint: 'Сергей' }],
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'assignee_resolve',
+        hint: 'Сергей',
+        resolverResult: 'resolved',
+        finalAssigneeId: 'user-sergey',
+        reason: 'name_hint',
+      }),
+      expect.anything(),
+    );
+    logSpy.mockRestore();
+  });
+
+  it('Ф4-лог: meeting_report → meeting_linkage с голым meetingId и linked=true', async () => {
+    const { service } = makeDeps();
+    const logSpy = vi.spyOn(Logger.prototype, 'log');
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача из отчёта' }],
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'meeting_linkage',
+        channel: 'meeting_report',
+        meetingId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        linked: true,
+      }),
+      expect.anything(),
+    );
+    logSpy.mockRestore();
   });
 });

@@ -191,7 +191,7 @@ export class TaskDraftMaterializerService {
           suggestedLabels: [],
           suggestedDuplicateOfIssueId,
           sourceBlockIds: draft.sourceBlockId ? [draft.sourceBlockId] : [],
-          meetingId: channel === 'meeting' ? args.sourceId : null,
+          meetingId: this.resolveLinkedMeetingId(channel, args.sourceId),
           confidence: confidenceDecimal,
           checklistJson: checklistJson ?? Prisma.JsonNull,
           expiresAt: computeExpiresAt(this.cfg.pendingActions.intakeTtlDays),
@@ -241,6 +241,15 @@ export class TaskDraftMaterializerService {
       'task-draft-materializer: готово',
     );
     return created;
+  }
+
+  private resolveLinkedMeetingId(channel: string, sourceId: string): string | null {
+    if (channel === 'meeting') return sourceId;
+    if (channel === 'meeting_report') {
+      const bare = sourceId.startsWith('report_') ? sourceId.slice('report_'.length) : sourceId;
+      return /^[0-9A-HJKMNP-TV-Z]{26}$/i.test(bare) ? bare : null;
+    }
+    return null;
   }
 
   private makeExternalId(channel: string, sourceId: string, key: string): string {

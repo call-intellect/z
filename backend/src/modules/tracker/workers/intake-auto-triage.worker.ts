@@ -270,7 +270,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
       intake.suggestedProjectId,
     );
     let suggestedAssigneeId: string | null;
-    if (intake.source === 'meeting') {
+    if (intake.source === 'meeting' || intake.source === 'meeting_report') {
       suggestedAssigneeId = intake.suggestedAssigneeId;
     } else {
       const hint = (parsed.suggestedAssigneeHint ?? '').trim();
@@ -292,7 +292,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     const confidence = clampConfidence(parsed.confidence ?? 0);
 
     const confidentEnough = confidence >= this.cfg.tracker.autoAcceptConfidenceThreshold;
-    const isMeeting = intake.source === 'meeting';
+    const isMeeting = intake.source === 'meeting' || intake.source === 'meeting_report';
     const meetingAlwaysPromote = this.cfg.tracker.meetingTasksAlwaysPromote;
     const meetingPromote = isMeeting && meetingAlwaysPromote;
 
@@ -301,6 +301,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     if (
       effectiveAssigneeId === null &&
       intake.source !== 'meeting' &&
+      intake.source !== 'meeting_report' &&
       this.skillRouting &&
       this.cfg.taskRouting.enabled
     ) {
@@ -326,7 +327,12 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
         /* fail-soft */
       }
     }
-    if (confidentEnough && effectiveAssigneeId === null && intake.source !== 'meeting') {
+    if (
+      confidentEnough &&
+      effectiveAssigneeId === null &&
+      intake.source !== 'meeting' &&
+      intake.source !== 'meeting_report'
+    ) {
       const orgOwnerId = await this.resolveOrgOwnerId(tenantId);
       if (orgOwnerId) {
         effectiveAssigneeId = orgOwnerId;

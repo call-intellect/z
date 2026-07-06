@@ -164,4 +164,72 @@ describe('TaskDraftMaterializerService', () => {
       }),
     );
   });
+
+  it('meeting_report + report_<ulid> → meetingId = голый ulid', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача из отчёта' }],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ meetingId: '01ARZ3NDEKTSV4RRFFQ69G5FAV' }),
+      }),
+    );
+  });
+
+  it('meeting + ulid → meetingId = sourceId (регресс)', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting',
+      sourceId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача из транскрипта' }],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ meetingId: '01ARZ3NDEKTSV4RRFFQ69G5FAV' }),
+      }),
+    );
+  });
+
+  it('meeting_report + невалидный ulid → meetingId = null (не падать)', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_notulid',
+      drafts: [{ title: 'Задача с плохим id' }],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ meetingId: null }),
+      }),
+    );
+  });
+
+  it('chatbox → meetingId = null (регресс)', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'chatbox',
+      sourceId: 'conv-1',
+      drafts: [{ title: 'Задача из чата' }],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ meetingId: null }),
+      }),
+    );
+  });
 });

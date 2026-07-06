@@ -20,8 +20,11 @@
 - **Фаза 3 (агент письма):** `personal-day-narrative` — промпт (`operations/prompts/`), taskType в `LlmRouter`, `PersonalDayNarrativeService` (пакет 6 источников + LLM с fallback + upsert), `PersonalDayNarrativeCron`, DTO, `GET /me/day-letter` + `POST /me/day-letter/:id/opened`. Проверен экспериментом на «Стреле».
 - **Фаза 4:** борд задач `GET /me/tasks/buckets` (`IssuesService.findMyTaskBuckets` — 4 букета) · `GET /me/tasks/method-capture-pending` + запись `methodCapturedAt` из probe (`ProbeResponseHandler`) · `GET /me/load` + `/me/stuck` (`MyExecutionDashboardController`, self-срез) · `GET /me/check-ins/plan-signal` (`DailyCheckInService.getPlanNotClosingStreak`) · `GET /me/expertise` (`PersonExpertiseService`, авторство через `IdeaBlockEvidence.authorPersonId`).
 
+## Что построено (Фаза 5 — весь backend `/me/*`)
+- `GET /me/night-ledger` (Кора за ночь: авто-черновики + задачи из встреч self + ответы клона) · `GET /me/requires-you` (**решения-без-задачи + мои просроченные обещания** — отдельным эндпоинтом, НЕ через pending-actions: интеграция в общий inbox сильно связана — enum/bySource/snoozed/confirm-switch — отложена, фронт совмещает с probe/intake) · `GET /me/clone-impact` (окупаемость клона) · `GET /me/company-blockers` (лента компании + isMine) + `GET /me/company-ideas` (топ + myIdeasThisMonth).
+
 ## Осталось
-Провайдеры «требует тебя» (`decision_action` + `commitment_action` в pending-actions) · `GET /me/night-ledger` (Кора за ночь) · `GET /me/clone-impact` · ленты `GET /me/company-blockers` (+ гейт приватности) + `GET /me/company-ideas` · фронт `/me` + сверка с прототипом.
+Фронт `/me` (борд + письмо + ленты + клик→трекер `/issues/{id}`) + сверка с прототипом. Опц.: интеграция requires-you в pending-actions как единый inbox; приватность-гейт закрытых групп для company-blockers (владелец решил «показывать всё»).
 
 ## Связи
 Директорский дашборд — [[director-dashboard]] (образец агента `operations-daily-digest`). Захват метода → клоны (мостик probe→skill). Роль сотрудника = `manager` (не `member`).

@@ -2877,6 +2877,56 @@ export class ClonesService {
     }
   }
 
+  async getCloneImpactSummary(args: { tenantId: string; userId: string }): Promise<{
+    totalAsked: number;
+    answeredGroundedCount: number;
+    refusedCount: number;
+    recentQuestions: Array<{ questionPreview: string; createdAt: string; answeredGrounded: boolean }>;
+  }> {
+    const person = await this.prisma.person.findFirst({
+      where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!person) {
+      return { totalAsked: 0, answeredGroundedCount: 0, refusedCount: 0, recentQuestions: [] };
+    }
+
+    const where = {
+      tenantId: args.tenantId,
+      cloneScope: 'person' as const,
+      cloneTargetId: person.id,
+    };
+    const [grouped, recent] = await Promise.all([
+      this.prisma.cloneQueryLog.groupBy({
+        by: ['answeredGrounded'],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.cloneQueryLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { questionPreview: true, createdAt: true, answeredGrounded: true },
+      }),
+    ]);
+    let answeredGroundedCount = 0;
+    let refusedCount = 0;
+    for (const g of grouped) {
+      if (g.answeredGrounded) answeredGroundedCount += g._count._all;
+      else refusedCount += g._count._all;
+    }
+    return {
+      totalAsked: answeredGroundedCount + refusedCount,
+      answeredGroundedCount,
+      refusedCount,
+      recentQuestions: recent.map((r) => ({
+        questionPreview: r.questionPreview,
+        createdAt: r.createdAt.toISOString(),
+        answeredGrounded: r.answeredGrounded,
+      })),
+    };
+  }
+
   async listQueryLog(args: {
     tenantId: string;
     cloneTargetId?: string;

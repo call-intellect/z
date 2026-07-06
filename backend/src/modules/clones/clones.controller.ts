@@ -370,6 +370,8 @@ export class MeCloneAccessController {
   constructor(
     @Inject(ClonesAdminService)
     private readonly admin: ClonesAdminService,
+    @Inject(ClonesService)
+    private readonly clones: ClonesService,
   ) {}
 
   @Get('clone-access')
@@ -387,5 +389,27 @@ export class MeCloneAccessController {
       });
     }
     return this.admin.getMyCloneAccess({ tenantId, userId: user.id });
+  }
+
+  @Get('clone-impact')
+  @ApiOperation({
+    summary: 'Сколько раз мой клон ответил за меня (self-scope, окупаемость захвата знаний)',
+  })
+  async getMyCloneImpact(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{
+    totalAsked: number;
+    answeredGroundedCount: number;
+    refusedCount: number;
+    recentQuestions: Array<{ questionPreview: string; createdAt: string; answeredGrounded: boolean }>;
+  }> {
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Организация не определена' },
+      });
+    }
+    return this.clones.getCloneImpactSummary({ tenantId, userId: user.id });
   }
 }

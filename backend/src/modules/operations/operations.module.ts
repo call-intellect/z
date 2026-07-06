@@ -14,6 +14,7 @@ import { MyCustomerRiskController } from './controllers/my-customer-risk.control
 import { MyDailyBriefController } from './controllers/my-daily-brief.controller';
 import { MyDailyValueController } from './controllers/my-daily-value.controller';
 import { MyDayNarrativeController } from './controllers/my-day-narrative.controller';
+import { MyNightLedgerController } from './controllers/my-night-ledger.controller';
 import { MyWeeklyPerPersonController } from './controllers/my-weekly-per-person.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
 import { PersonalRelationsController } from './controllers/personal-relations.controller';
@@ -34,6 +35,8 @@ import { GoalCascadeService } from './services/goal-cascade.service';
 import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
 import { KnowsWhoService } from './services/knows-who.service';
 import { MonthlyDigestService } from './services/monthly-digest.service';
+import { NightLedgerService } from './services/night-ledger.service';
+import { RequiresYouService } from './services/requires-you.service';
 import { OnboardingRampService } from './services/onboarding-ramp.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
 import { PersonRefResolverService } from './services/person-ref-resolver.service';
@@ -90,6 +93,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     MyCustomerRiskController,
     MyDailyBriefController,
     MyDayNarrativeController,
+    MyNightLedgerController,
     MyWeeklyPerPersonController,
     MyDailyValueController,
     MonthlyDigestController,
@@ -139,6 +143,8 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     PersonalDailyBriefCron,
     PersonalDayNarrativeService,
     PersonalDayNarrativeCron,
+    NightLedgerService,
+    RequiresYouService,
     ExecMorningPushCron,
     BlockerSynthesisService,
     BlockerSynthesisCron,

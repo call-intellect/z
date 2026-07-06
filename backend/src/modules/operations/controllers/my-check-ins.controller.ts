@@ -106,6 +106,25 @@ export class MyCheckInsController {
     return { items: items.map((it) => stripSentimentForRole(it, null)) };
   }
 
+  @Get('plan-signal')
+  @ApiOperation({
+    summary: 'Сигнал «план не закрывается N дней подряд» (поведенческий, без настроения)',
+  })
+  async planSignal(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+  ): Promise<{
+    streakDays: number;
+    triggered: boolean;
+    lastNotDoneItems: string[];
+    thresholdDays: number;
+  }> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    const person = await this.svc.resolveSelfPerson({ tenantId: tenantId!, userId: uid });
+    return this.svc.getPlanNotClosingStreak({ tenantId: tenantId!, personId: person.id });
+  }
+
   private requireUser(req: Request): string {
     const uid = req.user?.id;
     if (!uid) {

@@ -16,6 +16,14 @@ import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 import type { MyInboxCountDto, MyInboxResponseDto } from '../dto/issues/issue-response.dto';
+import {
+  MyMethodCapturePendingQuerySchema,
+  MyTaskBucketsQuerySchema,
+  type MethodCapturePendingResponseDto,
+  type MyMethodCapturePendingQuery,
+  type MyTaskBucketsQuery,
+  type TaskBucketsResponseDto,
+} from '../dto/issues/me-task-buckets.dto';
 import { MyInboxQuerySchema, type MyInboxQuery } from '../dto/issues/my-inbox-query.dto';
 import { IssuesService } from '../services/issues.service';
 
@@ -75,6 +83,42 @@ export class MeInboxController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     return this.svc.countMyInbox(t, user.id);
+  }
+
+  @Get('me/tasks/buckets')
+  @ApiOperation({
+    summary: 'Мои задачи по букетам: зависли/просрочено · в работе · без срока · сделано',
+    description:
+      'Борд задач стенда сотрудника. Букеты вычисляются машинно: overdueStuck = dueDate<now ИЛИ нет активности >staleDays; inProgress = state.category=started; noDueDate = dueDate=null; done = completedAt за окно me.tasks.doneWindowDays. Backlog с будущей датой в букеты не входит.',
+  })
+  @ApiResponse({ status: 200, description: '4 букета + counts' })
+  @ApiResponse({ status: 403, description: 'Недостаточно прав на чтение задач' })
+  async taskBuckets(
+    @Query(new ZodValidationPipe(MyTaskBucketsQuerySchema)) query: MyTaskBucketsQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<TaskBucketsResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.findMyTaskBuckets(t, user.id, query, new Date());
+  }
+
+  @Get('me/tasks/method-capture-pending')
+  @ApiOperation({
+    summary: 'Закрытые задачи, по которым ещё не записан метод («расскажи как делал»)',
+    description:
+      'Кандидаты для значка «🎤 расскажи как делал» на борде: completedAt задан, methodCapturedAt пуст, assignee = self, сложность ≥ tracker.methodCaptureMinComplexity (та же формула, что у probe при закрытии).',
+  })
+  @ApiResponse({ status: 200, description: 'Список кандидатов + сложность' })
+  @ApiResponse({ status: 403, description: 'Недостаточно прав на чтение задач' })
+  async methodCapturePending(
+    @Query(new ZodValidationPipe(MyMethodCapturePendingQuerySchema)) query: MyMethodCapturePendingQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MethodCapturePendingResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.findMyMethodCapturePending(t, user.id, query.limit, new Date());
   }
 
   private requireTenant(tenantId: string | undefined): string {

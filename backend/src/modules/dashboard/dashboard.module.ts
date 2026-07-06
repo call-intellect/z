@@ -20,7 +20,9 @@ import { DirectorDashboardController } from './director-dashboard.controller';
 import { ExecutionDashboardController } from './execution-dashboard.controller';
 import { DashboardQueueService } from './services/dashboard-queue.service';
 import { DirectorDashboardService } from './services/director-dashboard.service';
+import { MyExecutionDashboardController } from './my-execution-dashboard.controller';
 import { ExecutionDashboardService } from './services/execution-dashboard.service';
+import { PersonExpertiseService } from './services/person-expertise.service';
 import { NarrativeCitationsParserService } from './services/narrative-citations-parser.service';
 import { PeopleAtRiskService } from './services/people-at-risk.service';
 import { PulsePatternsService } from './services/pulse-patterns.service';
@@ -30,10 +32,15 @@ import { TeamHealthService } from './services/team-health.service';
 
 @Module({
   imports: [PrismaModule, OperationsModule, PendingActionsModule],
-  controllers: [DirectorDashboardController, ExecutionDashboardController],
+  controllers: [
+    DirectorDashboardController,
+    ExecutionDashboardController,
+    MyExecutionDashboardController,
+  ],
   providers: [
     DirectorDashboardService,
     ExecutionDashboardService,
+    PersonExpertiseService,
     SentimentIndexService,
     NarrativeCitationsParserService,
     TeamHealthService,

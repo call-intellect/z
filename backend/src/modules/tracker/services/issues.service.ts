@@ -29,6 +29,13 @@ import type {
 } from '../dto/issues/issue-response.dto';
 import type { ListIssuesQuery } from '../dto/issues/list-issues-query.dto';
 import type { ListOrgIssuesQuery } from '../dto/issues/list-org-issues-query.dto';
+import type {
+  MethodCapturePendingResponseDto,
+  MyTaskBucketsQuery,
+  TaskBucketItemDto,
+  TaskBucketReason,
+  TaskBucketsResponseDto,
+} from '../dto/issues/me-task-buckets.dto';
 import type { MyInboxQuery } from '../dto/issues/my-inbox-query.dto';
 import type { TransitionIssueStateDto } from '../dto/issues/transition-state.dto';
 import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
@@ -818,6 +825,215 @@ export class IssuesService {
     // Когда появится IssueRead с `readAt` — заменим на отдельный count
     // с фильтром `reads: { none: { userId } }`.
     return { total, unread: total };
+  }
+
+  async findMyTaskBuckets(
+    tenantId: string,
+    userId: string,
+    query: MyTaskBucketsQuery,
+    now: Date,
+  ): Promise<TaskBucketsResponseDto> {
+    const doneWindowDays =
+      (await this.cfg?.getDynamic<number>('me.tasks.doneWindowDays', undefined, 14)) ?? 14;
+    const staleDays =
+      (await this.cfg?.getDynamic<number>('dashboard.stuck.staleDaysThreshold', undefined, 5)) ?? 5;
+    const cutoff = new Date(now.getTime() - staleDays * 86_400_000);
+    const doneSince = new Date(now.getTime() - doneWindowDays * 86_400_000);
+    const projectFilter = query.projectId ? { projectId: query.projectId } : {};
+
+    const select = {
+      id: true,
+      identifier: true,
+      title: true,
+      dueDate: true,
+      completedAt: true,
+      createdAt: true,
+      state: { select: { category: true } },
+      project: { select: { name: true } },
+    } as const;
+
+    const [openRows, doneRows] = await Promise.all([
+      this.prisma.issue.findMany({
+        where: {
+          tenantId,
+          assignees: { some: { userId } },
+          deletedAt: null,
+          archivedAt: null,
+          OR: [{ stateId: null }, { state: { category: { notIn: ['completed', 'cancelled'] } } }],
+          ...projectFilter,
+        },
+        select,
+        take: 500,
+      }),
+      this.prisma.issue.findMany({
+        where: {
+          tenantId,
+          assignees: { some: { userId } },
+          deletedAt: null,
+          completedAt: { gte: doneSince },
+          ...projectFilter,
+        },
+        select,
+        orderBy: { completedAt: 'desc' },
+        take: query.limitPerBucket,
+      }),
+    ]);
+
+    const openIds = openRows.map((r) => r.id);
+    const [activity, journal] = await Promise.all([
+      openIds.length > 0
+        ? this.prisma.issueActivity.groupBy({
+            by: ['issueId'],
+            where: { issueId: { in: openIds } },
+            _max: { createdAt: true },
+          })
+        : Promise.resolve([] as Array<{ issueId: string; _max: { createdAt: Date | null } }>),
+      openIds.length > 0
+        ? this.prisma.issueProgressUpdate.groupBy({
+            by: ['issueId'],
+            where: { issueId: { in: openIds } },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ issueId: string; _count: { _all: number } }>),
+    ]);
+    const lastById = new Map<string, Date>();
+    for (const a of activity) if (a._max.createdAt) lastById.set(a.issueId, a._max.createdAt);
+    const journalSet = new Set<string>();
+    for (const j of journal) if (j._count._all > 0) journalSet.add(j.issueId);
+
+    const overdueStuck: TaskBucketItemDto[] = [];
+    const inProgress: TaskBucketItemDto[] = [];
+    const noDueDate: TaskBucketItemDto[] = [];
+
+    for (const r of openRows) {
+      const lastActivityAt = lastById.get(r.id) ?? r.createdAt;
+      const overdue = !!r.dueDate && r.dueDate < now;
+      const stuck = lastActivityAt < cutoff;
+      const item = this.toBucketItem(r, lastActivityAt, journalSet.has(r.id), overdue, stuck);
+      if (overdue || stuck) overdueStuck.push(item);
+      else if (r.state?.category === 'started') inProgress.push(item);
+      else if (r.dueDate === null) noDueDate.push(item);
+    }
+
+    const done = doneRows.map((r) =>
+      this.toBucketItem(r, r.completedAt ?? r.createdAt, journalSet.has(r.id), false, false),
+    );
+
+    const cap = query.limitPerBucket;
+    return {
+      overdueStuck: overdueStuck.slice(0, cap),
+      inProgress: inProgress.slice(0, cap),
+      noDueDate: noDueDate.slice(0, cap),
+      done,
+      counts: {
+        overdueStuck: overdueStuck.length,
+        inProgress: inProgress.length,
+        noDueDate: noDueDate.length,
+        done: doneRows.length,
+      },
+    };
+  }
+
+  async findMyMethodCapturePending(
+    tenantId: string,
+    userId: string,
+    limit: number,
+    now: Date,
+  ): Promise<MethodCapturePendingResponseDto> {
+    const enabled =
+      (await this.cfg?.getDynamic<boolean>('tracker.methodCaptureEnabled', undefined, true)) ?? true;
+    if (!enabled) return { items: [] };
+    const minComplexity =
+      (await this.cfg?.getDynamic<number>('tracker.methodCaptureMinComplexity', undefined, 0.5)) ??
+      0.5;
+
+    const rows = await this.prisma.issue.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        completedAt: { not: null },
+        methodCapturedAt: null,
+        assignees: { some: { userId } },
+      },
+      select: {
+        id: true,
+        identifier: true,
+        title: true,
+        descriptionStripped: true,
+        description: true,
+        priority: true,
+        createdAt: true,
+        completedAt: true,
+      },
+      orderBy: { completedAt: 'desc' },
+      take: Math.min(limit, 100) * 3,
+    });
+    if (rows.length === 0) return { items: [] };
+
+    const ids = rows.map((r) => r.id);
+    const activity = await this.prisma.issueActivity.groupBy({
+      by: ['issueId'],
+      where: { issueId: { in: ids } },
+      _count: { _all: true },
+    });
+    const actById = new Map<string, number>();
+    for (const a of activity) actById.set(a.issueId, a._count._all);
+
+    const items = [];
+    for (const r of rows) {
+      const descriptionLength = (r.descriptionStripped ?? r.description ?? '').length;
+      const lifetimeDays = Math.max(
+        0,
+        ((r.completedAt ?? now).getTime() - r.createdAt.getTime()) / 86_400_000,
+      );
+      const complexity = IssuesService.computeMethodCaptureComplexity({
+        descriptionLength,
+        activityCount: actById.get(r.id) ?? 0,
+        lifetimeDays,
+        priority: r.priority,
+      });
+      if (complexity < minComplexity) continue;
+      items.push({
+        id: r.id,
+        identifier: r.identifier,
+        title: r.title,
+        completedAt: r.completedAt ? r.completedAt.toISOString() : null,
+        complexity: Math.round(complexity * 100) / 100,
+      });
+      if (items.length >= limit) break;
+    }
+    return { items };
+  }
+
+  private toBucketItem(
+    r: {
+      id: string;
+      identifier: string;
+      title: string;
+      dueDate: Date | null;
+      completedAt: Date | null;
+      state: { category: string } | null;
+      project: { name: string } | null;
+    },
+    lastActivityAt: Date,
+    hasJournal: boolean,
+    overdue: boolean,
+    stuck: boolean,
+  ): TaskBucketItemDto {
+    const reason: TaskBucketReason | null =
+      overdue && stuck ? 'overdue_and_stuck' : overdue ? 'overdue' : stuck ? 'stuck' : null;
+    return {
+      id: r.id,
+      identifier: r.identifier,
+      title: r.title,
+      dueDate: r.dueDate ? r.dueDate.toISOString() : null,
+      completedAt: r.completedAt ? r.completedAt.toISOString() : null,
+      stateCategory: r.state?.category ?? null,
+      projectName: r.project?.name ?? null,
+      lastActivityAt: lastActivityAt.toISOString(),
+      hasJournal,
+      reason,
+    };
   }
 
   /**

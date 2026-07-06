@@ -339,6 +339,15 @@ export class ProbeResponseHandler {
       });
     }
 
+    if (probe.reason === 'task.method_capture') {
+      applyResult = await this.maybeApplyMethodCaptureAnswer({
+        tenantId: event.tenantId,
+        probePayload,
+        eventPayload: event.payload,
+        classification,
+      });
+    }
+
     if (probe.reason === 'experiment.result_without_lesson') {
       applyResult = await this.maybeApplyExperimentLessonAnswer({
         tenantId: event.tenantId,
@@ -802,6 +811,49 @@ export class ProbeResponseHandler {
           err: err instanceof Error ? err.message : String(err),
         },
         'completion-detail-apply: best-effort, пропускаю',
+      );
+      return { status: 'noop' };
+    }
+  }
+
+  private async maybeApplyMethodCaptureAnswer(args: {
+    tenantId: string;
+    probePayload: Record<string, unknown>;
+    eventPayload: Record<string, unknown>;
+    classification: ProbeClassification | null;
+  }): Promise<ApplyResult> {
+    const issueId = this.toStringOrUndef(args.probePayload.contextCardId);
+    if (!issueId) return { status: 'noop' };
+    const rawAnswer =
+      args.classification?.value?.trim() || this.extractResponseText(args.eventPayload);
+    if (!rawAnswer) return { status: 'noop' };
+
+    const mode = this.resolveApplyMode(args.classification, rawAnswer);
+    if (mode.kind === 'unclear') return { status: 'skipped_unclear' };
+    if (mode.kind === 'counter_question') {
+      return { status: 'needs_clarification', gap: 'counter_question' };
+    }
+    if (mode.kind === 'delete') return { status: 'noop' };
+
+    try {
+      const res = await this.prisma.issue.updateMany({
+        where: { id: issueId, tenantId: args.tenantId, methodCapturedAt: null },
+        data: { methodCapturedAt: new Date() },
+      });
+      if (res.count > 0) {
+        this.logger.log(
+          `method-capture-apply: methodCapturedAt проставлен issue=${issueId} (tenant=${args.tenantId})`,
+        );
+      }
+      return { status: 'applied' };
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          issueId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'method-capture-apply: best-effort, пропускаю',
       );
       return { status: 'noop' };
     }

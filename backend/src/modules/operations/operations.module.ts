@@ -13,6 +13,7 @@ import { MyCheckInsController } from './controllers/my-check-ins.controller';
 import { MyCustomerRiskController } from './controllers/my-customer-risk.controller';
 import { MyDailyBriefController } from './controllers/my-daily-brief.controller';
 import { MyDailyValueController } from './controllers/my-daily-value.controller';
+import { MyDayNarrativeController } from './controllers/my-day-narrative.controller';
 import { MyWeeklyPerPersonController } from './controllers/my-weekly-per-person.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
 import { PersonalRelationsController } from './controllers/personal-relations.controller';
@@ -37,6 +38,7 @@ import { OnboardingRampService } from './services/onboarding-ramp.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
 import { PersonRefResolverService } from './services/person-ref-resolver.service';
 import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
+import { PersonalDayNarrativeService } from './services/personal-day-narrative.service';
 import { PersonalRelationService } from './services/personal-relation.service';
 import { PortfolioHealthService } from './services/portfolio-health.service';
 import { SelfPersonResolverService } from './services/self-person-resolver.service';
@@ -62,6 +64,7 @@ import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cro
 import { OperationsMonthlyDigestCron } from './workers/operations-monthly-digest.cron';
 import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.cron';
 import { PersonalDailyBriefCron } from './workers/personal-daily-brief.cron';
+import { PersonalDayNarrativeCron } from './workers/personal-day-narrative.cron';
 import { CheckInConflictDetectorCron } from './workers/personal-relation-builder.worker';
 import { PortfolioHealthSnapshotCron } from './workers/portfolio-health-snapshot.cron';
 import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer.cron';
@@ -86,6 +89,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     DailyDigestController,
     MyCustomerRiskController,
     MyDailyBriefController,
+    MyDayNarrativeController,
     MyWeeklyPerPersonController,
     MyDailyValueController,
     MonthlyDigestController,
@@ -133,6 +137,8 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     PersonalDailyBriefService,
     KnowsWhoService,
     PersonalDailyBriefCron,
+    PersonalDayNarrativeService,
+    PersonalDayNarrativeCron,
     ExecMorningPushCron,
     BlockerSynthesisService,
     BlockerSynthesisCron,
@@ -159,6 +165,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     DailyDigestService,
     CustomerRiskRadarService,
     PersonalDailyBriefService,
+    PersonalDayNarrativeService,
     KnowsWhoService,
     BlockerSynthesisService,
     KnowledgeAtRiskService,

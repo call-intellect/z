@@ -368,6 +368,7 @@ export type LlmTaskType =
   //   Дешёвая задача → primary deepseek-v4-flash. Один вызов на сотрудника в
   //   день. Без выдуманных фактов/₽.
   | 'personal-brief-hint'
+  | 'personal-day-narrative'
   // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров.
   // 'blocker-synthesis-summary' — ТОЛЬКО финальный абзац-сводка по
   //   синтезированным блокерам Org за день (кластеризация/статусы/импакт —
@@ -842,6 +843,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'customer-risk-digest',
   // TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день»
   'personal-brief-hint',
+  'personal-day-narrative',
   // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров
   'blocker-synthesis-summary',
   // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap

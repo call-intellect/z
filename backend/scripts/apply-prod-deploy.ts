@@ -75,6 +75,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-llm-core',
+    script: 'scripts/seed-llm-task-routes-personal-day-narrative.ts',
+    hint: 'маршрут personal-day-narrative → deepseek-v4-pro (стабильная json_schema для письма «Твой день»)',
+  },
+  {
+    phase: 'seed-llm-core',
     script: 'scripts/patch-daily-digest-route-deepseek-pro-gpt-kie.ts',
     hint: 'маршрут operations-daily-digest → deepseek-v4-pro → gpt-5.4-mini → kie/gemini-3.1-pro (День компании v2 Ф5); уважает админ-правки, идемпотентно',
   },
@@ -367,6 +372,11 @@ const STEPS: Step[] = [
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-table-graphsync.ts',
     hint: 'table.graphsync.{enabled,min_confidence} — kill-switch + порог авто-создания строк умных таблиц из графа (smart-tables Ф4)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-employee-stand.ts',
+    hint: 'me.tasks.doneWindowDays + operations.personal_day_narrative.{enabled,evening_hour} + operations.self_signals.plan_not_closing_streak_days + knowledge.expertise.self_{max_blocks_scanned,top_k} (стенд сотрудника)',
   },
 
   ...[

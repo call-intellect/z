@@ -87,10 +87,6 @@ export function llmCostTaskTypeDetailFromApi(
   return api;
 }
 
-export function formatRub(rub: number): string {
-  return `${Math.round(rub).toLocaleString("ru-RU")} ₽`;
-}
-
 export function formatSharePct(sharePct: number): string {
   return `${sharePct >= 10 ? Math.round(sharePct) : sharePct.toFixed(1)}%`;
 }

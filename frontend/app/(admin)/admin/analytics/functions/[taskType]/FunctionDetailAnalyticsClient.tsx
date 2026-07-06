@@ -15,7 +15,7 @@ import {
   adminFunctionDetailFromApi,
   taskTypeLabel,
 } from "@/domain/admin-experiment";
-import { formatRub, llmCostTaskTypeDetailFromApi } from "@/domain/admin-llm-cost";
+import { llmCostTaskTypeDetailFromApi } from "@/domain/admin-llm-cost";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
 import { Badge } from "@/ui/shadcn/badge";
@@ -198,7 +198,7 @@ export function FunctionDetailAnalyticsClient({
                   )}
                   {!costQ.isLoading && costQ.data && (
                     <div className="text-2xl font-semibold leading-none tracking-tight">
-                      {formatRub(costQ.data.totals.costRub)}
+                      {formatUsd(costQ.data.totals.costUsd)}
                     </div>
                   )}
                   <Button asChild variant="outline" size="sm">

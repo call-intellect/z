@@ -45,7 +45,7 @@ import {
   mapTaskTypeRoute,
   tierLabel,
 } from "@/domain/admin-ai-model";
-import { formatRub as formatCostRub } from "@/domain/admin-llm-cost";
+import { formatUsd as formatCostUsd } from "@/domain/admin-usage";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import {
   AdminSparkline,
@@ -710,7 +710,7 @@ function LlmCostCrossLinkSection({
     : `/admin/analytics/llm-cost?view=overview`;
 
   const sparklineData: AdminSparklinePoint[] = (detail?.trend ?? []).map(
-    (p) => ({ x: p.date, y: p.costRub }),
+    (p) => ({ x: p.date, y: p.costUsd }),
   );
 
   return (
@@ -744,7 +744,7 @@ function LlmCostCrossLinkSection({
               Расход
             </div>
             <div className="text-base font-semibold text-fg-primary">
-              {formatCostRub(detail.totals.costRub)}
+              {formatCostUsd(detail.totals.costUsd)}
             </div>
           </div>
           <div>

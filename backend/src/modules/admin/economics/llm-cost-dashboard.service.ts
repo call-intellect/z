@@ -16,42 +16,42 @@ import { LLM_COST_MODULE_LABELS, type LlmCostModule, resolveLlmCostModule } from
 
 export interface LlmCostTrendPoint {
   date: string;
-  costRub: number;
+  costUsd: number;
 }
 
 export interface LlmCostOverviewView {
   period: LlmCostPeriod;
   totals: {
-    costRub: number;
+    costUsd: number;
     callsCount: number;
     prevPeriodCostRub: number | null;
     changePct: number | null;
   };
   trend: LlmCostTrendPoint[];
-  byModel: Array<{ model: string; costRub: number; sharePct: number }>;
-  byModule: Array<{ module: LlmCostModule; label: string; costRub: number; sharePct: number }>;
-  topCompanies: Array<{ tenantId: string; name: string; costRub: number; sharePct: number }>;
+  byModel: Array<{ model: string; costUsd: number; sharePct: number }>;
+  byModule: Array<{ module: LlmCostModule; label: string; costUsd: number; sharePct: number }>;
+  topCompanies: Array<{ tenantId: string; name: string; costUsd: number; sharePct: number }>;
 }
 
 export interface LlmCostModelDetailView {
   model: string;
-  totals: { costRub: number; sharePct: number };
+  totals: { costUsd: number; sharePct: number };
   trend: LlmCostTrendPoint[];
-  byModule: Array<{ module: LlmCostModule; label: string; costRub: number; sharePct: number }>;
+  byModule: Array<{ module: LlmCostModule; label: string; costUsd: number; sharePct: number }>;
 }
 
 export interface LlmCostModuleDetailView {
   module: LlmCostModule;
   label: string;
-  totals: { costRub: number; sharePct: number };
+  totals: { costUsd: number; sharePct: number };
   trend: LlmCostTrendPoint[];
-  byTaskType: Array<{ taskType: string; costRub: number; callsCount: number }>;
+  byTaskType: Array<{ taskType: string; costUsd: number; callsCount: number }>;
 }
 
 export interface LlmCostCompanyRow {
   tenantId: string;
   name: string;
-  costRub: number;
+  costUsd: number;
   sharePct: number;
   trend: LlmCostTrendPoint[];
 }
@@ -63,20 +63,20 @@ export interface LlmCostCompaniesView {
 export interface LlmCostCompanyDetailView {
   tenantId: string;
   name: string;
-  totals: { costRub: number };
+  totals: { costUsd: number };
   trend: LlmCostTrendPoint[];
-  byModel: Array<{ model: string; costRub: number; sharePct: number }>;
+  byModel: Array<{ model: string; costUsd: number; sharePct: number }>;
 }
 
 export interface LlmCostTaskTypeDetailView {
   taskType: string;
   module: LlmCostModule;
-  totals: { costRub: number; callsCount: number };
+  totals: { costUsd: number; callsCount: number };
   trend: LlmCostTrendPoint[];
 }
 
 interface CompaniesCursor {
-  costRub: number;
+  costUsd: number;
   tenantId: string;
 }
 
@@ -92,7 +92,7 @@ function decodeCompaniesCursor(raw: string | undefined): CompaniesCursor | null 
     if (
       typeof parsed === 'object' &&
       parsed !== null &&
-      typeof (parsed as Record<string, unknown>).costRub === 'number' &&
+      typeof (parsed as Record<string, unknown>).costUsd === 'number' &&
       typeof (parsed as Record<string, unknown>).tenantId === 'string'
     ) {
       return parsed as CompaniesCursor;
@@ -144,13 +144,13 @@ export class LlmCostDashboardService {
     const rows = await this.prisma.aiCostDaily.groupBy({
       by: ['date'],
       where,
-      _sum: { costRub: true },
+      _sum: { costUsd: true },
       orderBy: { date: 'asc' },
     });
     if (granularity === 'day') {
       return rows.map((r) => ({
         date: r.date.toISOString().slice(0, 10),
-        costRub: decimalToNumber(r._sum.costRub),
+        costUsd: decimalToNumber(r._sum.costUsd),
       }));
     }
     const byWeek = new Map<string, number>();
@@ -159,11 +159,11 @@ export class LlmCostDashboardService {
       const day = (d.getUTCDay() + 6) % 7;
       const monday = new Date(d.getTime() - day * 86_400_000);
       const key = monday.toISOString().slice(0, 10);
-      byWeek.set(key, (byWeek.get(key) ?? 0) + decimalToNumber(r._sum.costRub));
+      byWeek.set(key, (byWeek.get(key) ?? 0) + decimalToNumber(r._sum.costUsd));
     }
     return [...byWeek.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, costRub]) => ({ date, costRub }));
+      .map(([date, costUsd]) => ({ date, costUsd }));
   }
 
   async overview(q: LlmCostOverviewQuery): Promise<LlmCostOverviewView> {
@@ -175,47 +175,47 @@ export class LlmCostDashboardService {
       await Promise.all([
         this.prisma.aiCostDaily.aggregate({
           where,
-          _sum: { costRub: true, callsCount: true },
+          _sum: { costUsd: true, callsCount: true },
         }),
-        this.prisma.aiCostDaily.aggregate({ where: prevWhere, _sum: { costRub: true } }),
-        this.prisma.aiCostDaily.groupBy({ by: ['model'], where, _sum: { costRub: true } }),
-        this.prisma.aiCostDaily.groupBy({ by: ['taskType'], where, _sum: { costRub: true } }),
+        this.prisma.aiCostDaily.aggregate({ where: prevWhere, _sum: { costUsd: true } }),
+        this.prisma.aiCostDaily.groupBy({ by: ['model'], where, _sum: { costUsd: true } }),
+        this.prisma.aiCostDaily.groupBy({ by: ['taskType'], where, _sum: { costUsd: true } }),
         this.prisma.aiCostDaily.groupBy({
           by: ['tenantId'],
           where,
-          _sum: { costRub: true },
-          orderBy: { _sum: { costRub: 'desc' } },
+          _sum: { costUsd: true },
+          orderBy: { _sum: { costUsd: 'desc' } },
           take: 20,
         }),
         this.buildTrend(where, q.trend),
       ]);
 
-    const totalCostRub = decimalToNumber(totalsAgg._sum.costRub);
+    const totalCostRub = decimalToNumber(totalsAgg._sum.costUsd);
     const callsCount = totalsAgg._sum.callsCount ?? 0;
-    const prevPeriodCostRub = decimalToNumber(prevTotalsAgg._sum.costRub);
+    const prevPeriodCostRub = decimalToNumber(prevTotalsAgg._sum.costUsd);
     const changePct =
       prevPeriodCostRub > 0
         ? ((totalCostRub - prevPeriodCostRub) / prevPeriodCostRub) * 100
         : null;
 
     const byModel = byModelRows
-      .map((r) => ({ model: r.model, costRub: decimalToNumber(r._sum.costRub) }))
-      .sort((a, b) => b.costRub - a.costRub)
-      .map((r) => ({ ...r, sharePct: sharePct(r.costRub, totalCostRub) }));
+      .map((r) => ({ model: r.model, costUsd: decimalToNumber(r._sum.costUsd) }))
+      .sort((a, b) => b.costUsd - a.costUsd)
+      .map((r) => ({ ...r, sharePct: sharePct(r.costUsd, totalCostRub) }));
 
     const byModuleAgg = new Map<LlmCostModule, number>();
     for (const r of byTaskTypeRows) {
       const module = resolveLlmCostModule(r.taskType);
-      byModuleAgg.set(module, (byModuleAgg.get(module) ?? 0) + decimalToNumber(r._sum.costRub));
+      byModuleAgg.set(module, (byModuleAgg.get(module) ?? 0) + decimalToNumber(r._sum.costUsd));
     }
     const byModule = [...byModuleAgg.entries()]
-      .map(([module, costRub]) => ({
+      .map(([module, costUsd]) => ({
         module,
         label: LLM_COST_MODULE_LABELS[module],
-        costRub,
-        sharePct: sharePct(costRub, totalCostRub),
+        costUsd,
+        sharePct: sharePct(costUsd, totalCostRub),
       }))
-      .sort((a, b) => b.costRub - a.costRub);
+      .sort((a, b) => b.costUsd - a.costUsd);
 
     const tenantIds = byTenantRows.map((r) => r.tenantId);
     const orgs =
@@ -227,18 +227,18 @@ export class LlmCostDashboardService {
         : [];
     const orgNameById = new Map(orgs.map((o) => [o.id, o.name]));
     const topCompanies = byTenantRows.map((r) => {
-      const costRub = decimalToNumber(r._sum.costRub);
+      const costUsd = decimalToNumber(r._sum.costUsd);
       return {
         tenantId: r.tenantId,
         name: orgNameById.get(r.tenantId) ?? r.tenantId,
-        costRub,
-        sharePct: sharePct(costRub, totalCostRub),
+        costUsd,
+        sharePct: sharePct(costUsd, totalCostRub),
       };
     });
 
     return {
       period: q.period,
-      totals: { costRub: totalCostRub, callsCount, prevPeriodCostRub, changePct },
+      totals: { costUsd: totalCostRub, callsCount, prevPeriodCostRub, changePct },
       trend,
       byModel,
       byModule,
@@ -252,36 +252,36 @@ export class LlmCostDashboardService {
     const whereModel: Prisma.AiCostDailyWhereInput = { ...whereAll, model };
 
     const [totalsAgg, modelAgg, byTaskTypeRows, trend] = await Promise.all([
-      this.prisma.aiCostDaily.aggregate({ where: whereAll, _sum: { costRub: true } }),
-      this.prisma.aiCostDaily.aggregate({ where: whereModel, _sum: { costRub: true } }),
+      this.prisma.aiCostDaily.aggregate({ where: whereAll, _sum: { costUsd: true } }),
+      this.prisma.aiCostDaily.aggregate({ where: whereModel, _sum: { costUsd: true } }),
       this.prisma.aiCostDaily.groupBy({
         by: ['taskType'],
         where: whereModel,
-        _sum: { costRub: true },
+        _sum: { costUsd: true },
       }),
       this.buildTrend(whereModel, q.trend),
     ]);
 
-    const totalCostRub = decimalToNumber(totalsAgg._sum.costRub);
-    const modelCostRub = decimalToNumber(modelAgg._sum.costRub);
+    const totalCostRub = decimalToNumber(totalsAgg._sum.costUsd);
+    const modelCostRub = decimalToNumber(modelAgg._sum.costUsd);
 
     const byModuleAgg = new Map<LlmCostModule, number>();
     for (const r of byTaskTypeRows) {
       const module = resolveLlmCostModule(r.taskType);
-      byModuleAgg.set(module, (byModuleAgg.get(module) ?? 0) + decimalToNumber(r._sum.costRub));
+      byModuleAgg.set(module, (byModuleAgg.get(module) ?? 0) + decimalToNumber(r._sum.costUsd));
     }
     const byModule = [...byModuleAgg.entries()]
-      .map(([module, costRub]) => ({
+      .map(([module, costUsd]) => ({
         module,
         label: LLM_COST_MODULE_LABELS[module],
-        costRub,
-        sharePct: sharePct(costRub, modelCostRub),
+        costUsd,
+        sharePct: sharePct(costUsd, modelCostRub),
       }))
-      .sort((a, b) => b.costRub - a.costRub);
+      .sort((a, b) => b.costUsd - a.costUsd);
 
     return {
       model,
-      totals: { costRub: modelCostRub, sharePct: sharePct(modelCostRub, totalCostRub) },
+      totals: { costUsd: modelCostRub, sharePct: sharePct(modelCostRub, totalCostRub) },
       trend,
       byModule,
     };
@@ -292,20 +292,20 @@ export class LlmCostDashboardService {
     const whereAll: Prisma.AiCostDailyWhereInput = { date: { gte, lt } };
 
     const [totalsAgg, byTaskTypeAllRows] = await Promise.all([
-      this.prisma.aiCostDaily.aggregate({ where: whereAll, _sum: { costRub: true } }),
+      this.prisma.aiCostDaily.aggregate({ where: whereAll, _sum: { costUsd: true } }),
       this.prisma.aiCostDaily.groupBy({
         by: ['taskType'],
         where: whereAll,
-        _sum: { costRub: true, callsCount: true },
+        _sum: { costUsd: true, callsCount: true },
       }),
     ]);
 
     const byTaskTypeForModule = byTaskTypeAllRows.filter(
       (r) => resolveLlmCostModule(r.taskType) === module,
     );
-    const totalCostRub = decimalToNumber(totalsAgg._sum.costRub);
+    const totalCostRub = decimalToNumber(totalsAgg._sum.costUsd);
     const moduleCostRub = byTaskTypeForModule.reduce(
-      (sum, r) => sum + decimalToNumber(r._sum.costRub),
+      (sum, r) => sum + decimalToNumber(r._sum.costUsd),
       0,
     );
 
@@ -318,15 +318,15 @@ export class LlmCostDashboardService {
     const byTaskType = byTaskTypeForModule
       .map((r) => ({
         taskType: r.taskType,
-        costRub: decimalToNumber(r._sum.costRub),
+        costUsd: decimalToNumber(r._sum.costUsd),
         callsCount: r._sum.callsCount ?? 0,
       }))
-      .sort((a, b) => b.costRub - a.costRub);
+      .sort((a, b) => b.costUsd - a.costUsd);
 
     return {
       module,
       label: LLM_COST_MODULE_LABELS[module],
-      totals: { costRub: moduleCostRub, sharePct: sharePct(moduleCostRub, totalCostRub) },
+      totals: { costUsd: moduleCostRub, sharePct: sharePct(moduleCostRub, totalCostRub) },
       trend,
       byTaskType,
     };
@@ -356,23 +356,23 @@ export class LlmCostDashboardService {
     const byTenantRows = await this.prisma.aiCostDaily.groupBy({
       by: ['tenantId'],
       where: { ...where, ...(tenantFilter ? { tenantId: { in: tenantFilter } } : {}) },
-      _sum: { costRub: true },
+      _sum: { costUsd: true },
     });
 
-    const totalCostRub = byTenantRows.reduce((sum, r) => sum + decimalToNumber(r._sum.costRub), 0);
+    const totalCostRub = byTenantRows.reduce((sum, r) => sum + decimalToNumber(r._sum.costUsd), 0);
 
     let sortedRows = byTenantRows
-      .map((r) => ({ tenantId: r.tenantId, costRub: decimalToNumber(r._sum.costRub) }))
+      .map((r) => ({ tenantId: r.tenantId, costUsd: decimalToNumber(r._sum.costUsd) }))
       .sort((a, b) =>
-        b.costRub !== a.costRub ? b.costRub - a.costRub : a.tenantId.localeCompare(b.tenantId),
+        b.costUsd !== a.costUsd ? b.costUsd - a.costUsd : a.tenantId.localeCompare(b.tenantId),
       );
 
     const cursor = decodeCompaniesCursor(q.cursor);
     if (cursor) {
       sortedRows = sortedRows.filter(
         (r) =>
-          r.costRub < cursor.costRub ||
-          (r.costRub === cursor.costRub && r.tenantId > cursor.tenantId),
+          r.costUsd < cursor.costUsd ||
+          (r.costUsd === cursor.costUsd && r.tenantId > cursor.tenantId),
       );
     }
 
@@ -392,8 +392,8 @@ export class LlmCostDashboardService {
       page.map(async (r) => ({
         tenantId: r.tenantId,
         name: orgNameById.get(r.tenantId) ?? r.tenantId,
-        costRub: r.costRub,
-        sharePct: sharePct(r.costRub, totalCostRub),
+        costUsd: r.costUsd,
+        sharePct: sharePct(r.costUsd, totalCostRub),
         trend: await this.buildTrend({ tenantId: r.tenantId, date: { gte, lt } }, 'day'),
       })),
     );
@@ -401,7 +401,7 @@ export class LlmCostDashboardService {
     const last = page[page.length - 1];
     const nextCursor =
       hasMore && last
-        ? encodeCompaniesCursor({ costRub: last.costRub, tenantId: last.tenantId })
+        ? encodeCompaniesCursor({ costUsd: last.costUsd, tenantId: last.tenantId })
         : null;
 
     return { items, nextCursor };
@@ -416,21 +416,21 @@ export class LlmCostDashboardService {
 
     const [org, totalsAgg, byModelRows, trend] = await Promise.all([
       this.prisma.org.findUnique({ where: { id: tenantId }, select: { id: true, name: true } }),
-      this.prisma.aiCostDaily.aggregate({ where, _sum: { costRub: true } }),
-      this.prisma.aiCostDaily.groupBy({ by: ['model'], where, _sum: { costRub: true } }),
+      this.prisma.aiCostDaily.aggregate({ where, _sum: { costUsd: true } }),
+      this.prisma.aiCostDaily.groupBy({ by: ['model'], where, _sum: { costUsd: true } }),
       this.buildTrend(where, q.trend),
     ]);
 
-    const totalCostRub = decimalToNumber(totalsAgg._sum.costRub);
+    const totalCostRub = decimalToNumber(totalsAgg._sum.costUsd);
     const byModel = byModelRows
-      .map((r) => ({ model: r.model, costRub: decimalToNumber(r._sum.costRub) }))
-      .sort((a, b) => b.costRub - a.costRub)
-      .map((r) => ({ ...r, sharePct: sharePct(r.costRub, totalCostRub) }));
+      .map((r) => ({ model: r.model, costUsd: decimalToNumber(r._sum.costUsd) }))
+      .sort((a, b) => b.costUsd - a.costUsd)
+      .map((r) => ({ ...r, sharePct: sharePct(r.costUsd, totalCostRub) }));
 
     return {
       tenantId,
       name: org?.name ?? tenantId,
-      totals: { costRub: totalCostRub },
+      totals: { costUsd: totalCostRub },
       trend,
       byModel,
     };
@@ -444,7 +444,7 @@ export class LlmCostDashboardService {
     const where: Prisma.AiCostDailyWhereInput = { taskType, date: { gte, lt } };
 
     const [totalsAgg, trend] = await Promise.all([
-      this.prisma.aiCostDaily.aggregate({ where, _sum: { costRub: true, callsCount: true } }),
+      this.prisma.aiCostDaily.aggregate({ where, _sum: { costUsd: true, callsCount: true } }),
       this.buildTrend(where, q.trend),
     ]);
 
@@ -452,7 +452,7 @@ export class LlmCostDashboardService {
       taskType,
       module: resolveLlmCostModule(taskType),
       totals: {
-        costRub: decimalToNumber(totalsAgg._sum.costRub),
+        costUsd: decimalToNumber(totalsAgg._sum.costUsd),
         callsCount: totalsAgg._sum.callsCount ?? 0,
       },
       trend,

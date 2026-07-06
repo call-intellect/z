@@ -7,7 +7,6 @@ import { ArrowDownRight, ArrowLeft, ArrowUpRight, Search } from "lucide-react";
 
 import { adminLlmCostApi } from "@/api/admin-llm-cost.api";
 import {
-  formatRub,
   formatSharePct,
   isLlmCostModule,
   isLlmCostPeriod,
@@ -23,6 +22,7 @@ import {
   type LlmCostPeriod,
   type LlmCostTrendGranularity,
 } from "@/domain/admin-llm-cost";
+import { formatUsd } from "@/domain/admin-usage";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
 import { AdminSparkline } from "@/ui/components/admin/AdminSparkline";
@@ -214,12 +214,12 @@ function ChangeBadge({ changePct }: { changePct: number | null }) {
 
 function DoorCard({
   label,
-  costRub,
+  costUsd,
   sharePct,
   href,
 }: {
   label: string;
-  costRub: number;
+  costUsd: number;
   sharePct: number;
   href: string;
 }) {
@@ -236,7 +236,7 @@ function DoorCard({
       </div>
       <div className="mt-2 flex items-baseline gap-2">
         <span className="text-lg font-semibold tabular-nums">
-          {formatRub(costRub)}
+          {formatUsd(costUsd)}
         </span>
         <span className="text-xs text-fg-tertiary">
           {formatSharePct(sharePct)}
@@ -249,7 +249,7 @@ function DoorCard({
 type ExpandedRow = {
   key: string;
   label: string;
-  costRub: number;
+  costUsd: number;
   sharePct: number;
   href: string;
 };
@@ -267,7 +267,7 @@ function ExpandedList({ rows }: { rows: ExpandedRow[] }) {
             {r.label}
           </span>
           <span className="flex shrink-0 items-center gap-2 tabular-nums text-fg-tertiary">
-            <span>{formatRub(r.costRub)}</span>
+            <span>{formatUsd(r.costUsd)}</span>
             <span className="text-xs">{formatSharePct(r.sharePct)}</span>
           </span>
         </Link>
@@ -277,7 +277,7 @@ function ExpandedList({ rows }: { rows: ExpandedRow[] }) {
 }
 
 function BreakdownBars({ rows }: { rows: ExpandedRow[] }) {
-  const maxCost = Math.max(1, ...rows.map((r) => r.costRub));
+  const maxCost = Math.max(1, ...rows.map((r) => r.costUsd));
   return (
     <div className="space-y-2">
       {rows.map((r) => (
@@ -291,13 +291,13 @@ function BreakdownBars({ rows }: { rows: ExpandedRow[] }) {
               {r.label}
             </span>
             <span className="shrink-0 tabular-nums text-fg-secondary">
-              {formatRub(r.costRub)}
+              {formatUsd(r.costUsd)}
             </span>
           </div>
           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-bg-overlay">
             <div
               className="h-full rounded-full bg-accent"
-              style={{ width: `${Math.max(2, (r.costRub / maxCost) * 100)}%` }}
+              style={{ width: `${Math.max(2, (r.costUsd / maxCost) * 100)}%` }}
             />
           </div>
         </Link>
@@ -329,13 +329,13 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
   const companiesHref = buildLlmCostHref({ view: "companies", period });
 
   const trendData: Array<Record<string, unknown>> = (q.data?.trend ?? []).map(
-    (t) => ({ date: t.date, costRub: t.costRub }),
+    (t) => ({ date: t.date, costUsd: t.costUsd }),
   );
   const csvByModelRows: Array<Record<string, unknown>> = (
     q.data?.byModel ?? []
   ).map((m) => ({
     model: m.model,
-    costRub: Math.round(m.costRub),
+    costUsd: Number(m.costUsd.toFixed(2)),
     sharePct: Number(m.sharePct.toFixed(1)),
   }));
 
@@ -350,7 +350,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
             rows={csvByModelRows}
             columns={[
               { key: "model", label: "Модель" },
-              { key: "costRub", label: "Расход, ₽" },
+              { key: "costUsd", label: "Расход, $" },
               { key: "sharePct", label: "Доля, %" },
             ]}
             filename={`llm-cost-overview-${period}.csv`}
@@ -374,7 +374,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
           <>
             <div className="flex flex-wrap items-end gap-3">
               <span className="text-[32px] font-semibold leading-none tracking-tight">
-                {formatRub(q.data.totals.costRub)}
+                {formatUsd(q.data.totals.costUsd)}
               </span>
               <ChangeBadge changePct={q.data.totals.changePct} />
               <span className="text-sm text-fg-tertiary">
@@ -393,7 +393,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                 data={trendData}
                 xKey="date"
                 series={[
-                  { key: "costRub", color: CHART.mint, label: "Расход, ₽" },
+                  { key: "costUsd", color: CHART.mint, label: "Расход, $" },
                 ]}
               />
             </div>
@@ -406,7 +406,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                 {q.data.byModel[0] && (
                   <DoorCard
                     label={q.data.byModel[0].model}
-                    costRub={q.data.byModel[0].costRub}
+                    costUsd={q.data.byModel[0].costUsd}
                     sharePct={q.data.byModel[0].sharePct}
                     href={buildLlmCostHref({
                       view: "model",
@@ -429,7 +429,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                     rows={q.data.byModel.map((m) => ({
                       key: m.model,
                       label: m.model,
-                      costRub: m.costRub,
+                      costUsd: m.costUsd,
                       sharePct: m.sharePct,
                       href: buildLlmCostHref({
                         view: "model",
@@ -448,7 +448,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                 {q.data.byModule[0] && (
                   <DoorCard
                     label={q.data.byModule[0].label}
-                    costRub={q.data.byModule[0].costRub}
+                    costUsd={q.data.byModule[0].costUsd}
                     sharePct={q.data.byModule[0].sharePct}
                     href={buildLlmCostHref({
                       view: "module",
@@ -471,7 +471,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                     rows={q.data.byModule.map((m) => ({
                       key: m.module,
                       label: m.label,
-                      costRub: m.costRub,
+                      costUsd: m.costUsd,
                       sharePct: m.sharePct,
                       href: buildLlmCostHref({
                         view: "module",
@@ -495,7 +495,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                 {q.data.topCompanies[0] && (
                   <DoorCard
                     label={q.data.topCompanies[0].name}
-                    costRub={q.data.topCompanies[0].costRub}
+                    costUsd={q.data.topCompanies[0].costUsd}
                     sharePct={q.data.topCompanies[0].sharePct}
                     href={buildLlmCostHref({
                       view: "company",
@@ -518,7 +518,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                     rows={q.data.topCompanies.map((c) => ({
                       key: c.tenantId,
                       label: c.name,
-                      costRub: c.costRub,
+                      costUsd: c.costUsd,
                       sharePct: c.sharePct,
                       href: buildLlmCostHref({
                         view: "company",
@@ -555,12 +555,12 @@ function ModelDetailView({
 
   const overviewHref = buildLlmCostHref({ view: "overview", period });
   const trendData: Array<Record<string, unknown>> = (q.data?.trend ?? []).map(
-    (t) => ({ date: t.date, costRub: t.costRub }),
+    (t) => ({ date: t.date, costUsd: t.costUsd }),
   );
   const csvRows: Array<Record<string, unknown>> = (q.data?.byModule ?? []).map(
     (m) => ({
       label: m.label,
-      costRub: Math.round(m.costRub),
+      costUsd: Number(m.costUsd.toFixed(2)),
       sharePct: Number(m.sharePct.toFixed(1)),
     }),
   );
@@ -580,7 +580,7 @@ function ModelDetailView({
             rows={csvRows}
             columns={[
               { key: "label", label: "Раздел" },
-              { key: "costRub", label: "Расход, ₽" },
+              { key: "costUsd", label: "Расход, $" },
               { key: "sharePct", label: "Доля, %" },
             ]}
             filename={`llm-cost-model-${model}-${period}.csv`}
@@ -594,17 +594,17 @@ function ModelDetailView({
         {!q.isLoading && q.error && (
           <AdminError message={q.error} onRetry={q.refetch} />
         )}
-        {!q.isLoading && q.data && q.data.totals.costRub === 0 && (
+        {!q.isLoading && q.data && q.data.totals.costUsd === 0 && (
           <AdminEmpty
             title="Нет расхода по этой модели"
             description="За выбранный период эта модель не использовалась ни в одном разделе."
           />
         )}
-        {!q.isLoading && q.data && q.data.totals.costRub > 0 && (
+        {!q.isLoading && q.data && q.data.totals.costUsd > 0 && (
           <>
             <div className="flex flex-wrap items-end gap-3">
               <span className="text-[32px] font-semibold leading-none tracking-tight">
-                {formatRub(q.data.totals.costRub)}
+                {formatUsd(q.data.totals.costUsd)}
               </span>
               <span className="text-sm text-fg-tertiary">
                 {formatSharePct(q.data.totals.sharePct)} всего расхода
@@ -621,7 +621,7 @@ function ModelDetailView({
                 data={trendData}
                 xKey="date"
                 series={[
-                  { key: "costRub", color: CHART.blue, label: "Расход, ₽" },
+                  { key: "costUsd", color: CHART.blue, label: "Расход, $" },
                 ]}
               />
             </div>
@@ -633,7 +633,7 @@ function ModelDetailView({
                 rows={q.data.byModule.map((m) => ({
                   key: m.module,
                   label: m.label,
-                  costRub: m.costRub,
+                  costUsd: m.costUsd,
                   sharePct: m.sharePct,
                   href: buildLlmCostHref({
                     view: "module",
@@ -675,13 +675,13 @@ function ModuleDetailView({
   const overviewHref = buildLlmCostHref({ view: "overview", period });
   const title = q.data?.label ?? module;
   const trendData: Array<Record<string, unknown>> = (q.data?.trend ?? []).map(
-    (t) => ({ date: t.date, costRub: t.costRub }),
+    (t) => ({ date: t.date, costUsd: t.costUsd }),
   );
   const csvRows: Array<Record<string, unknown>> = (
     q.data?.byTaskType ?? []
   ).map((r) => ({
     taskType: r.taskType,
-    costRub: Math.round(r.costRub),
+    costUsd: Number(r.costUsd.toFixed(2)),
     callsCount: r.callsCount,
   }));
 
@@ -690,7 +690,7 @@ function ModuleDetailView({
     ? byTaskType
     : byTaskType.slice(0, TASK_TYPE_COLLAPSE_LIMIT);
   const restRows = showAll ? [] : byTaskType.slice(TASK_TYPE_COLLAPSE_LIMIT);
-  const restCostRub = restRows.reduce((sum, r) => sum + r.costRub, 0);
+  const restCostRub = restRows.reduce((sum, r) => sum + r.costUsd, 0);
 
   return (
     <AdminSection
@@ -707,7 +707,7 @@ function ModuleDetailView({
             rows={csvRows}
             columns={[
               { key: "taskType", label: "Вид операции" },
-              { key: "costRub", label: "Расход, ₽" },
+              { key: "costUsd", label: "Расход, $" },
               { key: "callsCount", label: "Вызовов" },
             ]}
             filename={`llm-cost-module-${module}-${period}.csv`}
@@ -721,17 +721,17 @@ function ModuleDetailView({
         {!q.isLoading && q.error && (
           <AdminError message={q.error} onRetry={q.refetch} />
         )}
-        {!q.isLoading && q.data && q.data.totals.costRub === 0 && (
+        {!q.isLoading && q.data && q.data.totals.costUsd === 0 && (
           <AdminEmpty
             title="Нет расхода по этому разделу"
             description="За выбранный период в этом разделе не было платных LLM-вызовов."
           />
         )}
-        {!q.isLoading && q.data && q.data.totals.costRub > 0 && (
+        {!q.isLoading && q.data && q.data.totals.costUsd > 0 && (
           <>
             <div className="flex flex-wrap items-end gap-3">
               <span className="text-[32px] font-semibold leading-none tracking-tight">
-                {formatRub(q.data.totals.costRub)}
+                {formatUsd(q.data.totals.costUsd)}
               </span>
               <span className="text-sm text-fg-tertiary">
                 {formatSharePct(q.data.totals.sharePct)} всего расхода
@@ -748,7 +748,7 @@ function ModuleDetailView({
                 data={trendData}
                 xKey="date"
                 series={[
-                  { key: "costRub", color: CHART.violet, label: "Расход, ₽" },
+                  { key: "costUsd", color: CHART.violet, label: "Расход, $" },
                 ]}
               />
             </div>
@@ -761,7 +761,7 @@ function ModuleDetailView({
                   <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
                     <tr>
                       <th className="px-3 py-2 text-left">Вид операции</th>
-                      <th className="px-3 py-2 text-right">Расход, ₽</th>
+                      <th className="px-3 py-2 text-right">Расход, $</th>
                       <th className="px-3 py-2 text-right">Вызовов</th>
                     </tr>
                   </thead>
@@ -780,7 +780,7 @@ function ModuleDetailView({
                           </Link>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {formatRub(r.costRub)}
+                          {formatUsd(r.costUsd)}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {r.callsCount.toLocaleString("ru-RU")}
@@ -793,7 +793,7 @@ function ModuleDetailView({
                           Прочие {restRows.length} видов
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {formatRub(restCostRub)}
+                          {formatUsd(restCostRub)}
                         </td>
                         <td className="px-3 py-2 text-right">—</td>
                       </tr>
@@ -853,7 +853,7 @@ function CompaniesListView({ period, onPeriodChange }: PeriodViewProps) {
   const csvRows: Array<Record<string, unknown>> = accumulator.map((c) => ({
     name: c.name,
     tenantId: c.tenantId,
-    costRub: Math.round(c.costRub),
+    costUsd: Number(c.costUsd.toFixed(2)),
     sharePct: Number(c.sharePct.toFixed(1)),
   }));
 
@@ -873,7 +873,7 @@ function CompaniesListView({ period, onPeriodChange }: PeriodViewProps) {
             columns={[
               { key: "name", label: "Компания" },
               { key: "tenantId", label: "tenantId" },
-              { key: "costRub", label: "Расход, ₽" },
+              { key: "costUsd", label: "Расход, $" },
               { key: "sharePct", label: "Доля, %" },
             ]}
             filename={`llm-cost-companies-${period}.csv`}
@@ -921,7 +921,7 @@ function CompaniesListView({ period, onPeriodChange }: PeriodViewProps) {
                 <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
                   <tr>
                     <th className="px-3 py-2 text-left">Компания</th>
-                    <th className="px-3 py-2 text-right">₽/период</th>
+                    <th className="px-3 py-2 text-right">$/период</th>
                     <th className="px-3 py-2 text-right">Доля</th>
                     <th className="px-3 py-2 text-right">График</th>
                   </tr>
@@ -945,7 +945,7 @@ function CompaniesListView({ period, onPeriodChange }: PeriodViewProps) {
                         </Link>
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {formatRub(c.costRub)}
+                        {formatUsd(c.costUsd)}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-fg-tertiary">
                         {formatSharePct(c.sharePct)}
@@ -955,7 +955,7 @@ function CompaniesListView({ period, onPeriodChange }: PeriodViewProps) {
                           <AdminSparkline
                             data={c.trend.map((t) => ({
                               x: t.date,
-                              y: t.costRub,
+                              y: t.costUsd,
                             }))}
                             width={100}
                             height={28}
@@ -1010,12 +1010,12 @@ function CompanyDetailView({
   const companiesHref = buildLlmCostHref({ view: "companies", period });
   const title = q.data?.name ?? tenantId;
   const trendData: Array<Record<string, unknown>> = (q.data?.trend ?? []).map(
-    (t) => ({ date: t.date, costRub: t.costRub }),
+    (t) => ({ date: t.date, costUsd: t.costUsd }),
   );
   const csvRows: Array<Record<string, unknown>> = (q.data?.byModel ?? []).map(
     (m) => ({
       model: m.model,
-      costRub: Math.round(m.costRub),
+      costUsd: Number(m.costUsd.toFixed(2)),
       sharePct: Number(m.sharePct.toFixed(1)),
     }),
   );
@@ -1036,7 +1036,7 @@ function CompanyDetailView({
             rows={csvRows}
             columns={[
               { key: "model", label: "Модель" },
-              { key: "costRub", label: "Расход, ₽" },
+              { key: "costUsd", label: "Расход, $" },
               { key: "sharePct", label: "Доля, %" },
             ]}
             filename={`llm-cost-company-${tenantId}-${period}.csv`}
@@ -1050,17 +1050,17 @@ function CompanyDetailView({
         {!q.isLoading && q.error && (
           <AdminError message={q.error} onRetry={q.refetch} />
         )}
-        {!q.isLoading && q.data && q.data.totals.costRub === 0 && (
+        {!q.isLoading && q.data && q.data.totals.costUsd === 0 && (
           <AdminEmpty
             title="Нет расхода у этой компании"
             description="За выбранный период у этой компании не было платных LLM-вызовов."
           />
         )}
-        {!q.isLoading && q.data && q.data.totals.costRub > 0 && (
+        {!q.isLoading && q.data && q.data.totals.costUsd > 0 && (
           <>
             <div className="flex flex-wrap items-end gap-3">
               <span className="text-[32px] font-semibold leading-none tracking-tight">
-                {formatRub(q.data.totals.costRub)}
+                {formatUsd(q.data.totals.costUsd)}
               </span>
             </div>
             <div>
@@ -1074,7 +1074,7 @@ function CompanyDetailView({
                 data={trendData}
                 xKey="date"
                 series={[
-                  { key: "costRub", color: CHART.amber, label: "Расход, ₽" },
+                  { key: "costUsd", color: CHART.amber, label: "Расход, $" },
                 ]}
               />
             </div>
@@ -1087,7 +1087,7 @@ function CompanyDetailView({
                   <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
                     <tr>
                       <th className="px-3 py-2 text-left">Модель</th>
-                      <th className="px-3 py-2 text-right">₽/период</th>
+                      <th className="px-3 py-2 text-right">$/период</th>
                       <th className="px-3 py-2 text-right">% от компании</th>
                     </tr>
                   </thead>
@@ -1110,7 +1110,7 @@ function CompanyDetailView({
                           </Link>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {formatRub(m.costRub)}
+                          {formatUsd(m.costUsd)}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums text-fg-tertiary">
                           {formatSharePct(m.sharePct)}

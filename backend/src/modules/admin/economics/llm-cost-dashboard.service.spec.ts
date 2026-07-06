@@ -11,7 +11,7 @@ interface FixtureRow {
   taskType: string;
   provider: string;
   model: string;
-  costRub: number;
+  costUsd: number;
   callsCount: number;
 }
 
@@ -52,18 +52,18 @@ function build(rows: FixtureRow[] = [], orgs: OrgFixture[] = []) {
     async (args: { by: string[]; where: Record<string, unknown> }) => {
       const filtered = rows.filter((r) => matchesWhere(r, args.where));
       const key = args.by[0] as 'date' | 'model' | 'taskType' | 'tenantId';
-      const groups = new Map<string, { costRub: number; callsCount: number; raw: unknown }>();
+      const groups = new Map<string, { costUsd: number; callsCount: number; raw: unknown }>();
       for (const r of filtered) {
         const rawKey = key === 'date' ? r.date : (r as unknown as Record<string, string>)[key];
         const mapKey = key === 'date' ? (rawKey as Date).toISOString() : (rawKey as string);
-        const g = groups.get(mapKey) ?? { costRub: 0, callsCount: 0, raw: rawKey };
-        g.costRub += r.costRub;
+        const g = groups.get(mapKey) ?? { costUsd: 0, callsCount: 0, raw: rawKey };
+        g.costUsd += r.costUsd;
         g.callsCount += r.callsCount;
         groups.set(mapKey, g);
       }
       const result = [...groups.values()].map((g) => ({
         [key]: g.raw,
-        _sum: { costRub: new Prisma.Decimal(g.costRub), callsCount: g.callsCount },
+        _sum: { costUsd: new Prisma.Decimal(g.costUsd), callsCount: g.callsCount },
       }));
       return result as unknown[];
     },
@@ -71,9 +71,9 @@ function build(rows: FixtureRow[] = [], orgs: OrgFixture[] = []) {
 
   const aggregate = vi.fn(async (args: { where: Record<string, unknown> }) => {
     const filtered = rows.filter((r) => matchesWhere(r, args.where));
-    const costRub = filtered.reduce((sum, r) => sum + r.costRub, 0);
+    const costUsd = filtered.reduce((sum, r) => sum + r.costUsd, 0);
     const callsCount = filtered.reduce((sum, r) => sum + r.callsCount, 0);
-    return { _sum: { costRub: new Prisma.Decimal(costRub), callsCount } };
+    return { _sum: { costUsd: new Prisma.Decimal(costUsd), callsCount } };
   });
 
   const orgFindMany = vi.fn(async (args: { where: Record<string, unknown> }) => {
@@ -118,7 +118,7 @@ describe('LlmCostDashboardService', () => {
       taskType: 'summary',
       provider: 'deepseek',
       model: 'deepseek-v4-pro',
-      costRub: 100,
+      costUsd: 100,
       callsCount: 10,
     },
     {
@@ -127,7 +127,7 @@ describe('LlmCostDashboardService', () => {
       taskType: 'chat',
       provider: 'openai-via-proxy',
       model: 'gpt-5.5',
-      costRub: 50,
+      costUsd: 50,
       callsCount: 5,
     },
     {
@@ -136,7 +136,7 @@ describe('LlmCostDashboardService', () => {
       taskType: 'block-ingest',
       provider: 'deepseek',
       model: 'deepseek-v4-pro',
-      costRub: 25,
+      costUsd: 25,
       callsCount: 2,
     },
   ];
@@ -150,44 +150,44 @@ describe('LlmCostDashboardService', () => {
       const { svc } = build(rows, orgs);
       const res = await svc.overview({ period: '30d', trend: 'day' });
 
-      expect(res.totals.costRub).toBe(175);
+      expect(res.totals.costUsd).toBe(175);
       expect(res.totals.callsCount).toBe(17);
 
       expect(res.byModel).toHaveLength(2);
       const deepseek = res.byModel.find((m) => m.model === 'deepseek-v4-pro');
       const gpt = res.byModel.find((m) => m.model === 'gpt-5.5');
-      expect(deepseek?.costRub).toBe(125);
+      expect(deepseek?.costUsd).toBe(125);
       expect(deepseek?.sharePct).toBeCloseTo((125 / 175) * 100);
-      expect(gpt?.costRub).toBe(50);
+      expect(gpt?.costUsd).toBe(50);
       expect(gpt?.sharePct).toBeCloseTo((50 / 175) * 100);
 
       // summary + block-ingest -> extraction; chat -> agent
       expect(res.byModule.length).toBeGreaterThanOrEqual(2);
       const extraction = res.byModule.find((m) => m.module === 'extraction');
       const agent = res.byModule.find((m) => m.module === 'agent');
-      expect(extraction?.costRub).toBe(125);
-      expect(agent?.costRub).toBe(50);
+      expect(extraction?.costUsd).toBe(125);
+      expect(agent?.costUsd).toBe(50);
 
       expect(res.topCompanies).toHaveLength(2);
       const org1 = res.topCompanies.find((c) => c.tenantId === 'org-1');
       const org2 = res.topCompanies.find((c) => c.tenantId === 'org-2');
-      expect(org1?.costRub).toBe(150);
+      expect(org1?.costUsd).toBe(150);
       expect(org1?.name).toBe('Org One');
-      expect(org2?.costRub).toBe(25);
+      expect(org2?.costUsd).toBe(25);
       expect(org2?.name).toBe('Org Two');
 
       expect(res.trend.length).toBeGreaterThan(0);
-      const trendTotal = res.trend.reduce((sum, p) => sum + p.costRub, 0);
+      const trendTotal = res.trend.reduce((sum, p) => sum + p.costUsd, 0);
       expect(trendTotal).toBe(175);
     });
   });
 
   describe('companyDetail', () => {
-    it('для несуществующего tenantId возвращает totals.costRub===0, пустые массивы, не бросает', async () => {
+    it('для несуществующего tenantId возвращает totals.costUsd===0, пустые массивы, не бросает', async () => {
       const { svc } = build(rows, orgs);
       const res = await svc.companyDetail('org-does-not-exist', { period: '30d', trend: 'day' });
 
-      expect(res.totals.costRub).toBe(0);
+      expect(res.totals.costUsd).toBe(0);
       expect(res.byModel).toEqual([]);
       expect(res.trend).toEqual([]);
       expect(res.name).toBe('org-does-not-exist');
@@ -197,7 +197,7 @@ describe('LlmCostDashboardService', () => {
       const { svc } = build(rows, orgs);
       const res = await svc.companyDetail('org-1', { period: '30d', trend: 'day' });
 
-      expect(res.totals.costRub).toBe(150);
+      expect(res.totals.costUsd).toBe(150);
       expect(res.name).toBe('Org One');
       expect(res.byModel).toHaveLength(2);
     });
@@ -213,7 +213,7 @@ describe('LlmCostDashboardService', () => {
           taskType: 'totally-unknown-task-type-not-in-map',
           provider: 'deepseek',
           model: 'deepseek-v4-pro',
-          costRub: 10,
+          costUsd: 10,
           callsCount: 1,
         },
       ];
@@ -221,11 +221,11 @@ describe('LlmCostDashboardService', () => {
       const res = await svc.moduleDetail('other', { period: '30d', trend: 'day' });
 
       expect(res.module).toBe('other');
-      expect(res.totals.costRub).toBe(10);
+      expect(res.totals.costUsd).toBe(10);
       const unmapped = res.byTaskType.find(
         (t) => t.taskType === 'totally-unknown-task-type-not-in-map',
       );
-      expect(unmapped?.costRub).toBe(10);
+      expect(unmapped?.costUsd).toBe(10);
       expect(unmapped?.callsCount).toBe(1);
     });
 
@@ -233,7 +233,7 @@ describe('LlmCostDashboardService', () => {
       const { svc } = build(rows, orgs);
       const res = await svc.moduleDetail('extraction', { period: '30d', trend: 'day' });
 
-      expect(res.totals.costRub).toBe(125);
+      expect(res.totals.costUsd).toBe(125);
       expect(res.byTaskType.map((t) => t.taskType).sort()).toEqual(['block-ingest', 'summary']);
     });
   });

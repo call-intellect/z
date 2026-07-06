@@ -7,41 +7,41 @@ export type LlmCostModule = "memory_graph" | "extraction" | "agent" | "other";
 
 export type LlmCostTrendPointApi = {
   date: string;
-  costRub: number;
+  costUsd: number;
 };
 
 export type LlmCostOverviewApi = {
   period: LlmCostPeriod;
   totals: {
-    costRub: number;
+    costUsd: number;
     callsCount: number;
-    prevPeriodCostRub: number | null;
+    prevPeriodCostUsd: number | null;
     changePct: number | null;
   };
   trend: LlmCostTrendPointApi[];
-  byModel: Array<{ model: string; costRub: number; sharePct: number }>;
+  byModel: Array<{ model: string; costUsd: number; sharePct: number }>;
   byModule: Array<{
     module: LlmCostModule;
     label: string;
-    costRub: number;
+    costUsd: number;
     sharePct: number;
   }>;
   topCompanies: Array<{
     tenantId: string;
     name: string;
-    costRub: number;
+    costUsd: number;
     sharePct: number;
   }>;
 };
 
 export type LlmCostModelDetailApi = {
   model: string;
-  totals: { costRub: number; sharePct: number };
+  totals: { costUsd: number; sharePct: number };
   trend: LlmCostTrendPointApi[];
   byModule: Array<{
     module: LlmCostModule;
     label: string;
-    costRub: number;
+    costUsd: number;
     sharePct: number;
   }>;
 };
@@ -49,15 +49,15 @@ export type LlmCostModelDetailApi = {
 export type LlmCostModuleDetailApi = {
   module: LlmCostModule;
   label: string;
-  totals: { costRub: number; sharePct: number };
+  totals: { costUsd: number; sharePct: number };
   trend: LlmCostTrendPointApi[];
-  byTaskType: Array<{ taskType: string; costRub: number; callsCount: number }>;
+  byTaskType: Array<{ taskType: string; costUsd: number; callsCount: number }>;
 };
 
 export type LlmCostCompanyRowApi = {
   tenantId: string;
   name: string;
-  costRub: number;
+  costUsd: number;
   sharePct: number;
   trend: LlmCostTrendPointApi[];
 };
@@ -70,15 +70,15 @@ export type LlmCostCompaniesApi = {
 export type LlmCostCompanyDetailApi = {
   tenantId: string;
   name: string;
-  totals: { costRub: number };
+  totals: { costUsd: number };
   trend: LlmCostTrendPointApi[];
-  byModel: Array<{ model: string; costRub: number; sharePct: number }>;
+  byModel: Array<{ model: string; costUsd: number; sharePct: number }>;
 };
 
 export type LlmCostTaskTypeDetailApi = {
   taskType: string;
   module: LlmCostModule;
-  totals: { costRub: number; callsCount: number };
+  totals: { costUsd: number; callsCount: number };
   trend: LlmCostTrendPointApi[];
 };
 

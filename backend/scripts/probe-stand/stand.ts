@@ -324,24 +324,13 @@ function writeReport(
 
 async function modeTrigger(): Promise<void> {
   await withApp(async (app) => {
-    const { RedisService } = await import('../../src/common/redis/redis.service');
-    const { ConsistencyCheckerService } = await import(
-      '../../src/modules/curation/workers/consistency-checker.cron'
-    );
     const { Specialist315TasksService } = await import(
       '../../src/modules/knowledge-core/services/specialist-3-15-tasks.service'
     );
-    const redis = app.get(RedisService);
-    const pattern = `consistency:dedup:${STRELA}:*`;
-    const keys = await redis.client.keys(pattern);
-    if (keys.length > 0) await redis.client.del(...keys);
-    log(`trigger: очищено dedup-ключей ${keys.length}`);
-    const cc = app.get(ConsistencyCheckerService);
-    const ccRes = await cc.runForAllOrgs();
-    log(`trigger: consistency-checker → violations=${ccRes.violationsTotal} orgs=${ccRes.scannedOrgs}`);
     const sweep = app.get(Specialist315TasksService);
     const swRes = await sweep.runClarifySweep();
     log(`trigger: task-clarify-sweep → probed=${swRes.probed} orgs=${swRes.orgsScanned}`);
+    log('trigger: инспектор порядка (consistency-checker) снесён — больше не форсируется');
   });
 }
 

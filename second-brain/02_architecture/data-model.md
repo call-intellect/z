@@ -435,6 +435,22 @@ N:1 к IdeaBlock — один блок может агрегировать мн�
 
 **Дроп двух полей надзора за внедрением решений** (2026-06-30, миграция `20260630020000_drop_decision_implementation_fields`, ТЗ [`2026-06-29-decisions-operational-cleanup`](../../plans/tz/2026-06-29-decisions-operational-cleanup.md)) — две производные колонки контролёра внедрения решений (статус внедрения + дата проверки, изначально добавлены `20260608160100`) **дропнуты**: надзор за внедрением снят, решение остаётся пассивной памятью. Колонка `Decision.linkedTaskCount` той же исходной миграции **остаётся** (счётчик связанных задач — ось исполнения). `DROP COLUMN` без потери значимых данных (статусы были производными). `Decision.reversibility`/`reversibilityAt` (гигиена решений, Bezos one-way door) **остаются** атрибутом памяти — на карточке показываются тихим бейджом «необратимое» при `reversibility==='type-1'`.
 
+### ExperimentTaskLink (провенанс «задача из эксперимента»)
+
+```
+ExperimentTaskLink {
+  id, tenantId,
+  experimentId → Experiment (onDelete: Cascade),
+  issueId      → Issue      (onDelete: Cascade),
+  linkType String @default("derived"),
+  createdAt
+  @@unique([experimentId, issueId])
+  @@index([tenantId, issueId])
+}
+```
+
+**Модель `ExperimentTaskLink`** (2026-07-06, миграция `20260706130000_add_experiment_task_link`, ТЗ [`experiment-to-task`](../../plans/tz/2026-07-06-experiment-to-task.md)) — **зеркало `DecisionTaskLink`**: связь задача↔эксперимент с провенансом «задача выросла из эксперимента». `Experiment` (специалист 3-9-experiments) **не менялся** и остаётся фактом памяти; когда эксперимент содержит **конкретное действие**, извлечение вдобавок заводит задачу в трекер — эта таблица держит связь. `linkType='derived'` — связь авто-деривится в `intake-auto-triage.worker.ts` (утилита `linkDerivedExperimentsForIssue`) по пересечению `IntakeIssue.sourceBlockIds` с `Experiment.sourceBlockIds` того же tenant (общий блок-источник ⇒ задача и эксперимент из одной реплики). Аддитивная таблица (`CREATE TABLE` + 2 FK `CASCADE` на `experiments`/`Issue`, без изменения существующих). В отличие от `Decision`, у `Experiment` **нет** `linkedTaskCount` и `deletedAt` — счётчик задач на эксперименте не денормализуется. Прецеденты той же оси «память + исполнение»: решение→задача (`DecisionTaskLink`) и обещание→задача.
+
 ### Entity
 
 ```

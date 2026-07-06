@@ -370,6 +370,16 @@ Embedding темы считается на её создании (`ThemeWriteSer
 
 **Ф5 — надёжность пайплайна (не терять RawEvent + JSON-ремонт воркеров).** `StrategicAlignmentWorker`: `parseLlmResponse` через `tryParseJson`(ремонт)+`safeParse` без throw — транзиентный сбой LLM-вызова → throw (BullMQ-ретрай), детерминированный битый ответ → warn+audit+метрика+skip (job НЕ падает); голого `JSON.parse` не осталось. Новый `raw-event-recovery.cron` (см. [[workers-queues]] §«raw-event-recovery») спасает `RawEvent` застрявшие в `processingStatus='received'` после исчерпания ретраев. Метрики `strategic_alignment_parse_skip_total{reason}` / `raw_event_recovery_reenqueued_total` / `raw_event_recovery_dead_lettered_total`. **Ф0** (вне AI): P0-краш создания задач — advisory-lock `$queryRaw`→`$executeRaw` (Prisma 7 не десериализует `void`), см. [[../02_architecture/code-pitfalls]] §8a.
 
+## Эксперимент с конкретным действием → задача (2026-07-06)
+
+**Источник:** ТЗ [`plans/tz/2026-07-06-experiment-to-task.md`](../../plans/tz/2026-07-06-experiment-to-task.md). Профильно — [[tracker]], модели — [[../02_architecture/data-model]] §«ExperimentTaskLink».
+
+Тот же контур «память + исполнение», что решение→задача и обещание→задача, распространён на эксперименты. **`Experiment` (специалист 3-9-experiments) НЕ менялся** — остаётся фактом памяти (гипотеза/проверка/урок). Новое: **эксперимент с КОНКРЕТНЫМ действием теперь порождает и запись эксперимента (память), и задачу в трекер**. Абстрактный призыв «надо больше экспериментировать» / гипотеза без действия → задачи НЕТ (только память).
+
+- **Мост — в двух промптах.** Combined-экстрактор встреч `specialists-combined.prompt.ts` и классификатор входа `block-ingest.prompt.ts` усилены: эксперимент с конкретным действием → И запись эксперимента, И задача. `block-ingest` для блока-эксперимента с действием даёт **дуальную эмиссию** `hypothesis` (память) + `action_item` (трекер) — по образцу «idea + поручение». Оба — code-промпты (prompt registry с code-fallback), едут с деплоем кода.
+- **Провенанс — `ExperimentTaskLink('derived')`** (зеркало `DecisionTaskLink`). Связь авто-деривится в `intake-auto-triage.worker.ts` (утилита `linkDerivedExperimentsForIssue`) по пересечению `IntakeIssue.sourceBlockIds` с `Experiment.sourceBlockIds` того же tenant. В отличие от `Decision`, у `Experiment` нет `linkedTaskCount`/`deletedAt` — линковка короче.
+- **Метрика** `experiment_tasks_extracted_total{tenant_top, surface}` — `surface` = `meeting` (combined-экстрактор) | `ingest` (block-ingest).
+
 ## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
 
 **Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.

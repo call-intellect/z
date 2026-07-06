@@ -62,6 +62,15 @@ docker compose run --rm --no-deps backend \
 
 > Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
 
+### Эксперимент с конкретным действием → задача — 2026-07-06 (ветка work/2026-07-02)
+
+Эксперимент (`Experiment`, спец. 3-9) остаётся фактом памяти, но при конкретном действии combo (`specialists-combined`) и `block-ingest` вдобавок заводят задачу в трекер. Провенанс — новая связь `ExperimentTaskLink('derived')` (зеркало `DecisionTaskLink`). ТЗ [`plans/tz/2026-07-06-experiment-to-task.md`](../../plans/tz/2026-07-06-experiment-to-task.md).
+
+- **Шаг 4 — Миграция (аддитивная, авто через `migrate deploy` на `docker compose up -d`):** `20260706130000_add_experiment_task_link` — новая таблица `experiment_task_link` (связь задача↔эксперимент: `tenantId`/`experimentId`/`issueId`/`linkType`(default `derived`), `@@unique(experimentId, issueId)`, 2 FK CASCADE → `experiments`/`Issue`). Аддитивная (`CREATE TABLE` + FK, без DROP/ALTER существующих), без потери данных, **backfill НЕ нужен** (связи деривятся на новом извлечении). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы, применяется migrate-контейнером). Соответствует `data-model.md` §«ExperimentTaskLink».
+- **Шаги 1/5/6/7/8/9/10 (ENV/postgres-init/patch/seed/backfill/migrate/setup) — НЕ затронуты.** Новых ENV/флагов/сидов нет (усиление — code-промпты `specialists-combined`/`block-ingest`, едут с деплоем кода).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (промпты извлечения + `ExperimentTaskLink`-линковка в `intake-auto-triage.worker`).
+- **Шаг 12 — Smoke** (после rebuild): миграция применилась — `docker compose exec backend sh -c "psql \$DATABASE_URL -c \"\\d experiment_task_link\""` (таблица есть в `public`); после разбора встречи/чата с конкретным экспериментом-действием — И запись `experiments`, И задача, связка в `experiment_task_link` (`SELECT COUNT(*) FROM experiment_task_link` > 0); новая метрика `experiment_tasks_extracted_total{tenant_top,surface}` (surface=meeting|ingest) видна в `/metrics`: `docker compose exec backend sh -c 'curl -s localhost:3000/metrics | grep experiment_tasks_extracted_total'`.
+
 ### Задачи встречи: привязка к встрече + назначенец гостя (вариант А) — 2026-07-06 (ветка work/2026-07-02)
 
 Фикс: combo (`SpecialistsCombinedService`) по `channel=meeting_report` не проставлял `meetingId` → задачи встречи не попадали в карточку, назначенец гостя авто-уходил на постороннего сотрудника. Теперь materializer резолвит `meetingId` из `report_<id>` → `IntakeIssue.meetingId` → `Issue.linkedMeetingIds`; `meeting_report`=always-promote (без skill-routing/owner-fallback); имя гостя-владельца сохраняется в `ownerHintRaw` (без исполнителя) + FE-пометка «по словам гостя». ТЗ [`plans/tz/2026-07-06-meeting-tasks-linkage-fix.md`](../../plans/tz/2026-07-06-meeting-tasks-linkage-fix.md). 5 коммитов (`c5878f21`/`e2a7c71b`/`ac94a2b3`/`4abc5aad`/`2aa5b50a`).

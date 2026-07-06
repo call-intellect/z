@@ -9,6 +9,9 @@ export type LlmCostTrendGranularity = z.infer<typeof LlmCostTrendGranularitySche
 export const LlmCostOverviewQuerySchema = z.object({
   period: LlmCostPeriodSchema,
   trend: LlmCostTrendGranularitySchema,
+  /** YYYY-MM-DD. Если заданы оба (dateFrom и dateTo) — переопределяют period произвольным диапазоном. */
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 export type LlmCostOverviewQuery = z.infer<typeof LlmCostOverviewQuerySchema>;
 

@@ -53,6 +53,7 @@
     "next": "^16.2.6",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.6",
+    "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.6",
     "react-force-graph-2d": "^1.27.0",
     "react-markdown": "^10.1.0",

@@ -12,6 +12,9 @@ export type LlmCostTrendPointApi = {
 
 export type LlmCostOverviewApi = {
   period: LlmCostPeriod;
+  /** Фактически применённый диапазон (YYYY-MM-DD). */
+  dateFrom: string;
+  dateTo: string;
   totals: {
     costUsd: number;
     callsCount: number;
@@ -104,8 +107,14 @@ export type LlmCostCompanyDetailRequest = LlmCostPeriodQuery & {
   model?: string;
 };
 
+export type LlmCostOverviewRequest = LlmCostPeriodQuery & {
+  /** YYYY-MM-DD. Если заданы оба — переопределяют period. */
+  dateFrom?: string;
+  dateTo?: string;
+};
+
 export const adminLlmCostApi = {
-  overview: (req: LlmCostPeriodQuery) =>
+  overview: (req: LlmCostOverviewRequest) =>
     apiClient.get<LlmCostOverviewApi>(
       `/api/v1/admin/llm-cost/overview${buildQuery({ ...req })}`,
     ),

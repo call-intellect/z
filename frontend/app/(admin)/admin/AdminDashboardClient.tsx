@@ -21,13 +21,13 @@ import {
 import { taskTypeLabel } from "@/domain/admin-experiment";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { DateRangeCalendarPopover } from "@/ui/components/admin/DateRangeCalendarPopover";
 import {
   MultiSelectCombobox,
   type MultiSelectOption,
 } from "@/ui/components/admin/MultiSelectCombobox";
 import { Button } from "@/ui/shadcn/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
-import { Input } from "@/ui/shadcn/input";
 import {
   Select,
   SelectContent,
@@ -49,7 +49,6 @@ const PERIODS: Array<{ value: AdminPeriod; label: string }> = [
   { value: "day", label: "Сутки" },
   { value: "week", label: "Неделя" },
   { value: "month", label: "Месяц" },
-  { value: "custom", label: "Свой период" },
 ];
 
 function csv(values: string[]): string | undefined {
@@ -151,17 +150,32 @@ export function AdminDashboardClient() {
       description="Расход LLM, активность пользователей и Org за выбранный период."
       actions={
         <div className="flex items-center gap-2">
-          {resolvedRangeLabel && (
-            <span className="whitespace-nowrap rounded-md border border-border-subtle bg-bg-card px-2.5 py-1.5 text-xs text-fg-tertiary">
-              {resolvedRangeLabel}
-            </span>
-          )}
+          <DateRangeCalendarPopover
+            from={dateFrom || undefined}
+            to={dateTo || undefined}
+            triggerLabel={resolvedRangeLabel ?? "Выбрать период"}
+            onChange={(range) => {
+              if (range) {
+                setDateFrom(range.from);
+                setDateTo(range.to);
+                setPeriod("custom");
+              } else {
+                setDateFrom("");
+                setDateTo("");
+                setPeriod("week");
+              }
+            }}
+          />
           <Select
-            value={period}
-            onValueChange={(v) => setPeriod(v as AdminPeriod)}
+            value={isCustom ? "" : period}
+            onValueChange={(v) => {
+              setPeriod(v as AdminPeriod);
+              setDateFrom("");
+              setDateTo("");
+            }}
           >
             <SelectTrigger className="w-[180px]">
-              <SelectValue />
+              <SelectValue placeholder="Свой период" />
             </SelectTrigger>
             <SelectContent>
               {PERIODS.map((p) => (
@@ -176,28 +190,6 @@ export function AdminDashboardClient() {
     >
       <div className="space-y-6">
         <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border-subtle bg-bg-card p-3">
-          {isCustom && (
-            <>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-fg-tertiary">Дата от</span>
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="h-9 w-40"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-fg-tertiary">Дата до</span>
-                <Input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="h-9 w-40"
-                />
-              </div>
-            </>
-          )}
           <MultiSelectCombobox
             label="Провайдер"
             placeholder="Все провайдеры"
@@ -433,6 +425,8 @@ function DashboardContent({
             data={providerChartData}
             xKey="name"
             dataKey="costUsd"
+            seriesLabel="Расход, $"
+            valueFormatter={formatUsd}
           />
         )}
 
@@ -457,6 +451,8 @@ function DashboardContent({
               data={modelChartData}
               xKey="name"
               dataKey="costUsd"
+              seriesLabel="Расход, $"
+              valueFormatter={formatUsd}
             />
             <div className="flex justify-end">
               <AdminCsvDownloadButton
@@ -518,6 +514,8 @@ function DashboardContent({
               data={functionsChartData}
               xKey="name"
               dataKey="costUsd"
+              seriesLabel="Расход, $"
+              valueFormatter={formatUsd}
             />
           )}
         </CardContent>
@@ -560,6 +558,8 @@ function DashboardContent({
               data={orgsChartData}
               xKey="name"
               dataKey="costUsd"
+              seriesLabel="Расход, $"
+              valueFormatter={formatUsd}
             />
           </CardContent>
         </Card>

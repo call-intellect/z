@@ -26,6 +26,7 @@ import { formatUsd } from "@/domain/admin-usage";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
 import { AdminSparkline } from "@/ui/components/admin/AdminSparkline";
+import { DateRangeCalendarPopover } from "@/ui/components/admin/DateRangeCalendarPopover";
 import { AreaTrend } from "@/ui/components/dashboard/modern/AreaTrend";
 import { CHART } from "@/ui/components/dashboard/modern/tokens";
 import { Button } from "@/ui/shadcn/button";
@@ -74,6 +75,11 @@ function buildLlmCostHref(params: {
   if (params.id) usp.set("id", params.id);
   usp.set("period", params.period);
   return `${BASE_PATH}?${usp.toString()}`;
+}
+
+function formatIsoDate(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y}`;
 }
 
 export function LlmCostDashboardClient() {
@@ -324,14 +330,21 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
   const [showAllModels, setShowAllModels] = useState(false);
   const [showAllModules, setShowAllModules] = useState(false);
   const [showAllCompanies, setShowAllCompanies] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const hasCustomRange = Boolean(dateFrom && dateTo);
 
   const q = useAdminQuery(
-    `llm-cost-overview:${period}:${granularity}`,
+    `llm-cost-overview:${period}:${granularity}:${dateFrom}:${dateTo}`,
     async () =>
       llmCostOverviewFromApi(
-        await adminLlmCostApi.overview({ period, trend: granularity }),
+        await adminLlmCostApi.overview({
+          period,
+          trend: granularity,
+          ...(hasCustomRange ? { dateFrom, dateTo } : {}),
+        }),
       ),
-    [period, granularity],
+    [period, granularity, dateFrom, dateTo, hasCustomRange],
   );
 
   const companiesHref = buildLlmCostHref({ view: "companies", period });
@@ -347,6 +360,9 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
     costUsd: Number(m.costUsd.toFixed(2)),
     sharePct: Number(m.sharePct.toFixed(1)),
   }));
+  const resolvedRangeLabel = q.data
+    ? `${formatIsoDate(q.data.dateFrom)} – ${formatIsoDate(q.data.dateTo)}`
+    : "Свой период";
 
   return (
     <AdminSection
@@ -354,7 +370,23 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
       description="Единый источник расхода на AI — по моделям, разделам и компаниям, в долларах."
       actions={
         <>
-          <PeriodSwitcher value={period} onChange={onPeriodChange} />
+          <DateRangeCalendarPopover
+            from={dateFrom || undefined}
+            to={dateTo || undefined}
+            triggerLabel={resolvedRangeLabel}
+            onChange={(range) => {
+              setDateFrom(range?.from ?? "");
+              setDateTo(range?.to ?? "");
+            }}
+          />
+          <PeriodSwitcher
+            value={period}
+            onChange={(p) => {
+              onPeriodChange(p);
+              setDateFrom("");
+              setDateTo("");
+            }}
+          />
           <AdminCsvDownloadButton
             rows={csvByModelRows}
             columns={[
@@ -411,6 +443,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                 series={[
                   { key: "costUsd", color: CHART.mint, label: "Расход, $" },
                 ]}
+                valueFormatter={formatUsd}
               />
             </div>
 
@@ -639,6 +672,7 @@ function ModelDetailView({
                 series={[
                   { key: "costUsd", color: CHART.blue, label: "Расход, $" },
                 ]}
+                valueFormatter={formatUsd}
               />
             </div>
             <div>
@@ -766,6 +800,7 @@ function ModuleDetailView({
                 series={[
                   { key: "costUsd", color: CHART.violet, label: "Расход, $" },
                 ]}
+                valueFormatter={formatUsd}
               />
             </div>
             <div>
@@ -1204,6 +1239,7 @@ function CompanyDetailView({
                 series={[
                   { key: "costUsd", color: CHART.amber, label: "Расход, $" },
                 ]}
+                valueFormatter={formatUsd}
               />
             </div>
             <div>

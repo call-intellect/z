@@ -17,6 +17,7 @@ export function AreaTrend({
   series,
   height = 260,
   headline,
+  valueFormatter,
 }: {
   title?: string;
   titleIcon?: ReactNode;
@@ -32,6 +33,7 @@ export function AreaTrend({
   }[];
   height?: number;
   headline?: { value: string; sub: string; subColor?: string };
+  valueFormatter?: (value: number) => string;
 }) {
   const gradId = (key: string) => `area-${key}`;
   return (
@@ -95,7 +97,7 @@ export function AreaTrend({
               tick={{ fill: CHART.faint, fontSize: 12 }}
             />
             <Tooltip
-              content={<ChartTip />}
+              content={<ChartTip valueFormatter={valueFormatter} />}
               cursor={{ stroke: "var(--border-strong)" }}
             />
             {series.map((s) => (
@@ -103,6 +105,7 @@ export function AreaTrend({
                 key={s.key}
                 type="monotone"
                 dataKey={s.key}
+                name={s.label}
                 stroke={s.color}
                 strokeWidth={s.strokeWidth ?? 2}
                 fill={`url(#${gradId(s.key)})`}

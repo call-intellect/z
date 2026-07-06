@@ -2,7 +2,12 @@
 
 import { CHART } from "./tokens";
 
-export function ChartTip({ active, payload, label }: any) {
+export function ChartTip({
+  active,
+  payload,
+  label,
+  valueFormatter,
+}: any & { valueFormatter?: (value: number) => string }) {
   if (!active || !payload?.length) return null;
   return (
     <div
@@ -26,7 +31,8 @@ export function ChartTip({ active, payload, label }: any) {
           className="text-sm"
           style={{ color: CHART.text }}
         >
-          {p.name ?? p.dataKey}: <b>{p.value}</b>
+          {p.name ?? p.dataKey}:{" "}
+          <b>{valueFormatter ? valueFormatter(Number(p.value)) : p.value}</b>
         </div>
       ))}
     </div>

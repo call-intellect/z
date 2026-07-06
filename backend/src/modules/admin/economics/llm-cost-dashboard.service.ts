@@ -21,6 +21,9 @@ export interface LlmCostTrendPoint {
 
 export interface LlmCostOverviewView {
   period: LlmCostPeriod;
+  /** Фактически применённый диапазон (YYYY-MM-DD, resolveDateRange — либо preset, либо custom). */
+  dateFrom: string;
+  dateTo: string;
   totals: {
     costUsd: number;
     callsCount: number;
@@ -134,11 +137,12 @@ export class LlmCostDashboardService {
     period: LlmCostPeriod;
     dateFrom?: string;
     dateTo?: string;
-  }): { gte: Date; lt: Date } {
+  }): { gte: Date; lt: Date; prevGte: Date } {
     if (q.dateFrom && q.dateTo) {
       const gte = new Date(`${q.dateFrom}T00:00:00.000Z`);
       const lt = new Date(new Date(`${q.dateTo}T00:00:00.000Z`).getTime() + 86_400_000);
-      return { gte, lt };
+      const prevGte = new Date(gte.getTime() - (lt.getTime() - gte.getTime()));
+      return { gte, lt, prevGte };
     }
     return this.dateRange(q.period);
   }
@@ -234,7 +238,7 @@ export class LlmCostDashboardService {
   }
 
   async overview(q: LlmCostOverviewQuery): Promise<LlmCostOverviewView> {
-    const { gte, lt, prevGte } = this.dateRange(q.period);
+    const { gte, lt, prevGte } = this.resolveDateRange(q);
     const where: Prisma.AiCostDailyWhereInput = { date: { gte, lt } };
     const prevWhere: Prisma.AiCostDailyWhereInput = { date: { gte: prevGte, lt: gte } };
 
@@ -316,6 +320,8 @@ export class LlmCostDashboardService {
 
     return {
       period: q.period,
+      dateFrom: gte.toISOString().slice(0, 10),
+      dateTo: new Date(lt.getTime() - 86_400_000).toISOString().slice(0, 10),
       totals: {
         costUsd: totalCostRub,
         callsCount,

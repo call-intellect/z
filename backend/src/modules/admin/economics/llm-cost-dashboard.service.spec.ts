@@ -225,6 +225,32 @@ describe('LlmCostDashboardService', () => {
       );
       expect(chargeDayPoint?.costUsd).toBe(125);
     });
+
+    it('dateFrom/dateTo (произвольный диапазон) переопределяют period — захватывает только строки внутри диапазона', async () => {
+      const { svc } = build(rows, orgs);
+      const day = utcDate(2).toISOString().slice(0, 10);
+      const res = await svc.overview({
+        period: '30d',
+        trend: 'day',
+        dateFrom: day,
+        dateTo: day,
+      });
+
+      expect(res.totals.costUsd).toBe(100);
+      expect(res.dateFrom).toBe(day);
+      expect(res.dateTo).toBe(day);
+      expect(res.byModel).toHaveLength(1);
+      expect(res.byModel[0]?.model).toBe('deepseek-v4-pro');
+    });
+
+    it('без dateFrom/dateTo возвращает dateFrom/dateTo, соответствующие резолву period', async () => {
+      const { svc } = build(rows, orgs);
+      const res = await svc.overview({ period: '7d', trend: 'day' });
+
+      expect(res.dateFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(res.dateTo).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(new Date(res.dateFrom).getTime()).toBeLessThan(new Date(res.dateTo).getTime());
+    });
   });
 
   describe('companyDetail', () => {

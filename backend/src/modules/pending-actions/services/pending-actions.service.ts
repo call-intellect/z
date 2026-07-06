@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -6,6 +6,7 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { WorkChatService } from '../../messaging/services/work-chat.service';
+import { RbacService } from '../../rbac/rbac.service';
 import { IntakeService } from '../../tracker/services/intake.service';
 import { IssuesService } from '../../tracker/services/issues.service';
 import { ProgressUpdatesService } from '../../tracker/services/progress-updates.service';
@@ -120,6 +121,8 @@ export class PendingActionsService {
     private readonly progressUpdatesService: ProgressUpdatesService,
     @Inject(WorkChatService)
     private readonly workChat: WorkChatService,
+    @Inject(RbacService)
+    private readonly rbac: RbacService,
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
@@ -389,6 +392,13 @@ export class PendingActionsService {
         },
       });
     }
+    const canResolve = await this.rbac.canWrite(input.userId, input.tenantId, 'conflict_item');
+    if (!canResolve) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Недостаточно прав для резолва конфликта' },
+      });
+    }
     await this.conflictService.resolve({
       tenantId: input.tenantId,
       conflictId: input.resourceId,
@@ -401,12 +411,6 @@ export class PendingActionsService {
     );
   }
 
-  /**
-   * intake: accept | reject → IntakeService.triage. Для accept проект берётся
-   * из targetProjectId / привязки / suggested (логика внутри triage). Если
-   * проекта нет — triage кидает BadRequest 'target_project_required' (наружу,
-   * не 500). Повторный триаж → BadRequest 'intake_already_triaged'.
-   */
   private async confirmIntake(input: ConfirmInput): Promise<void> {
     const decision = input.resolution;
     if (decision !== 'accept' && decision !== 'reject') {
@@ -416,6 +420,13 @@ export class PendingActionsService {
           code: 'intake_resolution_required',
           message: 'Для входящей задачи нужен resolution ∈ accept | reject',
         },
+      });
+    }
+    const canTriage = await this.rbac.canWrite(input.userId, input.tenantId, 'intake_issue');
+    if (!canTriage) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Недостаточно прав для триажа' },
       });
     }
     await this.intakeService.triage(

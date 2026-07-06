@@ -30,6 +30,9 @@ export class IntakePendingProvider implements PendingActionsProvider {
       status: 'pending',
       OR: [{ confidence: null }, { confidence: { gte: MIN_INTAKE_CONFIDENCE } }],
     };
+    if (!isPrivileged(a.role)) {
+      where.suggestedAssigneeId = a.userId;
+    }
     if (a.snoozedResourceIds.size > 0) {
       where.id = { notIn: [...a.snoozedResourceIds] };
     }
@@ -37,14 +40,12 @@ export class IntakePendingProvider implements PendingActionsProvider {
   }
 
   async countForUser(a: PendingActionsProviderArgs): Promise<number> {
-    if (!isPrivileged(a.role)) return 0;
     return this.prisma.intakeIssue.count({ where: this.buildWhere(a) });
   }
 
   async listForUser(
     a: PendingActionsProviderArgs & { limit: number },
   ): Promise<PendingActionItem[]> {
-    if (!isPrivileged(a.role)) return [];
     const items = await this.prisma.intakeIssue.findMany({
       where: this.buildWhere(a),
       orderBy: [{ createdAt: 'asc' }],

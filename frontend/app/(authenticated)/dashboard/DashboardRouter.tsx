@@ -20,7 +20,7 @@ export function DashboardRouter() {
   useEffect(() => {
     if (isLoading) return;
     if (!isDirector) {
-      router.replace("/me");
+      router.replace("/me/stand");
     }
   }, [isLoading, isDirector, router]);
 

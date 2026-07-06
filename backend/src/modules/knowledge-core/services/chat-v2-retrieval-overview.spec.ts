@@ -87,10 +87,9 @@ describe('ChatV2RetrievalService.selectTopThemes (Ф6 R4)', () => {
       branches: ['sales', 'marketing'],
     });
     const { sql, params } = calls[0]!;
-    expect(sql).toContain('"branch" = ANY(');
+    expect(sql).toContain('"branch"::text = ANY(');
     expect(sql).toContain('::text[]');
-    // порядок — по cosine, branch только в WHERE (до ORDER BY).
-    const wherePos = sql.indexOf('"branch" = ANY(');
+    const wherePos = sql.indexOf('"branch"::text = ANY(');
     const orderPos = sql.indexOf('ORDER BY embedding <=>');
     expect(wherePos).toBeGreaterThan(0);
     expect(orderPos).toBeGreaterThan(wherePos);

@@ -49,6 +49,7 @@ function makeService(over: Partial<Deps> = {}): {
       if (key === 'rag.rrf_k') return rrfK;
       if (key === 'rag.rerank_min_pool') return minPool;
       if (key === 'knowledge.chatV2CascadeEnabled') return false;
+      if (key === 'knowledge.chatV2BaseRecallFloor') return false;
       return def;
     }),
     aiFeatures: { promptInjectionGuardEnabled: false },
@@ -462,6 +463,7 @@ describe('ChatV2Service — both-ways роутер по классу запро�
         if (key === 'rag.rrf_k') return 60;
         if (key === 'rag.rerank_min_pool') return 100;
         if (key === 'knowledge.chatV2CascadeEnabled') return false;
+        if (key === 'knowledge.chatV2BaseRecallFloor') return false;
         return def;
       },
     );

@@ -69,6 +69,7 @@ function makeService(over: Over = {}): {
       if (key === 'rag.rerank_min_pool') return minPool;
       if (key === 'rag.rrf_k') return 60;
       if (key === 'knowledge.chatV2CascadeEnabled') return false;
+      if (key === 'knowledge.chatV2BaseRecallFloor') return false;
       return def;
     }),
     aiFeatures: { promptInjectionGuardEnabled: false },

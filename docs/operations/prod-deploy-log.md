@@ -62,6 +62,13 @@ docker compose run --rm --no-deps backend \
 
 > Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
 
+### Клон-регламент-роутер (вариант B) — 2026-07-05
+
+- **Шаг 1 — ENV: новых обязательных нет.** Крутилки через `getDynamic`/`resolveSync` (code-fallback, Ship-On, работают ДО сида): `clone.regulations.router.enabled`=`true` (kill-switch тип A), `.router.model`=`deepseek-v4-flash`, `.router.max_tokens`=`1500`, `.router.max_pool`=`60`, `.router.context_level`=`summary`, `.summary.enabled`=`true` (kill-switch тип A), `.summary.model`=`deepseek-v4-flash`, `.summary.max_tokens`=`700`, `.summary.batch`=`40`. Реестр флагов — `docs/operations/feature-flags.md` (2 kill-switch тип A).
+- **Шаг 4 — Миграция (аддитивная, авто через `migrate deploy` на `docker compose up -d`):** `20260705174811_clone_rule_summaries` — новая таблица `rule_summaries` (кэш саммари правил роли: `tenantId`/`kind`/`ruleId`/`summary`/`sourceHash`/`model`, `@@unique(tenantId,kind,ruleId)`, FK→`Org` cascade). Бэкфилл колонок не нужен. Опасных изменений нет.
+- **Шаг 8 — Backfill (НОВЫЙ, идемпотентный, STEPS `phase:'patch'`, `skipBootstrap`):** `scripts/backfill-rule-summaries.ts` — генерит саммари (1–2 предложения) по каждому активному правилу (regulations/instructions/policies/processes) всех Org, upsert в `rule_summaries`, staleness по `sourceHash` (повторный прогон = reused, 0 генераций). Опц. `--tenant=<id>` / `--force`. Cron `regulation-summarize` доберёт стейл сам; backfill — для немедленного эффекта.
+- **Шаг 12 — Smoke:** `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогонит backfill; крутилки `clone.regulations.*` видны в `/admin`; cron зарегистрирован: `docker compose exec backend sh -c 'grep -rn "regulation-summarize" /app/src/modules/ai/workers.module.ts'`; вопрос клону роли по регламенту → отвечает по регламенту компании (не выдумывает имя); `SELECT COUNT(*) FROM rule_summaries` > 0.
+
 ### 🎛️ Опциональные ручные операции (вне авто-аггрегатора)
 
 > Эти скрипты **НЕ зарегистрированы** в `apply-prod-deploy.ts` STEPS и **НЕ выполняются** на `docker compose ... apply-prod-deploy`. Запускать **только вручную, осознанно владельцем** (бюджетные / cost-решения). Все идемпотентны (повторный прогон = no-op).

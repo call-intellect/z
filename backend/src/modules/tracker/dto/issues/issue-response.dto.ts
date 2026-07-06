@@ -29,6 +29,7 @@ export interface IssueResponseDto {
   meetingId: string | null;
   linkedMeetingIds: string[];
   sourceBlockIds: string[];
+  ownerHintRaw: string | null;
   previewQuote: string | null;
   previewSourceRef: ProvenancePreviewRef | null;
   confidence: string | null;

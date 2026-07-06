@@ -1701,6 +1701,11 @@ function TasksTab({
                       size={20}
                     />
                   )}
+                  {issue.assigneeUserIds.length === 0 && issue.ownerHintRaw && (
+                    <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
+                      по словам гостя: {issue.ownerHintRaw}
+                    </span>
+                  )}
                   {issue.dueDate && (
                     <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
                       до {issue.dueDate.toLocaleDateString('ru-RU')}

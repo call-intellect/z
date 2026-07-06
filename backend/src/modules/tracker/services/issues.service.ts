@@ -2455,6 +2455,7 @@ export class IssuesService {
       meetingId: issue.meetingId,
       linkedMeetingIds: issue.linkedMeetingIds,
       sourceBlockIds: issue.sourceBlockIds,
+      ownerHintRaw: issue.ownerHintRaw ?? null,
       previewQuote: issue.previewQuote ?? null,
       previewSourceRef: (issue.previewSourceRef as ProvenancePreviewRef | null) ?? null,
       confidence: issue.confidence?.toString() ?? null,

@@ -184,7 +184,8 @@ DTO `backend/src/modules/operations/dto/personal-day-narrative.dto.ts` (зерк
 ## Фаза 6 — Фронт (`frontend/`)
 
 - Стартовый роут сотрудника: `/meetings` → `/me` (единый экран).
-- Экран `/me` в директорском стекле: обложка-письмо (`GET /me/day-letter`) + 4 оси → борд задач (`GET /me/tasks/buckets`, клик → трекер) → «требует тебя» (pending-actions) → «Кора за ночь» → «на твоей стороне»/«ты двигаешь» → ленты блокеров/идей → трастовый футер.
+- Экран `/me` в директорском стекле: обложка-письмо (`GET /me/day-letter`) + 4 оси → борд задач (`GET /me/tasks/buckets`) → «требует тебя» (pending-actions) → «Кора за ночь» → «на твоей стороне»/«ты двигаешь» → ленты блокеров/идей → трастовый футер.
+- **Клик по карточке задачи борда → переход на существующую страницу трекера `/issues/{id}`** (`frontend/app/(authenticated)/issues/[id]/page.tsx`). Каждая карточка `/me/tasks/buckets` уже несёт `id` + `identifier` — link готов, доп. эндпоинт не нужен. На странице задачи — журнал шагов (`GET /issues/:id/progress-updates`) + аудит (`/activity`), уже `issue:read` (обёртка не нужна).
 - Слои `ApiDto → DomainModel → UiModel`; SWR; визуальная опора — `scratchpad/site/index.html`.
 - Значок «🎤 расскажи как делал» на закрытых из `/me/tasks/method-capture-pending` → probe-ответ.
 

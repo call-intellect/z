@@ -59,7 +59,7 @@
 - **Новые REST:** `issues/:id/progress-updates`(+`progress-updates/:id/confirm`), `issues/:id/activity-digest`, `issues/:id/field-values`+`projects/:id/field-defs`, `automation-rules`, `templates`(+`/instantiate`)+`recurrences`, `issues/:id/worklogs`.
 - **Новые воркеры/cron/движки:** `progress-auto-draft.cron` (07:00 UTC), `recurrence-materialize.cron` (06:00 UTC), `automation-engine` (`@OnEvent tracker.event_occurred`).
 - **Новые LLM-taskType:** `issue-progress-draft`, `issue-activity-digest` (оба DEFAULT-цепочка DeepSeek/OpenAI-proxy; промпт-файлы cache-friendly).
-- **Крутилки (страница `/admin/tracker`, каркас DomainSettings, все ON/Ship-On):** `tracker.progressAutoDraft{Enabled,MinSignals,Cron}`, `tracker.activityDigestEnabled`, `tracker.automationsEnabled`, `tracker.recurrence{Enabled,CronCadence}` (реестр — `docs/operations/feature-flags.md`).
+- **Крутилки (страница `/admin/tracker`, каркас DomainSettings, все ON/Ship-On):** `tracker.progressAutoDraft{Enabled,MinSignals,Cron,MinConfidence,RequireSubstantiveSignal}`, `tracker.activityDigestEnabled`, `tracker.automationsEnabled`, `tracker.recurrence{Enabled,CronCadence}` (реестр — `docs/operations/feature-flags.md`).
 
 ## Спайн-специалист задач (unified-task-extraction, 2026-06-23)
 

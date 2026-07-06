@@ -11,7 +11,6 @@ import { DecisionPointService } from './services/decision-point.service';
 import { ProcessExtractionService } from './services/process-extraction.service';
 import { ProcessHandoffService } from './services/process-handoff.service';
 import { ProcessTemplateCompletenessService } from './services/process-template-completeness.service';
-import { ProcessTemplateProbeService } from './services/process-template-probe.service';
 import { ProcessTemplateService } from './services/process-template.service';
 import { CrossFunctionalFrictionAggregatorCron } from './workers/cross-functional-friction-aggregator.cron';
 
@@ -24,7 +23,6 @@ import { CrossFunctionalFrictionAggregatorCron } from './workers/cross-functiona
     ProcessHandoffService,
     ProcessExtractionService,
     ProcessTemplateCompletenessService,
-    ProcessTemplateProbeService,
     CrossFunctionalDetectorService,
     CrossFunctionalFrictionService,
     CrossFunctionalFrictionAggregatorCron,
@@ -35,7 +33,6 @@ import { CrossFunctionalFrictionAggregatorCron } from './workers/cross-functiona
     ProcessHandoffService,
     ProcessExtractionService,
     ProcessTemplateCompletenessService,
-    ProcessTemplateProbeService,
     CrossFunctionalDetectorService,
     CrossFunctionalFrictionService,
   ],

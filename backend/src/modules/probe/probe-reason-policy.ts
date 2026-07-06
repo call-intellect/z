@@ -28,9 +28,6 @@ export const NUDGE_REASONS: ReadonlySet<string> = new Set([
 
 export const MACHINE_FILLABLE_REASONS: ReadonlySet<string> = new Set([
   'card.merge_suggestion',
-  'process_template.missing_input_artifact',
-  'process_template.missing_output_artifact',
-  'process_template.step_without_owner',
 ]);
 
 export type ProbeProvenance =

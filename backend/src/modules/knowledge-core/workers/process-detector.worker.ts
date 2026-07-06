@@ -14,7 +14,6 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ProcessExtractionService } from '../../processes/services/process-extraction.service';
-import { ProcessTemplateProbeService } from '../../processes/services/process-template-probe.service';
 
 @Injectable()
 export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
@@ -32,8 +31,6 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ProcessExtractionService)
     private readonly extraction: ProcessExtractionService,
-    @Inject(ProcessTemplateProbeService)
-    private readonly probes: ProcessTemplateProbeService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
@@ -195,34 +192,10 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
       { tenantId: args.tenantId, batchSize: blockIds.length },
       'process-detector: flush batch',
     );
-    const outcome = await this.extraction.extractBatch({
+    await this.extraction.extractBatch({
       tenantId: args.tenantId,
       blockIds,
     });
-
-    if (outcome.new + outcome.updated > 0) {
-      try {
-        const recentlyTouched = await this.prisma.processTemplate.findMany({
-          where: {
-            tenantId: args.tenantId,
-            deletedAt: null,
-            updatedAt: { gte: new Date(Date.now() - 60_000) },
-          },
-          take: 20,
-        });
-        for (const tpl of recentlyTouched) {
-          await this.probes.checkAndEmit(tpl);
-        }
-      } catch (err) {
-        this.logger.debug(
-          {
-            tenantId: args.tenantId,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'process-detector: probe-check упал (best-effort)',
-        );
-      }
-    }
   }
 
   private listKey(tenantId: string): string {

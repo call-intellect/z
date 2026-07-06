@@ -586,9 +586,15 @@ describe('resolveProbeProvenance (центральный гейт политик
 describe('MACHINE_FILLABLE_REASONS (защита human-only)', () => {
   it('содержит машинно-закрываемые gap-reason', () => {
     expect(MACHINE_FILLABLE_REASONS.has('card.merge_suggestion')).toBe(true);
+  });
+
+  it('НЕ содержит снесённые process_template-вопросы', () => {
     expect(
       MACHINE_FILLABLE_REASONS.has('process_template.step_without_owner'),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      MACHINE_FILLABLE_REASONS.has('process_template.missing_output_artifact'),
+    ).toBe(false);
   });
 
   it('НЕ содержит regulation / attribution / decision / experiment', () => {

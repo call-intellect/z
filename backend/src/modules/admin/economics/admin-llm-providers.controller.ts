@@ -24,6 +24,8 @@ import {
   type CreateLlmProviderDto,
   ListLlmProvidersQuerySchema,
   type ListLlmProvidersQuery,
+  SetDefaultProviderSchema,
+  type SetDefaultProviderDto,
   UpdateLlmProviderSchema,
   type UpdateLlmProviderDto,
 } from './dto/admin-llm-providers.dto';
@@ -52,6 +54,19 @@ export class AdminLlmProvidersController {
   @Get(':id')
   getById(@Param('id') id: string) {
     return this.svc.getById(id);
+  }
+
+  @Get(':id/removal-impact')
+  previewRemoval(@Param('id') id: string) {
+    return this.svc.previewRemoval(id);
+  }
+
+  @Post(':id/set-default')
+  setDefault(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetDefaultProviderSchema)) dto: SetDefaultProviderDto,
+  ) {
+    return this.svc.setDefaultProvider(id, dto.model);
   }
 
   @Post()

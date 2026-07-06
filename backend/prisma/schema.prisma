@@ -3125,6 +3125,12 @@ model LlmProvider {
   globalRps        Int?
   /// Активен ли провайдер для маршрутизации.
   isActive         Boolean   @default(true)
+  /// Ф-фича 2026-07-06 llm-provider-default-fallback: ровно один провайдер в системе
+  /// может быть isDefaultProvider=true — это «провайдер по умолчанию», на него
+  /// автоматически переключаются маршруты при удалении других провайдеров.
+  /// Модель дефолта — уже существующий defaultModelKey. Гарантия «ровно один или ноль» —
+  /// на уровне сервиса (транзакция), не на уровне БД-constraint.
+  isDefaultProvider Boolean  @default(false)
   /// Ходить через прокси: эффективный baseUrl строится из PROXY_BASE_URL(+proxyPath), ключ префиксуется PROXY_PREFIX.
   useProxy         Boolean   @default(false)
   /// Слаг пути на прокси (например 'grsai' → {proxyRoot}/grsai/v1). NULL = корневой upstream прокси (openai).

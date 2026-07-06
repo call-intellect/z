@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma, type LlmProvider } from '@prisma/client';
 
@@ -116,6 +117,99 @@ export class AdminLlmProvidersService {
     });
     this.providerInfo.invalidate();
     return { ok: true as const };
+  }
+
+  /**
+   * Ф2026-07-06: назначить провайдера дефолтным. Атомарно снимает флаг
+   * со старого дефолта (если был) и ставит на новый. model должен принадлежать
+   * провайдеру и быть активным.
+   */
+  async setDefaultProvider(id: string, model: string): Promise<{ ok: true }> {
+    const row = await this.getRow(id);
+    const modelRow = await this.prisma.llmModel.findFirst({
+      where: { providerId: id, modelKey: model, isActive: true, deletedAt: null },
+    });
+    if (!modelRow) {
+      throw new UnprocessableEntityException({
+        ok: false,
+        error: {
+          code: 'default_model_invalid',
+          message: `Модель "${model}" не найдена/не активна у провайдера "${row.name}"`,
+        },
+      });
+    }
+    await this.prisma.$transaction([
+      this.prisma.llmProvider.updateMany({
+        where: { isDefaultProvider: true },
+        data: { isDefaultProvider: false },
+      }),
+      this.prisma.llmProvider.update({
+        where: { id },
+        data: { isDefaultProvider: true, defaultModelKey: model },
+      }),
+    ]);
+    this.providerInfo.invalidate();
+    return { ok: true };
+  }
+
+  /**
+   * Возвращает текущий дефолт (провайдер+модель) или null, если не назначен.
+   */
+  private async getDefaultProvider(): Promise<{
+    providerName: string;
+    model: string | null;
+  } | null> {
+    const row = await this.prisma.llmProvider.findFirst({
+      where: { isDefaultProvider: true, deletedAt: null },
+    });
+    return row ? { providerName: row.name, model: row.defaultModelKey } : null;
+  }
+
+  /**
+   * Ф2026-07-06: предпросмотр удаления — сколько маршрутов затронуто, текущий дефолт.
+   * НЕ мутирует ничего.
+   */
+  async previewRemoval(id: string): Promise<{
+    providerName: string;
+    isDefault: boolean;
+    affectedRoutesCount: number;
+    affectedTenantsCount: number;
+    inDefaultChain: boolean;
+    currentDefault: { providerName: string; model: string | null } | null;
+  }> {
+    const row = await this.getRow(id);
+    const [tieredRoutes, legacyRoutes] = await Promise.all([
+      this.prisma.llmTaskRoute.findMany({
+        where: { providerName: row.name, tier: { not: null } },
+        select: { tenantId: true },
+      }),
+      this.prisma.llmTaskRoute.findMany({
+        where: { tier: null, providers: { not: Prisma.JsonNull } },
+        select: { tenantId: true, providers: true },
+      }),
+    ]);
+    const legacyMatches = legacyRoutes.filter(
+      (r) =>
+        Array.isArray(r.providers) &&
+        (r.providers as Array<{ provider?: string }>).some((p) => p?.provider === row.name),
+    );
+    const affectedRoutesCount = tieredRoutes.length + legacyMatches.length;
+    const tenantSet = new Set(
+      [...tieredRoutes, ...legacyMatches].map((r) => r.tenantId ?? '__global__'),
+    );
+    const defaultChainRaw = await this.cfg
+      ?.getDynamic<Array<{ provider: string }>>('llm.router.defaultChain', undefined, [])
+      .catch(() => []);
+    const inDefaultChain =
+      Array.isArray(defaultChainRaw) && defaultChainRaw.some((e) => e?.provider === row.name);
+    return {
+      providerName: row.name,
+      isDefault: row.isDefaultProvider,
+      affectedRoutesCount,
+      affectedTenantsCount: tenantSet.size,
+      inDefaultChain,
+      currentDefault: await this.getDefaultProvider(),
+    };
   }
 
   async discoverModels(id: string) {

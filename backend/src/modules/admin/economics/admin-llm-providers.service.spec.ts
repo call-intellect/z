@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdminLlmProvidersService } from './admin-llm-providers.service';
@@ -22,6 +27,7 @@ function fakeProvider(overrides: Record<string, unknown> = {}) {
     defaultHeaders: null,
     globalRps: null,
     isActive: true,
+    isDefaultProvider: false,
     useProxy: false,
     proxyPath: null,
     timeoutMs: null,
@@ -41,8 +47,13 @@ describe('AdminLlmProvidersService', () => {
   const findUnique = vi.fn();
   const create = vi.fn();
   const update = vi.fn();
+  const updateMany = vi.fn();
+  const llmProviderFindFirst = vi.fn();
   const llmModelFindMany = vi.fn();
+  const llmModelFindFirst = vi.fn();
   const llmTaskRouteFindFirst = vi.fn();
+  const llmTaskRouteFindMany = vi.fn();
+  const transaction = vi.fn();
   const encrypt = vi.fn(() => 'gcm:v1:mocked');
   const isEncrypted = vi.fn((v: string) => v.startsWith('gcm:v1:'));
   const invalidate = vi.fn();
@@ -50,9 +61,17 @@ describe('AdminLlmProvidersService', () => {
   const getDynamic = vi.fn();
 
   const prisma = {
-    llmProvider: { findMany, findUnique, create, update },
-    llmModel: { findMany: llmModelFindMany },
-    llmTaskRoute: { findFirst: llmTaskRouteFindFirst },
+    llmProvider: {
+      findMany,
+      findUnique,
+      create,
+      update,
+      updateMany,
+      findFirst: llmProviderFindFirst,
+    },
+    llmModel: { findMany: llmModelFindMany, findFirst: llmModelFindFirst },
+    llmTaskRoute: { findFirst: llmTaskRouteFindFirst, findMany: llmTaskRouteFindMany },
+    $transaction: transaction,
   } as unknown as ConstructorParameters<typeof AdminLlmProvidersService>[0];
   const crypto = { encrypt, isEncrypted } as unknown as ConstructorParameters<
     typeof AdminLlmProvidersService
@@ -70,7 +89,11 @@ describe('AdminLlmProvidersService', () => {
     vi.clearAllMocks();
     encrypt.mockReturnValue('gcm:v1:mocked');
     llmModelFindMany.mockResolvedValue([]);
+    llmModelFindFirst.mockResolvedValue(null);
+    llmProviderFindFirst.mockResolvedValue(null);
     llmTaskRouteFindFirst.mockResolvedValue(null);
+    llmTaskRouteFindMany.mockResolvedValue([]);
+    transaction.mockImplementation((ops: unknown[]) => Promise.all(ops));
     getDynamic.mockResolvedValue([]);
     svc = new AdminLlmProvidersService(prisma, crypto, providerInfo);
   });
@@ -314,6 +337,144 @@ describe('AdminLlmProvidersService', () => {
       const res = await svc.discoverModels('p1');
 
       expect(res).toEqual({ ok: false, error: 'boom' });
+    });
+  });
+
+  describe('setDefaultProvider (Ф2026-07-06 llm-provider-default-fallback, Фаза 1)', () => {
+    it('(a) назначить А дефолтом, потом Б → транзакция каждый раз сбрасывает старый флаг и ставит новый + модель', async () => {
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pA', name: 'anthropic' }));
+      llmModelFindFirst.mockResolvedValueOnce({
+        id: 'm1',
+        providerId: 'pA',
+        modelKey: 'model-a',
+        isActive: true,
+        deletedAt: null,
+      });
+      updateMany.mockResolvedValueOnce({ count: 0 });
+      update.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pA',
+          name: 'anthropic',
+          isDefaultProvider: true,
+          defaultModelKey: 'model-a',
+        }),
+      );
+
+      const resA = await svc.setDefaultProvider('pA', 'model-a');
+
+      expect(resA).toEqual({ ok: true });
+      expect(updateMany).toHaveBeenNthCalledWith(1, {
+        where: { isDefaultProvider: true },
+        data: { isDefaultProvider: false },
+      });
+      expect(update).toHaveBeenNthCalledWith(1, {
+        where: { id: 'pA' },
+        data: { isDefaultProvider: true, defaultModelKey: 'model-a' },
+      });
+      expect(invalidate).toHaveBeenCalledTimes(1);
+
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pB', name: 'deepseek' }));
+      llmModelFindFirst.mockResolvedValueOnce({
+        id: 'm2',
+        providerId: 'pB',
+        modelKey: 'model-b',
+        isActive: true,
+        deletedAt: null,
+      });
+      updateMany.mockResolvedValueOnce({ count: 1 });
+      update.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pB',
+          name: 'deepseek',
+          isDefaultProvider: true,
+          defaultModelKey: 'model-b',
+        }),
+      );
+
+      const resB = await svc.setDefaultProvider('pB', 'model-b');
+
+      expect(resB).toEqual({ ok: true });
+      expect(updateMany).toHaveBeenNthCalledWith(2, {
+        where: { isDefaultProvider: true },
+        data: { isDefaultProvider: false },
+      });
+      expect(update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'pB' },
+        data: { isDefaultProvider: true, defaultModelKey: 'model-b' },
+      });
+      expect(invalidate).toHaveBeenCalledTimes(2);
+    });
+
+    it('(b) модель не принадлежит провайдеру / не активна → UnprocessableEntityException default_model_invalid', async () => {
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'p1', name: 'deepseek' }));
+      llmModelFindFirst.mockResolvedValueOnce(null);
+
+      let err: unknown;
+      try {
+        await svc.setDefaultProvider('p1', 'bad-model');
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(UnprocessableEntityException);
+      expect((err as UnprocessableEntityException).getResponse()).toMatchObject({
+        error: { code: 'default_model_invalid' },
+      });
+      expect(transaction).not.toHaveBeenCalled();
+      expect(invalidate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('previewRemoval (Ф2026-07-06 llm-provider-default-fallback, Фаза 1)', () => {
+    it('(a) занят в глобальном тир-маршруте + per-tenant тир-маршруте + legacy JSON-маршруте → считает все три, tenants дедуп по __global__/tenantId', async () => {
+      const svcWithCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfg);
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({ id: 'p1', name: 'deepseek', isDefaultProvider: false }),
+      );
+      llmTaskRouteFindMany
+        .mockResolvedValueOnce([{ tenantId: null }, { tenantId: 'org1' }])
+        .mockResolvedValueOnce([
+          { tenantId: 'org2', providers: [{ provider: 'deepseek' }] },
+          { tenantId: 'org3', providers: [{ provider: 'openai-via-proxy' }] },
+        ]);
+      getDynamic.mockResolvedValueOnce([{ provider: 'deepseek' }]);
+      llmProviderFindFirst.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pDefault',
+          name: 'ollama',
+          isDefaultProvider: true,
+          defaultModelKey: 'qwen3.5:9b',
+        }),
+      );
+
+      const res = await svcWithCfg.previewRemoval('p1');
+
+      expect(res).toEqual({
+        providerName: 'deepseek',
+        isDefault: false,
+        affectedRoutesCount: 3,
+        affectedTenantsCount: 3,
+        inDefaultChain: true,
+        currentDefault: { providerName: 'ollama', model: 'qwen3.5:9b' },
+      });
+    });
+
+    it('(b) провайдер не занят нигде → affectedRoutesCount:0, affectedTenantsCount:0, inDefaultChain:false, currentDefault:null', async () => {
+      const svcWithCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfg);
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'p1', name: 'unused-provider' }));
+      llmTaskRouteFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      getDynamic.mockResolvedValueOnce([{ provider: 'deepseek' }]);
+      llmProviderFindFirst.mockResolvedValueOnce(null);
+
+      const res = await svcWithCfg.previewRemoval('p1');
+
+      expect(res).toEqual({
+        providerName: 'unused-provider',
+        isDefault: false,
+        affectedRoutesCount: 0,
+        affectedTenantsCount: 0,
+        inDefaultChain: false,
+        currentDefault: null,
+      });
     });
   });
 });

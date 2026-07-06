@@ -39,3 +39,8 @@ export const ListLlmProvidersQuerySchema = z.object({
     .default(false),
 });
 export type ListLlmProvidersQuery = z.infer<typeof ListLlmProvidersQuerySchema>;
+
+export const SetDefaultProviderSchema = z.object({
+  model: z.string().trim().min(1),
+});
+export type SetDefaultProviderDto = z.infer<typeof SetDefaultProviderSchema>;

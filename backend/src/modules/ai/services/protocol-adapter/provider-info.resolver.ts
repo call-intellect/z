@@ -46,6 +46,7 @@ export class ProviderInfoResolver {
       timeoutMs: number | null;
       capability: string;
       defaultModelKey: string | null;
+      billingMode: string;
     } | null = null;
     try {
       row = await this.prisma.llmProvider.findUnique({
@@ -61,6 +62,7 @@ export class ProviderInfoResolver {
           timeoutMs: true,
           capability: true,
           defaultModelKey: true,
+          billingMode: true,
         },
       });
     } catch (err) {
@@ -94,6 +96,7 @@ export class ProviderInfoResolver {
         capability: row.capability,
         timeoutMs: row.timeoutMs,
         defaultModelKey: row.defaultModelKey,
+        billingMode: row.billingMode,
         ...(row.defaultHeaders &&
         typeof row.defaultHeaders === 'object' &&
         !Array.isArray(row.defaultHeaders)

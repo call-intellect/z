@@ -14,6 +14,9 @@ export type AdminLlmProviderApi = {
   defaultHeaders: Record<string, string> | null;
   globalRps: number | null;
   isDefaultProvider: boolean;
+  billingMode: string;
+  subscriptionMonthlyCostUsd: number | null;
+  subscriptionStartedAt: string | null;
   lastSmokeAt: string | null;
   lastSmokeSuccess: boolean | null;
   lastSmokeError: string | null;
@@ -39,6 +42,9 @@ export type AdminLlmProviderDomain = {
   defaultHeaders: Record<string, string> | null;
   globalRps: number | null;
   isDefaultProvider: boolean;
+  billingMode: string;
+  subscriptionMonthlyCostUsd: number | null;
+  subscriptionStartedAt: Date | null;
   lastSmokeAt: Date | null;
   lastSmokeSuccess: boolean | null;
   lastSmokeError: string | null;
@@ -65,6 +71,11 @@ export function adminLlmProviderFromApi(
     defaultHeaders: api.defaultHeaders,
     globalRps: api.globalRps,
     isDefaultProvider: api.isDefaultProvider,
+    billingMode: api.billingMode,
+    subscriptionMonthlyCostUsd: api.subscriptionMonthlyCostUsd,
+    subscriptionStartedAt: api.subscriptionStartedAt
+      ? new Date(api.subscriptionStartedAt)
+      : null,
     lastSmokeAt: api.lastSmokeAt ? new Date(api.lastSmokeAt) : null,
     lastSmokeSuccess: api.lastSmokeSuccess,
     lastSmokeError: api.lastSmokeError,
@@ -102,6 +113,9 @@ export type CreateLlmProviderRequest = {
   proxyPath?: string | null;
   timeoutMs?: number | null;
   defaultModelKey?: string | null;
+  billingMode?: "per_token" | "subscription";
+  subscriptionMonthlyCostUsd?: number | null;
+  subscriptionStartedAt?: string | null;
 };
 
 export type UpdateLlmProviderRequest = Partial<

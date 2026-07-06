@@ -24,6 +24,9 @@ export const CreateLlmProviderSchema = z.object({
   proxyPath: z.string().max(120).nullable().optional(),
   timeoutMs: z.number().int().positive().nullable().optional(),
   defaultModelKey: z.string().max(120).nullable().optional(),
+  billingMode: z.enum(['per_token', 'subscription']).default('per_token'),
+  subscriptionMonthlyCostUsd: z.number().nonnegative().nullable().optional(),
+  subscriptionStartedAt: z.string().datetime().nullable().optional(),
 });
 export type CreateLlmProviderDto = z.infer<typeof CreateLlmProviderSchema>;
 

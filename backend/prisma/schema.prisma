@@ -3139,6 +3139,15 @@ model LlmProvider {
   timeoutMs        Int?
   /// Модель по умолчанию, когда её не задали ни вызов, ни маршрут. NULL = defaultModel legacy-сервиса.
   defaultModelKey  String?   @db.VarChar(120)
+  /// Ф-фича 2026-07-06 llm-provider-subscription-billing: 'per_token' (обычная оплата за
+  /// токен, дефолт) | 'subscription' — фиксированная ежемесячная подписка вместо оплаты
+  /// за токен. При 'subscription' computeCostUsd() всегда возвращает 0 без похода
+  /// в LlmModelPrice — токены по-прежнему считаются (AiUsageLog), просто бесплатны.
+  billingMode                String    @default("per_token") @db.VarChar(20)
+  /// Сумма подписки в месяц, USD. NULL, если billingMode != 'subscription'.
+  subscriptionMonthlyCostUsd Decimal?  @db.Decimal(10, 2)
+  /// Дата начала подписки — определяет день месяца списания (LlmProviderSubscriptionCharge).
+  subscriptionStartedAt      DateTime?
   /// Последний результат smoke-теста.
   lastSmokeAt      DateTime?
   lastSmokeSuccess Boolean?
@@ -3147,10 +3156,29 @@ model LlmProvider {
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
-  models LlmModel[]
+  models              LlmModel[]
+  subscriptionCharges LlmProviderSubscriptionCharge[]
 
   @@index([isActive, protocolKind])
   @@map("llm_providers")
+}
+
+/// Ф-фича 2026-07-06 llm-provider-subscription-billing: ledger списаний подписки.
+/// Platform-level расход (НЕ per-org) — не путать с AiCostDaily (per-tenant атрибуция).
+model LlmProviderSubscriptionCharge {
+  id           String   @id @default(cuid())
+  providerId   String
+  providerName String   @db.VarChar(60)
+  /// День фактического списания (годовщина subscriptionStartedAt, с клампом на конец месяца).
+  chargeDate   DateTime @db.Date
+  amountUsd    Decimal  @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+
+  provider LlmProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, chargeDate])
+  @@index([chargeDate])
+  @@map("llm_provider_subscription_charges")
 }
 
 /// LlmModel — конкретная модель LLM в реестре (gpt-5.4-flash, deepseek-v4-pro,

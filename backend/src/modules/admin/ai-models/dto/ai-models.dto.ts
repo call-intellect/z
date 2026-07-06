@@ -61,6 +61,37 @@ export const MetricsQuerySchema = z.object({
 });
 export type MetricsQueryDto = z.infer<typeof MetricsQuerySchema>;
 
+export const BulkReassignScopeSchema = z.object({
+  scope: z.enum(['unassigned', 'provider']),
+  tier: z.enum(TIER_VALUES).optional(),
+  fromProviderName: z.string().optional(),
+});
+
+function requireFromProviderForScopeProvider(
+  v: { scope: 'unassigned' | 'provider'; fromProviderName?: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (v.scope === 'provider' && !v.fromProviderName) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'fromProviderName обязателен при scope="provider"',
+      path: ['fromProviderName'],
+    });
+  }
+}
+
+export const BulkReassignPreviewSchema = BulkReassignScopeSchema.superRefine(
+  requireFromProviderForScopeProvider,
+);
+export type BulkReassignPreviewDto = z.infer<typeof BulkReassignPreviewSchema>;
+
+export const BulkReassignSchema = BulkReassignScopeSchema.extend({
+  toProviderName: z.enum(PROVIDER_NAMES),
+  toModel: z.string().min(1).max(120),
+  reason: z.string().min(3).max(500),
+}).superRefine(requireFromProviderForScopeProvider);
+export type BulkReassignDto = z.infer<typeof BulkReassignSchema>;
+
 export const PutChainSchema = z.object({
   entries: z
     .array(

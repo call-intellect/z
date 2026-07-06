@@ -40,7 +40,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
       apiKey,
       defaultHeaders: provider.defaultHeaders,
     });
-    const model = input.model ?? provider.defaultModel ?? 'gpt-4o-mini';
+    const model = input.model ?? provider.defaultModelKey ?? provider.defaultModel ?? 'gpt-4o-mini';
 
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const messages: Array<{ role: 'system' | 'user'; content: string }> = [

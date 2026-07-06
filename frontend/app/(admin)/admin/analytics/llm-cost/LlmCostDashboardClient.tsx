@@ -31,6 +31,13 @@ import { CHART } from "@/ui/components/dashboard/modern/tokens";
 import { Button } from "@/ui/shadcn/button";
 import { Input } from "@/ui/shadcn/input";
 import { cn } from "@/ui/shadcn/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/shadcn/select";
 
 import {
   AdminEmpty,
@@ -43,6 +50,7 @@ import { useAdminQuery } from "../../useAdminQuery";
 type LlmCostView = "overview" | "model" | "module" | "companies" | "company";
 
 const BASE_PATH = "/admin/analytics/llm-cost";
+const ALL_FILTER = "__all__";
 
 function parseView(raw: string | null): LlmCostView {
   if (
@@ -334,6 +342,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
   const csvByModelRows: Array<Record<string, unknown>> = (
     q.data?.byModel ?? []
   ).map((m) => ({
+    provider: m.provider,
     model: m.model,
     costUsd: Number(m.costUsd.toFixed(2)),
     sharePct: Number(m.sharePct.toFixed(1)),
@@ -342,13 +351,14 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
   return (
     <AdminSection
       title="Расход на LLM"
-      description="Единый источник расхода на AI — по моделям, разделам и компаниям, в рублях."
+      description="Единый источник расхода на AI — по моделям, разделам и компаниям, в долларах."
       actions={
         <>
           <PeriodSwitcher value={period} onChange={onPeriodChange} />
           <AdminCsvDownloadButton
             rows={csvByModelRows}
             columns={[
+              { key: "provider", label: "Провайдер" },
               { key: "model", label: "Модель" },
               { key: "costUsd", label: "Расход, $" },
               { key: "sharePct", label: "Доля, %" },
@@ -380,6 +390,12 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
               <span className="text-sm text-fg-tertiary">
                 {q.data.totals.callsCount.toLocaleString("ru-RU")} вызовов
               </span>
+              {q.data.totals.subscriptionCostUsd > 0 && (
+                <span className="text-sm text-fg-tertiary">
+                  включая {formatUsd(q.data.totals.subscriptionCostUsd)} по
+                  подписке провайдеров
+                </span>
+              )}
             </div>
 
             <div>
@@ -405,7 +421,7 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                 </div>
                 {q.data.byModel[0] && (
                   <DoorCard
-                    label={q.data.byModel[0].model}
+                    label={`${q.data.byModel[0].provider} / ${q.data.byModel[0].model}`}
                     costUsd={q.data.byModel[0].costUsd}
                     sharePct={q.data.byModel[0].sharePct}
                     href={buildLlmCostHref({
@@ -427,8 +443,8 @@ function OverviewView({ period, onPeriodChange }: PeriodViewProps) {
                 {showAllModels && (
                   <ExpandedList
                     rows={q.data.byModel.map((m) => ({
-                      key: m.model,
-                      label: m.model,
+                      key: `${m.provider}::${m.model}`,
+                      label: `${m.provider} / ${m.model}`,
                       costUsd: m.costUsd,
                       sharePct: m.sharePct,
                       href: buildLlmCostHref({
@@ -993,17 +1009,51 @@ function CompanyDetailView({
   onPeriodChange,
 }: PeriodViewProps & { tenantId: string }) {
   const [granularity, setGranularity] = useState<LlmCostTrendGranularity>("day");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [providerFilter, setProviderFilter] = useState("");
+  const [modelFilter, setModelFilter] = useState("");
+
+  const hasCustomRange = Boolean(dateFrom && dateTo);
+
+  // Список опций для фильтров — БЕЗ применённых фильтров (иначе после выбора
+  // провайдера пропадали бы остальные варианты из выпадающего списка модели).
+  const optionsQ = useAdminQuery(
+    `llm-cost-company-options:${tenantId}:${period}:${dateFrom}:${dateTo}`,
+    async () =>
+      llmCostCompanyDetailFromApi(
+        await adminLlmCostApi.companyDetail(tenantId, {
+          period,
+          trend: "day",
+          ...(hasCustomRange ? { dateFrom, dateTo } : {}),
+        }),
+      ),
+    [tenantId, period, dateFrom, dateTo],
+  );
+  const providerOptions = [
+    ...new Set((optionsQ.data?.byModel ?? []).map((m) => m.provider)),
+  ].sort();
+  const modelOptions = [
+    ...new Set(
+      (optionsQ.data?.byModel ?? [])
+        .filter((m) => !providerFilter || m.provider === providerFilter)
+        .map((m) => m.model),
+    ),
+  ].sort();
 
   const q = useAdminQuery(
-    `llm-cost-company:${tenantId}:${period}:${granularity}`,
+    `llm-cost-company:${tenantId}:${period}:${granularity}:${dateFrom}:${dateTo}:${providerFilter}:${modelFilter}`,
     async () =>
       llmCostCompanyDetailFromApi(
         await adminLlmCostApi.companyDetail(tenantId, {
           period,
           trend: granularity,
+          ...(hasCustomRange ? { dateFrom, dateTo } : {}),
+          ...(providerFilter ? { provider: providerFilter } : {}),
+          ...(modelFilter ? { model: modelFilter } : {}),
         }),
       ),
-    [tenantId, period, granularity],
+    [tenantId, period, granularity, dateFrom, dateTo, providerFilter, modelFilter],
   );
 
   const overviewHref = buildLlmCostHref({ view: "overview", period });
@@ -1014,6 +1064,7 @@ function CompanyDetailView({
   );
   const csvRows: Array<Record<string, unknown>> = (q.data?.byModel ?? []).map(
     (m) => ({
+      provider: m.provider,
       model: m.model,
       costUsd: Number(m.costUsd.toFixed(2)),
       sharePct: Number(m.sharePct.toFixed(1)),
@@ -1035,6 +1086,7 @@ function CompanyDetailView({
           <AdminCsvDownloadButton
             rows={csvRows}
             columns={[
+              { key: "provider", label: "Провайдер" },
               { key: "model", label: "Модель" },
               { key: "costUsd", label: "Расход, $" },
               { key: "sharePct", label: "Доля, %" },
@@ -1045,6 +1097,82 @@ function CompanyDetailView({
       }
     >
       <div className="space-y-6">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border-subtle bg-bg-card p-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-fg-tertiary">Дата от</span>
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-9 w-40"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-fg-tertiary">Дата до</span>
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-9 w-40"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-fg-tertiary">Провайдер</span>
+            <Select
+              value={providerFilter || ALL_FILTER}
+              onValueChange={(v) => {
+                setProviderFilter(v === ALL_FILTER ? "" : v);
+                setModelFilter("");
+              }}
+            >
+              <SelectTrigger className="h-9 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_FILTER}>Все провайдеры</SelectItem>
+                {providerOptions.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-fg-tertiary">Модель</span>
+            <Select
+              value={modelFilter || ALL_FILTER}
+              onValueChange={(v) => setModelFilter(v === ALL_FILTER ? "" : v)}
+            >
+              <SelectTrigger className="h-9 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_FILTER}>Все модели</SelectItem>
+                {modelOptions.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {(dateFrom || dateTo || providerFilter || modelFilter) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+                setProviderFilter("");
+                setModelFilter("");
+              }}
+            >
+              Сбросить фильтры
+            </Button>
+          )}
+        </div>
+
         {q.isLoading && <AdminLoading rows={5} />}
         {!q.isLoading && q.isForbidden && <AdminForbidden />}
         {!q.isLoading && q.error && (
@@ -1053,7 +1181,7 @@ function CompanyDetailView({
         {!q.isLoading && q.data && q.data.totals.costUsd === 0 && (
           <AdminEmpty
             title="Нет расхода у этой компании"
-            description="За выбранный период у этой компании не было платных LLM-вызовов."
+            description="За выбранный период (и с учётом фильтров) у этой компании не было платных LLM-вызовов."
           />
         )}
         {!q.isLoading && q.data && q.data.totals.costUsd > 0 && (
@@ -1086,6 +1214,7 @@ function CompanyDetailView({
                 <table className="w-full text-sm">
                   <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
                     <tr>
+                      <th className="px-3 py-2 text-left">Провайдер</th>
                       <th className="px-3 py-2 text-left">Модель</th>
                       <th className="px-3 py-2 text-right">$/период</th>
                       <th className="px-3 py-2 text-right">% от компании</th>
@@ -1094,9 +1223,12 @@ function CompanyDetailView({
                   <tbody>
                     {q.data.byModel.map((m) => (
                       <tr
-                        key={m.model}
+                        key={`${m.provider}::${m.model}`}
                         className="border-t border-border-subtle hover:bg-bg-overlay"
                       >
+                        <td className="px-3 py-2 font-mono text-xs text-fg-tertiary">
+                          {m.provider}
+                        </td>
                         <td className="px-3 py-2">
                           <Link
                             href={buildLlmCostHref({

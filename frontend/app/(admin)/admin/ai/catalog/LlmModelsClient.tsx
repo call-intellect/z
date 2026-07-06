@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { Info, Pencil, Plus, Trash2 } from "lucide-react";
+import { Info, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api/api-error";
@@ -12,6 +12,7 @@ import {
   adminLlmModelFromApi,
   type AdminLlmModelDomain,
   type CreateLlmModelRequest,
+  type ModelRemovalImpactApi,
 } from "@/domain/admin-llm-model";
 import {
   adminLlmProviderFromApi,
@@ -93,6 +94,12 @@ export function LlmModelsClient() {
   const [showCreate, setShowCreate] = useState(false);
   const [editModel, setEditModel] = useState<AdminLlmModelDomain | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [reassignDialog, setReassignDialog] =
+    useState<AdminLlmModelDomain | null>(null);
+  const [removalDialog, setRemovalDialog] = useState<{
+    model: AdminLlmModelDomain;
+    impact: ModelRemovalImpactApi;
+  } | null>(null);
 
   const providersQ = useAdminQuery(
     "admin-llm-providers-for-models",
@@ -117,12 +124,15 @@ export function LlmModelsClient() {
     [providerFilter, includeInactive],
   );
 
-  const handleDelete = async (m: AdminLlmModelDomain) => {
-    if (!window.confirm(`Удалить модель «${m.displayName}»?`)) return;
+  const performSimpleDelete = async (m: AdminLlmModelDomain) => {
     setBusyId(m.id);
     try {
-      await adminLlmModelsApi.remove(m.id);
-      toast.success(`Модель «${m.displayName}» удалена`);
+      const res = await adminLlmModelsApi.remove(m.id);
+      toast.success(
+        res.routesMigrated > 0
+          ? `Модель «${m.displayName}» удалена, ${res.routesMigrated} маршрутов переключено`
+          : `Модель «${m.displayName}» удалена`,
+      );
       q.refetch();
     } catch (e) {
       toast.error(
@@ -131,6 +141,94 @@ export function LlmModelsClient() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleDelete = async (m: AdminLlmModelDomain) => {
+    if (m.isDefault) {
+      setReassignDialog(m);
+      return;
+    }
+    setBusyId(m.id);
+    let impact: ModelRemovalImpactApi;
+    try {
+      impact = await adminLlmModelsApi.previewRemoval(m.id);
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось получить информацию об удалении",
+      );
+      setBusyId(null);
+      return;
+    }
+    setBusyId(null);
+
+    const occupied = impact.affectedRoutesCount > 0 || impact.inDefaultChain;
+    if (occupied && impact.currentDefaultModel) {
+      setRemovalDialog({ model: m, impact });
+      return;
+    }
+    if (occupied && !impact.currentDefaultModel) {
+      toast.error(
+        `Модель «${m.displayName}» занята в ${impact.affectedRoutesCount} маршрутах, а дефолтная модель у провайдера «${m.providerDisplayName}» ещё не назначена. Сначала нажмите «Сделать по умолчанию» у другой модели этого провайдера.`,
+      );
+      return;
+    }
+
+    if (!window.confirm(`Удалить модель «${m.displayName}»?`)) return;
+    await performSimpleDelete(m);
+  };
+
+  const handleConfirmMigratedRemoval = async () => {
+    if (!removalDialog) return;
+    const { model, impact } = removalDialog;
+    setBusyId(model.id);
+    try {
+      const res = await adminLlmModelsApi.remove(model.id);
+      toast.success(
+        res.routesMigrated > 0
+          ? `Модель «${model.displayName}» удалена, ${res.routesMigrated} маршрутов переключено на ${impact.currentDefaultModel}`
+          : `Модель «${model.displayName}» удалена`,
+      );
+      setRemovalDialog(null);
+      q.refetch();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось удалить модель",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleSetDefault = async (m: AdminLlmModelDomain) => {
+    setBusyId(m.id);
+    try {
+      await adminLlmModelsApi.setDefault(m.id);
+      toast.success(`«${m.displayName}» назначена дефолтной моделью провайдера`);
+      q.refetch();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось назначить модель по умолчанию",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleReassignRemoved = (
+    routesMigrated: number,
+    newDefaultModelKey: string,
+  ) => {
+    setReassignDialog(null);
+    toast.success(
+      routesMigrated > 0
+        ? `Модель удалена, ${routesMigrated} маршрутов переключено на ${newDefaultModelKey}`
+        : `Модель удалена, новая дефолтная модель — ${newDefaultModelKey}`,
+    );
+    q.refetch();
   };
 
   const providers = providersQ.data ?? [];
@@ -192,6 +290,59 @@ export function LlmModelsClient() {
           busyId={busyId}
           onEdit={setEditModel}
           onDelete={(m) => void handleDelete(m)}
+          onSetDefault={(m) => void handleSetDefault(m)}
+        />
+      )}
+
+      {removalDialog && (
+        <Dialog
+          open
+          onOpenChange={(o) => (!o ? setRemovalDialog(null) : undefined)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                Удалить модель «{removalDialog.model.displayName}»?
+              </DialogTitle>
+              <DialogDescription>
+                Эта модель сейчас используется в{" "}
+                {removalDialog.impact.affectedRoutesCount} маршрутах. Все они
+                переключатся на дефолтную модель провайдера:{" "}
+                {removalDialog.impact.currentDefaultModel}.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRemovalDialog(null)}
+                disabled={busyId === removalDialog.model.id}
+              >
+                Отмена
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={busyId === removalDialog.model.id}
+                onClick={() => void handleConfirmMigratedRemoval()}
+              >
+                Удалить и переключить
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+      {reassignDialog && (
+        <ReassignDefaultModelDialog
+          model={reassignDialog}
+          otherModels={(q.data ?? []).filter(
+            (x) =>
+              x.id !== reassignDialog.id &&
+              x.providerId === reassignDialog.providerId &&
+              x.isActive,
+          )}
+          onClose={() => setReassignDialog(null)}
+          onRemoved={handleReassignRemoved}
         />
       )}
 
@@ -229,11 +380,13 @@ function ModelsTable({
   busyId,
   onEdit,
   onDelete,
+  onSetDefault,
 }: {
   items: AdminLlmModelDomain[];
   busyId: string | null;
   onEdit: (m: AdminLlmModelDomain) => void;
   onDelete: (m: AdminLlmModelDomain) => void;
+  onSetDefault: (m: AdminLlmModelDomain) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border-subtle">
@@ -266,11 +419,18 @@ function ModelsTable({
                   : "—"}
               </td>
               <td className="px-3 py-2">
-                {m.isActive ? (
-                  <Badge variant="default">активна</Badge>
-                ) : (
-                  <Badge variant="secondary">отключена</Badge>
-                )}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {m.isActive ? (
+                    <Badge variant="default">активна</Badge>
+                  ) : (
+                    <Badge variant="secondary">отключена</Badge>
+                  )}
+                  {m.isDefault && (
+                    <Badge variant="default">
+                      <Star size={11} /> По умолчанию
+                    </Badge>
+                  )}
+                </div>
               </td>
               <td className="px-3 py-2 text-xs">
                 {m.verifiedAt ? (
@@ -281,6 +441,16 @@ function ModelsTable({
               </td>
               <td className="px-3 py-2 text-right">
                 <div className="flex items-center justify-end gap-1">
+                  {!m.isDefault && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busyId === m.id}
+                      onClick={() => onSetDefault(m)}
+                    >
+                      <Star size={12} /> Сделать по умолчанию
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -557,6 +727,106 @@ function ModelFormDialog({
             disabled={submitting || (!isEdit && !providerId)}
           >
             {submitting ? "Сохраняем…" : "Сохранить"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReassignDefaultModelDialog({
+  model,
+  otherModels,
+  onClose,
+  onRemoved,
+}: {
+  model: AdminLlmModelDomain;
+  otherModels: AdminLlmModelDomain[];
+  onClose: () => void;
+  onRemoved: (routesMigrated: number, newDefaultModelKey: string) => void;
+}) {
+  const [newModelId, setNewModelId] = useState(otherModels[0]?.id ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!newModelId && otherModels.length > 0) {
+      setNewModelId(otherModels[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otherModels]);
+
+  const handleConfirm = async () => {
+    const newModel = otherModels.find((m) => m.id === newModelId);
+    if (!newModel) {
+      toast.error("Выберите новую дефолтную модель");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await adminLlmModelsApi.remove(model.id, newModel.modelKey);
+      onRemoved(res.routesMigrated, newModel.modelKey);
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось удалить модель",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => (!o ? onClose() : undefined)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Удалить модель «{model.displayName}» (сейчас — по умолчанию)?
+          </DialogTitle>
+          <DialogDescription>
+            «{model.displayName}» сейчас назначена дефолтной моделью
+            провайдера «{model.providerDisplayName}». Чтобы удалить её,
+            сначала выбери, какая модель станет новой дефолтной.
+          </DialogDescription>
+        </DialogHeader>
+        {otherModels.length === 0 ? (
+          <p className="text-xs text-danger">
+            У провайдера «{model.providerDisplayName}» нет других активных
+            моделей — сначала добавьте ещё одну, чтобы было на что
+            переключить дефолт.
+          </p>
+        ) : (
+          <div className="grid gap-3">
+            <Field label="Новая дефолтная модель">
+              <Select value={newModelId} onValueChange={setNewModelId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {otherModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.displayName} ({m.modelKey})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+        )}
+        <DialogFooter>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Отмена
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={submitting || otherModels.length === 0 || !newModelId}
+            onClick={() => void handleConfirm()}
+          >
+            {submitting ? "Удаляем…" : "Назначить и удалить"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -9,6 +9,7 @@ export type AdminLlmModelApi = {
   capabilitiesJson: Record<string, unknown> | null;
   category: string | null;
   isActive: boolean;
+  isDefault: boolean;
   verifiedAt: string | null;
   notes: string | null;
   createdAt: string;
@@ -27,6 +28,7 @@ export type AdminLlmModelDomain = {
   capabilitiesJson: Record<string, unknown> | null;
   category: string | null;
   isActive: boolean;
+  isDefault: boolean;
   verifiedAt: Date | null;
   notes: string | null;
   createdAt: Date;
@@ -46,11 +48,22 @@ export function adminLlmModelFromApi(
     capabilitiesJson: api.capabilitiesJson,
     category: api.category,
     isActive: api.isActive,
+    isDefault: api.isDefault,
     verifiedAt: api.verifiedAt ? new Date(api.verifiedAt) : null,
     notes: api.notes,
     createdAt: new Date(api.createdAt),
   };
 }
+
+export type ModelRemovalImpactApi = {
+  modelKey: string;
+  providerName: string;
+  isDefault: boolean;
+  affectedRoutesCount: number;
+  affectedTenantsCount: number;
+  inDefaultChain: boolean;
+  currentDefaultModel: string | null;
+};
 
 export type CreateLlmModelRequest = {
   providerId: string;

@@ -36,6 +36,7 @@ import { LlmCostDashboardService } from './economics/llm-cost-dashboard.service'
 import { OrgEconomicsController } from './economics/org-economics.controller';
 import { OrgEconomicsCron } from './economics/org-economics.cron';
 import { ProviderSmokeTestCron } from './economics/provider-smoke-test.cron';
+import { ProviderSubscriptionChargeCron } from './economics/provider-subscription-charge.cron';
 import { UnitEconomicsService } from './economics/unit-economics.service';
 import { AdminEntitlementsModule } from './entitlements/entitlements.module';
 import { AdminIncidentsModule } from './incidents/admin-incidents.module';
@@ -143,6 +144,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     BudgetAlertCron,
     CurrencyRateSyncCron,
     ProviderSmokeTestCron,
+    ProviderSubscriptionChargeCron,
     AdminTelegramBotService,
     SignalTypeMonitorService,
   ],
@@ -167,6 +169,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     BudgetAlertCron,
     CurrencyRateSyncCron,
     ProviderSmokeTestCron,
+    ProviderSubscriptionChargeCron,
   ],
 })
 export class AdminModule {}

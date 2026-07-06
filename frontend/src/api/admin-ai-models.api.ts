@@ -126,6 +126,27 @@ export type PutChainRequest = {
 
 export type PutChainResponse = { ok: true; warnings: string[] };
 
+export type BulkReassignScope = "unassigned" | "provider";
+
+export type BulkReassignAffectedApi = {
+  taskType: string;
+  tier: AiModelTier;
+  currentProviderName: string | null;
+  currentModel: string | null;
+};
+
+export type BulkReassignPreviewRequest = {
+  scope: BulkReassignScope;
+  tier?: AiModelTier;
+  fromProviderName?: string;
+};
+
+export type BulkReassignRequest = BulkReassignPreviewRequest & {
+  toProviderName: AiModelProvider;
+  toModel: string;
+  reason: string;
+};
+
 export type CreateExperimentRequest = {
   taskType: string;
   controlModel: string;
@@ -180,6 +201,22 @@ export const adminAiModelsApi = {
   putChain: (taskType: string, body: PutChainRequest) =>
     apiClient.put<PutChainResponse>(
       `/api/v1/admin/ai-models/${encodeURIComponent(taskType)}/chain`,
+      body,
+    ),
+
+  previewBulkReassign: (req: BulkReassignPreviewRequest) => {
+    const search = new URLSearchParams();
+    search.set("scope", req.scope);
+    if (req.tier) search.set("tier", req.tier);
+    if (req.fromProviderName) search.set("fromProviderName", req.fromProviderName);
+    return apiClient.get<{ affected: BulkReassignAffectedApi[] }>(
+      `/api/v1/admin/ai-models/bulk-reassign/preview?${search.toString()}`,
+    );
+  },
+
+  bulkReassign: (body: BulkReassignRequest) =>
+    apiClient.post<{ ok: true; updated: number }>(
+      "/api/v1/admin/ai-models/bulk-reassign",
       body,
     ),
 

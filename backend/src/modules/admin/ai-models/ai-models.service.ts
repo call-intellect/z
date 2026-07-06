@@ -423,6 +423,154 @@ export class AdminAiModelsService {
     return { ok: true, warnings };
   }
 
+  async previewBulkReassign(params: {
+    scope: 'unassigned' | 'provider';
+    tier?: TierValue;
+    fromProviderName?: string;
+  }): Promise<{
+    affected: Array<{
+      taskType: string;
+      tier: TierValue;
+      currentProviderName: string | null;
+      currentModel: string | null;
+    }>;
+  }> {
+    const tiers: LlmRouteTier[] = params.tier ? [params.tier] : TIERS_ORDER;
+
+    if (params.scope === 'provider') {
+      const rows = await this.prisma.llmTaskRoute.findMany({
+        where: { tenantId: null, tier: { in: tiers }, providerName: params.fromProviderName },
+        select: { taskType: true, tier: true, providerName: true, model: true },
+      });
+      return {
+        affected: rows.map((r) => ({
+          taskType: r.taskType,
+          tier: r.tier as TierValue,
+          currentProviderName: r.providerName,
+          currentModel: r.model,
+        })),
+      };
+    }
+
+    const existing = await this.prisma.llmTaskRoute.findMany({
+      where: { tenantId: null, tier: { in: tiers } },
+      select: { taskType: true, tier: true },
+    });
+    const existingKeys = new Set(existing.map((r) => `${r.taskType}::${r.tier}`));
+    const affected: Array<{
+      taskType: string;
+      tier: TierValue;
+      currentProviderName: null;
+      currentModel: null;
+    }> = [];
+    for (const taskType of ALL_LLM_TASK_TYPES) {
+      for (const tier of tiers as TierValue[]) {
+        if (!existingKeys.has(`${taskType}::${tier}`)) {
+          affected.push({ taskType, tier, currentProviderName: null, currentModel: null });
+        }
+      }
+    }
+    return { affected };
+  }
+
+  /**
+   * Ф-фича 2026-07-06 — бальковый инструмент роутинга: (а) заполнить все
+   * НЕ назначенные (taskType,tier)-пары выбранным провайдером+моделью, или
+   * (б) переключить ВСЕ маршруты с одного провайдера на другой одним явным
+   * действием (вместо неявной каскадной миграции при удалении провайдера).
+   */
+  async bulkReassign(
+    params: {
+      scope: 'unassigned' | 'provider';
+      tier?: TierValue;
+      fromProviderName?: string;
+      toProviderName: string;
+      toModel: string;
+      reason: string;
+    },
+    userId: string,
+  ): Promise<{ ok: true; updated: number }> {
+    const dbProviders = await this.prisma.llmProvider.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: { name: true },
+    });
+    const knownProviders = new Set<string>([...dbProviders.map((p) => p.name), ...PROVIDER_NAMES]);
+    if (!knownProviders.has(params.toProviderName)) {
+      throw new UnprocessableEntityException({
+        ok: false,
+        error: {
+          code: 'route_provider_unknown',
+          message: `providerName="${params.toProviderName}" не найден ни в реестре LlmProvider, ни в legacy-списке`,
+        },
+      });
+    }
+
+    const { affected } = await this.previewBulkReassign(params);
+    if (affected.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of affected) {
+        if (params.scope === 'provider') {
+          await tx.llmTaskRoute.updateMany({
+            where: {
+              tenantId: null,
+              taskType: item.taskType,
+              tier: item.tier,
+              providerName: params.fromProviderName,
+            },
+            data: {
+              providerName: params.toProviderName,
+              model: params.toModel,
+              editedByAdmin: true,
+            },
+          });
+        } else {
+          await tx.llmTaskRoute.create({
+            data: {
+              tenantId: null,
+              taskType: item.taskType,
+              tier: item.tier,
+              priority: 0,
+              providerName: params.toProviderName,
+              model: params.toModel,
+              isActive: true,
+              editedByAdmin: true,
+            },
+          });
+        }
+        await tx.llmTaskRouteChange.create({
+          data: {
+            taskType: item.taskType,
+            tenantId: null,
+            tier: item.tier,
+            changeType: 'bulk_reassign',
+            before: {
+              providerName: item.currentProviderName,
+              model: item.currentModel,
+            } as unknown as Prisma.InputJsonValue,
+            after: {
+              providerName: params.toProviderName,
+              model: params.toModel,
+            } as unknown as Prisma.InputJsonValue,
+            changedById: userId,
+            reason: params.reason,
+          },
+        });
+      }
+    });
+
+    for (const item of affected) {
+      this.metrics.incAdminAiModelsRouteChange({
+        taskType: item.taskType,
+        changeType: 'bulk_reassign',
+      });
+    }
+    await this.router.refreshCache();
+    return { ok: true, updated: affected.length };
+  }
+
   async history(taskType: string, limit = 50): Promise<LlmTaskRouteChange[]> {
     this.assertKnownTaskType(taskType);
     return this.prisma.llmTaskRouteChange.findMany({

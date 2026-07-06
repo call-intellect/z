@@ -2068,6 +2068,11 @@ export class LlmRouterService implements OnModuleInit {
     outputTokens: number,
     cachedTokens: number,
   ): Promise<number> {
+    if (this.providerInfo) {
+      const resolved = await this.providerInfo.resolveByName(provider);
+      if (resolved?.info.billingMode === 'subscription') return 0;
+    }
+
     const key = `${provider}:${model}`;
     const cached = this.priceCache.get(key);
     const now = Date.now();

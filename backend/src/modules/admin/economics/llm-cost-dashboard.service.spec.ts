@@ -47,22 +47,40 @@ function matchesWhere(row: FixtureRow, where: Record<string, unknown>): boolean 
   return true;
 }
 
-function build(rows: FixtureRow[] = [], orgs: OrgFixture[] = []) {
+interface SubscriptionChargeFixture {
+  chargeDate: Date;
+  amountUsd: number;
+}
+
+function build(
+  rows: FixtureRow[] = [],
+  orgs: OrgFixture[] = [],
+  subscriptionCharges: SubscriptionChargeFixture[] = [],
+) {
   const groupBy = vi.fn(
     async (args: { by: string[]; where: Record<string, unknown> }) => {
       const filtered = rows.filter((r) => matchesWhere(r, args.where));
-      const key = args.by[0] as 'date' | 'model' | 'taskType' | 'tenantId';
-      const groups = new Map<string, { costUsd: number; callsCount: number; raw: unknown }>();
+      const keys = args.by as Array<'date' | 'model' | 'taskType' | 'tenantId' | 'provider'>;
+      const groups = new Map<
+        string,
+        { costUsd: number; callsCount: number; raw: Record<string, unknown> }
+      >();
       for (const r of filtered) {
-        const rawKey = key === 'date' ? r.date : (r as unknown as Record<string, string>)[key];
-        const mapKey = key === 'date' ? (rawKey as Date).toISOString() : (rawKey as string);
-        const g = groups.get(mapKey) ?? { costUsd: 0, callsCount: 0, raw: rawKey };
+        const raw: Record<string, unknown> = {};
+        for (const key of keys) {
+          raw[key] =
+            key === 'date' ? r.date : (r as unknown as Record<string, string>)[key];
+        }
+        const mapKey = keys
+          .map((key) => (key === 'date' ? (raw[key] as Date).toISOString() : (raw[key] as string)))
+          .join('::');
+        const g = groups.get(mapKey) ?? { costUsd: 0, callsCount: 0, raw };
         g.costUsd += r.costUsd;
         g.callsCount += r.callsCount;
         groups.set(mapKey, g);
       }
       const result = [...groups.values()].map((g) => ({
-        [key]: g.raw,
+        ...g.raw,
         _sum: { costUsd: new Prisma.Decimal(g.costUsd), callsCount: g.callsCount },
       }));
       return result as unknown[];
@@ -101,13 +119,22 @@ function build(rows: FixtureRow[] = [], orgs: OrgFixture[] = []) {
     return orgs.find((o) => o.id === args.where.id) ?? null;
   });
 
+  const subscriptionChargeFindMany = vi.fn(
+    async (args: { where: { chargeDate: { gte: Date; lt: Date } } }) =>
+      subscriptionCharges
+        .filter(
+          (c) => c.chargeDate >= args.where.chargeDate.gte && c.chargeDate < args.where.chargeDate.lt,
+        )
+        .map((c) => ({ chargeDate: c.chargeDate, amountUsd: new Prisma.Decimal(c.amountUsd) })),
+  );
   const prisma = {
     aiCostDaily: { groupBy, aggregate },
     org: { findMany: orgFindMany, findUnique: orgFindUnique },
+    llmProviderSubscriptionCharge: { findMany: subscriptionChargeFindMany },
   } as unknown as PrismaService;
 
   const svc = new LlmCostDashboardService(prisma);
-  return { svc, prisma, groupBy, aggregate };
+  return { svc, prisma, groupBy, aggregate, subscriptionChargeFindMany };
 }
 
 describe('LlmCostDashboardService', () => {
@@ -156,8 +183,10 @@ describe('LlmCostDashboardService', () => {
       expect(res.byModel).toHaveLength(2);
       const deepseek = res.byModel.find((m) => m.model === 'deepseek-v4-pro');
       const gpt = res.byModel.find((m) => m.model === 'gpt-5.5');
+      expect(deepseek?.provider).toBe('deepseek');
       expect(deepseek?.costUsd).toBe(125);
       expect(deepseek?.sharePct).toBeCloseTo((125 / 175) * 100);
+      expect(gpt?.provider).toBe('openai-via-proxy');
       expect(gpt?.costUsd).toBe(50);
       expect(gpt?.sharePct).toBeCloseTo((50 / 175) * 100);
 
@@ -179,6 +208,22 @@ describe('LlmCostDashboardService', () => {
       expect(res.trend.length).toBeGreaterThan(0);
       const trendTotal = res.trend.reduce((sum, p) => sum + p.costUsd, 0);
       expect(trendTotal).toBe(175);
+      expect(res.totals.subscriptionCostUsd).toBe(0);
+    });
+
+    it('подписочное списание провайдера (ТЗ 2026-07-06 llm-provider-subscription-billing) добавляется в totals.costUsd/trend, выделено в totals.subscriptionCostUsd', async () => {
+      const chargeDate = utcDate(1);
+      const { svc } = build(rows, orgs, [{ chargeDate, amountUsd: 50 }]);
+      const res = await svc.overview({ period: '30d', trend: 'day' });
+
+      expect(res.totals.costUsd).toBe(225);
+      expect(res.totals.subscriptionCostUsd).toBe(50);
+      const trendTotal = res.trend.reduce((sum, p) => sum + p.costUsd, 0);
+      expect(trendTotal).toBe(225);
+      const chargeDayPoint = res.trend.find(
+        (p) => p.date === chargeDate.toISOString().slice(0, 10),
+      );
+      expect(chargeDayPoint?.costUsd).toBe(125);
     });
   });
 
@@ -200,6 +245,65 @@ describe('LlmCostDashboardService', () => {
       expect(res.totals.costUsd).toBe(150);
       expect(res.name).toBe('Org One');
       expect(res.byModel).toHaveLength(2);
+      expect(res.byModel.find((m) => m.model === 'deepseek-v4-pro')?.provider).toBe('deepseek');
+      expect(res.byModel.find((m) => m.model === 'gpt-5.5')?.provider).toBe('openai-via-proxy');
+    });
+
+    it('dateFrom/dateTo (произвольный диапазон) переопределяют period — захватывает только строки внутри диапазона', async () => {
+      const { svc } = build(rows, orgs);
+      const day = utcDate(2).toISOString().slice(0, 10);
+      const res = await svc.companyDetail('org-1', {
+        period: '30d',
+        trend: 'day',
+        dateFrom: day,
+        dateTo: day,
+      });
+
+      expect(res.totals.costUsd).toBe(100);
+      expect(res.byModel).toHaveLength(1);
+      expect(res.byModel[0]?.model).toBe('deepseek-v4-pro');
+    });
+
+    it('provider/model фильтр сужает выборку до конкретной пары', async () => {
+      const { svc } = build(rows, orgs);
+      const res = await svc.companyDetail('org-1', {
+        period: '30d',
+        trend: 'day',
+        provider: 'openai-via-proxy',
+      });
+
+      expect(res.totals.costUsd).toBe(50);
+      expect(res.byModel).toHaveLength(1);
+      expect(res.byModel[0]?.model).toBe('gpt-5.5');
+    });
+
+    it('одинаковое имя модели у РАЗНЫХ провайдеров (напр. gemini-3.1-pro через kie и grsai) → две отдельные строки byModel, не смёржены', async () => {
+      const ambiguousRows: FixtureRow[] = [
+        {
+          tenantId: 'org-1',
+          date: utcDate(1),
+          taskType: 'summary',
+          provider: 'kie',
+          model: 'gemini-3.1-pro',
+          costUsd: 10,
+          callsCount: 1,
+        },
+        {
+          tenantId: 'org-1',
+          date: utcDate(1),
+          taskType: 'summary',
+          provider: 'grsai',
+          model: 'gemini-3.1-pro',
+          costUsd: 20,
+          callsCount: 1,
+        },
+      ];
+      const { svc } = build(ambiguousRows, orgs);
+      const res = await svc.companyDetail('org-1', { period: '30d', trend: 'day' });
+
+      expect(res.byModel).toHaveLength(2);
+      expect(res.byModel.find((m) => m.provider === 'kie')?.costUsd).toBe(10);
+      expect(res.byModel.find((m) => m.provider === 'grsai')?.costUsd).toBe(20);
     });
   });
 

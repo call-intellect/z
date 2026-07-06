@@ -18,6 +18,11 @@ export const UpdateLlmModelSchema = CreateLlmModelSchema.partial().omit({
 });
 export type UpdateLlmModelDto = z.infer<typeof UpdateLlmModelSchema>;
 
+export const RemoveModelSchema = z.object({
+  reassignDefaultModelTo: z.string().min(1).optional(),
+});
+export type RemoveModelDto = z.infer<typeof RemoveModelSchema>;
+
 export const ListLlmModelsQuerySchema = z.object({
   providerId: z.string().optional(),
   category: z.enum(['flagship', 'fast', 'reasoning', 'embedding', 'experimental']).optional(),

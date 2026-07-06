@@ -2176,4 +2176,33 @@ EmbeddingModel {
 
 `@@map("embedding_models")`. Активация провайдера с моделью, чья `dimensions` не совпадает с размерностью текущей vector-колонки, блокируется гардом `embedding_dimension_mismatch_requires_reindex` (нужен реиндекс — воркер вне scope этого ТЗ, остаётся заглушка `ReindexTab`).
 
+## LlmProvider += подписочная тарификация + LlmProviderSubscriptionCharge (2026-07-06, миграция `20260706150000_add_llm_provider_subscription_billing`)
+
+**Источник:** ТЗ [`plans/tz/2026-07-06-llm-provider-subscription-billing.md`](../../plans/tz/2026-07-06-llm-provider-subscription-billing.md). Не все LLM-провайдеры берут деньги за токен — часть (например MiniMax) продаётся по фиксированной ежемесячной подписке с квотой запросов (в этой итерации закрыт только УЧЁТ СТОИМОСТИ, без rate-limit enforcement квоты — сознательная граница scope, см. `04_не-сделано`).
+
+```
+LlmProvider += {
+  billingMode                 String   @default("per_token")  -- 'per_token' | 'subscription'
+  subscriptionMonthlyCostUsd  Decimal? @db.Decimal(10, 2)
+  subscriptionStartedAt       DateTime?
+}
+```
+
+`billingMode='subscription'` ⇒ `LlmRouterService.computeCostUsd()` возвращает `0` СРАЗУ, минуя `LlmModelPrice`/`MODEL_PRICES` и unpriced-метрику — токены (input/output/cached) всё равно пишутся в `AiUsageLog` как обычно, просто бесплатны. Валидация (`AdminLlmProvidersService.assertSubscriptionFieldsValid`): `billingMode='subscription'` требует оба поля суммы/даты (422 `subscription_fields_required`, считает ЭФФЕКТИВНЫЕ значения — новые из DTO ИЛИ уже сохранённые в БД).
+
+```
+LlmProviderSubscriptionCharge {         -- @@map("llm_provider_subscription_charges")
+  id, providerId → LlmProvider (onDelete Cascade), providerName,
+  chargeDate DateTime @db.Date,        -- день фактического списания (годовщина subscriptionStartedAt, клампом на конец месяца)
+  amountUsd  Decimal @db.Decimal(10, 2),
+  createdAt
+
+  @@unique([providerId, chargeDate])   -- идемпотентность повторного прогона крона в тот же день
+}
+```
+
+**Platform-level расход, НЕ per-org** — принципиально отдельно от `AiCostDaily` (которая per-`tenantId`, используется бюджетами компаний). Подписку платит платформа провайдеру, не конкретный клиент — писать её в `AiCostDaily` означало бы приписать чужой расход случайному Org. `ProviderSubscriptionChargeCron` (`0 5 * * *`) раз в день проверяет все `billingMode='subscription'` провайдеры: если сегодня — день-годовщина `subscriptionStartedAt` (с клампом на конец короткого месяца, напр. старт 31-го → 28/29 февраля) и charge на сегодня ещё не создан — создаёт запись на `subscriptionMonthlyCostUsd`. `LlmCostDashboardService.overview()` мёржит платежи периода поверх `AiCostDaily`-агрегатов В ТОТ ЖЕ `trend`/`totals.costUsd` (видно как скачок в день списания — решение владельца, не размазывается по дням), плюс отдельно светит `totals.subscriptionCostUsd` для прозрачности отчёта.
+
+**Побочный баг, найденный и исправленный в этом же ТЗ:** `openai-chat`/`custom-http` протокол-адаптеры (`backend/src/modules/ai/services/protocol-adapter/adapters/`) резолвили модель по умолчанию через `provider.defaultModel` (легаси ENV-only поле, живёт только у 6 хардкод-провайдеров из `ProviderInfoResolver.buildFromEnv`) вместо `provider.defaultModelKey` (реальное, admin-редактируемое поле из БД) — у ЛЮБОГО добавленного через админку openai-chat-провайдера без прописанного `defaultModel`-легаси вызов без явной модели молча падал на хардкод `'gpt-4o-mini'`. Фикс — `input.model ?? provider.defaultModelKey ?? provider.defaultModel ?? 'gpt-4o-mini'`.
+
 [[../index|← index]]

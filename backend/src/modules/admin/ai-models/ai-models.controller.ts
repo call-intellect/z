@@ -24,6 +24,10 @@ import { AdminAiModelsService } from './ai-models.service';
 import {
   AddProviderSchema,
   type AddProviderDto,
+  BulkReassignPreviewSchema,
+  type BulkReassignPreviewDto,
+  BulkReassignSchema,
+  type BulkReassignDto,
   CreateExperimentSchema,
   type CreateExperimentDto,
   ListAiModelsQuerySchema,
@@ -95,6 +99,22 @@ export class AdminAiModelsController {
   ) {
     this.assertUser(user);
     return this.svc.putChain(taskType, dto, user.id);
+  }
+
+  @Get('ai-models/bulk-reassign/preview')
+  async previewBulkReassign(
+    @Query(new ZodValidationPipe(BulkReassignPreviewSchema)) query: BulkReassignPreviewDto,
+  ) {
+    return this.svc.previewBulkReassign(query);
+  }
+
+  @Post('ai-models/bulk-reassign')
+  async bulkReassign(
+    @Body(new ZodValidationPipe(BulkReassignSchema)) dto: BulkReassignDto,
+    @CurrentUser() user: CurrentUserPayload | null | undefined,
+  ) {
+    this.assertUser(user);
+    return this.svc.bulkReassign(dto, user.id);
   }
 
   @Get('ai-models/:taskType/history')

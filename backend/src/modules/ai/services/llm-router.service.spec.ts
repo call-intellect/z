@@ -19,6 +19,7 @@ import type { LlmCompleteOutput } from './llm.types';
 import type { MinimaxService } from './minimax.service';
 import type { OllamaService } from './ollama.service';
 import type { OpenAiProxyService } from './openai-proxy.service';
+import type { ProviderInfoResolver } from './protocol-adapter/provider-info.resolver';
 
 function makeOutput(provider: LlmCompleteOutput['provider'], model = 'm-test'): LlmCompleteOutput {
   return {
@@ -732,6 +733,92 @@ describe('LlmRouterService', () => {
     it('неизвестный taskType → custom (default)', () => {
       const { router } = build({});
       expect(callTaskTypeToAgentType(router, 'chapters' as LlmTaskType)).toBe('custom');
+    });
+  });
+
+  describe('computeCostUsd — billingMode=subscription bypass (ТЗ 2026-07-06 llm-provider-subscription-billing)', () => {
+    function callComputeCostUsd(
+      router: LlmRouterService,
+      provider: string,
+      model: string,
+      inputTokens: number,
+      outputTokens: number,
+      cachedTokens: number,
+    ): Promise<number> {
+      const fn = (
+        router as unknown as {
+          computeCostUsd: (
+            provider: string,
+            model: string,
+            inputTokens: number,
+            outputTokens: number,
+            cachedTokens: number,
+          ) => Promise<number>;
+        }
+      ).computeCostUsd.bind(router);
+      return fn(provider, model, inputTokens, outputTokens, cachedTokens);
+    }
+
+    function buildWithProviderInfo(billingMode: string) {
+      const priceFindFirst = vi.fn(async () => null);
+      const prisma = { llmModelPrice: { findFirst: priceFindFirst } } as unknown as PrismaService;
+      const incLlmCostUnpriced = vi.fn();
+      const metrics = { incLlmCostUnpriced } as unknown as BusinessMetricsService;
+      const resolveByName = vi.fn(async () => ({
+        info: { name: 'p', baseUrl: 'https://x', apiKey: 'k', billingMode },
+        protocolKind: 'openai-chat' as const,
+      }));
+      const providerInfo = { resolveByName } as unknown as ProviderInfoResolver;
+      const router = new LlmRouterService(
+        prisma,
+        {} as AnthropicService,
+        {} as MinimaxService,
+        {} as OpenAiProxyService,
+        {} as DeepSeekService,
+        {} as OllamaService,
+        {} as KieService,
+        {} as GrsaiService,
+        {} as AiUsageLogService,
+        metrics,
+        undefined,
+        undefined,
+        providerInfo,
+      );
+      return { router, resolveByName, incLlmCostUnpriced, priceFindFirst };
+    }
+
+    it('billingMode=subscription → costUsd=0 без похода в LlmModelPrice и без incLlmCostUnpriced (модель нигде не прайсована)', async () => {
+      const { router, resolveByName, incLlmCostUnpriced, priceFindFirst } =
+        buildWithProviderInfo('subscription');
+
+      const cost = await callComputeCostUsd(
+        router,
+        'minimaxio2',
+        'totally-unknown-model',
+        1000,
+        500,
+        0,
+      );
+
+      expect(cost).toBe(0);
+      expect(resolveByName).toHaveBeenCalledWith('minimaxio2');
+      expect(priceFindFirst).not.toHaveBeenCalled();
+      expect(incLlmCostUnpriced).not.toHaveBeenCalled();
+    });
+
+    it('billingMode=per_token (обычный провайдер) — считает по MODEL_PRICES как раньше (регрессия)', async () => {
+      const { router } = buildWithProviderInfo('per_token');
+
+      const cost = await callComputeCostUsd(
+        router,
+        'deepseek',
+        'deepseek-chat',
+        1_000_000,
+        1_000_000,
+        0,
+      );
+
+      expect(cost).toBeCloseTo(0.14 + 0.28, 5);
     });
   });
 });

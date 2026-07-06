@@ -73,6 +73,11 @@ export class AdminLlmProvidersService {
         },
       });
     }
+    this.assertSubscriptionFieldsValid(
+      dto.billingMode,
+      dto.subscriptionMonthlyCostUsd ?? null,
+      dto.subscriptionStartedAt ?? null,
+    );
     const row = await this.prisma.llmProvider.create({
       data: {
         name: dto.name,
@@ -90,6 +95,17 @@ export class AdminLlmProvidersService {
           ? { defaultHeaders: dto.defaultHeaders as Prisma.InputJsonValue }
           : {}),
         ...(dto.globalRps ? { globalRps: dto.globalRps } : {}),
+        billingMode: dto.billingMode,
+        ...(dto.subscriptionMonthlyCostUsd !== undefined
+          ? { subscriptionMonthlyCostUsd: dto.subscriptionMonthlyCostUsd }
+          : {}),
+        ...(dto.subscriptionStartedAt !== undefined
+          ? {
+              subscriptionStartedAt: dto.subscriptionStartedAt
+                ? new Date(dto.subscriptionStartedAt)
+                : null,
+            }
+          : {}),
       },
     });
     this.providerInfo.invalidate();
@@ -101,6 +117,18 @@ export class AdminLlmProvidersService {
     if (dto.isActive === false) {
       await this.assertProviderNotInUse(existing.name);
     }
+    const effectiveBillingMode = dto.billingMode ?? existing.billingMode;
+    const effectiveMonthlyCost =
+      dto.subscriptionMonthlyCostUsd !== undefined
+        ? dto.subscriptionMonthlyCostUsd
+        : existing.subscriptionMonthlyCostUsd !== null
+          ? Number(existing.subscriptionMonthlyCostUsd)
+          : null;
+    const effectiveStartedAt =
+      dto.subscriptionStartedAt !== undefined
+        ? dto.subscriptionStartedAt
+        : (existing.subscriptionStartedAt?.toISOString() ?? null);
+    this.assertSubscriptionFieldsValid(effectiveBillingMode, effectiveMonthlyCost, effectiveStartedAt);
     const row = await this.prisma.llmProvider.update({
       where: { id },
       data: {
@@ -122,10 +150,39 @@ export class AdminLlmProvidersService {
           ? { defaultHeaders: dto.defaultHeaders as Prisma.InputJsonValue }
           : {}),
         ...(dto.globalRps !== undefined ? { globalRps: dto.globalRps } : {}),
+        ...(dto.billingMode !== undefined ? { billingMode: dto.billingMode } : {}),
+        ...(dto.subscriptionMonthlyCostUsd !== undefined
+          ? { subscriptionMonthlyCostUsd: dto.subscriptionMonthlyCostUsd }
+          : {}),
+        ...(dto.subscriptionStartedAt !== undefined
+          ? {
+              subscriptionStartedAt: dto.subscriptionStartedAt
+                ? new Date(dto.subscriptionStartedAt)
+                : null,
+            }
+          : {}),
       },
     });
     this.providerInfo.invalidate();
     return this.present(row);
+  }
+
+  private assertSubscriptionFieldsValid(
+    billingMode: string,
+    monthlyCostUsd: number | null,
+    startedAt: string | null,
+  ): void {
+    if (billingMode !== 'subscription') return;
+    if (monthlyCostUsd === null || startedAt === null) {
+      throw new UnprocessableEntityException({
+        ok: false,
+        error: {
+          code: 'subscription_fields_required',
+          message:
+            'billingMode="subscription" требует subscriptionMonthlyCostUsd и subscriptionStartedAt',
+        },
+      });
+    }
   }
 
   async setDefaultProvider(id: string, model: string): Promise<{ ok: true }> {
@@ -274,23 +331,10 @@ export class AdminLlmProvidersService {
 
       for (const routes of groups.values()) {
         for (const route of routes) {
-          const dupInGroup = await tx.llmTaskRoute.findFirst({
-            where: {
-              taskType: route.taskType,
-              tenantId: route.tenantId,
-              providerName: defaultProvider.providerName,
-              id: { not: route.id },
-            },
+          await tx.llmTaskRoute.update({
+            where: { id: route.id },
+            data: { providerName: defaultProvider.providerName, model: defaultProvider.model },
           });
-
-          if (dupInGroup) {
-            await tx.llmTaskRoute.delete({ where: { id: route.id } });
-          } else {
-            await tx.llmTaskRoute.update({
-              where: { id: route.id },
-              data: { providerName: defaultProvider.providerName, model: defaultProvider.model },
-            });
-          }
 
           await tx.llmTaskRouteChange.create({
             data: {
@@ -504,6 +548,10 @@ export class AdminLlmProvidersService {
       defaultHeaders: row.defaultHeaders,
       globalRps: row.globalRps,
       isDefaultProvider: row.isDefaultProvider,
+      billingMode: row.billingMode,
+      subscriptionMonthlyCostUsd:
+        row.subscriptionMonthlyCostUsd !== null ? Number(row.subscriptionMonthlyCostUsd) : null,
+      subscriptionStartedAt: row.subscriptionStartedAt?.toISOString() ?? null,
       lastSmokeAt: row.lastSmokeAt?.toISOString() ?? null,
       lastSmokeSuccess: row.lastSmokeSuccess,
       lastSmokeError: row.lastSmokeError,

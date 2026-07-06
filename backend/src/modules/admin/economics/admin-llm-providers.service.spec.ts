@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdminLlmProvidersService } from './admin-llm-providers.service';
@@ -32,6 +33,9 @@ function fakeProvider(overrides: Record<string, unknown> = {}) {
     proxyPath: null,
     timeoutMs: null,
     defaultModelKey: null,
+    billingMode: 'per_token',
+    subscriptionMonthlyCostUsd: null,
+    subscriptionStartedAt: null,
     lastSmokeAt: null,
     lastSmokeSuccess: null,
     lastSmokeError: null,
@@ -137,6 +141,7 @@ describe('AdminLlmProvidersService', () => {
     apiKey: 'secret-key',
     isActive: true,
     useProxy: false,
+    billingMode: 'per_token' as const,
   };
 
   it('(a) create с apiKey шифрует ключ через crypto.encrypt (gcm:v1:-префикс в data)', async () => {
@@ -525,7 +530,6 @@ describe('AdminLlmProvidersService', () => {
           },
         ])
         .mockResolvedValueOnce([]);
-      llmTaskRouteFindFirst.mockResolvedValueOnce(null);
       getDynamic.mockResolvedValueOnce([]);
       update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
 
@@ -589,7 +593,6 @@ describe('AdminLlmProvidersService', () => {
           },
         ])
         .mockResolvedValueOnce([]);
-      llmTaskRouteFindFirst.mockResolvedValueOnce(null);
       getDynamic.mockResolvedValueOnce([]);
       update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
 
@@ -651,7 +654,7 @@ describe('AdminLlmProvidersService', () => {
       });
     });
 
-    it('(d) дефолт уже стоит в той же цепочке на другом тире (Р2) → старая строка УДАЛЕНА, не задвоена', async () => {
+    it('(d) дефолт уже стоит в той же цепочке на другом тире (регрессия инцидента 2026-07-06) → мигрирующий тир ВСЁ РАВНО переключается на дефолт, не удаляется', async () => {
       const svcFull = new AdminLlmProvidersService(
         prisma,
         crypto,
@@ -683,23 +686,17 @@ describe('AdminLlmProvidersService', () => {
           },
         ])
         .mockResolvedValueOnce([]);
-      llmTaskRouteFindFirst.mockResolvedValueOnce({
-        id: 'r2',
-        taskType: 'summary',
-        tenantId: null,
-        tier: 'secondary',
-        providerName: 'deepseek',
-      });
       getDynamic.mockResolvedValueOnce([]);
       update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
 
       const res = await svcFull.softDeleteWithFallback('p1', undefined, 'user1');
 
       expect(res).toEqual({ ok: true, routesMigrated: 1 });
-      expect(llmTaskRouteDelete).toHaveBeenCalledWith({ where: { id: 'r1' } });
-      expect(llmTaskRouteUpdate).not.toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'r1' } }),
-      );
+      expect(llmTaskRouteUpdate).toHaveBeenCalledWith({
+        where: { id: 'r1' },
+        data: { providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      });
+      expect(llmTaskRouteDelete).not.toHaveBeenCalled();
     });
 
     it('(e) дефолт НЕ назначен → удаление занятого провайдера по-прежнему бросает provider_in_use_by_routes (регрессия недопустима)', async () => {
@@ -902,6 +899,87 @@ describe('AdminLlmProvidersService', () => {
           update: expect.objectContaining({ value: [{ provider: 'deepseek', model: 'deepseek-v4-flash' }] }),
         }),
       );
+    });
+  });
+
+  describe('billingMode=subscription (ТЗ 2026-07-06 llm-provider-subscription-billing)', () => {
+    it('(a) create с billingMode=subscription без subscriptionMonthlyCostUsd/subscriptionStartedAt → 422 subscription_fields_required', async () => {
+      let err: unknown;
+      try {
+        await svc.create({ ...createDto, name: 'minimaxio2', billingMode: 'subscription' });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(UnprocessableEntityException);
+      expect((err as UnprocessableEntityException).getResponse()).toMatchObject({
+        error: { code: 'subscription_fields_required' },
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('(b) create с billingMode=subscription + оба поля заданы → создаёт, present() возвращает поля', async () => {
+      findUnique.mockResolvedValueOnce(null);
+      create.mockResolvedValueOnce(
+        fakeProvider({
+          name: 'minimaxio2',
+          billingMode: 'subscription',
+          subscriptionMonthlyCostUsd: new Prisma.Decimal(50),
+          subscriptionStartedAt: new Date('2026-07-01T00:00:00.000Z'),
+        }),
+      );
+
+      const res = await svc.create({
+        ...createDto,
+        name: 'minimaxio2',
+        billingMode: 'subscription',
+        subscriptionMonthlyCostUsd: 50,
+        subscriptionStartedAt: '2026-07-01T00:00:00.000Z',
+      });
+
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            billingMode: 'subscription',
+            subscriptionMonthlyCostUsd: 50,
+            subscriptionStartedAt: new Date('2026-07-01T00:00:00.000Z'),
+          }),
+        }),
+      );
+      expect(res.billingMode).toBe('subscription');
+      expect(res.subscriptionMonthlyCostUsd).toBe(50);
+      expect(res.subscriptionStartedAt).toBe('2026-07-01T00:00:00.000Z');
+    });
+
+    it('(c) update({billingMode:"subscription"}) без указания сумм/даты, но существующий провайдер их уже имеет → проходит (эффективные значения из БД)', async () => {
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({
+          billingMode: 'per_token',
+          subscriptionMonthlyCostUsd: new Prisma.Decimal(50),
+          subscriptionStartedAt: new Date('2026-07-01T00:00:00.000Z'),
+        }),
+      );
+      llmTaskRouteFindFirst.mockResolvedValueOnce(null);
+      update.mockResolvedValueOnce(fakeProvider({ billingMode: 'subscription' }));
+
+      const res = await svc.update('p1', { billingMode: 'subscription' });
+
+      expect(res.billingMode).toBe('subscription');
+    });
+
+    it('(d) update({billingMode:"subscription"}) у провайдера без ранее заданных сумм/даты → 422', async () => {
+      findUnique.mockResolvedValueOnce(fakeProvider({ billingMode: 'per_token' }));
+
+      let err: unknown;
+      try {
+        await svc.update('p1', { billingMode: 'subscription' });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(UnprocessableEntityException);
+      expect((err as UnprocessableEntityException).getResponse()).toMatchObject({
+        error: { code: 'subscription_fields_required' },
+      });
+      expect(update).not.toHaveBeenCalled();
     });
   });
 });

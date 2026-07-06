@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 
 import { ApiError } from "@/api/api-error";
 import { adminPricesApi } from "@/api/admin-prices.api";
+import { adminLlmProvidersApi } from "@/api/admin-llm-providers.api";
 import {
   adminPriceListFromApi,
   type AdminPriceDomain,
@@ -36,6 +37,7 @@ import { useAdminQuery } from "../useAdminQuery";
 export function LlmPricesClient() {
   const [activeOnly, setActiveOnly] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editPrice, setEditPrice] = useState<AdminPriceDomain | null>(null);
 
   const q = useAdminQuery(
     `admin-prices:${activeOnly}`,
@@ -45,6 +47,19 @@ export function LlmPricesClient() {
     },
     [activeOnly],
   );
+
+  const providersQ = useAdminQuery(
+    "admin-llm-providers-for-prices",
+    async () => {
+      const res = await adminLlmProvidersApi.list({ includeInactive: true });
+      return new Map(res.items.map((p) => [p.name, p.billingMode]));
+    },
+    [],
+  );
+  const providerBillingModeByName = providersQ.data ?? null;
+  const existingProviderNames = providerBillingModeByName
+    ? new Set(providerBillingModeByName.keys())
+    : null;
 
   return (
     <div className="space-y-6">
@@ -82,14 +97,31 @@ export function LlmPricesClient() {
             description="Добавьте первую запись, чтобы Lll-Router начал считать стоимость."
           />
         ) : (
-          <PricesTable items={q.data.items} />
+          <PricesTable
+            items={q.data.items}
+            existingProviderNames={existingProviderNames}
+            onEdit={setEditPrice}
+          />
         ))}
 
       {showAdd && (
-        <AddPriceDialog
+        <PriceFormDialog
+          initial={null}
+          providerBillingModeByName={providerBillingModeByName}
           onClose={() => setShowAdd(false)}
           onSaved={() => {
             setShowAdd(false);
+            q.refetch();
+          }}
+        />
+      )}
+      {editPrice && (
+        <PriceFormDialog
+          initial={editPrice}
+          providerBillingModeByName={providerBillingModeByName}
+          onClose={() => setEditPrice(null)}
+          onSaved={() => {
+            setEditPrice(null);
             q.refetch();
           }}
         />
@@ -98,7 +130,18 @@ export function LlmPricesClient() {
   );
 }
 
-function PricesTable({ items }: { items: AdminPriceDomain[] }) {
+function PricesTable({
+  items,
+  existingProviderNames,
+  onEdit,
+}: {
+  items: AdminPriceDomain[];
+  existingProviderNames: Set<string> | null;
+  onEdit: (p: AdminPriceDomain) => void;
+}) {
+  const isOrphaned = (provider: string) =>
+    existingProviderNames !== null && !existingProviderNames.has(provider);
+
   return (
     <>
       {}
@@ -114,6 +157,7 @@ function PricesTable({ items }: { items: AdminPriceDomain[] }) {
               <th className="px-3 py-2 text-left">Currency</th>
               <th className="px-3 py-2 text-left">Effective</th>
               <th className="px-3 py-2 text-left">Статус</th>
+              <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
@@ -122,7 +166,14 @@ function PricesTable({ items }: { items: AdminPriceDomain[] }) {
                 key={p.id}
                 className="border-t border-border-subtle hover:bg-bg-overlay"
               >
-                <td className="px-3 py-2 font-mono text-xs">{p.provider}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  <div className="flex items-center gap-1.5">
+                    {p.provider}
+                    {isOrphaned(p.provider) && (
+                      <Badge variant="secondary">провайдер удалён</Badge>
+                    )}
+                  </div>
+                </td>
                 <td className="px-3 py-2 font-mono text-xs">{p.model}</td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {p.inputCostPerMillionTokens.toFixed(2)}
@@ -147,6 +198,13 @@ function PricesTable({ items }: { items: AdminPriceDomain[] }) {
                     <Badge variant="secondary">архив</Badge>
                   )}
                 </td>
+                <td className="px-3 py-2 text-right">
+                  {p.isActive && (
+                    <Button size="sm" variant="ghost" onClick={() => onEdit(p)}>
+                      <Pencil size={12} /> Изменить
+                    </Button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -162,8 +220,13 @@ function PricesTable({ items }: { items: AdminPriceDomain[] }) {
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="truncate font-mono text-xs text-fg-primary">
-                  {p.provider} / {p.model}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="truncate font-mono text-xs text-fg-primary">
+                    {p.provider} / {p.model}
+                  </span>
+                  {isOrphaned(p.provider) && (
+                    <Badge variant="secondary">провайдер удалён</Badge>
+                  )}
                 </div>
                 <div className="mt-1 text-[11px] text-fg-tertiary">
                   {p.effectiveFrom.toLocaleDateString("ru-RU")}
@@ -198,8 +261,13 @@ function PricesTable({ items }: { items: AdminPriceDomain[] }) {
                 </dd>
               </div>
             </dl>
-            <div className="mt-2 text-[11px] text-fg-tertiary">
-              Валюта: {p.currency}
+            <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-fg-tertiary">
+              <span>Валюта: {p.currency}</span>
+              {p.isActive && (
+                <Button size="sm" variant="ghost" onClick={() => onEdit(p)}>
+                  <Pencil size={12} /> Изменить
+                </Button>
+              )}
             </div>
           </li>
         ))}
@@ -208,20 +276,31 @@ function PricesTable({ items }: { items: AdminPriceDomain[] }) {
   );
 }
 
-function AddPriceDialog({
+function PriceFormDialog({
+  initial,
+  providerBillingModeByName,
   onClose,
   onSaved,
 }: {
+  initial: AdminPriceDomain | null;
+  providerBillingModeByName: Map<string, string> | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [provider, setProvider] = useState("anthropic");
-  const [model, setModel] = useState("");
-  const [inputCost, setInputCost] = useState("");
-  const [outputCost, setOutputCost] = useState("");
-  const [cachedCost, setCachedCost] = useState("0");
-  const [currency, setCurrency] = useState("USD");
+  const [provider, setProvider] = useState(initial?.provider ?? "anthropic");
+  const [model, setModel] = useState(initial?.model ?? "");
+  const [inputCost, setInputCost] = useState(
+    initial ? String(initial.inputCostPerMillionTokens) : "",
+  );
+  const [outputCost, setOutputCost] = useState(
+    initial ? String(initial.outputCostPerMillionTokens) : "",
+  );
+  const [cachedCost, setCachedCost] = useState(
+    initial ? String(initial.cachedCostPerMillionTokens) : "0",
+  );
+  const [currency, setCurrency] = useState(initial?.currency ?? "USD");
   const [submitting, setSubmitting] = useState(false);
+  const isEdit = initial !== null;
 
   const handleSubmit = async () => {
     if (!provider || !model) {
@@ -265,21 +344,33 @@ function AddPriceDialog({
     <Dialog open onOpenChange={(o) => (!o ? onClose() : undefined)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Новая цена</DialogTitle>
+          <DialogTitle>{isEdit ? "Изменить цену" : "Новая цена"}</DialogTitle>
           <DialogDescription>
-            Если для этой пары provider+model уже есть активная — она будет
-            закрыта (effectiveTo = сейчас).
+            {isEdit
+              ? "Текущая активная цена для этой пары provider+model будет закрыта (effectiveTo = сейчас), новая версия станет активной."
+              : "Если для этой пары provider+model уже есть активная — она будет закрыта (effectiveTo = сейчас)."}
           </DialogDescription>
         </DialogHeader>
+        {providerBillingModeByName?.get(provider) === "subscription" && (
+          <p className="text-xs text-fg-tertiary">
+            Провайдер «{provider}» по подписке — цену можно не указывать,
+            стоимость токенов всегда $0. Можно всё равно явно занулить.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Provider">
             <Input
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
+              disabled={isEdit}
             />
           </Field>
           <Field label="Model">
-            <Input value={model} onChange={(e) => setModel(e.target.value)} />
+            <Input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={isEdit}
+            />
           </Field>
           <Field label="Input / 1M токенов">
             <Input

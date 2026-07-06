@@ -26,7 +26,15 @@ export const LlmCostCompaniesQuerySchema = z.object({
 });
 export type LlmCostCompaniesQuery = z.infer<typeof LlmCostCompaniesQuerySchema>;
 
-export const LlmCostCompanyDetailQuerySchema = LlmCostOverviewQuerySchema;
+export const LlmCostCompanyDetailQuerySchema = z.object({
+  period: LlmCostPeriodSchema,
+  trend: LlmCostTrendGranularitySchema,
+  /** YYYY-MM-DD. Если заданы оба (dateFrom и dateTo) — переопределяют period произвольным диапазоном. */
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+});
 export type LlmCostCompanyDetailQuery = z.infer<typeof LlmCostCompanyDetailQuerySchema>;
 
 export const LlmCostTaskTypeQuerySchema = LlmCostOverviewQuerySchema;

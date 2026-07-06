@@ -110,6 +110,16 @@ deepseek (primary) → openai-via-proxy/gpt (secondary) → kie:gemini-3.1-pro (
 - **Удаление самого дефолта** — требует `reassignDefaultTo:{providerId,model}` в теле `DELETE`; без него — 409 `must_reassign_default`. Frontend показывает диалог выбора нового дефолта прямо в момент удаления (не отдельный поход в настройки).
 - **Эндпоинт предпросмотра** `GET /admin/llm-providers/:id/removal-impact` — считает число затронутых маршрутов/tenant'ов ДО удаления, фронт показывает это в диалоге подтверждения вместо голой ошибки.
 
+## Модель «по умолчанию» — тот же паттерн на уровне LlmModel (2026-07-06)
+
+> Реализовано ТЗ [`2026-07-06-llm-model-default-fallback.md`](../../plans/tz/2026-07-06-llm-model-default-fallback.md). Провайдерский фикс выше не закрывал соседний пробел: удаление КОНКРЕТНОЙ модели (`/admin/ai/catalog` → вкладка «Модели», `AdminLlmModelsService.softDelete`) не проверяло вообще ничего — модель, реально используемую в маршруте (`LlmTaskRoute.model`), можно было тихо удалить, оставив маршрут указывать в никуда.
+
+- Дефолт модели = уже существующий `LlmProvider.defaultModelKey` (одна дефолтная модель на провайдера, никакого нового поля на `LlmModel`).
+- **Удаление занятой модели** (`AdminLlmModelsService.softDeleteWithFallback`, заменил `softDelete`) — дефолт провайдера назначен и отличается от удаляемой модели → маршруты (tier-нормализованные + legacy JSON, global + per-org) переключаются на дефолтную модель (providerName не меняется — модель всегда в рамках своего провайдера), audit-запись в `LlmTaskRouteChange` (`changeType:'model_deleted_auto_migrated'`). Дефолт не назначен → жёсткий отказ `model_in_use_by_routes` (как и у провайдера — без явного согласия ничего не переключается втихую).
+- **Удаление самой дефолтной модели** — требует `reassignDefaultModelTo` в теле `DELETE` (модель того же провайдера); без него — 409 `must_reassign_default_model`. Фронт — тот же паттерн диалога, что у провайдеров.
+- `GET /admin/llm-models/:id/removal-impact`, `POST /admin/llm-models/:id/set-default` — предпросмотр и явное назначение дефолта.
+- Живая browser-QA: бейдж «★ По умолчанию» в `LlmModelsClient` корректно подхватил уже существующие (до этой фичи) значения `defaultModelKey` у `kie`/`grsai`; удаление дефолтной `gpt-4o` без reassign → диалог → выбор `gpt-4o-mini` → маршруты и дефолт переехали.
+
 ## Стоимость и телеметрия LLM (2026-06-05)
 
 > Реализовано ТЗ `plans/tz/2026-06-05-llm-cost-safety-and-telemetry-retention.md` (ветка `sergdev`). Закрывает риски #4 и #5 техаудита: расход стал управляемым (enforce за флагом) и видимым (метрика unpriced), рост телеметрии ограничен с сохранением истории стоимости. Схему БД не трогали (`OrgBudgetCap.capKind` уже был, превью уже nullable).

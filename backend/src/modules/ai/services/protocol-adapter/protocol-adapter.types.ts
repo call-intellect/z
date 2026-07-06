@@ -21,6 +21,8 @@ export interface ProtocolAdapterProviderInfo {
   timeoutMs?: number | null;
   /** Модель по умолчанию провайдера из LlmProvider.defaultModelKey (DB). Отдельно от defaultModel (ENV-фолбэк buildFromEnv). */
   defaultModelKey?: string | null;
+  /** 'per_token' (дефолт) | 'subscription' — из LlmProvider.billingMode (DB). */
+  billingMode?: string;
 }
 
 /** Единый контракт переопределения подключения — передаётся из ProviderInfoResolver (DB) в легаси-сервисы, чтобы admin-правка baseUrl/ключа реально действовала. */

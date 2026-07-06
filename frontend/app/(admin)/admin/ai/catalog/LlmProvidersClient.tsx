@@ -219,6 +219,12 @@ export function LlmProvidersClient() {
       setRemovalDialog({ provider: p, impact });
       return;
     }
+    if (occupied && !impact.currentDefault) {
+      toast.error(
+        `Провайдер «${p.displayName}» занят в ${impact.affectedRoutesCount} маршрутах, а провайдер по умолчанию ещё не назначен. Сначала нажмите «Сделать по умолчанию» у другого провайдера — тогда удаление автоматически переключит маршруты на него.`,
+      );
+      return;
+    }
 
     if (
       !window.confirm(
@@ -438,6 +444,14 @@ function ProviderCard({
                 <Star size={11} /> По умолчанию
               </Badge>
             )}
+            {provider.billingMode === "subscription" && (
+              <Badge variant="outline">
+                по подписке
+                {provider.subscriptionMonthlyCostUsd !== null
+                  ? `: $${provider.subscriptionMonthlyCostUsd}/мес`
+                  : ""}
+              </Badge>
+            )}
             {provider.isActive ? (
               <Badge variant="success">активен</Badge>
             ) : (
@@ -621,6 +635,20 @@ function ProviderFormDialog({
       : "",
   );
   const [isActive, setIsActive] = useState(provider?.isActive ?? true);
+  const [billingMode, setBillingMode] = useState<"per_token" | "subscription">(
+    provider?.billingMode === "subscription" ? "subscription" : "per_token",
+  );
+  const [subscriptionMonthlyCostUsd, setSubscriptionMonthlyCostUsd] = useState(
+    provider?.subscriptionMonthlyCostUsd !== null &&
+      provider?.subscriptionMonthlyCostUsd !== undefined
+      ? String(provider.subscriptionMonthlyCostUsd)
+      : "",
+  );
+  const [subscriptionStartedAt, setSubscriptionStartedAt] = useState(
+    provider?.subscriptionStartedAt
+      ? provider.subscriptionStartedAt.toISOString().slice(0, 10)
+      : "",
+  );
   const [headers, setHeaders] = useState(
     provider?.defaultHeaders
       ? JSON.stringify(provider.defaultHeaders, null, 2)
@@ -740,6 +768,19 @@ function ProviderFormDialog({
       }
       globalRpsValue = r;
     }
+    let subscriptionMonthlyCostValue: number | null = null;
+    if (billingMode === "subscription") {
+      const c = Number(subscriptionMonthlyCostUsd);
+      if (!subscriptionMonthlyCostUsd.trim() || !isFinite(c) || c < 0) {
+        toast.error("Сумма подписки в месяц — число ≥ 0");
+        return;
+      }
+      if (!subscriptionStartedAt) {
+        toast.error("Укажите дату начала подписки");
+        return;
+      }
+      subscriptionMonthlyCostValue = c;
+    }
 
     setSubmitting(true);
     try {
@@ -754,6 +795,12 @@ function ProviderFormDialog({
         timeoutMs: timeoutMsValue,
         defaultModelKey:
           defaultModelKey.trim().length > 0 ? defaultModelKey.trim() : null,
+        billingMode,
+        subscriptionMonthlyCostUsd: subscriptionMonthlyCostValue,
+        subscriptionStartedAt:
+          billingMode === "subscription"
+            ? new Date(`${subscriptionStartedAt}T00:00:00.000Z`).toISOString()
+            : null,
         ...(globalRpsValue !== undefined ? { globalRps: globalRpsValue } : {}),
         ...(parsedHeaders ? { defaultHeaders: parsedHeaders } : {}),
       };
@@ -1039,6 +1086,50 @@ function ProviderFormDialog({
               <Switch checked={isActive} onCheckedChange={setIsActive} />
             </div>
           </Field>
+          <Field
+            label="Тип тарификации"
+            tooltip="«По токенам» — обычная оплата за использованные токены (нужен прайс в разделе «Цены»). «По подписке» — фиксированная сумма в месяц, вызовы через этот провайдер всегда стоят $0 (токены всё равно считаются для аналитики)."
+          >
+            <Select
+              value={billingMode}
+              onValueChange={(v) => setBillingMode(v as "per_token" | "subscription")}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="per_token">По токенам</SelectItem>
+                <SelectItem value="subscription">По подписке</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          {billingMode === "subscription" && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field
+                label="Сумма подписки в месяц (USD)"
+                tooltip="Сколько платим провайдеру раз в месяц. Раз в месяц, в день годовщины даты начала, эта сумма попадёт в общий дашборд расхода как реальное списание."
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={subscriptionMonthlyCostUsd}
+                  onChange={(e) => setSubscriptionMonthlyCostUsd(e.target.value)}
+                  placeholder="50.00"
+                />
+              </Field>
+              <Field
+                label="Дата начала подписки"
+                tooltip="Определяет день месяца, когда фиксируется списание (с учётом коротких месяцев)."
+              >
+                <Input
+                  type="date"
+                  value={subscriptionStartedAt}
+                  onChange={(e) => setSubscriptionStartedAt(e.target.value)}
+                />
+              </Field>
+            </div>
+          )}
           <Field
             label="Доп. HTTP-заголовки (JSON)"
             hint='Необязательно. Пример: {"X-Custom": "value"}'

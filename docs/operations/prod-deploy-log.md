@@ -71,6 +71,45 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-06 — Фикс каскадной потери тиров роутинга + балковый инструмент + фильтры company-detail (ветка fix/invite-password-existing-user-multi-org)
+
+> Найден и исправлен реальный баг: `AdminLlmProvidersService.migrateRoutesToDefault()` при НЕСКОЛЬКИХ последовательных удалениях провайдеров подряд каскадно удалял (не переключал) tier-строки `LlmTaskRoute`, если новый дефолт-провайдер случайно совпадал с давно нетронутым другим тиром — см. [[llm-router]] §«Инцидент 2026-07-06» (second-brain/01_projects). Дедуп-удаление убрано, теперь всегда UPDATE. Плюс новый инструмент `POST /admin/ai-models/bulk-reassign` (+ `GET .../preview`) — явное безопасное балковое переключение с обязательным preview+reason, UI-кнопка на `/admin/ai/routing`. Плюс `byModel` в `llm-cost` дашборде (overview + company-detail) теперь включает `provider` (была неоднозначность при одинаковом имени модели у разных провайдеров), и company-detail получил `dateFrom`/`dateTo`/`provider`/`model` фильтры.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ.** **🟢 НОВЫХ ENV/ФЛАГОВ НЕТ.** **🟢 Новых патчей/сидов/бэкафиллов нет** (восстановление локальных dev-данных после инцидента — разовая ручная операция, не prod-скрипт). Docker rebuild backend+frontend обязателен (новые эндпоинты + фронт).
+
+- **Шаг 1/4/5/6/7/8/9/10 — не затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - `/admin/ai/routing` под суперадмином → кнопка «Балковое назначение» → scope=«все НЕ назначенные» → предпросмотр должен показывать **0** затронутых (если роутинг не поломан) — если больше 0, разобраться, почему появились пустые тиры.
+  - `GET /api/v1/admin/ai-models/bulk-reassign/preview?scope=provider&fromProviderName=kie` → 200, `affected` — непустой список реальных занятых маршрутов.
+  - `/admin/analytics/llm-cost?view=company&id=<любая компания>` → в таблице «по моделям» есть столбец «Провайдер»; фильтры «Дата от/до»/«Провайдер»/«Модель» реально сужают `$`-сумму и график.
+- **Откат:** чисто исправление логики (delete→update) + два новых READ/WRITE эндпоинта, ничего не ломает при откате кода — старые маршруты как были.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-06 — Провайдер по подписке (ТЗ llm-provider-subscription-billing, 3 фазы, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ [`2026-07-06-llm-provider-subscription-billing.md`](../../plans/tz/2026-07-06-llm-provider-subscription-billing.md) + архитектура [`2026-07-06-llm-provider-subscription-billing.md`](../../plans/architecture/2026-07-06-llm-provider-subscription-billing.md). Провайдер можно пометить `billingMode='subscription'` (фикс. сумма/мес вместо оплаты за токен — токены всё равно считаются, просто бесплатны). Новый ежедневный cron `ProviderSubscriptionChargeCron` пишет реальное списание в день годовщины подписки; дашборд `/admin/analytics/llm-cost` показывает его как скачок в графике + отдельную сумму `subscriptionCostUsd`. Попутно исправлен баг: `openai-chat`/`custom-http` адаптеры читали легаси ENV-поле `defaultModel` вместо реального DB-поля `defaultModelKey` — у DB-провайдеров без явной модели в вызове тихо подставлялся хардкод `gpt-4o-mini` (ломало смоук-тест и реальные вызовы; живьём подтверждено на `minimaxio2`).
+>
+> **🟡 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA** (3 колонки на `llm_providers` + новая таблица `llm_provider_subscription_charges`). **🟢 НОВЫХ ENV/ФЛАГОВ НЕТ.** **🟢 Новых патчей/сидов/бэкафиллов нет.** **🟡 Новый @Cron** (`provider-subscription-charge`, `0 5 * * *`, in-process — отдельного действия не требует, просто появится в логах CronManager). Docker rebuild backend+frontend обязателен.
+
+- **Шаг 4 — Prisma миграция, авто через `prisma migrate deploy`**: `20260706150000_add_llm_provider_subscription_billing` — аддитивная (3 колонки на `llm_providers` + `CREATE TABLE llm_provider_subscription_charges` + FK/индексы), существующие строки не трогает.
+  - **⚠️ Локальная AGE-грабля (см. память `project-age-search-path-ddl-trap`):** если миграцию применяешь НЕ через `prisma migrate deploy` (например, руками через `psql < migration.sql` на локальной dev-БД) — первой строкой файла обязателен `SET search_path TO "public";`, иначе `CREATE TABLE` уйдёт в `ag_catalog`. На прод это НЕ грозит (там `migrate deploy` без AGE search_path-подмены), но если у кого-то локальный AGE-образ — предупреди.
+- **Шаг 1/5/6/7/8/9/10 — не затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - `/admin/ai/catalog` под суперадмином → «Редактировать» провайдера → «Тип тарификации» = «По подписке» → появляются поля суммы/даты → сохранение → бейдж «по подписке: $X/мес» на карточке.
+  - Логи backend после старта: `CronManager: найдено N @Cron-методов` — N должно включать новый `provider-subscription-charge` (grep `provider-subscription-charge` в логах после первого прогона в 05:00 UTC).
+  - `/admin/analytics/llm-cost` → после первого реального списания в ответе `GET /api/v1/admin/llm-cost/overview` поле `totals.subscriptionCostUsd` > 0 в периоде, когда было списание; график показывает скачок в день списания.
+  - Smoke-тест любого `openai-chat`-провайдера БЕЗ `defaultModel` в ENV-легаси (т.е. любой DB-добавленный, кроме `deepseek`) → успешен (регрессия на баг `gpt-4o-mini`).
+- **Откат:** чисто аддитивно — новые колонки/таблица не используются существующим кодом при `billingMode='per_token'` (дефолт), откат кода безопасен без отката схемы.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-06 — Провайдер по умолчанию в каталоге LLM (ТЗ llm-provider-default-fallback, 3 фазы, ветка fix/invite-password-existing-user-multi-org)
 
 > ТЗ [`2026-07-06-llm-provider-default-fallback.md`](../../plans/tz/2026-07-06-llm-provider-default-fallback.md) + архитектура [`2026-07-06-llm-provider-default-fallback.md`](../../plans/architecture/2026-07-06-llm-provider-default-fallback.md). Назначение одного провайдера «по умолчанию» в `/admin/ai/catalog`; удаление занятого провайдера теперь показывает предпросмотр (число маршрутов) и автопереключает на дефолт вместо блокировки 409.

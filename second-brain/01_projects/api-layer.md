@@ -507,6 +507,8 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | GET | `/admin/ai-models/:taskType/history` | audit переключений (`changeType` включает `chain_replaced`) |
 | POST | `/admin/ai-models/:taskType/switch-primary` | точечный switch + опц. A/B (оставлен для истории аудита; новый UI использует `chain`) |
 | POST | `/admin/ai-models/:taskType/add-provider` / DELETE `.../provider/:id` | точечное добавление/удаление (оставлены, не обязательны для нового UI) |
+| GET | `/admin/ai-models/bulk-reassign/preview?scope=unassigned\|provider&tier?&fromProviderName?` | (2026-07-06) предпросмотр балкового назначения — список затронутых `(taskType,tier)` без записи в БД |
+| POST | `/admin/ai-models/bulk-reassign` | (2026-07-06) явное балковое переключение — `scope='unassigned'` создаёт строки на все пустые `(taskType,tier)`-пары, `scope='provider'` (+`fromProviderName`) переключает ВСЕ маршруты с одного провайдера на другой одной транзакцией; обязателен `reason` → `LlmTaskRouteChange` (`changeType:'bulk_reassign'`). UI — кнопка «Балковое назначение» на `/admin/ai/routing`. Заменяет неявную каскадную миграцию как безопасную альтернативу после инцидента (см. [[llm-router]] §«Инцидент 2026-07-06»). |
 | GET/POST | `/admin/llm-model-experiments*` | A/B-эксперименты (`LlmModelExperiment`) — **канонический механизм с 2026-07-03** (см. [`2026-07-03-llm-model-ab-experiments-real-split.md`](../../plans/tz/2026-07-03-llm-model-ab-experiments-real-split.md)): `LlmRouterService.chooseProviders()` реально сплитует трафик, sticky по `meetingId`. UI — вкладка «A/B-тест» на `/admin/ai/routing/[taskType]`. Легаси `/admin/experiments*` (`AdminExperimentsController`, старое поле `LlmTaskRoute.experiment`) удалён целиком. |
 | GET | `/admin/ai-prompts` (он же `/admin/prompts`) | реестр шаблонов промптов |
 | GET | `/admin/ai-prompts/:id` | + версии |
@@ -541,14 +543,14 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | DELETE | `/api/v1/admin/embedding-providers/:id/models/:modelId` | удалить модель |
 
 ### Расход на LLM — консолидированный дашборд (2026-07-03)
-`LlmCostDashboardController` (`backend/src/modules/admin/economics/llm-cost-dashboard.controller.ts`, `@ApiExcludeController`), под `CookieAuthGuard+SuperAdminGuard+SuperAdminAuditInterceptor` (без `TenantGuard` — суперадмин кросс-tenant). Читает только `AiCostDaily` (не `AiUsageLog`), все суммы в рублях (`costRub`), период `7d|30d|90d` (дефолт 30d). Потребители: новый фронт-экран `/admin/analytics/llm-cost` (5 уровней, [[admin]] §«Расход на LLM») + встроенная врезка в «Метрики» `/admin/ai/routing/[taskType]`. ТЗ [`2026-07-03-llm-cost-dashboard`](../../plans/tz/2026-07-03-llm-cost-dashboard.md).
+`LlmCostDashboardController` (`backend/src/modules/admin/economics/llm-cost-dashboard.controller.ts`, `@ApiExcludeController`), под `CookieAuthGuard+SuperAdminGuard+SuperAdminAuditInterceptor` (без `TenantGuard` — суперадмин кросс-tenant). Читает `AiCostDaily` (не `AiUsageLog`) + platform-level `LlmProviderSubscriptionCharge`, все суммы в USD (`costUsd`, с 2026-07-06 — было в рублях), период `7d|30d|90d` (дефолт 30d). Потребители: новый фронт-экран `/admin/analytics/llm-cost` (5 уровней, [[admin]] §«Расход на LLM») + встроенная врезка в «Метрики» `/admin/ai/routing/[taskType]`. ТЗ [`2026-07-03-llm-cost-dashboard`](../../plans/tz/2026-07-03-llm-cost-dashboard.md).
 | Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/admin/llm-cost/overview?period=&trend=day\|week` | Уровень 1 — общий итог: totals+тренд+топ по модели/разделу/компании |
+| GET | `/admin/llm-cost/overview?period=&trend=day\|week` | Уровень 1 — общий итог: totals(+`subscriptionCostUsd`)+тренд+топ по `byModel`(`provider`+`model`, с 2026-07-06)/разделу/компании |
 | GET | `/admin/llm-cost/models/:model` | Уровень 2 — расход одной модели, разбивка по смысловым разделам |
 | GET | `/admin/llm-cost/modules/:module` | Уровень 3 — расход смыслового раздела (4: `memory_graph`/`extraction`/`agent`/`other`), разбивка по `taskType` |
 | GET | `/admin/llm-cost/companies` | Уровень 4 — список компаний с расходом (курсорная пагинация, поиск) |
-| GET | `/admin/llm-cost/companies/:tenantId` | Уровень 5 — расход компании, разбивка по моделям |
+| GET | `/admin/llm-cost/companies/:tenantId?period=&dateFrom=&dateTo=&provider=&model=` | Уровень 5 — расход компании, разбивка по `byModel`(`provider`+`model`). С 2026-07-06 — `dateFrom`/`dateTo` (оба вместе переопределяют `period` произвольным диапазоном) + `provider`/`model` сужают выборку; UI — фильтры на странице компании. |
 | GET | `/admin/llm-cost/task-types/:taskType` | Узкая врезка для вкладки «Метрики» роутинга — totals+тренд одного `taskType` (без module/model разбивки) |
 
 6 эндпоинтов, не в Swagger. Консолидирует (полный редирект/хирургия/удаление) 8 старых путей расхода — см. [[admin]] §«/admin/analytics/llm-cost».

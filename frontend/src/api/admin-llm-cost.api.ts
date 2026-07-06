@@ -17,9 +17,11 @@ export type LlmCostOverviewApi = {
     callsCount: number;
     prevPeriodCostUsd: number | null;
     changePct: number | null;
+    /** Сумма подписочных списаний провайдеров за период — уже включена в costUsd/trend. */
+    subscriptionCostUsd: number;
   };
   trend: LlmCostTrendPointApi[];
-  byModel: Array<{ model: string; costUsd: number; sharePct: number }>;
+  byModel: Array<{ provider: string; model: string; costUsd: number; sharePct: number }>;
   byModule: Array<{
     module: LlmCostModule;
     label: string;
@@ -72,7 +74,7 @@ export type LlmCostCompanyDetailApi = {
   name: string;
   totals: { costUsd: number };
   trend: LlmCostTrendPointApi[];
-  byModel: Array<{ model: string; costUsd: number; sharePct: number }>;
+  byModel: Array<{ provider: string; model: string; costUsd: number; sharePct: number }>;
 };
 
 export type LlmCostTaskTypeDetailApi = {
@@ -92,6 +94,14 @@ export type LlmCostCompaniesRequest = {
   limit?: number;
   cursor?: string;
   search?: string;
+};
+
+export type LlmCostCompanyDetailRequest = LlmCostPeriodQuery & {
+  /** YYYY-MM-DD. Если заданы оба — переопределяют period. */
+  dateFrom?: string;
+  dateTo?: string;
+  provider?: string;
+  model?: string;
 };
 
 export const adminLlmCostApi = {
@@ -115,7 +125,7 @@ export const adminLlmCostApi = {
       `/api/v1/admin/llm-cost/companies${buildQuery({ ...req })}`,
     ),
 
-  companyDetail: (tenantId: string, req: LlmCostPeriodQuery) =>
+  companyDetail: (tenantId: string, req: LlmCostCompanyDetailRequest) =>
     apiClient.get<LlmCostCompanyDetailApi>(
       `/api/v1/admin/llm-cost/companies/${encodeURIComponent(tenantId)}${buildQuery({ ...req })}`,
     ),

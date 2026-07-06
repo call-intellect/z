@@ -2,12 +2,20 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Loader2, Search } from "lucide-react";
+import { ExternalLink, Loader2, Search, Wand2 } from "lucide-react";
+import { toast } from "sonner";
 
+import { ApiError } from "@/api/api-error";
 import {
   AI_MODELS_GROUPS,
+  AI_MODELS_PROVIDERS,
+  AI_MODELS_TIERS,
   adminAiModelsApi,
   type AiModelGroup,
+  type AiModelProvider,
+  type AiModelTier,
+  type BulkReassignAffectedApi,
+  type BulkReassignScope,
 } from "@/api/admin-ai-models.api";
 import {
   mapTaskTypeRoute,
@@ -15,6 +23,17 @@ import {
 } from "@/domain/admin-ai-model";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
@@ -22,14 +41,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/shadcn/select";
+import { Textarea } from "@/ui/shadcn/textarea";
 import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 import { AdminForbidden } from "../../AdminStateViews";
 import { useAdminQuery } from "../../useAdminQuery";
 
+const ALL_TIERS = "all";
+
 export function RoutingClient() {
   const [groupFilter, setGroupFilter] = useState<"all" | AiModelGroup>("all");
   const [search, setSearch] = useState("");
+  const [showBulk, setShowBulk] = useState(false);
 
   const q = useAdminQuery<TaskTypeRouteUi[]>(
     `ai-models:${groupFilter}:${search}`,
@@ -101,7 +124,25 @@ export function RoutingClient() {
             ))}
           </SelectContent>
         </Select>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          onClick={() => setShowBulk(true)}
+        >
+          <Wand2 size={13} /> Балковое назначение
+        </Button>
       </div>
+
+      {showBulk && (
+        <BulkReassignDialog
+          onClose={() => setShowBulk(false)}
+          onApplied={() => {
+            setShowBulk(false);
+            q.refetch();
+          }}
+        />
+      )}
 
       {loading && (
         <div className="flex items-center justify-center py-16 text-sm text-fg-secondary">
@@ -232,5 +273,255 @@ function TierBadge({
         )}
       </div>
     </div>
+  );
+}
+
+function BulkReassignDialog({
+  onClose,
+  onApplied,
+}: {
+  onClose: () => void;
+  onApplied: () => void;
+}) {
+  const [scope, setScope] = useState<BulkReassignScope>("unassigned");
+  const [tier, setTier] = useState(ALL_TIERS);
+  const [fromProviderName, setFromProviderName] = useState<AiModelProvider>(
+    AI_MODELS_PROVIDERS[0],
+  );
+  const [toProviderName, setToProviderName] = useState<AiModelProvider>(
+    AI_MODELS_PROVIDERS[0],
+  );
+  const [toModel, setToModel] = useState("");
+  const [reason, setReason] = useState("");
+  const [affected, setAffected] = useState<BulkReassignAffectedApi[] | null>(
+    null,
+  );
+  const [previewing, setPreviewing] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  const tierValue = tier === ALL_TIERS ? undefined : (tier as AiModelTier);
+
+  const handlePreview = async () => {
+    setPreviewing(true);
+    setAffected(null);
+    try {
+      const res = await adminAiModelsApi.previewBulkReassign({
+        scope,
+        ...(tierValue ? { tier: tierValue } : {}),
+        ...(scope === "provider" ? { fromProviderName } : {}),
+      });
+      setAffected(res.affected);
+      if (res.affected.length === 0) {
+        toast.error("Ничего не найдено — маршрутов под эти условия нет");
+      }
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось получить предпросмотр",
+      );
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (!toModel.trim()) {
+      toast.error("Укажите модель назначения");
+      return;
+    }
+    if (reason.trim().length < 3) {
+      toast.error("Укажите причину (не короче 3 символов)");
+      return;
+    }
+    setApplying(true);
+    try {
+      const res = await adminAiModelsApi.bulkReassign({
+        scope,
+        ...(tierValue ? { tier: tierValue } : {}),
+        ...(scope === "provider" ? { fromProviderName } : {}),
+        toProviderName,
+        toModel: toModel.trim(),
+        reason: reason.trim(),
+      });
+      toast.success(`Переключено маршрутов: ${res.updated}`);
+      onApplied();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось применить изменение",
+      );
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => (!o ? onClose() : undefined)}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Балковое назначение маршрутов</DialogTitle>
+          <DialogDescription>
+            Выставить провайдера/модель сразу на много (taskType, tier) —
+            либо на все НЕ назначенные пары, либо на все пары, которые сейчас
+            занимает один конкретный провайдер. Сначала предпросмотр, потом
+            применение.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Label className="text-xs">Что выбираем</Label>
+            <Select
+              value={scope}
+              onValueChange={(v) => {
+                setScope(v as BulkReassignScope);
+                setAffected(null);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">
+                  Все НЕ назначенные (пустые) пары
+                </SelectItem>
+                <SelectItem value="provider">
+                  Все пары на конкретном провайдере
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {scope === "provider" && (
+            <div className="grid gap-1.5">
+              <Label className="text-xs">С провайдера (сейчас занят)</Label>
+              <Select
+                value={fromProviderName}
+                onValueChange={(v) => {
+                  setFromProviderName(v as AiModelProvider);
+                  setAffected(null);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AI_MODELS_PROVIDERS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="grid gap-1.5">
+            <Label className="text-xs">Тир</Label>
+            <Select
+              value={tier}
+              onValueChange={(v) => {
+                setTier(v);
+                setAffected(null);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_TIERS}>Все тиры</SelectItem>
+                {AI_MODELS_TIERS.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label className="text-xs">На провайдера</Label>
+              <Select
+                value={toProviderName}
+                onValueChange={(v) => setToProviderName(v as AiModelProvider)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AI_MODELS_PROVIDERS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Модель</Label>
+              <Input
+                value={toModel}
+                onChange={(e) => setToModel(e.target.value)}
+                placeholder="например, deepseek-v4-pro"
+              />
+            </div>
+          </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={previewing}
+            onClick={() => void handlePreview()}
+          >
+            {previewing ? "Считаем…" : "Предпросмотр"}
+          </Button>
+
+          {affected !== null && (
+            <div className="rounded-md border border-border-subtle bg-bg-subtle p-2">
+              <div className="mb-1 text-xs font-medium text-fg-primary">
+                Затронет {affected.length}{" "}
+                {affected.length === 1 ? "маршрут" : "маршрутов"}
+              </div>
+              {affected.length > 0 && (
+                <ul className="max-h-40 space-y-0.5 overflow-y-auto text-[11px] text-fg-secondary">
+                  {affected.slice(0, 200).map((a) => (
+                    <li key={`${a.taskType}::${a.tier}`} className="font-mono">
+                      {a.taskType} / {a.tier}
+                      {a.currentProviderName
+                        ? ` (сейчас: ${a.currentProviderName}${a.currentModel ? `/${a.currentModel}` : ""})`
+                        : " (сейчас: не задан)"}
+                    </li>
+                  ))}
+                  {affected.length > 200 && (
+                    <li>… и ещё {affected.length - 200}</li>
+                  )}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <div className="grid gap-1.5">
+            <Label className="text-xs">Причина изменения</Label>
+            <Textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder="Зачем это делаем — попадёт в audit-лог"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={applying}>
+            Отмена
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={applying || affected === null || affected.length === 0}
+            onClick={() => void handleApply()}
+          >
+            {applying ? "Применяем…" : "Применить"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

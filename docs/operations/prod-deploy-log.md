@@ -62,6 +62,15 @@ docker compose run --rm --no-deps backend \
 
 > Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
 
+### Probe-noise: снос инспектора порядка + снятие push attribution/experiment/insight — 2026-07-06
+
+Деплой **батча**: overhaul-ТЗ `kora-clarify-questions-overhaul` (Ф1–Ф7, уже на ветке — снос вопросов про решения/обещания/регламенты + авто-привязка регламентов к автору) **плюс** ТЗ `probe-questions-unify-and-simplify` (снос инспектора порядка; снятие push attribution/experiment/insight; task-clarify сохранён). Прод отстал от ветки — деплой снимает оба слоя шума.
+
+- **Шаг 1 — ENV: удалены** `CONSISTENCY_CHECKER_ENABLED`, `CONSISTENCY_CHECKER_DEDUP_TTL_SECONDS` (`env.schema.ts` + `env-classification.ts`); флаги `curation.consistencyChecker{Enabled,DedupTtlSeconds}` убраны из admin-реестра + `feature-flags.md`. Стрея этих ключей в прод-`.env` безвредна (Zod игнорит неизвестные). Overhaul-флаги (`proactive.rules.decisionNoOwner`, `betaOps.commitmentFollowup*`) — в логе overhaul-выката.
+- **Шаг 4 — Миграций схемы НЕТ** (сущности не трогаем).
+- **Шаг 12 — Smoke** (после rebuild): cron `consistency-checker` больше НЕ зарегистрирован — `docker compose exec backend sh -c 'grep -c "ConsistencyChecker" /app/src/modules/curation/curation.module.ts'` → `0`; новые `probe_events` с reason `consistency_violation.*` / `experiment.no_owner` / `insight.no_mitigation_plan` / `attribution.unresolved_at_ingest` больше НЕ создаются; **task-clarify жив** (`task.assignee_unresolved`/`task.due_date_missing` создаются); исторические строки этих reason читаются без падения (терпимые метки).
+- **Прод-действие:** только `docker compose up -d --build backend` + rebuild frontend. Никаких seed/patch/backfill/migrate.
+
 ### Клон: регламент-роутер B + retrieval-floor + грунт-как-материал — 2026-07-05..06
 
 - **Шаг 1 — ENV: новых обязательных нет.** Крутилки через `getDynamic`/`resolveSync` (code-fallback, Ship-On, работают ДО сида): `clone.regulations.router.enabled`=`true` (kill-switch тип A), `.router.model`=`deepseek-v4-flash`, `.router.max_tokens`=`1500`, `.router.max_pool`=`60`, `.router.context_level`=`summary`, `.summary.enabled`=`true` (kill-switch тип A), `.summary.model`=`deepseek-v4-flash`, `.summary.max_tokens`=`700`, `.summary.batch`=`40`, **`clone.retrieval.base_recall_floor`=`true`** (kill-switch тип A — широкий сырой ретрив подмешивается в подграф клона), **`clone.grounding.accept_topic_match`=`true`** (kill-switch тип A — ответ с релевантными блоками принимается без обязательных дословных цитат). Реестр флагов — `docs/operations/feature-flags.md` (4 kill-switch тип A).

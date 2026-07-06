@@ -32,12 +32,10 @@ export class ExperimentStatusResolverCron {
       });
       let totalTransitioned = 0;
       let totalNoOwner = 0;
-      let totalRunningTooLong = 0;
       for (const org of orgs) {
         try {
           totalTransitioned += await this.resolveStatusesForOrg(org.id);
           totalNoOwner += await this.probes.checkNoOwnerForOrg(org.id);
-          totalRunningTooLong += await this.probes.checkRunningTooLongForOrg(org.id);
           await this.refreshOrgGauges(org.id);
         } catch (err) {
           this.logger.warn(
@@ -55,7 +53,6 @@ export class ExperimentStatusResolverCron {
           orgs: orgs.length,
           totalTransitioned,
           totalNoOwner,
-          totalRunningTooLong,
           autoEnabled: this.cfg.experiments.autoStatusTransitionEnabled,
         },
         'experiment-status-resolver: проход завершён',

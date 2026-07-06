@@ -35,23 +35,6 @@ const GROUPS: SettingsGroup[] = [
     title: "Курация",
     specs: [
       {
-        key: "curation.consistencyCheckerEnabled",
-        label: "Проверка согласованности знаний",
-        description:
-          "Рубильник проверки согласованности знаний (поиск противоречий). По умолчанию вкл (Ship-On).",
-        schema: z.boolean(),
-        defaultValue: true,
-        requiresReason: "high",
-      },
-      {
-        key: "curation.consistencyCheckerDedupTtlSeconds",
-        label: "TTL дедупа проверки согласованности (сек)",
-        description:
-          "TTL (сек) дедупа проверки согласованности знаний (не плодить одинаковые конфликты). По умолчанию 14400 (4 ч).",
-        schema: z.number().int().min(1),
-        defaultValue: 14_400,
-      },
-      {
         key: "curation.completenessScannerEnabled",
         label: "Сканер полноты карточек",
         description:

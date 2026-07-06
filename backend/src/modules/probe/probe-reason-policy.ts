@@ -6,12 +6,6 @@ export type ProbeWindow = 'immediate' | 'deferrable';
 
 export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
   'temporal.fact_stale_contradiction.escalated': 'immediate',
-  'consistency_violation.R1': 'immediate',
-  'consistency_violation.R2': 'immediate',
-  'consistency_violation.R3': 'immediate',
-  'consistency_violation.R4': 'immediate',
-  'consistency_violation.R5': 'immediate',
-  'consistency_violation.R6': 'immediate',
   'goal.kr_checkpoint_suggested': 'immediate',
   'kr_checkpoint_suggested': 'immediate',
   'task.assignee_unresolved': 'immediate',
@@ -34,7 +28,6 @@ export const NUDGE_REASONS: ReadonlySet<string> = new Set([
 
 export const MACHINE_FILLABLE_REASONS: ReadonlySet<string> = new Set([
   'card.merge_suggestion',
-  'experiment.no_owner',
   'process_template.missing_input_artifact',
   'process_template.missing_output_artifact',
   'process_template.step_without_owner',

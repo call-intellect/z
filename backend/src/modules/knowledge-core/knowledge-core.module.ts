@@ -60,7 +60,6 @@ import { Specialist32ProbeService } from './services/specialist-3-2-probe.servic
 import { Specialist33Service } from './services/specialist-3-3-decisions.service';
 import { Specialist34ProbeService } from './services/specialist-3-4-probe.service';
 import { Specialist35Service } from './services/specialist-3-5-insights.service';
-import { Specialist35ProbeService } from './services/specialist-3-5-probe.service';
 import { Specialist36Service } from './services/specialist-3-6-ideas.service';
 import { Specialist36ProbeService } from './services/specialist-3-6-probe.service';
 import { Specialist37ProbeService } from './services/specialist-3-7-skill-probe.service';
@@ -128,7 +127,6 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     Specialist32ProbeService,
     Specialist33Service,
     Specialist35Service,
-    Specialist35ProbeService,
     Specialist39ExperimentsService,
     Specialist39ExperimentProbeService,
     Specialist36Service,
@@ -205,7 +203,6 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     Specialist32ProbeService,
     Specialist33Service,
     Specialist35Service,
-    Specialist35ProbeService,
     Specialist39ExperimentsService,
     Specialist39ExperimentProbeService,
     Specialist36Service,

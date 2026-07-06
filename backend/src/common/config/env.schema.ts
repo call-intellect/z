@@ -433,8 +433,6 @@ const OrchestratorSchema = z.object({
 const WorkerKnobsSchema = z.object({
   AXIS_CLASSIFY_ENABLED: zBool(true),
   ROLE_PROFILE_MIN_BLOCKS: z.coerce.number().int().positive().default(5),
-  CONSISTENCY_CHECKER_DEDUP_TTL_SECONDS: z.coerce.number().int().positive().default(14_400),
-  CONSISTENCY_CHECKER_ENABLED: zBool(true),
   COMPLETENESS_SCANNER_ENABLED: zBool(true),
   GOAL_ALIGNMENT_LOW_ENABLED: zBool(true),
   TELEGRAM_DIGEST_HOUR_LOCAL: z.coerce.number().int().min(0).max(23).default(9),

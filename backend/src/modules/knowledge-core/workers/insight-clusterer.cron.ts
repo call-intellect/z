@@ -9,7 +9,6 @@ import {
   shouldReactivateInsight,
 } from '../services/insight-recheck.scoring';
 import { Specialist35Service } from '../services/specialist-3-5-insights.service';
-import { Specialist35ProbeService } from '../services/specialist-3-5-probe.service';
 
 @Injectable()
 export class InsightClustererCron {
@@ -20,8 +19,6 @@ export class InsightClustererCron {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(Specialist35Service) private readonly svc: Specialist35Service,
-    @Inject(Specialist35ProbeService)
-    private readonly probes: Specialist35ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
@@ -34,13 +31,11 @@ export class InsightClustererCron {
         select: { id: true },
       });
       let totalRecalc = 0;
-      let totalNoMitigation = 0;
       let totalReactivated = 0;
       const recheckEnabled = await this.isRecheckEnabled();
       for (const org of orgs) {
         try {
           totalRecalc += await this.recalcAllForOrg(org.id);
-          totalNoMitigation += await this.probes.checkNoMitigationPlanForOrg(org.id);
           if (recheckEnabled) {
             totalReactivated += await this.recheckMitigatedForOrg(org.id);
           }
@@ -61,7 +56,6 @@ export class InsightClustererCron {
         {
           orgs: orgs.length,
           totalRecalc,
-          totalNoMitigation,
           totalReactivated,
           clusterCron: this.cfg.insights.clusterCron,
         },

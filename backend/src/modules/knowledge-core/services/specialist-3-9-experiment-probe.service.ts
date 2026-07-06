@@ -1,12 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Experiment } from '@prisma/client';
 
-import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ActivityFeedService } from '../../activity-feed/services/activity-feed.service';
-import { ConversationalService } from '../../conversational/conversational.service';
-import { ProbeService } from '../../probe/probe.service';
 
 import { OwnerResolverService } from './owner-resolver.service';
 
@@ -20,14 +17,8 @@ export class Specialist39ExperimentProbeService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(ConversationalService)
-    private readonly conversational: ConversationalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    @Optional()
-    @Inject(ProbeService)
-    private readonly probeService?: ProbeService,
     @Optional()
     @Inject(OwnerResolverService)
     private readonly ownerResolver?: OwnerResolverService,
@@ -35,36 +26,6 @@ export class Specialist39ExperimentProbeService {
     @Inject(ActivityFeedService)
     private readonly activityFeed?: ActivityFeedService,
   ) {}
-
-  async emitResultWithoutLesson(exp: Experiment): Promise<void> {
-    try {
-      if (!exp.currentResult) return;
-      const hasLessons = Array.isArray(exp.lessonsJson)
-        ? (exp.lessonsJson as unknown[]).length > 0
-        : false;
-      if (hasLessons) return;
-      const recipients = await this.findOrgAdminsUserIds(exp.tenantId);
-      if (recipients.length === 0) return;
-      const name = exp.name.slice(0, 80);
-      const message = `У эксперимента «${name}» есть результат, но не зафиксирован урок. Что вы для себя вынесли?`;
-      await this.emit({
-        tenantId: exp.tenantId,
-        experimentId: exp.id,
-        reason: 'experiment.result_without_lesson',
-        message,
-        objectName: name,
-        recipients,
-        suggestedActions: [
-          'Записать что сработало',
-          'Записать что не сработало',
-          'Это разовый эпизод',
-        ],
-        priorityHint: 0.5,
-      });
-    } catch (err) {
-      this.logErr('experiment.result_without_lesson', exp.id, err);
-    }
-  }
 
   async checkNoOwnerForOrg(tenantId: string): Promise<number> {
     const cutoff = new Date(
@@ -79,34 +40,16 @@ export class Specialist39ExperimentProbeService {
       },
       take: Specialist39ExperimentProbeService.CRON_BATCH_LIMIT,
     });
-    let emitted = 0;
+    let autoAssigned = 0;
     for (const exp of experiments) {
       try {
-        const recipients = await this.findOrgAdminsUserIds(exp.tenantId);
-        if (recipients.length === 0) continue;
-        const name = exp.name.slice(0, 80);
         const ladder = await this.tryResolveOwner(exp);
-        if (ladder.outcome === 'auto' || ladder.outcome === 'already_assigned') continue;
-        const message =
-          ladder.outcome === 'ambiguous'
-            ? `Эксперимент «${name}» уже больше суток без ответственного. Кого назначить ответственным: ${ladder.candidateNames.join(' или ')}?`
-            : `Эксперимент «${name}» уже больше суток без ответственного. Кто его ведёт?`;
-        await this.emit({
-          tenantId: exp.tenantId,
-          experimentId: exp.id,
-          reason: 'experiment.no_owner',
-          message,
-          objectName: name,
-          recipients,
-          suggestedActions: ['Назначить ответственного', 'Перевести в paused'],
-          priorityHint: 0.4,
-        });
-        emitted += 1;
+        if (ladder.outcome === 'auto') autoAssigned += 1;
       } catch (err) {
         this.logErr('experiment.no_owner', exp.id, err);
       }
     }
-    return emitted;
+    return autoAssigned;
   }
 
   private async tryResolveOwner(
@@ -206,170 +149,6 @@ export class Specialist39ExperimentProbeService {
         },
         'specialist-3-9 probe: publish в ленту не удался — назначение уже применено',
       );
-    }
-  }
-
-  async checkRunningTooLongForOrg(tenantId: string): Promise<number> {
-    const thresholdDays = this.cfg.experiments.runningProbeThresholdDays;
-    const cutoff = new Date(Date.now() - thresholdDays * 24 * 3600 * 1000);
-    const experiments = await this.prisma.experiment.findMany({
-      where: {
-        tenantId,
-        status: 'running',
-        currentResult: null,
-        startedAt: { lt: cutoff },
-      },
-      take: Specialist39ExperimentProbeService.CRON_BATCH_LIMIT,
-    });
-    let emitted = 0;
-    for (const exp of experiments) {
-      try {
-        const recipients = await this.findRecipientsWithOwner({
-          tenantId: exp.tenantId,
-          ownerEntityId: exp.ownerEntityId,
-        });
-        if (recipients.length === 0) continue;
-        const name = exp.name.slice(0, 80);
-        const message = `Эксперимент «${name}» бежит уже больше ${thresholdDays} дней без результата. Что-то пошло не так — может, закрыть?`;
-        await this.emit({
-          tenantId: exp.tenantId,
-          experimentId: exp.id,
-          reason: 'experiment.running_too_long',
-          message,
-          objectName: name,
-          recipients,
-          suggestedActions: [
-            'Записать промежуточный результат',
-            'Перевести в dropped',
-            'Поставить на паузу',
-          ],
-          priorityHint: 0.6,
-        });
-        emitted += 1;
-      } catch (err) {
-        this.logErr('experiment.running_too_long', exp.id, err);
-      }
-    }
-    return emitted;
-  }
-
-  private async findOrgAdminsUserIds(tenantId: string): Promise<string[]> {
-    const memberships = await this.prisma.membership.findMany({
-      where: {
-        orgId: tenantId,
-        role: { in: ['owner', 'admin'] },
-      },
-      select: { userId: true },
-      take: 20,
-    });
-    return memberships.map((m) => m.userId);
-  }
-
-  private async findRecipientsWithOwner(args: {
-    tenantId: string;
-    ownerEntityId: string | null;
-  }): Promise<string[]> {
-    const admins = await this.findOrgAdminsUserIds(args.tenantId);
-    if (!args.ownerEntityId) return admins;
-    try {
-      const owner = await this.prisma.person.findFirst({
-        where: {
-          entityId: args.ownerEntityId,
-          tenantId: args.tenantId,
-          deletedAt: null,
-          userId: { not: null },
-        },
-        select: { userId: true },
-      });
-      if (owner?.userId && !admins.includes(owner.userId)) {
-        return [owner.userId, ...admins];
-      }
-      return admins;
-    } catch {
-      return admins;
-    }
-  }
-
-  private async emit(args: {
-    tenantId: string;
-    experimentId: string;
-    reason: string;
-    message: string;
-    objectName: string;
-    recipients: readonly string[];
-    suggestedActions?: readonly string[];
-    priorityHint: number;
-  }): Promise<void> {
-    const actionUrl = `/experiments/${args.experimentId}`;
-    if (this.probeService) {
-      try {
-        await this.probeService.suggest({
-          tenantId: args.tenantId,
-          emittedByService: Specialist39ExperimentProbeService.SPECIALIST_NAME,
-          reason: args.reason,
-          payload: {
-            message: args.message,
-            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
-            contextCardId: args.experimentId,
-            contextCardKind: 'experiment',
-            contextCardTitle: args.objectName.slice(0, 100),
-            objectName: args.objectName,
-            objectKindRu: 'эксперимент',
-            actionUrl,
-            dataClass: 'internal',
-          },
-          recipientCandidates: [...args.recipients],
-          priorityHint: args.priorityHint,
-          dataClass: 'internal',
-        });
-        this.metrics.incCoreSpecialistProbeEvent({
-          type: 'experiment',
-          reason: args.reason,
-        });
-        return;
-      } catch (err) {
-        this.logger.warn(
-          {
-            experimentId: args.experimentId,
-            reason: args.reason,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'specialist-3-9 probe: ProbeService.suggest упал — fallback',
-        );
-      }
-    }
-    for (const userId of args.recipients) {
-      try {
-        await this.conversational.sendNotification({
-          tenantId: args.tenantId,
-          recipientUserId: userId,
-          eventType: 'specialist.probe',
-          payload: {
-            specialistName: Specialist39ExperimentProbeService.SPECIALIST_NAME,
-            reason: args.reason,
-            message: args.message,
-            cardId: args.experimentId,
-            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
-            actionUrl,
-          },
-          dataClass: 'internal',
-          contextCardId: args.experimentId,
-        });
-        this.metrics.incCoreSpecialistProbeEvent({
-          type: 'experiment',
-          reason: args.reason,
-        });
-      } catch (err) {
-        this.logger.warn(
-          {
-            experimentId: args.experimentId,
-            reason: args.reason,
-            userId,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'specialist-3-9 probe: ошибка sendNotification — пропускаю получателя',
-        );
-      }
     }
   }
 

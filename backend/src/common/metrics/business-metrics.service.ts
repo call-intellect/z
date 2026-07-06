@@ -470,13 +470,11 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── Action Center A2 «лестница доверия» (2026-06-02) — autotune + kill-switch ──
   private curationKillSwitchTotal!: Counter<'resource_type'>;
   private curationAutotuneAdjustmentTotal!: Counter<'resource_type' | 'direction'>;
-  // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker ──
+  // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot ──
   // Cardinality-safe: tenant НЕ выносим в label (паттерн остальных curation/probe-метрик).
   // Top-100 tenant-агрегации делает Grafana / Prometheus recording rule поверх БД.
   private completenessSlotsOpenTotal!: Gauge<'card_type'>;
   private completenessSlotsFilledTotal!: Counter<'card_type'>;
-  private consistencyViolationsTotal!: Counter<'rule'>;
-  private consistencyCheckerDurationSeconds!: Histogram<never>;
 
   // ── specialists (SBA α-6 — эталонный референс контракта §5 зонтичного) ──
   // Метрики единые для всех специалистов Слоя 3 (3.1..3.7). Label `type`
@@ -2465,7 +2463,7 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['resource_type', 'direction'] as const,
     });
 
-    // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker
+    // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot
     this.completenessSlotsOpenTotal = this.getOrCreateGauge({
       name: 'completeness_slots_open_total',
       help: 'SBA α-4 wave 2 — сколько CompletenessSlot.filledAt IS NULL сейчас (card_type ∈ regulation|process|role|company_profile).',
@@ -2475,17 +2473,6 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'completeness_slots_filled_total',
       help: 'SBA α-4 wave 2 — сколько слотов было закрыто (auto-scanner либо manual mark-filled), counter.',
       labelNames: ['card_type'] as const,
-    });
-    this.consistencyViolationsTotal = this.getOrCreateCounter({
-      name: 'consistency_violations_total',
-      help: 'SBA α-4 wave 2 — сколько структурных нарушений детектировано ConsistencyCheckerCron (rule ∈ R1..R6).',
-      labelNames: ['rule'] as const,
-    });
-    this.consistencyCheckerDurationSeconds = this.getOrCreateHistogram({
-      name: 'consistency_checker_duration_seconds',
-      help: 'SBA α-4 wave 2 — длительность одного прохода ConsistencyCheckerCron в секундах.',
-      labelNames: [] as const,
-      buckets: [0.5, 1, 5, 15, 60, 300, 900],
     });
 
     // ── specialists (SBA α-6 — единый контракт §5 для Слоя 3) ────────
@@ -6065,17 +6052,6 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter: слот закрыт (auto или manual). */
   incCompletenessSlotsFilled(args: { cardType: string }): void {
     this.completenessSlotsFilledTotal.inc({ card_type: args.cardType });
-  }
-
-  /** Counter: ConsistencyChecker нашёл нарушение (rule ∈ R1..R6). */
-  incConsistencyViolation(args: { rule: string }): void {
-    this.consistencyViolationsTotal.inc({ rule: args.rule });
-  }
-
-  /** Histogram: длительность прохода ConsistencyCheckerCron, секунды. */
-  observeConsistencyCheckerDuration(seconds: number): void {
-    if (seconds < 0) return;
-    this.consistencyCheckerDurationSeconds.observe(seconds);
   }
 
   // ────────────────────── specialists (SBA α-6) ────────────────────────

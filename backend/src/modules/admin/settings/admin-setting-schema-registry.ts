@@ -437,8 +437,6 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['knowledge.axisClassifyEnabled', z.boolean()],
   ['roleProfiles.minBlocks', POSITIVE_INT],
-  ['curation.consistencyCheckerDedupTtlSeconds', POSITIVE_INT],
-  ['curation.consistencyCheckerEnabled', z.boolean()],
   ['curation.completenessScannerEnabled', z.boolean()],
   ['tracker.goalAlignmentLowEnabled', z.boolean()],
   ['tracker.goalAlignmentLowPeriodDays', POSITIVE_INT],
@@ -573,6 +571,13 @@ const registry = new Map<string, ZodTypeAny>([
   ['operations.digest.team_friction_min_confidence', UNIT_INTERVAL],
   ['operations.digest.team_friction_repeat_count', z.number().int().min(1).max(20)],
   ['operations.report_archive.recent_limit', z.number().int().min(1).max(50)],
+
+  ['me.tasks.doneWindowDays', z.number().int().min(1).max(90)],
+  ['operations.personal_day_narrative.enabled', z.boolean()],
+  ['operations.personal_day_narrative.evening_hour', z.number().int().min(0).max(23)],
+  ['operations.self_signals.plan_not_closing_streak_days', z.number().int().min(1).max(30)],
+  ['knowledge.expertise.self_max_blocks_scanned', z.number().int().min(100).max(20_000)],
+  ['knowledge.expertise.self_top_k', z.number().int().min(1).max(50)],
 
   ['betaOps.morningLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.eveningLocalHour', z.number().int().min(0).max(23)],

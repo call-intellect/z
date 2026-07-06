@@ -13,6 +13,7 @@ export type AdminLlmProviderApi = {
   hasApiKey: boolean;
   defaultHeaders: Record<string, string> | null;
   globalRps: number | null;
+  isDefaultProvider: boolean;
   lastSmokeAt: string | null;
   lastSmokeSuccess: boolean | null;
   lastSmokeError: string | null;
@@ -37,6 +38,7 @@ export type AdminLlmProviderDomain = {
   hasApiKey: boolean;
   defaultHeaders: Record<string, string> | null;
   globalRps: number | null;
+  isDefaultProvider: boolean;
   lastSmokeAt: Date | null;
   lastSmokeSuccess: boolean | null;
   lastSmokeError: string | null;
@@ -62,6 +64,7 @@ export function adminLlmProviderFromApi(
     hasApiKey: api.hasApiKey,
     defaultHeaders: api.defaultHeaders,
     globalRps: api.globalRps,
+    isDefaultProvider: api.isDefaultProvider,
     lastSmokeAt: api.lastSmokeAt ? new Date(api.lastSmokeAt) : null,
     lastSmokeSuccess: api.lastSmokeSuccess,
     lastSmokeError: api.lastSmokeError,
@@ -117,3 +120,12 @@ export type SmokeTestResultApi = {
 export type DiscoverModelsResultApi =
   | { ok: true; models: Array<{ id: string; alreadyInCatalog: boolean }> }
   | { ok: false; error: string };
+
+export type RemovalImpactApi = {
+  providerName: string;
+  isDefault: boolean;
+  affectedRoutesCount: number;
+  affectedTenantsCount: number;
+  inDefaultChain: boolean;
+  currentDefault: { providerName: string; model: string | null } | null;
+};

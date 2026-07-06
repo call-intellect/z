@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   Power,
+  Star,
   Trash2,
   XCircle,
   Zap,
@@ -23,6 +24,7 @@ import {
   type CreateLlmProviderRequest,
   type LlmProtocolKind,
   type LlmProviderCapability,
+  type RemovalImpactApi,
 } from "@/domain/admin-llm-provider";
 import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
@@ -105,6 +107,14 @@ export function LlmProvidersClient() {
   const [editProvider, setEditProvider] =
     useState<AdminLlmProviderDomain | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [defaultDialogProvider, setDefaultDialogProvider] =
+    useState<AdminLlmProviderDomain | null>(null);
+  const [reassignDialog, setReassignDialog] =
+    useState<AdminLlmProviderDomain | null>(null);
+  const [removalDialog, setRemovalDialog] = useState<{
+    provider: AdminLlmProviderDomain;
+    impact: RemovalImpactApi;
+  } | null>(null);
 
   const q = useAdminQuery(
     "admin-llm-providers",
@@ -158,18 +168,15 @@ export function LlmProvidersClient() {
     }
   };
 
-  const handleDelete = async (p: AdminLlmProviderDomain) => {
-    if (
-      !window.confirm(
-        `Удалить провайдера «${p.displayName}»? Это действие нельзя отменить.`,
-      )
-    ) {
-      return;
-    }
+  const performSimpleDelete = async (p: AdminLlmProviderDomain) => {
     setBusyId(p.id);
     try {
-      await adminLlmProvidersApi.remove(p.id);
-      toast.success(`Провайдер «${p.displayName}» удалён`);
+      const res = await adminLlmProvidersApi.remove(p.id);
+      toast.success(
+        res.routesMigrated > 0
+          ? `Провайдер «${p.displayName}» удалён, ${res.routesMigrated} маршрутов переключено`
+          : `Провайдер «${p.displayName}» удалён`,
+      );
       q.refetch();
     } catch (e) {
       toast.error(
@@ -178,6 +185,82 @@ export function LlmProvidersClient() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleDelete = async (p: AdminLlmProviderDomain) => {
+    if (p.isDefaultProvider) {
+      setReassignDialog(p);
+      return;
+    }
+    setBusyId(p.id);
+    let impact: RemovalImpactApi;
+    try {
+      impact = await adminLlmProvidersApi.previewRemoval(p.id);
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось получить информацию об удалении",
+      );
+      setBusyId(null);
+      return;
+    }
+    setBusyId(null);
+
+    const occupied = impact.affectedRoutesCount > 0 || impact.inDefaultChain;
+    if (occupied && impact.currentDefault) {
+      setRemovalDialog({ provider: p, impact });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Удалить провайдера «${p.displayName}»? Это действие нельзя отменить.`,
+      )
+    ) {
+      return;
+    }
+    await performSimpleDelete(p);
+  };
+
+  const handleConfirmMigratedRemoval = async () => {
+    if (!removalDialog) return;
+    const { provider, impact } = removalDialog;
+    setBusyId(provider.id);
+    try {
+      const res = await adminLlmProvidersApi.remove(provider.id);
+      const defaultLabel = impact.currentDefault
+        ? `${impact.currentDefault.providerName}${
+            impact.currentDefault.model ? ` / ${impact.currentDefault.model}` : ""
+          }`
+        : "";
+      toast.success(
+        res.routesMigrated > 0
+          ? `Провайдер «${provider.displayName}» удалён, ${res.routesMigrated} маршрутов переключено на ${defaultLabel}`
+          : `Провайдер «${provider.displayName}» удалён`,
+      );
+      setRemovalDialog(null);
+      q.refetch();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось удалить провайдера",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleReassignRemoved = (
+    routesMigrated: number,
+    newDefaultName: string,
+  ) => {
+    setReassignDialog(null);
+    toast.success(
+      routesMigrated > 0
+        ? `Провайдер удалён, ${routesMigrated} маршрутов переключено на ${newDefaultName}`
+        : `Провайдер удалён, новый провайдер по умолчанию — ${newDefaultName}`,
+    );
+    q.refetch();
   };
 
   return (
@@ -218,6 +301,7 @@ export function LlmProvidersClient() {
               onSmoke={() => void handleSmoke(p)}
               onEdit={() => setEditProvider(p)}
               onDelete={() => void handleDelete(p)}
+              onSetDefault={() => setDefaultDialogProvider(p)}
               onGoToModels={() => goToModels(p.id)}
             />
           ))}
@@ -246,6 +330,68 @@ export function LlmProvidersClient() {
           onModelsImported={() => q.refetch()}
         />
       )}
+      {defaultDialogProvider && (
+        <SetDefaultDialog
+          provider={defaultDialogProvider}
+          onClose={() => setDefaultDialogProvider(null)}
+          onSaved={() => {
+            setDefaultDialogProvider(null);
+            q.refetch();
+          }}
+        />
+      )}
+      {removalDialog && (
+        <Dialog
+          open
+          onOpenChange={(o) => (!o ? setRemovalDialog(null) : undefined)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                Удалить провайдера «{removalDialog.provider.displayName}»?
+              </DialogTitle>
+              <DialogDescription>
+                Этот провайдер сейчас используется в{" "}
+                {removalDialog.impact.affectedRoutesCount} маршрутах. Все они
+                переключатся на провайдера по умолчанию:{" "}
+                {removalDialog.impact.currentDefault?.providerName}
+                {removalDialog.impact.currentDefault?.model
+                  ? ` / ${removalDialog.impact.currentDefault.model}`
+                  : ""}
+                .
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRemovalDialog(null)}
+                disabled={busyId === removalDialog.provider.id}
+              >
+                Отмена
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={busyId === removalDialog.provider.id}
+                onClick={() => void handleConfirmMigratedRemoval()}
+              >
+                Удалить и переключить
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+      {reassignDialog && (
+        <ReassignDefaultDialog
+          provider={reassignDialog}
+          otherProviders={(q.data ?? []).filter(
+            (x) => x.id !== reassignDialog.id && x.isActive,
+          )}
+          onClose={() => setReassignDialog(null)}
+          onRemoved={handleReassignRemoved}
+        />
+      )}
     </div>
   );
 }
@@ -257,6 +403,7 @@ function ProviderCard({
   onSmoke,
   onEdit,
   onDelete,
+  onSetDefault,
   onGoToModels,
 }: {
   provider: AdminLlmProviderDomain;
@@ -265,6 +412,7 @@ function ProviderCard({
   onSmoke: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onSetDefault: () => void;
   onGoToModels: () => void;
 }) {
   return (
@@ -278,6 +426,11 @@ function ProviderCard({
             <span className="font-mono text-xs text-fg-tertiary">
               {provider.name}
             </span>
+            {provider.isDefaultProvider && (
+              <Badge variant="default">
+                <Star size={11} /> По умолчанию
+              </Badge>
+            )}
             {provider.isActive ? (
               <Badge variant="success">активен</Badge>
             ) : (
@@ -322,6 +475,16 @@ function ProviderCard({
             <Power size={12} />{" "}
             {provider.isActive ? "Деактивировать" : "Активировать"}
           </Button>
+          {!provider.isDefaultProvider && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={onSetDefault}
+            >
+              <Star size={12} /> Сделать по умолчанию
+            </Button>
+          )}
           <Button size="sm" variant="ghost" disabled={busy} onClick={onEdit}>
             <Pencil size={12} /> Редактировать
           </Button>
@@ -836,6 +999,276 @@ function ProviderFormDialog({
             disabled={submitting}
           >
             {submitting ? "Сохраняем…" : "Сохранить"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SetDefaultDialog({
+  provider,
+  onClose,
+  onSaved,
+}: {
+  provider: AdminLlmProviderDomain;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const modelsQ = useAdminQuery(
+    `admin-llm-models-for-default-${provider.id}`,
+    async () => {
+      const res = await adminLlmModelsApi.list({
+        providerId: provider.id,
+        includeInactive: false,
+      });
+      return res.items;
+    },
+    [provider.id],
+  );
+  const models = modelsQ.data ?? [];
+  const [selectedModel, setSelectedModel] = useState(
+    provider.defaultModelKey ?? "",
+  );
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!selectedModel && models.length > 0) {
+      setSelectedModel(models[0].modelKey);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models]);
+
+  const handleConfirm = async () => {
+    if (!selectedModel) {
+      toast.error("Выберите модель");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await adminLlmProvidersApi.setDefault(provider.id, selectedModel);
+      toast.success(
+        `«${provider.displayName}» назначен провайдером по умолчанию`,
+      );
+      onSaved();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось назначить провайдера по умолчанию",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => (!o ? onClose() : undefined)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Сделать провайдера «{provider.displayName}» дефолтным?
+          </DialogTitle>
+          <DialogDescription>
+            На него будут автоматически переключаться маршруты при удалении
+            других занятых провайдеров.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <Field label="Модель по умолчанию">
+            {modelsQ.isLoading ? (
+              <span className="text-xs text-fg-tertiary">
+                Загружаем модели…
+              </span>
+            ) : models.length === 0 ? (
+              <span className="text-xs text-danger">
+                У провайдера нет активных моделей в каталоге — сначала
+                добавьте модель.
+              </span>
+            ) : (
+              <Select value={selectedModel} onValueChange={setSelectedModel}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((m) => (
+                    <SelectItem key={m.id} value={m.modelKey}>
+                      {m.displayName} ({m.modelKey})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Отмена
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => void handleConfirm()}
+            disabled={submitting || models.length === 0}
+          >
+            {submitting ? "Назначаем…" : "Назначить"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReassignDefaultDialog({
+  provider,
+  otherProviders,
+  onClose,
+  onRemoved,
+}: {
+  provider: AdminLlmProviderDomain;
+  otherProviders: AdminLlmProviderDomain[];
+  onClose: () => void;
+  onRemoved: (routesMigrated: number, newDefaultName: string) => void;
+}) {
+  const [newProviderId, setNewProviderId] = useState(
+    otherProviders[0]?.id ?? "",
+  );
+  const [selectedModel, setSelectedModel] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const modelsQ = useAdminQuery(
+    `admin-llm-models-for-reassign-${newProviderId}`,
+    async () => {
+      if (!newProviderId) return [];
+      const res = await adminLlmModelsApi.list({
+        providerId: newProviderId,
+        includeInactive: false,
+      });
+      return res.items;
+    },
+    [newProviderId],
+  );
+  const models = modelsQ.data ?? [];
+
+  useEffect(() => {
+    setSelectedModel("");
+  }, [newProviderId]);
+
+  useEffect(() => {
+    if (!selectedModel && models.length > 0) {
+      setSelectedModel(models[0].modelKey);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models]);
+
+  const handleConfirm = async () => {
+    if (!newProviderId || !selectedModel) {
+      toast.error("Выберите нового провайдера по умолчанию и модель");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await adminLlmProvidersApi.remove(provider.id, {
+        providerId: newProviderId,
+        model: selectedModel,
+      });
+      const newDefault = otherProviders.find((p) => p.id === newProviderId);
+      onRemoved(res.routesMigrated, newDefault?.displayName ?? selectedModel);
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось удалить провайдера",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => (!o ? onClose() : undefined)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Удалить провайдера «{provider.displayName}» (сейчас — по
+            умолчанию)?
+          </DialogTitle>
+          <DialogDescription>
+            «{provider.displayName}» сейчас назначен провайдером по умолчанию.
+            Чтобы удалить его, сначала выбери, кто станет новым провайдером по
+            умолчанию.
+          </DialogDescription>
+        </DialogHeader>
+        {otherProviders.length === 0 ? (
+          <p className="text-xs text-danger">
+            Нет других активных провайдеров — сначала добавьте ещё одного,
+            чтобы было на кого переключить дефолт.
+          </p>
+        ) : (
+          <div className="grid gap-3">
+            <Field label="Новый провайдер по умолчанию">
+              <Select value={newProviderId} onValueChange={setNewProviderId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {otherProviders.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Модель">
+              {modelsQ.isLoading ? (
+                <span className="text-xs text-fg-tertiary">
+                  Загружаем модели…
+                </span>
+              ) : models.length === 0 ? (
+                <span className="text-xs text-danger">
+                  У выбранного провайдера нет активных моделей в каталоге.
+                </span>
+              ) : (
+                <Select value={selectedModel} onValueChange={setSelectedModel}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((m) => (
+                      <SelectItem key={m.id} value={m.modelKey}>
+                        {m.displayName} ({m.modelKey})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </Field>
+          </div>
+        )}
+        <DialogFooter>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Отмена
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={
+              submitting ||
+              otherProviders.length === 0 ||
+              !newProviderId ||
+              !selectedModel
+            }
+            onClick={() => void handleConfirm()}
+          >
+            {submitting ? "Удаляем…" : "Назначить и удалить"}
           </Button>
         </DialogFooter>
       </DialogContent>

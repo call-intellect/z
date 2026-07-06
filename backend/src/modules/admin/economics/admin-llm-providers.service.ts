@@ -503,6 +503,7 @@ export class AdminLlmProvidersService {
       hasApiKey: Boolean(row.apiKeyEncrypted),
       defaultHeaders: row.defaultHeaders,
       globalRps: row.globalRps,
+      isDefaultProvider: row.isDefaultProvider,
       lastSmokeAt: row.lastSmokeAt?.toISOString() ?? null,
       lastSmokeSuccess: row.lastSmokeSuccess,
       lastSmokeError: row.lastSmokeError,

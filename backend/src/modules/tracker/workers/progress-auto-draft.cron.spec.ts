@@ -301,4 +301,75 @@ describe('ProgressAutoDraftCron', () => {
     expect(issueFindFirst).not.toHaveBeenCalled();
     expect(progressCreate).not.toHaveBeenCalled();
   });
+
+  it('статус туда-обратно (нетто-ноль) — черновик не создаётся', async () => {
+    activityFindMany.mockResolvedValueOnce([
+      { oldValue: 'S1', newValue: 'S2' },
+      { oldValue: 'S2', newValue: 'S1' },
+    ]);
+    checklistFindMany.mockResolvedValueOnce([]);
+    candidateFindMany.mockResolvedValueOnce([]);
+    const res = await cron.run();
+    expect(progressCreate).not.toHaveBeenCalled();
+    expect(res.drafted).toBe(0);
+  });
+
+  it('нетто-сдвиг статуса без содержательного сигнала — no_substantive', async () => {
+    cron = new ProgressAutoDraftCron(
+      prisma,
+      redis,
+      makeCfg({ 'tracker.progressAutoDraftMinSignals': 1 }),
+      llm,
+      provenance,
+    );
+    activityFindMany.mockResolvedValueOnce([
+      { oldValue: 'S1', newValue: 'S2' },
+      { oldValue: 'S2', newValue: 'S3' },
+    ]);
+    checklistFindMany.mockResolvedValueOnce([]);
+    candidateFindMany.mockResolvedValueOnce([]);
+    const res = await cron.run();
+    expect(res.noSubstantive).toBe(1);
+    expect(progressCreate).not.toHaveBeenCalled();
+  });
+
+  it('низкая уверенность LLM (0.2) — low_confidence, черновик не создаётся', async () => {
+    llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        health: 'at_risk',
+        body: 'x',
+        doneText: '',
+        nextText: '',
+        confidence: 0.2,
+      }),
+    });
+    const res = await cron.run();
+    expect(res.lowConfidence).toBe(1);
+    expect(progressCreate).not.toHaveBeenCalled();
+  });
+
+  it('happy-path сохранён при новых гейтах — checklist + candidate + confidence 0.8 создаёт черновик', async () => {
+    const res = await cron.run();
+    expect(res.drafted).toBe(1);
+    expect(progressCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('requireSubstantiveSignal=false — один нетто-статус без содержательного создаёт черновик', async () => {
+    cron = new ProgressAutoDraftCron(
+      prisma,
+      redis,
+      makeCfg({
+        'tracker.progressAutoDraftRequireSubstantiveSignal': false,
+        'tracker.progressAutoDraftMinSignals': 1,
+      }),
+      llm,
+      provenance,
+    );
+    activityFindMany.mockResolvedValueOnce([{ oldValue: 'S1', newValue: 'S3' }]);
+    checklistFindMany.mockResolvedValueOnce([]);
+    candidateFindMany.mockResolvedValueOnce([]);
+    const res = await cron.run();
+    expect(res.drafted).toBe(1);
+    expect(progressCreate).toHaveBeenCalledTimes(1);
+  });
 });

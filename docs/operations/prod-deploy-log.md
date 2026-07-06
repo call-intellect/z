@@ -71,6 +71,23 @@ docker compose run --rm --no-deps backend \
 - **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (промпты извлечения + `ExperimentTaskLink`-линковка в `intake-auto-triage.worker`).
 - **Шаг 12 — Smoke** (после rebuild): миграция применилась — `docker compose exec backend sh -c "psql \$DATABASE_URL -c \"\\d experiment_task_link\""` (таблица есть в `public`); после разбора встречи/чата с конкретным экспериментом-действием — И запись `experiments`, И задача, связка в `experiment_task_link` (`SELECT COUNT(*) FROM experiment_task_link` > 0); новая метрика `experiment_tasks_extracted_total{tenant_top,surface}` (surface=meeting|ingest) видна в `/metrics`: `docker compose exec backend sh -c 'curl -s localhost:3000/metrics | grep experiment_tasks_extracted_total'`.
 
+### Структурное описание задач (Т11, MTG-14) — 2026-07-07 (ветка work/2026-07-02)
+
+Описание задачи теперь структурный текст по сути, а не дословная расшифровка речи. Добавлено поле `description`
+в combined-извлекатель (`specialists-combined.prompt.ts` схема/тулза/промпт) → map в сервисе → `resolvedDescription`
+в `task-draft-materializer` (в дедуп И `extractedDescription`). ТЗ [`plans/tz/2026-07-04-task-text-reformulation.md`](../../plans/tz/2026-07-04-task-text-reformulation.md). Доказано стендом task-stand (K-03/K-04 сырьё→структура).
+
+- **🟢 МИГРАЦИЙ БД НЕТ** (`IntakeIssue.extractedDescription`/`Issue.descriptionStripped` уже существуют).
+- **🟢 НОВЫХ ENV/ФЛАГОВ/СИДОВ НЕТ.**
+- **Шаг 6 — Промпт (admin-override caveat):** `specialists-combined` — admin-editable через registry с
+  code-fallback. Правка — в **code-fallback**, едет с деплоем кода. **⚠️ ЕСЛИ в проде combined-промпт
+  переопределён через AdminSetting** — новое правило `description` НЕ применится, пока не обновить сохранённую
+  версию (patch-скрипт в registry). Проверить: есть ли admin-override combined-промпта в проде; если да — нужен
+  `patch-*`. Если нет (code-fallback) — чистый деплой кода.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (промпт combined + materializer).
+- **Шаг 12 — Smoke:** после разбора встречи с «грязной» речью постановщика — `Issue.descriptionStripped` короткое
+  структурное (без слов-паразитов), заголовок чистый, дословная цитата в `IntakeIssue.rawContent` («Цитата: …»).
+
 ### Задачи встречи: привязка к встрече + назначенец гостя (вариант А) — 2026-07-06 (ветка work/2026-07-02)
 
 Фикс: combo (`SpecialistsCombinedService`) по `channel=meeting_report` не проставлял `meetingId` → задачи встречи не попадали в карточку, назначенец гостя авто-уходил на постороннего сотрудника. Теперь materializer резолвит `meetingId` из `report_<id>` → `IntakeIssue.meetingId` → `Issue.linkedMeetingIds`; `meeting_report`=always-promote (без skill-routing/owner-fallback); имя гостя-владельца сохраняется в `ownerHintRaw` (без исполнителя) + FE-пометка «по словам гостя». ТЗ [`plans/tz/2026-07-06-meeting-tasks-linkage-fix.md`](../../plans/tz/2026-07-06-meeting-tasks-linkage-fix.md). 5 коммитов (`c5878f21`/`e2a7c71b`/`ac94a2b3`/`4abc5aad`/`2aa5b50a`).

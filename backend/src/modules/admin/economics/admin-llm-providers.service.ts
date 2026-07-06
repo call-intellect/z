@@ -7,15 +7,29 @@ import {
   Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { Prisma, type LlmProvider } from '@prisma/client';
+import { Prisma, type LlmProvider, type LlmTaskRoute } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { CryptoService } from '../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ProviderInfoResolver } from '../../ai/services/protocol-adapter/provider-info.resolver';
+import { AdminSettingsService } from '../settings/admin-settings.service';
 
 import { discoverProviderModels } from './discover-provider-models.util';
 import type { CreateLlmProviderDto, UpdateLlmProviderDto } from './dto/admin-llm-providers.dto';
+
+const DEFAULT_CHAIN_SETTING_KEY = 'llm.router.defaultChain';
+
+interface DefaultProviderRef {
+  providerName: string;
+  model: string | null;
+}
+
+interface DefaultChainEntry {
+  provider: string;
+  model?: string;
+}
 
 @Injectable()
 export class AdminLlmProvidersService {
@@ -27,6 +41,12 @@ export class AdminLlmProvidersService {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    @Optional()
+    @Inject(LlmRouterService)
+    private readonly router?: LlmRouterService,
+    @Optional()
+    @Inject(AdminSettingsService)
+    private readonly adminSettings?: AdminSettingsService,
   ) {}
 
   async list(args: { includeInactive: boolean }) {
@@ -108,22 +128,6 @@ export class AdminLlmProvidersService {
     return this.present(row);
   }
 
-  async softDelete(id: string) {
-    const row = await this.getRow(id);
-    await this.assertProviderNotInUse(row.name);
-    await this.prisma.llmProvider.update({
-      where: { id },
-      data: { deletedAt: new Date(), isActive: false },
-    });
-    this.providerInfo.invalidate();
-    return { ok: true as const };
-  }
-
-  /**
-   * Ф2026-07-06: назначить провайдера дефолтным. Атомарно снимает флаг
-   * со старого дефолта (если был) и ставит на новый. model должен принадлежать
-   * провайдеру и быть активным.
-   */
   async setDefaultProvider(id: string, model: string): Promise<{ ok: true }> {
     const row = await this.getRow(id);
     const modelRow = await this.prisma.llmModel.findFirst({
@@ -152,9 +156,6 @@ export class AdminLlmProvidersService {
     return { ok: true };
   }
 
-  /**
-   * Возвращает текущий дефолт (провайдер+модель) или null, если не назначен.
-   */
   private async getDefaultProvider(): Promise<{
     providerName: string;
     model: string | null;
@@ -165,10 +166,6 @@ export class AdminLlmProvidersService {
     return row ? { providerName: row.name, model: row.defaultModelKey } : null;
   }
 
-  /**
-   * Ф2026-07-06: предпросмотр удаления — сколько маршрутов затронуто, текущий дефолт.
-   * НЕ мутирует ничего.
-   */
   async previewRemoval(id: string): Promise<{
     providerName: string;
     isDefault: boolean;
@@ -212,6 +209,206 @@ export class AdminLlmProvidersService {
     };
   }
 
+  async softDeleteWithFallback(
+    id: string,
+    reassignDefaultTo: { providerId: string; model: string } | undefined,
+    userId: string,
+  ): Promise<{ ok: true; routesMigrated: number }> {
+    const row = await this.getRow(id);
+
+    if (row.isDefaultProvider) {
+      if (!reassignDefaultTo) {
+        throw new ConflictException({
+          ok: false,
+          error: {
+            code: 'must_reassign_default',
+            message: `"${row.name}" — провайдер по умолчанию. Сначала выбери нового дефолта.`,
+          },
+        });
+      }
+      await this.setDefaultProvider(reassignDefaultTo.providerId, reassignDefaultTo.model);
+    }
+
+    const defaultProvider = await this.getDefaultProvider();
+    if (!defaultProvider) {
+      await this.assertProviderNotInUse(row.name);
+    } else if (defaultProvider.providerName !== row.name) {
+      const routesMigrated = await this.migrateRoutesToDefault(row.name, defaultProvider, userId);
+      await this.migrateDefaultChain(row.name, defaultProvider, userId);
+      await this.prisma.llmProvider.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false },
+      });
+      this.providerInfo.invalidate();
+      await this.router?.refreshCache();
+      return { ok: true, routesMigrated };
+    }
+
+    await this.prisma.llmProvider.update({
+      where: { id },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+    this.providerInfo.invalidate();
+    return { ok: true, routesMigrated: 0 };
+  }
+
+  private async migrateRoutesToDefault(
+    oldProviderName: string,
+    defaultProvider: DefaultProviderRef,
+    userId: string,
+  ): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      let migratedCount = 0;
+
+      const tieredRoutes = await tx.llmTaskRoute.findMany({
+        where: { providerName: oldProviderName, tier: { not: null } },
+      });
+
+      const groups = new Map<string, LlmTaskRoute[]>();
+      for (const route of tieredRoutes) {
+        const key = `${route.taskType}::${route.tenantId ?? '__global__'}`;
+        const list = groups.get(key) ?? [];
+        list.push(route);
+        groups.set(key, list);
+      }
+
+      for (const routes of groups.values()) {
+        for (const route of routes) {
+          const dupInGroup = await tx.llmTaskRoute.findFirst({
+            where: {
+              taskType: route.taskType,
+              tenantId: route.tenantId,
+              providerName: defaultProvider.providerName,
+              id: { not: route.id },
+            },
+          });
+
+          if (dupInGroup) {
+            await tx.llmTaskRoute.delete({ where: { id: route.id } });
+          } else {
+            await tx.llmTaskRoute.update({
+              where: { id: route.id },
+              data: { providerName: defaultProvider.providerName, model: defaultProvider.model },
+            });
+          }
+
+          await tx.llmTaskRouteChange.create({
+            data: {
+              taskType: route.taskType,
+              tenantId: route.tenantId,
+              tier: route.tier,
+              changeType: 'removed_provider',
+              before: {
+                providerName: oldProviderName,
+                model: route.model,
+              } as unknown as Prisma.InputJsonValue,
+              after: {
+                providerName: defaultProvider.providerName,
+                model: defaultProvider.model,
+              } as unknown as Prisma.InputJsonValue,
+              changedById: userId,
+              reason: 'provider_deleted_auto_migrated',
+            },
+          });
+
+          migratedCount += 1;
+        }
+      }
+
+      const legacyRoutes = await tx.llmTaskRoute.findMany({
+        where: { tier: null, providers: { not: Prisma.JsonNull } },
+      });
+
+      for (const route of legacyRoutes) {
+        const providers = Array.isArray(route.providers)
+          ? (route.providers as unknown as DefaultChainEntry[])
+          : [];
+        if (!providers.some((p) => p?.provider === oldProviderName)) continue;
+
+        const before = providers;
+        const replaced = providers.map((p) =>
+          p?.provider === oldProviderName
+            ? {
+                provider: defaultProvider.providerName,
+                ...(defaultProvider.model ? { model: defaultProvider.model } : {}),
+              }
+            : p,
+        );
+        const deduped = dedupeByProvider(replaced, defaultProvider.providerName);
+
+        await tx.llmTaskRoute.update({
+          where: { id: route.id },
+          data: { providers: deduped as unknown as Prisma.InputJsonValue },
+        });
+
+        await tx.llmTaskRouteChange.create({
+          data: {
+            taskType: route.taskType,
+            tenantId: route.tenantId,
+            tier: null,
+            changeType: 'removed_provider',
+            before: before as unknown as Prisma.InputJsonValue,
+            after: deduped as unknown as Prisma.InputJsonValue,
+            changedById: userId,
+            reason: 'provider_deleted_auto_migrated',
+          },
+        });
+
+        migratedCount += 1;
+      }
+
+      return migratedCount;
+    });
+  }
+
+  private async migrateDefaultChain(
+    oldProviderName: string,
+    defaultProvider: DefaultProviderRef,
+    userId: string,
+  ): Promise<void> {
+    const chain = await this.cfg
+      ?.getDynamic<DefaultChainEntry[]>(DEFAULT_CHAIN_SETTING_KEY, undefined, [])
+      .catch(() => []);
+    if (!Array.isArray(chain) || chain.length === 0) return;
+    if (!chain.some((e) => e?.provider === oldProviderName)) return;
+
+    const replaced = chain.map((e) =>
+      e?.provider === oldProviderName
+        ? {
+            provider: defaultProvider.providerName,
+            ...(defaultProvider.model ? { model: defaultProvider.model } : {}),
+          }
+        : e,
+    );
+    const deduped = dedupeByProvider(replaced, defaultProvider.providerName);
+
+    if (this.adminSettings) {
+      await this.adminSettings.set(DEFAULT_CHAIN_SETTING_KEY, deduped, {
+        userId,
+        reason: 'provider_deleted_auto_migrated',
+      });
+      return;
+    }
+
+    await this.prisma.adminSetting.upsert({
+      where: { key: DEFAULT_CHAIN_SETTING_KEY },
+      create: {
+        key: DEFAULT_CHAIN_SETTING_KEY,
+        value: deduped as unknown as Prisma.InputJsonValue,
+        category: 'platform',
+        section: 'misc',
+        severity: 'low',
+        updatedBy: userId,
+        comment: 'provider_deleted_auto_migrated',
+      },
+      update: {
+        value: deduped as unknown as Prisma.InputJsonValue,
+        updatedBy: userId,
+        comment: 'provider_deleted_auto_migrated',
+      },
+    });
+  }
+
   async discoverModels(id: string) {
     const row = await this.getRow(id);
     if (row.protocolKind === 'anthropic-messages') {
@@ -248,11 +445,6 @@ export class AdminLlmProvidersService {
     }
   }
 
-  /**
-   * Ф6 (2026-07-02): гард 409 `provider_in_use_by_routes` — запрещает
-   * деактивацию/удаление провайдера, который используется в активном
-   * маршруте `LlmTaskRoute` или входит в дефолт-цепочку `llm.router.defaultChain`.
-   */
   private async assertProviderNotInUse(providerName: string): Promise<void> {
     const activeRoute = await this.prisma.llmTaskRoute.findFirst({
       where: { tenantId: null, providerName, isActive: true, tier: { not: null } },
@@ -318,4 +510,17 @@ export class AdminLlmProvidersService {
       updatedAt: row.updatedAt.toISOString(),
     };
   }
+}
+
+function dedupeByProvider<T extends { provider?: string }>(
+  entries: T[],
+  defaultProviderName: string,
+): T[] {
+  let seenDefault = false;
+  return entries.filter((entry) => {
+    if (entry?.provider !== defaultProviderName) return true;
+    if (seenDefault) return false;
+    seenDefault = true;
+    return true;
+  });
 }

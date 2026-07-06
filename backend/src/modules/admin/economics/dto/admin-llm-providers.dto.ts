@@ -44,3 +44,10 @@ export const SetDefaultProviderSchema = z.object({
   model: z.string().trim().min(1),
 });
 export type SetDefaultProviderDto = z.infer<typeof SetDefaultProviderSchema>;
+
+export const RemoveProviderSchema = z.object({
+  reassignDefaultTo: z
+    .object({ providerId: z.string().min(1), model: z.string().trim().min(1) })
+    .optional(),
+});
+export type RemoveProviderDto = z.infer<typeof RemoveProviderSchema>;

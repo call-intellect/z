@@ -14,6 +14,7 @@ import {
 import { ApiExcludeController } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
@@ -24,6 +25,8 @@ import {
   type CreateLlmProviderDto,
   ListLlmProvidersQuerySchema,
   type ListLlmProvidersQuery,
+  RemoveProviderSchema,
+  type RemoveProviderDto,
   SetDefaultProviderSchema,
   type SetDefaultProviderDto,
   UpdateLlmProviderSchema,
@@ -87,8 +90,12 @@ export class AdminLlmProvidersController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.svc.softDelete(id);
+  remove(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(RemoveProviderSchema)) dto: RemoveProviderDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.svc.softDeleteWithFallback(id, dto.reassignDefaultTo, user.id);
   }
 
   @Post(':id/smoke-test')

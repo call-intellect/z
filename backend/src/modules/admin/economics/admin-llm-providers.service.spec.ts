@@ -53,12 +53,18 @@ describe('AdminLlmProvidersService', () => {
   const llmModelFindFirst = vi.fn();
   const llmTaskRouteFindFirst = vi.fn();
   const llmTaskRouteFindMany = vi.fn();
+  const llmTaskRouteUpdate = vi.fn();
+  const llmTaskRouteDelete = vi.fn();
+  const llmTaskRouteChangeCreate = vi.fn();
+  const adminSettingUpsert = vi.fn();
   const transaction = vi.fn();
   const encrypt = vi.fn(() => 'gcm:v1:mocked');
   const isEncrypted = vi.fn((v: string) => v.startsWith('gcm:v1:'));
   const invalidate = vi.fn();
   const resolveByName = vi.fn();
   const getDynamic = vi.fn();
+  const refreshCache = vi.fn();
+  const adminSettingsSet = vi.fn();
 
   const prisma = {
     llmProvider: {
@@ -70,7 +76,14 @@ describe('AdminLlmProvidersService', () => {
       findFirst: llmProviderFindFirst,
     },
     llmModel: { findMany: llmModelFindMany, findFirst: llmModelFindFirst },
-    llmTaskRoute: { findFirst: llmTaskRouteFindFirst, findMany: llmTaskRouteFindMany },
+    llmTaskRoute: {
+      findFirst: llmTaskRouteFindFirst,
+      findMany: llmTaskRouteFindMany,
+      update: llmTaskRouteUpdate,
+      delete: llmTaskRouteDelete,
+    },
+    llmTaskRouteChange: { create: llmTaskRouteChangeCreate },
+    adminSetting: { upsert: adminSettingUpsert },
     $transaction: transaction,
   } as unknown as ConstructorParameters<typeof AdminLlmProvidersService>[0];
   const crypto = { encrypt, isEncrypted } as unknown as ConstructorParameters<
@@ -82,6 +95,12 @@ describe('AdminLlmProvidersService', () => {
   const cfg = { getDynamic } as unknown as ConstructorParameters<
     typeof AdminLlmProvidersService
   >[3];
+  const router = { refreshCache } as unknown as ConstructorParameters<
+    typeof AdminLlmProvidersService
+  >[4];
+  const adminSettings = { set: adminSettingsSet } as unknown as ConstructorParameters<
+    typeof AdminLlmProvidersService
+  >[5];
 
   let svc: AdminLlmProvidersService;
 
@@ -93,7 +112,18 @@ describe('AdminLlmProvidersService', () => {
     llmProviderFindFirst.mockResolvedValue(null);
     llmTaskRouteFindFirst.mockResolvedValue(null);
     llmTaskRouteFindMany.mockResolvedValue([]);
-    transaction.mockImplementation((ops: unknown[]) => Promise.all(ops));
+    llmTaskRouteUpdate.mockResolvedValue({});
+    llmTaskRouteDelete.mockResolvedValue({});
+    llmTaskRouteChangeCreate.mockResolvedValue({});
+    adminSettingUpsert.mockResolvedValue({});
+    refreshCache.mockResolvedValue(undefined);
+    adminSettingsSet.mockResolvedValue(undefined);
+    transaction.mockImplementation((arg: unknown) => {
+      if (typeof arg === 'function') {
+        return (arg as (tx: typeof prisma) => Promise<unknown>)(prisma);
+      }
+      return Promise.all(arg as Promise<unknown>[]);
+    });
     getDynamic.mockResolvedValue([]);
     svc = new AdminLlmProvidersService(prisma, crypto, providerInfo);
   });
@@ -219,14 +249,15 @@ describe('AdminLlmProvidersService', () => {
     });
   });
 
-  it('softDelete soft-удаляет и инвалидирует providerInfo-кэш (нет ссылок в маршрутах)', async () => {
+  it('softDeleteWithFallback (без reassign, дефолт не назначен) soft-удаляет и инвалидирует providerInfo-кэш (нет ссылок в маршрутах)', async () => {
     findUnique.mockResolvedValueOnce(fakeProvider());
     llmTaskRouteFindFirst.mockResolvedValueOnce(null);
+    llmProviderFindFirst.mockResolvedValueOnce(null);
     update.mockResolvedValueOnce(fakeProvider({ deletedAt: FIXED_DATE, isActive: false }));
 
-    const res = await svc.softDelete('p1');
+    const res = await svc.softDeleteWithFallback('p1', undefined, 'user-1');
 
-    expect(res).toEqual({ ok: true });
+    expect(res).toEqual({ ok: true, routesMigrated: 0 });
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'p1' },
@@ -236,24 +267,7 @@ describe('AdminLlmProvidersService', () => {
     expect(invalidate).toHaveBeenCalled();
   });
 
-  describe('provider_in_use_by_routes гард (Ф6)', () => {
-    it('softDelete провайдера с активным маршрутом → ConflictException, llmProvider.update НЕ вызван', async () => {
-      findUnique.mockResolvedValueOnce(fakeProvider());
-      llmTaskRouteFindFirst.mockResolvedValueOnce({ taskType: 'summary' });
-
-      let err: unknown;
-      try {
-        await svc.softDelete('p1');
-      } catch (e) {
-        err = e;
-      }
-      expect(err).toBeInstanceOf(ConflictException);
-      expect((err as ConflictException).getResponse()).toMatchObject({
-        error: { code: 'provider_in_use_by_routes' },
-      });
-      expect(update).not.toHaveBeenCalled();
-    });
-
+  describe('provider_in_use_by_routes гард (Ф6, регрессия — см. также softDeleteWithFallback (e))', () => {
     it('update({isActive:false}) провайдера в llm.router.defaultChain → ConflictException', async () => {
       const svcWithCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfg);
       findUnique.mockResolvedValueOnce(fakeProvider());
@@ -475,6 +489,419 @@ describe('AdminLlmProvidersService', () => {
         inDefaultChain: false,
         currentDefault: null,
       });
+    });
+  });
+
+  describe('softDeleteWithFallback (Ф2026-07-06 llm-provider-default-fallback, Фаза 2)', () => {
+    it('(a) занят в 1 глобальном тир-маршруте, дефолт назначен → маршрут переключён на дефолт, audit-запись создана', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({ id: 'p1', name: 'openai-via-proxy', isDefaultProvider: false }),
+      );
+      llmProviderFindFirst.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pDefault',
+          name: 'deepseek',
+          isDefaultProvider: true,
+          defaultModelKey: 'deepseek-v4-flash',
+        }),
+      );
+      llmTaskRouteFindMany
+        .mockResolvedValueOnce([
+          {
+            id: 'r1',
+            taskType: 'summary',
+            tenantId: null,
+            tier: 'primary',
+            providerName: 'openai-via-proxy',
+            model: 'gpt-5-mini',
+          },
+        ])
+        .mockResolvedValueOnce([]);
+      llmTaskRouteFindFirst.mockResolvedValueOnce(null);
+      getDynamic.mockResolvedValueOnce([]);
+      update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
+
+      const res = await svcFull.softDeleteWithFallback('p1', undefined, 'user1');
+
+      expect(res).toEqual({ ok: true, routesMigrated: 1 });
+      expect(llmTaskRouteUpdate).toHaveBeenCalledWith({
+        where: { id: 'r1' },
+        data: { providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      });
+      expect(llmTaskRouteDelete).not.toHaveBeenCalled();
+      expect(llmTaskRouteChangeCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          taskType: 'summary',
+          tenantId: null,
+          tier: 'primary',
+          changeType: 'removed_provider',
+          before: { providerName: 'openai-via-proxy', model: 'gpt-5-mini' },
+          after: { providerName: 'deepseek', model: 'deepseek-v4-flash' },
+          changedById: 'user1',
+          reason: 'provider_deleted_auto_migrated',
+        }),
+      });
+      expect(update).toHaveBeenCalledWith({
+        where: { id: 'p1' },
+        data: { deletedAt: expect.any(Date), isActive: false },
+      });
+      expect(invalidate).toHaveBeenCalled();
+      expect(refreshCache).toHaveBeenCalled();
+    });
+
+    it('(b) занят в per-tenant тир-маршруте (Р4) → тоже мигрирует, audit-запись с тем же tenantId', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({ id: 'p1', name: 'openai-via-proxy', isDefaultProvider: false }),
+      );
+      llmProviderFindFirst.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pDefault',
+          name: 'deepseek',
+          isDefaultProvider: true,
+          defaultModelKey: 'deepseek-v4-flash',
+        }),
+      );
+      llmTaskRouteFindMany
+        .mockResolvedValueOnce([
+          {
+            id: 'r-org1',
+            taskType: 'summary',
+            tenantId: 'org1',
+            tier: 'secondary',
+            providerName: 'openai-via-proxy',
+            model: 'gpt-5-mini',
+          },
+        ])
+        .mockResolvedValueOnce([]);
+      llmTaskRouteFindFirst.mockResolvedValueOnce(null);
+      getDynamic.mockResolvedValueOnce([]);
+      update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
+
+      const res = await svcFull.softDeleteWithFallback('p1', undefined, 'user1');
+
+      expect(res).toEqual({ ok: true, routesMigrated: 1 });
+      expect(llmTaskRouteUpdate).toHaveBeenCalledWith({
+        where: { id: 'r-org1' },
+        data: { providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      });
+      expect(llmTaskRouteChangeCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({ tenantId: 'org1', tier: 'secondary' }),
+      });
+    });
+
+    it('(c) занят в legacy JSON-массиве → элемент массива заменён на дефолт', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({ id: 'p1', name: 'openai-via-proxy', isDefaultProvider: false }),
+      );
+      llmProviderFindFirst.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pDefault',
+          name: 'deepseek',
+          isDefaultProvider: true,
+          defaultModelKey: 'deepseek-v4-flash',
+        }),
+      );
+      llmTaskRouteFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        {
+          id: 'legacy1',
+          taskType: 'chat',
+          tenantId: null,
+          tier: null,
+          providers: [{ provider: 'openai-via-proxy', model: 'gpt-5-mini' }, { provider: 'anthropic' }],
+        },
+      ]);
+      getDynamic.mockResolvedValueOnce([]);
+      update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
+
+      const res = await svcFull.softDeleteWithFallback('p1', undefined, 'user1');
+
+      expect(res).toEqual({ ok: true, routesMigrated: 1 });
+      expect(llmTaskRouteUpdate).toHaveBeenCalledWith({
+        where: { id: 'legacy1' },
+        data: {
+          providers: [{ provider: 'deepseek', model: 'deepseek-v4-flash' }, { provider: 'anthropic' }],
+        },
+      });
+      expect(llmTaskRouteChangeCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({ taskType: 'chat', tenantId: null, tier: null }),
+      });
+    });
+
+    it('(d) дефолт уже стоит в той же цепочке на другом тире (Р2) → старая строка УДАЛЕНА, не задвоена', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({ id: 'p1', name: 'openai-via-proxy', isDefaultProvider: false }),
+      );
+      llmProviderFindFirst.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pDefault',
+          name: 'deepseek',
+          isDefaultProvider: true,
+          defaultModelKey: 'deepseek-v4-flash',
+        }),
+      );
+      llmTaskRouteFindMany
+        .mockResolvedValueOnce([
+          {
+            id: 'r1',
+            taskType: 'summary',
+            tenantId: null,
+            tier: 'primary',
+            providerName: 'openai-via-proxy',
+            model: 'gpt-5-mini',
+          },
+        ])
+        .mockResolvedValueOnce([]);
+      llmTaskRouteFindFirst.mockResolvedValueOnce({
+        id: 'r2',
+        taskType: 'summary',
+        tenantId: null,
+        tier: 'secondary',
+        providerName: 'deepseek',
+      });
+      getDynamic.mockResolvedValueOnce([]);
+      update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
+
+      const res = await svcFull.softDeleteWithFallback('p1', undefined, 'user1');
+
+      expect(res).toEqual({ ok: true, routesMigrated: 1 });
+      expect(llmTaskRouteDelete).toHaveBeenCalledWith({ where: { id: 'r1' } });
+      expect(llmTaskRouteUpdate).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'r1' } }),
+      );
+    });
+
+    it('(e) дефолт НЕ назначен → удаление занятого провайдера по-прежнему бросает provider_in_use_by_routes (регрессия недопустима)', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({ id: 'p1', name: 'openai-via-proxy', isDefaultProvider: false }),
+      );
+      llmProviderFindFirst.mockResolvedValueOnce(null);
+      llmTaskRouteFindFirst.mockResolvedValueOnce({ taskType: 'summary' });
+
+      let err: unknown;
+      try {
+        await svcFull.softDeleteWithFallback('p1', undefined, 'user1');
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getResponse()).toMatchObject({
+        error: { code: 'provider_in_use_by_routes' },
+      });
+      expect(update).not.toHaveBeenCalled();
+      expect(refreshCache).not.toHaveBeenCalled();
+    });
+
+    it('(f) удаление самого дефолтного провайдера БЕЗ reassignDefaultTo → ConflictException must_reassign_default', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({ id: 'p1', name: 'deepseek', isDefaultProvider: true }),
+      );
+
+      let err: unknown;
+      try {
+        await svcFull.softDeleteWithFallback('p1', undefined, 'user1');
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getResponse()).toMatchObject({
+        error: { code: 'must_reassign_default' },
+      });
+      expect(llmModelFindFirst).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('(g) удаление дефолтного провайдера С reassignDefaultTo → новый провайдер становится дефолтом, миграция идёт на НОВЫЙ дефолт (не на старый), старый помечен deletedAt', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique
+        .mockResolvedValueOnce(fakeProvider({ id: 'p1', name: 'deepseek', isDefaultProvider: true }))
+        .mockResolvedValueOnce(
+          fakeProvider({ id: 'p2', name: 'openai-via-proxy', isDefaultProvider: false }),
+        );
+      llmModelFindFirst.mockResolvedValueOnce({
+        id: 'm2',
+        providerId: 'p2',
+        modelKey: 'gpt-5-mini',
+        isActive: true,
+        deletedAt: null,
+      });
+      updateMany.mockResolvedValueOnce({ count: 1 });
+      update.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'p2',
+          name: 'openai-via-proxy',
+          isDefaultProvider: true,
+          defaultModelKey: 'gpt-5-mini',
+        }),
+      );
+      llmProviderFindFirst.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'p2',
+          name: 'openai-via-proxy',
+          isDefaultProvider: true,
+          defaultModelKey: 'gpt-5-mini',
+        }),
+      );
+      llmTaskRouteFindMany
+        .mockResolvedValueOnce([
+          {
+            id: 'r1',
+            taskType: 'summary',
+            tenantId: null,
+            tier: 'primary',
+            providerName: 'deepseek',
+            model: 'deepseek-v4-flash',
+          },
+        ])
+        .mockResolvedValueOnce([]);
+      llmTaskRouteFindFirst.mockResolvedValueOnce(null);
+      getDynamic.mockResolvedValueOnce([]);
+      update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
+
+      const res = await svcFull.softDeleteWithFallback(
+        'p1',
+        { providerId: 'p2', model: 'gpt-5-mini' },
+        'user1',
+      );
+
+      expect(res).toEqual({ ok: true, routesMigrated: 1 });
+      expect(update).toHaveBeenNthCalledWith(1, {
+        where: { id: 'p2' },
+        data: { isDefaultProvider: true, defaultModelKey: 'gpt-5-mini' },
+      });
+      expect(llmTaskRouteUpdate).toHaveBeenCalledWith({
+        where: { id: 'r1' },
+        data: { providerName: 'openai-via-proxy', model: 'gpt-5-mini' },
+      });
+      expect(update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'p1' },
+        data: { deletedAt: expect.any(Date), isActive: false },
+      });
+    });
+
+    it('(h) провайдер в llm.router.defaultChain → после удаления в массиве стоит дефолт вместо старого, сохранено через AdminSettingsService.set', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({ id: 'p1', name: 'openai-via-proxy', isDefaultProvider: false }),
+      );
+      llmProviderFindFirst.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pDefault',
+          name: 'deepseek',
+          isDefaultProvider: true,
+          defaultModelKey: 'deepseek-v4-flash',
+        }),
+      );
+      llmTaskRouteFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      getDynamic.mockResolvedValueOnce([
+        { provider: 'openai-via-proxy', model: 'gpt-5-mini' },
+        { provider: 'anthropic' },
+      ]);
+      update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
+
+      const res = await svcFull.softDeleteWithFallback('p1', undefined, 'user1');
+
+      expect(res).toEqual({ ok: true, routesMigrated: 0 });
+      expect(adminSettingsSet).toHaveBeenCalledWith(
+        'llm.router.defaultChain',
+        [{ provider: 'deepseek', model: 'deepseek-v4-flash' }, { provider: 'anthropic' }],
+        { userId: 'user1', reason: 'provider_deleted_auto_migrated' },
+      );
+    });
+
+    it('(i) AdminSettingsService не инжектирован (undefined) → фолбэк на прямой prisma.adminSetting.upsert', async () => {
+      const svcNoAdminSettings = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+      );
+      findUnique.mockResolvedValueOnce(
+        fakeProvider({ id: 'p1', name: 'openai-via-proxy', isDefaultProvider: false }),
+      );
+      llmProviderFindFirst.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pDefault',
+          name: 'deepseek',
+          isDefaultProvider: true,
+          defaultModelKey: 'deepseek-v4-flash',
+        }),
+      );
+      llmTaskRouteFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      getDynamic.mockResolvedValueOnce([{ provider: 'openai-via-proxy' }]);
+      update.mockResolvedValueOnce(fakeProvider({ id: 'p1', deletedAt: FIXED_DATE, isActive: false }));
+
+      await svcNoAdminSettings.softDeleteWithFallback('p1', undefined, 'user1');
+
+      expect(adminSettingsSet).not.toHaveBeenCalled();
+      expect(adminSettingUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { key: 'llm.router.defaultChain' },
+          update: expect.objectContaining({ value: [{ provider: 'deepseek', model: 'deepseek-v4-flash' }] }),
+        }),
+      );
     });
   });
 });

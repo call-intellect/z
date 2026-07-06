@@ -539,7 +539,7 @@ const IdeasSchema = z.object({
 const ProbeSchema = z.object({
   PROBE_DEDUP_TTL_HOURS: z.coerce.number().int().positive().default(72),
   PROBE_RATE_LIMIT_PER_USER_PER_HOUR: z.coerce.number().int().positive().default(5),
-  PROBE_RATE_LIMIT_PER_USER_PER_DAY: z.coerce.number().int().positive().default(20),
+  PROBE_RATE_LIMIT_PER_USER_PER_DAY: z.coerce.number().int().positive().default(5),
   PROBE_EXPIRY_DAYS: z.coerce.number().int().positive().default(14),
   PROBE_PRIORITY_REFRESH_CRON: z.string().min(1).default('*/15 * * * *'),
   PROBE_QUIET_HOURS_DEFAULT_TZ_OFFSET_MIN: z.coerce.number().int().default(180),

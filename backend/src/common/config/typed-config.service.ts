@@ -1238,7 +1238,7 @@ export class TypedConfigService {
       rateLimitPerDay: this.resolveSync<number>(
         'probe.rateLimitPerDay',
         'PROBE_RATE_LIMIT_PER_USER_PER_DAY',
-        20,
+        5,
       ),
       expiryDays: this.resolveSync<number>('probe.expiryDays', 'PROBE_EXPIRY_DAYS', 14),
       priorityRefreshCron: this.get('PROBE_PRIORITY_REFRESH_CRON'),

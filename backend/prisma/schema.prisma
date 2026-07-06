@@ -7751,6 +7751,21 @@ model DecisionTaskLink {
   @@map("decision_task_link")
 }
 
+model ExperimentTaskLink {
+  id           String   @id @default(cuid())
+  experimentId String
+  issueId      String
+  linkType     String   @default("derived") @db.VarChar(24)
+  createdAt    DateTime @default(now())
+
+  experiment Experiment @relation("ExperimentTaskLinkExperiment", fields: [experimentId], references: [id], onDelete: Cascade)
+  issue      Issue      @relation("ExperimentTaskLinkIssue", fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([experimentId, issueId])
+  @@index([issueId])
+  @@map("experiment_task_link")
+}
+
 /// Pulse Wave 3 §3.3 — историческая лента engagement-score сотрудника.
 ///
 /// Создаётся ежедневно `EngagementScorerCron` (03:00 UTC). Хранит снапшот
@@ -9046,8 +9061,9 @@ model Experiment {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  tenant   Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  versions ExperimentVersion[]
+  tenant    Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions  ExperimentVersion[]
+  taskLinks ExperimentTaskLink[] @relation("ExperimentTaskLinkExperiment")
 
   // Частые фильтры master-detail UI + status-resolver cron.
   @@index([tenantId, status])
@@ -9724,6 +9740,8 @@ model Issue {
 
   /// TZ-1 Фаза 3.B (daily-value-engine) — связи задача↔решение (join).
   decisionLinks DecisionTaskLink[] @relation("DecisionTaskLinkIssue")
+
+  experimentLinks ExperimentTaskLink[] @relation("ExperimentTaskLinkIssue")
 
   taskSources TaskSource[]
 

@@ -812,6 +812,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private experimentsTotal!: Gauge<'tenant_top' | 'status'>;
   private experimentsRunningDurationDays!: Histogram<'tenant_top'>;
   private experimentsLessonsExtractedTotal!: Counter<'tenant_top'>;
+  private experimentTasksExtractedTotal!: Counter<'tenant_top' | 'surface'>;
   private experimentDetectorRunsTotal!: Counter<'tenant_top' | 'result'>;
 
   // ── SBA α-8 wave 4 — Role Map builder + completeness cron ────────────
@@ -3437,6 +3438,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'experiments_lessons_extracted_total',
       help: 'SBA β-6 — сколько уроков (lessonsJson entries) извлечено из завершённых экспериментов (tenant_top).',
       labelNames: ['tenant_top'] as const,
+    });
+    this.experimentTasksExtractedTotal = this.getOrCreateCounter({
+      name: 'experiment_tasks_extracted_total',
+      help: 'Эксперимент→задача — сколько задач в трекере привязано к эксперименту (tenant_top × surface: meeting | ingest).',
+      labelNames: ['tenant_top', 'surface'] as const,
     });
     this.experimentDetectorRunsTotal = this.getOrCreateCounter({
       name: 'experiment_detector_runs_total',
@@ -6521,6 +6527,19 @@ export class BusinessMetricsService implements OnModuleInit {
     if (args.count <= 0) return;
     this.experimentsLessonsExtractedTotal.inc(
       { tenant_top: args.tenantTop },
+      args.count,
+    );
+  }
+
+  /** Эксперимент→задача — инкремент счётчика задач, привязанных к эксперименту. */
+  incExperimentTaskExtracted(args: {
+    tenantTop: string;
+    surface: 'meeting' | 'ingest';
+    count: number;
+  }): void {
+    if (args.count <= 0) return;
+    this.experimentTasksExtractedTotal.inc(
+      { tenant_top: args.tenantTop, surface: args.surface },
       args.count,
     );
   }

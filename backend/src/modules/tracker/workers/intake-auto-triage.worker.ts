@@ -26,6 +26,7 @@ import { type IntakeAutoTriageJobData, TRACKER_QUEUE_NAMES } from '../queues';
 import { AssigneeResolverService } from '../services/assignee-resolver.service';
 import { ChecklistsService } from '../services/checklists.service';
 import { linkDerivedDecisionsForIssue } from '../services/decision-task-link.util';
+import { linkDerivedExperimentsForIssue } from '../services/experiment-task-link.util';
 import { materializeIntakeChecklist } from '../services/intake-checklist-materialize.util';
 import { IssuesService } from '../services/issues.service';
 import { ProjectsService } from '../services/projects.service';
@@ -575,6 +576,32 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
           err: e instanceof Error ? e.message : String(e),
         },
         'intake-auto-triage: линковка derived-решений упала (best-effort)',
+      );
+    }
+    try {
+      const expLinks = await linkDerivedExperimentsForIssue(this.prisma, {
+        tenantId,
+        issueId: created.id,
+        sourceBlockIds: intake.sourceBlockIds,
+      });
+      if (expLinks > 0) {
+        this.logger.debug(
+          { intakeIssueId: intake.id, issueId: created.id, links: expLinks },
+          'intake-auto-triage: создано ExperimentTaskLink(derived)',
+        );
+        this.metrics?.incExperimentTaskExtracted({
+          tenantTop: tenantTopOf(tenantId),
+          surface:
+            intake.source === 'meeting' || intake.source === 'meeting_report'
+              ? 'meeting'
+              : 'ingest',
+          count: 1,
+        });
+      }
+    } catch (e) {
+      this.logger.warn(
+        { intakeIssueId: intake.id, err: e instanceof Error ? e.message : String(e) },
+        'intake-auto-triage: линковка эксперимент→задача упала (best-effort)',
       );
     }
     try {

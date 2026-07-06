@@ -118,6 +118,104 @@ describe('TaskDraftMaterializerService', () => {
     ]);
   });
 
+  it('description из черновика → extractedDescription (структурная суть, не дословная речь)', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize(
+      args([
+        {
+          title: 'Сделать лендинг',
+          sourceQuote: 'ну это, короче, надо лендинг прикрутить, э-э, к пятнице',
+          description: 'Собрать лендинг к пятнице.',
+        },
+      ]),
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          extractedDescription: 'Собрать лендинг к пятнице.',
+        }),
+      }),
+    );
+  });
+
+  it('description отсутствует → extractedDescription фолбэчит на sourceQuote', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize(
+      args([
+        {
+          title: 'Сделать лендинг',
+          sourceQuote: 'я докручу лендинг к пятнице',
+        },
+      ]),
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          extractedDescription: 'я докручу лендинг к пятнице',
+        }),
+      }),
+    );
+  });
+
+  it('дедуп сравнивает по тому же resolvedDescription, что ложится в extractedDescription', async () => {
+    const { service, evaluate } = makeDeps();
+
+    await service.materialize(
+      args([
+        {
+          title: 'Сделать лендинг',
+          sourceQuote: 'ну короче лендинг к пятнице',
+          description: 'Собрать лендинг к пятнице.',
+        },
+      ]),
+    );
+
+    expect(evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Сделать лендинг',
+        description: 'Собрать лендинг к пятнице.',
+      }),
+    );
+  });
+
+  it('description пустой/пробелы → фолбэк на sourceQuote', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize(
+      args([
+        {
+          title: 'Сделать лендинг',
+          sourceQuote: 'я докручу лендинг',
+          description: '   ',
+        },
+      ]),
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          extractedDescription: 'я докручу лендинг',
+        }),
+      }),
+    );
+  });
+
+  it('нет ни description, ни sourceQuote → extractedDescription = null', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize(args([{ title: 'Голая задача' }]));
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ extractedDescription: null }),
+      }),
+    );
+  });
+
   it('идемпотентность: при существующем IntakeIssue не создаёт дубль', async () => {
     const { service, create, findFirst } = makeDeps();
     findFirst.mockResolvedValueOnce({ id: 'existing-1' });

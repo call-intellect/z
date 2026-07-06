@@ -23,6 +23,7 @@ export interface TaskDraftInput {
   suggestedPriority?: 'urgent' | 'high' | 'medium' | 'low' | null;
   confidence?: number | null;
   sourceQuote?: string | null;
+  description?: string | null;
   subtasks?: Array<{ title: string }> | null;
   sourceBlockId?: string | null;
 }
@@ -80,6 +81,7 @@ export class TaskDraftMaterializerService {
       const title = draft.title.trim();
       if (!title) continue;
       const sourceQuote = (draft.sourceQuote ?? '').trim();
+      const resolvedDescription = (draft.description?.trim() || sourceQuote) || null;
       const externalId = this.makeExternalId(channel, args.sourceId, sourceQuote || title);
 
       const existing = await this.prisma.intakeIssue.findFirst({
@@ -191,7 +193,7 @@ export class TaskDraftMaterializerService {
         const v = await this.taskDedup.evaluate({
           tenantId,
           title,
-          description: sourceQuote || null,
+          description: resolvedDescription,
         });
         if (v.verdict === 'same') suggestedDuplicateOfIssueId = v.matchedIssueId;
       } catch {
@@ -235,7 +237,7 @@ export class TaskDraftMaterializerService {
           externalId,
           rawContent,
           extractedTitle: title,
-          extractedDescription: sourceQuote || null,
+          extractedDescription: resolvedDescription,
           suggestedProjectId,
           suggestedAssigneeId,
           suggestedGoalId: null,

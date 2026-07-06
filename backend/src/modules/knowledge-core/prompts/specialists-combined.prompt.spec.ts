@@ -65,6 +65,10 @@ describe('specialists-combined — system prompt snapshot', () => {
     expect(prompt).toContain('на чистом русском');
     expect(prompt).toContain('эксперимент с конкретным действием');
     expect(prompt).toContain('больше экспериментировать');
+    expect(prompt).toContain('description — короткая структурная суть задачи');
+    expect(prompt).toContain(
+      'Каждый пункт subtasks — чистая формулировка шага',
+    );
   });
 });
 
@@ -264,5 +268,32 @@ describe('specialists-combined — zod schema валидирует минима�
     });
     expect(parsed.success).toBe(true);
     if (parsed.success) expect(parsed.data.tasks).toHaveLength(1);
+  });
+
+  it('task с description (структурная суть) → success', () => {
+    const parsed = SpecialistsCombinedOutputSchema.safeParse({
+      decisions: [],
+      ideas: [],
+      insights: [],
+      experiments: [],
+      regulations: [],
+      knowledge_categories: [],
+      skill_traits: [],
+      helpfulness_traits: [],
+      tasks: [
+        {
+          sourceBlockId: 'blk_1',
+          title: 'Сделать отчёт',
+          sourceQuote: 'ну короче отчёт к пятнице надо',
+          description: 'Подготовить отчёт к пятнице.',
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.tasks[0]?.description).toBe(
+        'Подготовить отчёт к пятнице.',
+      );
+    }
   });
 });

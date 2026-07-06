@@ -1182,6 +1182,7 @@ export class SpecialistsCombinedService {
         suggestedPriority: t.suggestedPriority ?? null,
         confidence: typeof t.confidence === 'number' ? t.confidence : null,
         sourceQuote: t.sourceQuote ?? null,
+        description: t.description ?? null,
         subtasks: t.subtasks ?? null,
         sourceBlockId: t.sourceBlockId,
       }));

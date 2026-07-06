@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CONFIDENCE_CALIBRATION, NOT_A_TASK_DISCRIMINATOR, type PromptInput } from './common';
-import {
-  buildMeetingExtractActionsPrompt,
-  buildTasksPrompt,
-  MEETING_EXTRACT_ACTIONS_SYSTEM,
-  TASKS_SCHEMA,
-  TASKS_TOOL,
-  TASKS_TOOL_NAME,
-} from './tasks';
+import { buildTasksPrompt, TASKS_SCHEMA, TASKS_TOOL, TASKS_TOOL_NAME } from './tasks';
 import { buildTasksStructuredPrompt } from './tasks-structured';
 import {
   buildTaskItemSchemaUnified,
@@ -438,9 +431,13 @@ describe('Legacy buildTasksPrompt (tasks.ts) — обратная совмест
   });
 });
 
-describe('Legacy buildMeetingExtractActionsPrompt (tasks.ts) — обратная совместимость', () => {
+describe('Enriched tasks prompt (buildTasksPromptUnified) — обогащённый meeting-режим', () => {
   it('system содержит обогащённые блоки + калибровку confidence', () => {
-    const out = buildMeetingExtractActionsPrompt(SAMPLE_INPUT, {});
+    const out = buildTasksPromptUnified(SAMPLE_INPUT, {
+      enriched: true,
+      withConfidence: true,
+      withSourceQuote: true,
+    });
     expect(out.system).toContain('suggestedAssigneeHint');
     expect(out.system).toContain('suggestedPriority');
     expect(out.system).toContain('sourceQuote');
@@ -448,7 +445,11 @@ describe('Legacy buildMeetingExtractActionsPrompt (tasks.ts) — обратна�
   });
 
   it('Ф3: system содержит правило само-назначения «берёт задачу НА СЕБЯ»', () => {
-    const out = buildMeetingExtractActionsPrompt(SAMPLE_INPUT, {});
+    const out = buildTasksPromptUnified(SAMPLE_INPUT, {
+      enriched: true,
+      withConfidence: true,
+      withSourceQuote: true,
+    });
     expect(out.system).toContain('берёт задачу НА СЕБЯ');
   });
 
@@ -463,11 +464,16 @@ describe('Legacy buildMeetingExtractActionsPrompt (tasks.ts) — обратна�
   });
 
   it('orgContext + meetingDateIso корректно прокидываются в user', () => {
-    const out = buildMeetingExtractActionsPrompt(SAMPLE_INPUT, {
+    const out = buildTasksPromptUnified(SAMPLE_INPUT, {
+      enriched: true,
+      withConfidence: true,
+      withSourceQuote: true,
       meetingDateIso: '2026-05-24',
-      projects: [{ identifier: 'DEV', name: 'Команда разработки' }],
-      goals: [{ name: 'Запуск v2' }],
-      people: [{ name: 'Иванов Сергей' }],
+      orgContext: {
+        projects: [{ identifier: 'DEV', name: 'Команда разработки' }],
+        goals: [{ name: 'Запуск v2' }],
+        people: [{ name: 'Иванов Сергей' }],
+      },
     });
     expect(out.user).toContain('Дата встречи: 2026-05-24');
     expect(out.user).toContain('Проекты организации:');
@@ -476,11 +482,6 @@ describe('Legacy buildMeetingExtractActionsPrompt (tasks.ts) — обратна�
     expect(out.user).toContain('Запуск v2');
     expect(out.user).toContain('Сотрудники организации:');
     expect(out.user).toContain('Иванов Сергей');
-  });
-
-  it('MEETING_EXTRACT_ACTIONS_SYSTEM-константа — синхронна с builder', () => {
-    expect(MEETING_EXTRACT_ACTIONS_SYSTEM).toContain('suggestedAssigneeHint');
-    expect(MEETING_EXTRACT_ACTIONS_SYSTEM).toContain('Шкала confidence');
   });
 });
 

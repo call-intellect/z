@@ -3,10 +3,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-import type { MeetingExtractActionsContext } from './prompts/tasks';
+import type { TasksOrgContext } from './prompts/tasks-unified';
 
-export type OrgContext = MeetingExtractActionsContext &
-  Required<Pick<MeetingExtractActionsContext, 'meetingDateIso'>>;
+export type OrgContext = TasksOrgContext & { meetingDateIso: string };
 
 @Injectable()
 export class OrgContextService {

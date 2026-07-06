@@ -110,7 +110,7 @@ export class Specialist315TasksService {
       });
       this.logger.debug(
         { blockId: block.id },
-        'specialist-3-15: блок встречи — задачи извлекает meeting-extract-actions, skip',
+        'specialist-3-15: блок встречи — задачи извлекает комбо SpecialistsCombinedService, skip',
       );
       return;
     }

@@ -126,8 +126,7 @@ export class IntakeService {
     private readonly autoTriageQueue?: IntakeAutoTriageQueueService,
     // A10 (2026-06-14) — резолв провенанса (canonical-блоки встречи) для
     // next-step → intake. @Optional: BlockFetchService — из @Global
-    // KnowledgeCoreModule (как TaskAssigneeResolverService в
-    // meeting-extract-actions); в unit-тестах IntakeService его не передают —
+    // KnowledgeCoreModule; в unit-тестах IntakeService его не передают —
     // тогда провенанс резолвится в пустой массив (best-effort, не падаем).
     @Optional()
     @Inject(BlockFetchService)

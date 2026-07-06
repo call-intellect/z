@@ -19,12 +19,24 @@ export type AdminDashboardApi = {
     failedCalls: number;
   };
   byProvider: Array<{ provider: string; costUsd: number; calls: number }>;
+  byModel: Array<{
+    provider: string;
+    model: string;
+    costUsd: number;
+    calls: number;
+  }>;
   byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
   topOrgs?: Array<{
     tenantId: string;
     name: string;
     costUsd: number;
     calls: number;
+  }>;
+  trend: Array<{
+    date: string;
+    costUsd: number;
+    calls: number;
+    failedCalls: number;
   }>;
   counts?: {
     orgsTotal: number;
@@ -44,12 +56,24 @@ export type AdminDashboardDomain = {
     failRate: number;
   };
   byProvider: Array<{ provider: string; costUsd: number; calls: number }>;
+  byModel: Array<{
+    provider: string;
+    model: string;
+    costUsd: number;
+    calls: number;
+  }>;
   byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
   topOrgs: Array<{
     tenantId: string;
     name: string;
     costUsd: number;
     calls: number;
+  }>;
+  trend: Array<{
+    date: string;
+    costUsd: number;
+    calls: number;
+    failedCalls: number;
   }>;
   counts: {
     orgsTotal: number;
@@ -77,8 +101,10 @@ export function adminDashboardFromApi(
       failRate: totalCalls > 0 ? api.totals.failedCalls / totalCalls : 0,
     },
     byProvider: api.byProvider,
+    byModel: api.byModel,
     byTaskType: api.byTaskType,
     topOrgs: api.topOrgs ?? [],
+    trend: api.trend,
     counts: api.counts ?? null,
   };
 }

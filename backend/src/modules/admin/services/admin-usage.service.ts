@@ -19,6 +19,13 @@ interface PeriodArgs {
   to?: Date;
 }
 
+interface DashboardFilterArgs {
+  provider?: string;
+  model?: string;
+  taskType?: string;
+  orgId?: string;
+}
+
 const DASHBOARD_TTL_MS = 60_000;
 
 interface UsageCursor {
@@ -86,8 +93,10 @@ export interface AdminDashboardResult {
     failedCalls: number;
   };
   byProvider: Array<{ provider: string; costUsd: number; calls: number }>;
+  byModel: Array<{ provider: string; model: string; costUsd: number; calls: number }>;
   byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
   topOrgs?: Array<{ tenantId: string; name: string; costUsd: number; calls: number }>;
+  trend: Array<{ date: string; costUsd: number; calls: number; failedCalls: number }>;
   counts?: {
     orgsTotal: number;
     usersTotal: number;
@@ -142,16 +151,19 @@ export class AdminUsageService {
     return {};
   }
 
-  private cacheKey(args: ScopeArgs & PeriodArgs, kind: string): string {
+  private cacheKey(args: ScopeArgs & PeriodArgs & DashboardFilterArgs, kind: string): string {
     const tenant = args.scope === 'org' ? (args.tenantId ?? '*') : '*';
     const periodKey =
       args.period === 'custom'
         ? `custom_${args.from?.toISOString()}_${args.to?.toISOString()}`
         : args.period;
-    return `usage:${kind}:${args.scope}:${tenant}:${periodKey}`;
+    const filterKey = `${args.provider ?? '*'}:${args.model ?? '*'}:${args.taskType ?? '*'}:${args.orgId ?? '*'}`;
+    return `usage:${kind}:${args.scope}:${tenant}:${periodKey}:${filterKey}`;
   }
 
-  async getDashboard(args: ScopeArgs & PeriodArgs): Promise<AdminDashboardResult> {
+  async getDashboard(
+    args: ScopeArgs & PeriodArgs & DashboardFilterArgs,
+  ): Promise<AdminDashboardResult> {
     const cacheKey = this.cacheKey(args, 'dashboard');
     const cached = this.cache.get<AdminDashboardResult>(cacheKey);
     if (cached) return cached;
@@ -161,32 +173,46 @@ export class AdminUsageService {
     const baseWhere: Prisma.AiUsageLogWhereInput = {
       createdAt: { gte: range.gte, lt: range.lt },
       ...tenantWhere,
+      ...(args.provider ? { provider: args.provider } : {}),
+      ...(args.model ? { model: args.model } : {}),
+      ...(args.taskType ? { taskType: args.taskType } : {}),
+      ...(args.scope === 'global' && args.orgId ? { tenantId: args.orgId } : {}),
     };
 
-    const [totalsAgg, failedAgg, byProvider, byTaskType, counts, topOrgs] = await Promise.all([
-      this.prisma.aiUsageLog.aggregate({
-        where: baseWhere,
-        _sum: { costUsd: true },
-        _count: { _all: true },
-      }),
-      this.prisma.aiUsageLog.count({
-        where: { ...baseWhere, success: false },
-      }),
-      this.prisma.aiUsageLog.groupBy({
-        by: ['provider'],
-        where: baseWhere,
-        _sum: { costUsd: true },
-        _count: { _all: true },
-      }),
-      this.prisma.aiUsageLog.groupBy({
-        by: ['taskType'],
-        where: baseWhere,
-        _sum: { costUsd: true },
-        _count: { _all: true },
-      }),
-      args.scope === 'global' ? this.fetchGlobalCounts() : Promise.resolve(undefined),
-      args.scope === 'global' ? this.fetchTopOrgsByCost(range, 10) : Promise.resolve(undefined),
-    ]);
+    const [totalsAgg, failedAgg, byProvider, byModel, byTaskType, counts, topOrgs, trend] =
+      await Promise.all([
+        this.prisma.aiUsageLog.aggregate({
+          where: baseWhere,
+          _sum: { costUsd: true },
+          _count: { _all: true },
+        }),
+        this.prisma.aiUsageLog.count({
+          where: { ...baseWhere, success: false },
+        }),
+        this.prisma.aiUsageLog.groupBy({
+          by: ['provider'],
+          where: baseWhere,
+          _sum: { costUsd: true },
+          _count: { _all: true },
+        }),
+        this.prisma.aiUsageLog.groupBy({
+          by: ['provider', 'model'],
+          where: baseWhere,
+          _sum: { costUsd: true },
+          _count: { _all: true },
+        }),
+        this.prisma.aiUsageLog.groupBy({
+          by: ['taskType'],
+          where: baseWhere,
+          _sum: { costUsd: true },
+          _count: { _all: true },
+        }),
+        args.scope === 'global' ? this.fetchGlobalCounts() : Promise.resolve(undefined),
+        args.scope === 'global'
+          ? this.fetchTopOrgsByCost(range, 10, args)
+          : Promise.resolve(undefined),
+        this.fetchDailyTrend(range, baseWhere),
+      ]);
 
     const result: AdminDashboardResult = {
       scope: args.scope,
@@ -208,6 +234,15 @@ export class AdminUsageService {
           calls: r._count._all,
         }))
         .sort((a, b) => b.costUsd - a.costUsd),
+      byModel: byModel
+        .map((r) => ({
+          provider: r.provider,
+          model: r.model,
+          costUsd: decimalToNumber(r._sum.costUsd),
+          calls: r._count._all,
+        }))
+        .sort((a, b) => b.costUsd - a.costUsd)
+        .slice(0, 20),
       byTaskType: byTaskType
         .map((r) => ({
           taskType: r.taskType ?? 'unknown',
@@ -216,12 +251,56 @@ export class AdminUsageService {
         }))
         .sort((a, b) => b.costUsd - a.costUsd)
         .slice(0, 20),
+      trend,
       ...(counts !== undefined ? { counts } : {}),
       ...(topOrgs !== undefined ? { topOrgs } : {}),
     };
 
     this.cache.setWithTtl(cacheKey, result, DASHBOARD_TTL_MS);
     return result;
+  }
+
+  private async fetchDailyTrend(
+    range: { gte: Date; lt: Date },
+    where: Prisma.AiUsageLogWhereInput,
+  ): Promise<Array<{ date: string; costUsd: number; calls: number; failedCalls: number }>> {
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`"createdAt" >= ${range.gte}`,
+      Prisma.sql`"createdAt" < ${range.lt}`,
+    ];
+    if (typeof where.tenantId === 'string') {
+      conditions.push(Prisma.sql`"tenantId" = ${where.tenantId}`);
+    }
+    if (typeof where.provider === 'string') {
+      conditions.push(Prisma.sql`"provider" = ${where.provider}`);
+    }
+    if (typeof where.model === 'string') {
+      conditions.push(Prisma.sql`"model" = ${where.model}`);
+    }
+    if (typeof where.taskType === 'string') {
+      conditions.push(Prisma.sql`"taskType" = ${where.taskType}`);
+    }
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ day: Date; cost: number; calls: bigint; failed: bigint }>
+    >(Prisma.sql`
+      SELECT
+        date_trunc('day', "createdAt") AS day,
+        COALESCE(SUM("costUsd"), 0)::float8 AS cost,
+        COUNT(*) AS calls,
+        COUNT(*) FILTER (WHERE "success" = false) AS failed
+      FROM "AiUsageLog"
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `);
+
+    return rows.map((r) => ({
+      date: r.day.toISOString().slice(0, 10),
+      costUsd: r.cost,
+      calls: Number(r.calls),
+      failedCalls: Number(r.failed),
+    }));
   }
 
   private async fetchGlobalCounts(): Promise<{
@@ -246,10 +325,17 @@ export class AdminUsageService {
   private async fetchTopOrgsByCost(
     range: { gte: Date; lt: Date },
     limit: number,
+    filters: DashboardFilterArgs = {},
   ): Promise<Array<{ tenantId: string; name: string; costUsd: number; calls: number }>> {
     const rows = await this.prisma.aiUsageLog.groupBy({
       by: ['tenantId'],
-      where: { createdAt: { gte: range.gte, lt: range.lt }, tenantId: { not: null } },
+      where: {
+        createdAt: { gte: range.gte, lt: range.lt },
+        tenantId: filters.orgId ? filters.orgId : { not: null },
+        ...(filters.provider ? { provider: filters.provider } : {}),
+        ...(filters.model ? { model: filters.model } : {}),
+        ...(filters.taskType ? { taskType: filters.taskType } : {}),
+      },
       _sum: { costUsd: true },
       _count: { _all: true },
       orderBy: { _sum: { costUsd: 'desc' } },

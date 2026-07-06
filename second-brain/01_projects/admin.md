@@ -21,6 +21,17 @@ updated: 2026-06-03
 > **«Команда» (`/structure`)** и карточку сотрудника `/structure/persons/[id]`. См.
 > [[frontend-pages]] §«Команда» и [[rbac-access-control]] §Frontend.
 
+## `/admin` — Пульс компании (главная страница админки)
+
+Обзорный дашборд: KPI-плитки (расход, доля ошибок, орг/юзеры, активные за 7 дн.), реальный дневной тренд (расход/вызовы/доля ошибок), разбивки «по провайдерам» / «по моделям» / «топ функций» / «топ организаций».
+
+- **API:** `GET /api/v1/admin/usage/dashboard` — `AdminUsageController`/`AdminUsageService` (`backend/src/modules/admin/{controllers,services}/admin-usage.*`), источник данных — `AiUsageLog` напрямую (НЕ `AiCostDaily` — это отдельный источник для `/admin/analytics/llm-cost`, см. ниже). Query: `period` (day/week/month/custom + from/to), `provider`, `model`, `taskType`, `orgId` — все опциональные фильтры, применяются согласованно ко всем срезам (totals/byProvider/byModel/byTaskType/topOrgs/trend), т.к. один и тот же `baseWhere`.
+- **`trend`** — реальный дневной ряд через `$queryRaw` (`date_trunc('day', "createdAt")`), с 2026-07-06 заменил фейковый псевдослучайный мок (`buildMockSeries`/`pseudoRandom` — генерировал шум от seed, не реальные данные).
+- **`byModel`** — новая разбивка `groupBy(['provider','model'])` (аналог disambiguation-фикса в `llm-cost-dashboard` от того же дня).
+- **Фронт:** `frontend/app/(admin)/admin/AdminDashboardClient.tsx`. Панель фильтров (провайдер/модель/модуль/организация, опции из «unfiltered»-запроса — паттерн `optionsQ`, как в `llm-cost-dashboard` company-detail) + графики через переиспользуемые `BarTrend`/recharts-компоненты `@/ui/components/dashboard/modern`, а не списки `<ul>`.
+- **Не путать** с `/admin/analytics/llm-cost` — это отдельный, более глубокий (5-уровневый) дашборд расхода на `AiCostDaily`, включая помесячную подписочную тарификацию провайдеров; здесь — верхнеуровневый «пульс» на сырых логах вызовов.
+- **ТЗ:** [plans/tz/2026-07-06-admin-dashboard-charts-filters.md](../../plans/tz/2026-07-06-admin-dashboard-charts-filters.md).
+
 ## Крутилки курации и напоминаний (AdminSetting)
 
 С 2026-06-03 (Action Center, Фаза C2) 14 платформенных дефолтов лестницы

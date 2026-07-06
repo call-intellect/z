@@ -8,6 +8,10 @@ export const DashboardQuerySchema = z
     period: PeriodSchema.default('week'),
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),
+    provider: z.string().min(1).max(60).optional(),
+    model: z.string().min(1).max(120).optional(),
+    taskType: z.string().min(1).max(80).optional(),
+    orgId: z.string().min(1).max(100).optional(),
   })
   .refine((v) => v.period !== 'custom' || (v.from !== undefined && v.to !== undefined), {
     message: 'period=custom требует from и to',

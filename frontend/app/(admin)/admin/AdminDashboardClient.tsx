@@ -6,11 +6,13 @@ import {
   Activity,
   ArrowRight,
   Building2,
+  DollarSign,
   Users as UsersIcon,
 } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 
 import { adminUsageApi } from "@/api/admin-usage.api";
+import { adminOrgsApi } from "@/api/admin-orgs.api";
 import {
   adminDashboardFromApi,
   formatUsd,
@@ -21,6 +23,7 @@ import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
 import { Button } from "@/ui/shadcn/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Input } from "@/ui/shadcn/input";
 import {
   Select,
   SelectContent,
@@ -28,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/shadcn/select";
+import { BarTrend, GRAD } from "@/ui/components/dashboard/modern";
 
 import {
   AdminEmpty,
@@ -41,18 +45,76 @@ const PERIODS: Array<{ value: AdminPeriod; label: string }> = [
   { value: "day", label: "Сутки" },
   { value: "week", label: "Неделя" },
   { value: "month", label: "Месяц" },
+  { value: "custom", label: "Свой период" },
 ];
+
+const ALL_FILTER = "__all__";
 
 export function AdminDashboardClient() {
   const [period, setPeriod] = useState<AdminPeriod>("week");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [provider, setProvider] = useState("");
+  const [model, setModel] = useState("");
+  const [taskType, setTaskType] = useState("");
+  const [orgId, setOrgId] = useState("");
 
-  const q = useAdminQuery(
-    `admin-dashboard:${period}`,
+  const isCustom = period === "custom";
+  const hasCustomRange = isCustom && Boolean(dateFrom && dateTo);
+
+  const optionsQ = useAdminQuery(
+    `admin-dashboard-options:${period}:${dateFrom}:${dateTo}`,
     async () => {
-      const res = await adminUsageApi.getDashboard({ period });
+      if (isCustom && !hasCustomRange) return null;
+      const res = await adminUsageApi.getDashboard({
+        period,
+        ...(hasCustomRange ? { from: dateFrom, to: dateTo } : {}),
+      });
       return adminDashboardFromApi(res);
     },
-    [period],
+    [period, dateFrom, dateTo, isCustom, hasCustomRange],
+  );
+
+  const orgsQ = useAdminQuery(
+    "admin-dashboard-orgs",
+    async () => adminOrgsApi.list({ limit: 200 }),
+    [],
+  );
+
+  const providerOptions = [
+    ...new Set((optionsQ.data?.byModel ?? []).map((m) => m.provider)),
+  ].sort();
+  const modelOptions = [
+    ...new Set(
+      (optionsQ.data?.byModel ?? [])
+        .filter((m) => !provider || m.provider === provider)
+        .map((m) => m.model),
+    ),
+  ].sort();
+  const taskTypeOptions = [
+    ...new Set((optionsQ.data?.byTaskType ?? []).map((t) => t.taskType)),
+  ].sort();
+  const orgOptions = orgsQ.data?.items ?? [];
+
+  const q = useAdminQuery(
+    `admin-dashboard:${period}:${dateFrom}:${dateTo}:${provider}:${model}:${taskType}:${orgId}`,
+    async () => {
+      if (isCustom && !hasCustomRange) return null;
+      const res = await adminUsageApi.getDashboard({
+        period,
+        ...(hasCustomRange ? { from: dateFrom, to: dateTo } : {}),
+        ...(provider ? { provider } : {}),
+        ...(model ? { model } : {}),
+        ...(taskType ? { taskType } : {}),
+        ...(orgId ? { orgId } : {}),
+      });
+      return adminDashboardFromApi(res);
+    },
+    [period, dateFrom, dateTo, provider, model, taskType, orgId, isCustom, hasCustomRange],
+  );
+
+  const hasFilters = Boolean(
+    dateFrom || dateTo || provider || model || taskType || orgId,
   );
 
   return (
@@ -77,14 +139,142 @@ export function AdminDashboardClient() {
         </Select>
       }
     >
-      {q.isLoading && <AdminLoading rows={6} />}
-      {!q.isLoading && q.isForbidden && <AdminForbidden />}
-      {!q.isLoading && q.error && (
-        <AdminError message={q.error} onRetry={q.refetch} />
-      )}
-      {!q.isLoading && !q.isForbidden && !q.error && q.data && (
-        <DashboardContent data={q.data} />
-      )}
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border-subtle bg-bg-card p-3">
+          {isCustom && (
+            <>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] text-fg-tertiary">Дата от</span>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-9 w-40"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] text-fg-tertiary">Дата до</span>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-9 w-40"
+                />
+              </div>
+            </>
+          )}
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-fg-tertiary">Провайдер</span>
+            <Select
+              value={provider || ALL_FILTER}
+              onValueChange={(v) => {
+                setProvider(v === ALL_FILTER ? "" : v);
+                setModel("");
+              }}
+            >
+              <SelectTrigger className="h-9 w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_FILTER}>Все провайдеры</SelectItem>
+                {providerOptions.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-fg-tertiary">Модель</span>
+            <Select
+              value={model || ALL_FILTER}
+              onValueChange={(v) => setModel(v === ALL_FILTER ? "" : v)}
+            >
+              <SelectTrigger className="h-9 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_FILTER}>Все модели</SelectItem>
+                {modelOptions.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-fg-tertiary">Модуль</span>
+            <Select
+              value={taskType || ALL_FILTER}
+              onValueChange={(v) => setTaskType(v === ALL_FILTER ? "" : v)}
+            >
+              <SelectTrigger className="h-9 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_FILTER}>Все модули</SelectItem>
+                {taskTypeOptions.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {taskTypeLabel(t)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] text-fg-tertiary">Организация</span>
+            <Select
+              value={orgId || ALL_FILTER}
+              onValueChange={(v) => setOrgId(v === ALL_FILTER ? "" : v)}
+            >
+              <SelectTrigger className="h-9 w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_FILTER}>Все организации</SelectItem>
+                {orgOptions.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {hasFilters && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+                setProvider("");
+                setModel("");
+                setTaskType("");
+                setOrgId("");
+              }}
+            >
+              Сбросить фильтры
+            </Button>
+          )}
+        </div>
+
+        {q.isLoading && <AdminLoading rows={6} />}
+        {!q.isLoading && q.isForbidden && <AdminForbidden />}
+        {!q.isLoading && q.error && (
+          <AdminError message={q.error} onRetry={q.refetch} />
+        )}
+        {!q.isLoading && isCustom && !hasCustomRange && (
+          <AdminEmpty
+            title="Укажите период"
+            description="Заполните обе даты («Дата от» и «Дата до»), чтобы посмотреть свой период."
+          />
+        )}
+        {!q.isLoading && !q.isForbidden && !q.error && q.data && (
+          <DashboardContent data={q.data} />
+        )}
+      </div>
     </AdminSection>
   );
 }
@@ -94,7 +284,43 @@ function DashboardContent({
 }: {
   data: ReturnType<typeof adminDashboardFromApi>;
 }) {
-  const series30d = useMemo(() => buildMockSeries(data.totals), [data.totals]);
+  const series = useMemo(() => buildTrendSeries(data.trend), [data.trend]);
+
+  const providerChartData = useMemo(
+    () =>
+      data.byProvider
+        .slice(0, 10)
+        .map((p) => ({ name: p.provider, costUsd: Number(p.costUsd.toFixed(4)) })),
+    [data.byProvider],
+  );
+  const modelChartData = useMemo(
+    () =>
+      data.byModel
+        .slice(0, 10)
+        .map((m) => ({
+          name: `${m.provider}/${m.model}`,
+          costUsd: Number(m.costUsd.toFixed(4)),
+        })),
+    [data.byModel],
+  );
+  const functionsChartData = useMemo(
+    () =>
+      data.byTaskType
+        .slice(0, 10)
+        .map((t) => ({
+          name: taskTypeLabel(t.taskType),
+          costUsd: Number(t.costUsd.toFixed(4)),
+        })),
+    [data.byTaskType],
+  );
+  const orgsChartData = useMemo(
+    () =>
+      data.topOrgs.map((o) => ({
+        name: o.name,
+        costUsd: Number(o.costUsd.toFixed(4)),
+      })),
+    [data.topOrgs],
+  );
 
   const functionsCsvRows = useMemo(
     () =>
@@ -105,6 +331,16 @@ function DashboardContent({
         costUsd: t.costUsd,
       })),
     [data.byTaskType],
+  );
+  const modelsCsvRows = useMemo(
+    () =>
+      data.byModel.map((m) => ({
+        provider: m.provider,
+        model: m.model,
+        calls: m.calls,
+        costUsd: m.costUsd,
+      })),
+    [data.byModel],
   );
   const orgsCsvRows = useMemo(
     () =>
@@ -153,59 +389,94 @@ function DashboardContent({
       {}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <SparkCard
-          title="Расход за 30 дней"
+          title="Расход по дням"
           value={formatUsd(data.totals.totalCostUsd)}
-          data={series30d.cost}
+          data={series.cost}
           color="var(--accent)"
           formatValue={(v) => formatUsd(v)}
         />
         <SparkCard
-          title="Вызовы за 30 дней"
+          title="Вызовы по дням"
           value={data.totals.totalCalls.toLocaleString("ru-RU")}
-          data={series30d.calls}
+          data={series.calls}
           color="var(--success, #10b981)"
           formatValue={(v) => Math.round(v).toLocaleString("ru-RU")}
         />
         <SparkCard
-          title="Доля ошибок за 30 дней"
+          title="Доля ошибок по дням"
           value={`${(data.totals.failRate * 100).toFixed(1)}%`}
-          data={series30d.failRate}
+          data={series.failRate}
           color="var(--warning, #f59e0b)"
           formatValue={(v) => `${(v * 100).toFixed(1)}%`}
         />
       </div>
 
       {}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Расход по провайдерам</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data.byProvider.length === 0 ? (
-            <AdminEmpty
-              title="Нет данных"
-              description="За выбранный период ни одного вызова не зафиксировано."
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {data.byProvider.length === 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Расход по провайдерам</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AdminEmpty
+                title="Нет данных"
+                description="За выбранный период (и с учётом фильтров) ни одного вызова не зафиксировано."
+              />
+            </CardContent>
+          </Card>
+        ) : (
+          <BarTrend
+            title="Расход по провайдерам"
+            icon={<Activity size={16} />}
+            grad={GRAD.blue}
+            data={providerChartData}
+            xKey="name"
+            dataKey="costUsd"
+          />
+        )}
+
+        {data.byModel.length === 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Расход по моделям</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AdminEmpty
+                title="Нет данных"
+                description="За выбранный период (и с учётом фильтров) ни одного вызова не зафиксировано."
+              />
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            <BarTrend
+              title="Расход по моделям"
+              icon={<Activity size={16} />}
+              grad={GRAD.teal}
+              data={modelChartData}
+              xKey="name"
+              dataKey="costUsd"
             />
-          ) : (
-            <ul className="space-y-2">
-              {data.byProvider.map((p) => (
-                <li
-                  key={p.provider}
-                  className="flex items-center justify-between rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
-                >
-                  <span className="font-mono text-xs">{p.provider}</span>
-                  <div className="flex items-center gap-4 text-fg-tertiary">
-                    <span>{p.calls.toLocaleString("ru-RU")} вызовов</span>
-                    <span className="font-medium text-fg-primary">
-                      {formatUsd(p.costUsd)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex justify-end">
+              <AdminCsvDownloadButton
+                rows={modelsCsvRows}
+                columns={[
+                  { key: "provider", label: "Провайдер" },
+                  { key: "model", label: "Модель" },
+                  { key: "calls", label: "Вызовы" },
+                  {
+                    key: "costUsd",
+                    label: "Расход, USD",
+                    format: (v) => Number(v).toFixed(4),
+                  },
+                ]}
+                filename="admin-by-model"
+              />
+            </div>
+          </div>
+        )}
+      </div>
 
       {}
       <Card>
@@ -240,30 +511,14 @@ function DashboardContent({
               description="Функции AI ещё не вызывались."
             />
           ) : (
-            <ul className="space-y-2">
-              {data.byTaskType.slice(0, 10).map((t) => (
-                <li
-                  key={t.taskType}
-                  className="flex items-center justify-between rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
-                >
-                  <Link
-                    href={`/admin/analytics/functions/${encodeURIComponent(t.taskType)}`}
-                    className="flex flex-col gap-0.5 hover:text-accent"
-                  >
-                    <span>{taskTypeLabel(t.taskType)}</span>
-                    <span className="font-mono text-[10px] text-fg-tertiary">
-                      {t.taskType}
-                    </span>
-                  </Link>
-                  <div className="flex items-center gap-4 text-fg-tertiary">
-                    <span>{t.calls.toLocaleString("ru-RU")}</span>
-                    <span className="font-medium text-fg-primary">
-                      {formatUsd(t.costUsd)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <BarTrend
+              title="Расход, $"
+              icon={<DollarSign size={16} />}
+              grad={GRAD.violet}
+              data={functionsChartData}
+              xKey="name"
+              dataKey="costUsd"
+            />
           )}
         </CardContent>
       </Card>
@@ -298,22 +553,14 @@ function DashboardContent({
             </div>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2">
-              {data.topOrgs.map((o) => (
-                <li
-                  key={o.tenantId}
-                  className="flex items-center justify-between rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
-                >
-                  <span>{o.name}</span>
-                  <div className="flex items-center gap-4 text-fg-tertiary">
-                    <span>{o.calls.toLocaleString("ru-RU")}</span>
-                    <span className="font-medium text-fg-primary">
-                      {formatUsd(o.costUsd)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <BarTrend
+              title="Расход, $"
+              icon={<DollarSign size={16} />}
+              grad={GRAD.amber}
+              data={orgsChartData}
+              xKey="name"
+              dataKey="costUsd"
+            />
           </CardContent>
         </Card>
       )}
@@ -384,73 +631,56 @@ function SparkCard({
         </div>
         <div className="mb-2 text-2xl font-semibold">{value}</div>
         <div className="h-[80px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={data}
-              margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
-            >
-              <XAxis dataKey="day" hide />
-              <Tooltip
-                formatter={(value) => {
-                  const n = typeof value === "number" ? value : Number(value);
-                  return [Number.isFinite(n) ? formatValue(n) : "—", ""];
-                }}
-                labelFormatter={(label) => `День ${String(label)}`}
-                contentStyle={{
-                  fontSize: 11,
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: 6,
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke={color}
-                strokeWidth={1.75}
-                dot={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          {data.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-xs text-fg-tertiary">
+              Нет данных за период
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={data}
+                margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
+              >
+                <XAxis dataKey="day" hide />
+                <Tooltip
+                  formatter={(value) => {
+                    const n = typeof value === "number" ? value : Number(value);
+                    return [Number.isFinite(n) ? formatValue(n) : "—", ""];
+                  }}
+                  labelFormatter={(label) => String(label)}
+                  contentStyle={{
+                    fontSize: 11,
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: 6,
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke={color}
+                  strokeWidth={1.75}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function buildMockSeries(totals: {
-  totalCostUsd: number;
-  totalCalls: number;
-  failRate: number;
-}): {
-  cost: SeriesPoint[];
-  calls: SeriesPoint[];
-  failRate: SeriesPoint[];
-} {
-  const seed = Math.max(
-    1,
-    Math.floor(totals.totalCalls + totals.totalCostUsd * 100),
-  );
-  const cost: SeriesPoint[] = [];
-  const calls: SeriesPoint[] = [];
-  const failRate: SeriesPoint[] = [];
-  const baseCost = totals.totalCostUsd / 30;
-  const baseCalls = totals.totalCalls / 30;
-  const baseFail = Math.max(totals.failRate, 0.001);
-  for (let i = 0; i < 30; i++) {
-    const noiseCost = 0.7 + pseudoRandom(seed + i * 3) * 0.6;
-    const noiseCalls = 0.7 + pseudoRandom(seed + i * 5 + 1) * 0.6;
-    const noiseFail = 0.5 + pseudoRandom(seed + i * 7 + 2);
-    const day = String(i + 1);
-    cost.push({ day, value: Math.max(0, baseCost * noiseCost) });
-    calls.push({ day, value: Math.max(0, baseCalls * noiseCalls) });
-    failRate.push({ day, value: Math.max(0, baseFail * noiseFail) });
-  }
-  return { cost, calls, failRate };
-}
-
-function pseudoRandom(n: number): number {
-  const x = Math.sin(n * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
+function buildTrendSeries(
+  trend: Array<{ date: string; costUsd: number; calls: number; failedCalls: number }>,
+): { cost: SeriesPoint[]; calls: SeriesPoint[]; failRate: SeriesPoint[] } {
+  return {
+    cost: trend.map((t) => ({ day: t.date, value: t.costUsd })),
+    calls: trend.map((t) => ({ day: t.date, value: t.calls })),
+    failRate: trend.map((t) => ({
+      day: t.date,
+      value: t.calls > 0 ? t.failedCalls / t.calls : 0,
+    })),
+  };
 }

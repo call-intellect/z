@@ -44,6 +44,10 @@ export class AdminUsageController {
       period: q.period,
       ...(q.from ? { from: q.from } : {}),
       ...(q.to ? { to: q.to } : {}),
+      ...(q.provider ? { provider: q.provider } : {}),
+      ...(q.model ? { model: q.model } : {}),
+      ...(q.taskType ? { taskType: q.taskType } : {}),
+      ...(q.orgId ? { orgId: q.orgId } : {}),
     });
   }
 

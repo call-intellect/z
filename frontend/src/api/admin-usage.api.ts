@@ -11,6 +11,10 @@ export type DashboardRequest = {
   period: AdminPeriod;
   from?: string;
   to?: string;
+  provider?: string;
+  model?: string;
+  taskType?: string;
+  orgId?: string;
 };
 
 export type CallsLogRequest = {

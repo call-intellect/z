@@ -486,6 +486,12 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | POST | `/admin/incidents/rules` | CRUD правил |
 | GET | `/admin/search` | Cmd+K fuzzy `?type=org|user|meeting&q=` |
 
+### Пульс компании — главная `/admin` (2026-07-06, графики + фильтры)
+`AdminUsageController`/`AdminUsageService` (`backend/src/modules/admin/{controllers,services}/admin-usage.*`), источник — `AiUsageLog` напрямую (не `AiCostDaily`).
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/usage/dashboard?period=day\|week\|month\|custom&from?&to?&provider?&model?&taskType?&orgId?` | totals + `byProvider`/`byModel`/`byTaskType`/`topOrgs` + реальный дневной `trend` (`$queryRaw`, заменил фейковый мок на фронте). Все фильтры — общий `baseWhere`, применяются согласованно ко всем срезам. Фронт — `AdminDashboardClient.tsx` (см. [[admin]] §«Пульс компании»). |
+
 ### Analytics (Фаза 2, read-only)
 | Метод | Путь | Назначение |
 |---|---|---|

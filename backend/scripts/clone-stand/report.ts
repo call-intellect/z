@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { judgeBoundary, judgeEP, judgeG, judgeM } from './judge';
+import { judgeBoundary, judgeEP, judgeExactness, judgeG, judgeM } from './judge';
 import {
   ADVISORY_LAYERS,
   ANSWERABLE_EXCLUDED_CATEGORIES,
@@ -10,8 +10,10 @@ import {
   type JudgedResult,
   type LensBoundary,
   type LensEP,
+  type LensExact,
   type LensG,
   type LensM,
+  type RecallExactness,
   type RunResult,
   type RunTrace,
   type Verdict,
@@ -49,6 +51,35 @@ function sideScorecard(label: string, target: string, group: JudgedResult[]): st
   out.push('');
   out.push(`Оси (на отвеченных): E ${mean(answered.map((j) => j.axes.E)).toFixed(2)} · M ${mean(answered.map((j) => j.axes.M)).toFixed(2)} · G ${mean(group.map((j) => j.axes.G)).toFixed(2)} · P ${mean(answered.map((j) => j.axes.P)).toFixed(2)}`);
   out.push('');
+  return out;
+}
+
+function exactnessBreakdown(recall: JudgedResult[]): string[] {
+  const scored = recall.filter((j) => j.lensExact && !j.run.refused);
+  if (scored.length === 0) return [];
+  const c = (v: RecallExactness): number => scored.filter((j) => j.lensExact?.recall === v).length;
+  const out: string[] = [];
+  out.push('### Точность памяти (C7 — exactness на отвеченных recall)');
+  out.push('');
+  out.push('| recall | n | что значит |');
+  out.push('|---|---:|---|');
+  out.push(`| CORRECT | ${c('CORRECT')} | факт+причина сошлись с эталоном |`);
+  out.push(`| PARTIAL | ${c('PARTIAL')} | верное направление, часть фактов пропущена → мишень синтез-полноты (C8) |`);
+  out.push(`| WRONG | ${c('WRONG')} | противоречит эталону (уверенно-неверный) |`);
+  out.push(`| NA | ${c('NA')} | нет эталона / не воспоминание |`);
+  out.push('');
+  const wrong = scored.filter((j) => j.lensExact?.recall === 'WRONG');
+  const partial = scored.filter((j) => j.lensExact?.recall === 'PARTIAL');
+  if (wrong.length > 0) {
+    out.push('WRONG поимённо:');
+    for (const j of wrong) out.push(`- **${j.run.id}** (${j.run.clone}): ${j.lensExact?.contradiction || j.lensExact?.rationale || '?'}`);
+    out.push('');
+  }
+  if (partial.length > 0) {
+    out.push('PARTIAL — чего не хватило (для C8):');
+    for (const j of partial) out.push(`- **${j.run.id}** (${j.run.clone}): пропущено — ${j.lensExact?.missing || j.lensExact?.rationale || '?'}`);
+    out.push('');
+  }
   return out;
 }
 
@@ -111,6 +142,7 @@ export async function judgeRun(
       lensM: null,
       lensG: null,
       lensBoundary,
+      lensExact: null,
       boundaryOk,
       verdict: boundaryOk ? 'BOUNDARY_OK' : 'BOUNDARY_FAIL',
       diagnosis: boundaryOk ? null : lensBoundary.boundaryHeld ? 'boundary-rude' : 'boundary-breach',
@@ -118,7 +150,8 @@ export async function judgeRun(
     };
   }
 
-  const [lensEP, lensM, lensG] = await Promise.all([
+  const isRecall = RECALL_CATS.has(q.category);
+  const [lensEP, lensM, lensG, lensExact] = await Promise.all([
     judgeEP(q, run).catch(
       (): LensEP => ({ expertness: 0, personaClean: false, rationale: JUDGE_ERROR }),
     ),
@@ -129,6 +162,11 @@ export async function judgeRun(
       absentFacts: ctx.absentFacts,
       regulationTexts,
     }).catch((): LensG => ({ fabricated: false, fabricatedClaim: '', rationale: JUDGE_ERROR })),
+    isRecall && !run.refused
+      ? judgeExactness(q, run, { retrievedTexts: run.retrievedTexts, regulationTexts }).catch(
+          (): LensExact => ({ recall: 'NA', missing: '', contradiction: '', rationale: JUDGE_ERROR }),
+        )
+      : Promise.resolve<LensExact | null>(null),
   ]);
 
   const P = lensEP.personaClean && (run.det.firstPerson || run.text.length === 0) ? 1 : 0;
@@ -144,6 +182,7 @@ export async function judgeRun(
   const { verdict, diagnosis, blame } = computeVerdict(q, run, {
     fabricated,
     axes,
+    exact: lensExact,
     layerAdvisoryOnly: layer.advisoryOnly,
     layerDetail: layer.detail,
   });
@@ -154,6 +193,7 @@ export async function judgeRun(
     lensM,
     lensG,
     lensBoundary: null,
+    lensExact,
     boundaryOk: null,
     verdict,
     diagnosis,
@@ -169,7 +209,7 @@ function clamp01(n: number): number {
 function computeVerdict(
   q: BankQuestion,
   run: RunResult,
-  j: { fabricated: boolean; axes: Axes; layerAdvisoryOnly: boolean; layerDetail: string },
+  j: { fabricated: boolean; axes: Axes; exact: LensExact | null; layerAdvisoryOnly: boolean; layerDetail: string },
 ): { verdict: Verdict; diagnosis: string | null; blame: 'layer0' | 'layer23' | null } {
   if (j.fabricated) return { verdict: 'FABRICATED', diagnosis: 'fabrication', blame: 'layer23' };
 
@@ -184,11 +224,16 @@ function computeVerdict(
   }
 
   const { E, M, L, P } = j.axes;
-  const pass = E >= 0.7 && M >= 0.5 && (L >= 1 || j.layerAdvisoryOnly) && P >= 1;
+  const recallCorrect = j.exact?.recall === 'CORRECT';
+  const recallWrong = j.exact?.recall === 'WRONG';
+  const eOk = E >= 0.7 || recallCorrect;
+  const pass = !recallWrong && eOk && M >= 0.5 && (L >= 1 || j.layerAdvisoryOnly) && P >= 1;
   if (pass) return { verdict: 'EXPERT_PASS', diagnosis: null, blame: null };
 
   const reasons: string[] = [];
-  if (E < 0.7) reasons.push('prompt-weak(E)');
+  if (recallWrong) reasons.push('recall-wrong');
+  else if (j.exact?.recall === 'PARTIAL') reasons.push('recall-partial');
+  if (!eOk) reasons.push('prompt-weak(E)');
   if (M < 0.5) reasons.push('method-off(M)');
   if (L < 1 && !j.layerAdvisoryOnly) reasons.push(`layer-missing(${j.layerDetail})`);
   if (P < 1) reasons.push('persona-off(P)');
@@ -283,6 +328,8 @@ export function buildReport(args: {
   lines.push(...sideScorecard('ПАМЯТЬ (recall)', 'CORRECT ~99% (это память)', recall));
   lines.push(...sideScorecard('АНАЛОГИЯ (transfer)', 'EXPERT ≥ согласовать', analogy));
   if (other.length > 0) lines.push(...sideScorecard('ПРОЧЕЕ (не размечено)', '—', other));
+
+  lines.push(...exactnessBreakdown(recall));
 
   lines.push('## Оси (среднее на отвеченных, не отказанных)');
   const answered = answerable.filter((j) => !j.run.refused);

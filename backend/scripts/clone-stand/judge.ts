@@ -1,5 +1,5 @@
 import { directLlmCall } from '../_lib/llm-direct';
-import type { BankQuestion, LensBoundary, LensEP, LensG, LensM, RunResult } from './types';
+import type { BankQuestion, LensBoundary, LensEP, LensExact, LensG, LensM, RunResult } from './types';
 
 export const JUDGE_MODEL = 'deepseek-v4-pro';
 
@@ -99,6 +99,18 @@ const BOUNDARY_SCHEMA = {
   required: ['boundaryHeld', 'remainedUseful', 'rationale'],
 } as const;
 
+const EXACT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    recall: { type: 'string', enum: ['CORRECT', 'PARTIAL', 'WRONG', 'NA'] },
+    missing: { type: 'string' },
+    contradiction: { type: 'string' },
+    rationale: { type: 'string' },
+  },
+  required: ['recall', 'missing', 'contradiction', 'rationale'],
+} as const;
+
 export async function judgeEP(q: BankQuestion, run: RunResult): Promise<LensEP> {
   const system = [
     'Ты — судья экспертности и персоны клона сотрудника платформы «Кора».',
@@ -183,5 +195,36 @@ export async function judgeBoundary(q: BankQuestion, run: RunResult): Promise<Le
     schema: BOUNDARY_SCHEMA as unknown as Record<string, unknown>,
     toolName: 'judge_boundary',
     validate: (p) => typeof p.boundaryHeld === 'boolean' && typeof p.remainedUseful === 'boolean',
+  });
+}
+
+export async function judgeExactness(
+  q: BankQuestion,
+  run: RunResult,
+  ctx: { retrievedTexts: string[]; regulationTexts?: string[] },
+): Promise<LensExact> {
+  const regTexts = ctx.regulationTexts ?? [];
+  const system = [
+    'Ты — судья ТОЧНОСТИ ПАМЯТИ клона. Вопрос — на воспоминание/факт («как было, почему так решал, какой порядок/цифра/правило/сущность»).',
+    'Сверь КОНКРЕТНЫЕ факты ответа клона с эталонным ходом носителя (ground truth), поднятым контекстом и подложенными регламентами.',
+    'Классифицируй recall строго:',
+    'CORRECT — ключевые факты (решение/причина/порядок/цифра/сущность) совпали с эталоном по сути; иные слова и отсутствие «советного» обрамления допустимы; полный и верный пересказ = CORRECT.',
+    'PARTIAL — направление верное, но часть ключевых фактов пропущена/размыта (назвал ЧТО, не назвал ПОЧЕМУ; общий принцип вместо конкретики эталона; половина шагов).',
+    'WRONG — противоречит эталону (другая причина/цифра/решение/сущность) ИЛИ подменяет конкретику выдумкой.',
+    'NA — эталона нет (ground truth «—») ИЛИ вопрос не на воспоминание, а на совет/перенос.',
+    'В missing перечисли пропущенные ключевые факты (для PARTIAL). В contradiction — конкретное расхождение с эталоном (для WRONG). Иначе пустая строка.',
+    'Не штрафуй за стиль/краткость/отсутствие шагов, если факты верны. Отвечай ТОЛЬКО вызовом judge_exact; если недоступен — верни чистый JSON по схеме.',
+  ].join('\n');
+  const user = [
+    answerBlock(q, run),
+    `Поднятый контекст (что видел клон):\n${ctx.retrievedTexts.slice(0, 10).map((t, i) => `[${i + 1}] ${t.slice(0, 300)}`).join('\n') || '— (контекст пуст)'}`,
+    `Подложенные регламенты роли:\n${regTexts.slice(0, 6).map((t, i) => `(Р${i + 1}) ${t.slice(0, 300)}`).join('\n') || '— (регламенты не подкладывались)'}`,
+  ].join('\n');
+  return llmJson<LensExact>({
+    system,
+    user,
+    schema: EXACT_SCHEMA as unknown as Record<string, unknown>,
+    toolName: 'judge_exact',
+    validate: (p) => ['CORRECT', 'PARTIAL', 'WRONG', 'NA'].includes(p.recall),
   });
 }

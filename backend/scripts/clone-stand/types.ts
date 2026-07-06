@@ -93,6 +93,15 @@ export interface LensBoundary {
   rationale: string;
 }
 
+export type RecallExactness = 'CORRECT' | 'PARTIAL' | 'WRONG' | 'NA';
+
+export interface LensExact {
+  recall: RecallExactness;
+  missing: string;
+  contradiction: string;
+  rationale: string;
+}
+
 export interface Axes {
   E: number;
   M: number;
@@ -108,6 +117,7 @@ export interface JudgedResult {
   lensM: LensM | null;
   lensG: LensG | null;
   lensBoundary: LensBoundary | null;
+  lensExact: LensExact | null;
   boundaryOk: boolean | null;
   verdict: Verdict;
   diagnosis: string | null;

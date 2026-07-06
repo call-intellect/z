@@ -39,49 +39,10 @@ export class Specialist32ProbeService {
     newProfile: SerializedKnowledgeProfile;
   }): Promise<void> {
     try {
-      await this.checkNewExpertise(args);
-    } catch (err) {
-      this.logProbeError('knowledge.new_expertise_detected', args.personId, err);
-    }
-    try {
       await this.checkContradiction(args);
     } catch (err) {
       this.logProbeError('knowledge.contradiction_detected', args.personId, err);
     }
-  }
-
-  private async checkNewExpertise(args: {
-    tenantId: string;
-    personId: string;
-    personName: string;
-    oldProfile: KnowledgeProfileDraft | null;
-    newProfile: SerializedKnowledgeProfile;
-  }): Promise<void> {
-    const oldNames = new Set(
-      (args.oldProfile?.categories ?? []).map((c) => c.name.trim().toLowerCase()),
-    );
-    const newHighCategories = args.newProfile.categories.filter(
-      (c) => c.confidence === 'high' && !oldNames.has(c.name.trim().toLowerCase()),
-    );
-    if (newHighCategories.length === 0) return;
-
-    const recipients = await this.findRecipients(args.tenantId, args.personId);
-    if (recipients.length === 0) return;
-
-    const categoryNames = newHighCategories
-      .slice(0, 3)
-      .map((c) => `«${c.name}»`)
-      .join(', ');
-    const message = `У ${args.personName} обнаружены новые области экспертизы: ${categoryNames}. Подтвердить?`;
-
-    await this.emit({
-      tenantId: args.tenantId,
-      personId: args.personId,
-      reason: 'knowledge.new_expertise_detected',
-      message,
-      recipients,
-      suggestedActions: ['Подтвердить', 'Пометить как неверное'],
-    });
   }
 
   private async checkContradiction(args: {

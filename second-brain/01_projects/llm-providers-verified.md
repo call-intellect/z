@@ -101,6 +101,15 @@ deepseek (primary) → openai-via-proxy/gpt (secondary) → kie:gemini-3.1-pro (
 
 > **Примечание к verified-таблице выше:** строки `gpt-4o` и `ollama:qwen3.5:9b` помечены ⚠ «выведена» по итогам этой нормализации. Сами каналы технически живы (smoke проходит), но в дефолтные `LlmTaskRoute.providers` их закладывать нельзя.
 
+## Провайдер «по умолчанию» (2026-07-06)
+
+> Реализовано ТЗ [`2026-07-06-llm-provider-default-fallback.md`](../../plans/tz/2026-07-06-llm-provider-default-fallback.md). Раньше удаление провайдера из каталога (`/admin/ai/catalog`), занятого хоть в одном из ~250 маршрутов, блокировалось голой ошибкой `provider_in_use_by_routes` — владельцу приходилось вручную искать и переключать каждый маршрут.
+
+- **`LlmProvider.isDefaultProvider`** (новая колонка, миграция `20260706142414_add_llm_provider_is_default`) — ровно один провайдер в системе может быть дефолтом; модель дефолта — уже существующий `defaultModelKey`, отдельного поля не заводили. Гарантия «ровно один» — на уровне транзакции сервиса (`setDefaultProvider`), не БД-constraint.
+- **Удаление занятого провайдера** (`AdminLlmProvidersService.softDeleteWithFallback`, заменил старый `softDelete`) — если дефолт назначен, вместо блокировки автоматически переключает ВСЕ занятые маршруты (глобальные и per-org, tier-нормализованные и legacy JSON-формат) на дефолт, с дедупом (не плодит второе вхождение дефолта в той же цепочке) и audit-логом в `LlmTaskRouteChange` (`changeType:'removed_provider'`, `reason:'provider_deleted_auto_migrated'`). Дефолт не назначен — поведение как раньше (жёсткий отказ).
+- **Удаление самого дефолта** — требует `reassignDefaultTo:{providerId,model}` в теле `DELETE`; без него — 409 `must_reassign_default`. Frontend показывает диалог выбора нового дефолта прямо в момент удаления (не отдельный поход в настройки).
+- **Эндпоинт предпросмотра** `GET /admin/llm-providers/:id/removal-impact` — считает число затронутых маршрутов/tenant'ов ДО удаления, фронт показывает это в диалоге подтверждения вместо голой ошибки.
+
 ## Стоимость и телеметрия LLM (2026-06-05)
 
 > Реализовано ТЗ `plans/tz/2026-06-05-llm-cost-safety-and-telemetry-retention.md` (ветка `sergdev`). Закрывает риски #4 и #5 техаудита: расход стал управляемым (enforce за флагом) и видимым (метрика unpriced), рост телеметрии ограничен с сохранением истории стоимости. Схему БД не трогали (`OrgBudgetCap.capKind` уже был, превью уже nullable).

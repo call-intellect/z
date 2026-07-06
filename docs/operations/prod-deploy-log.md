@@ -71,6 +71,26 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-06 — Провайдер по умолчанию в каталоге LLM (ТЗ llm-provider-default-fallback, 3 фазы, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ [`2026-07-06-llm-provider-default-fallback.md`](../../plans/tz/2026-07-06-llm-provider-default-fallback.md) + архитектура [`2026-07-06-llm-provider-default-fallback.md`](../../plans/architecture/2026-07-06-llm-provider-default-fallback.md). Назначение одного провайдера «по умолчанию» в `/admin/ai/catalog`; удаление занятого провайдера теперь показывает предпросмотр (число маршрутов) и автопереключает на дефолт вместо блокировки 409.
+>
+> **🟡 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA** (1 boolean-колонка). **🟢 НОВЫХ ENV/ФЛАГОВ НЕТ.** **🟢 Новых патчей/сидов/бэкафиллов нет.** Docker rebuild backend+frontend обязателен.
+
+- **Шаг 4 — Prisma миграция, авто через `prisma migrate deploy`**: `20260706142414_add_llm_provider_is_default` — аддитивная (`ALTER TABLE "llm_providers" ADD COLUMN "isDefaultProvider" BOOLEAN NOT NULL DEFAULT false`), существующие строки не трогает.
+- **Шаг 1/5/6/7/8/9/10 — не затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - `/admin/ai/catalog` под суперадмином → у одного из провайдеров можно нажать «Сделать по умолчанию», выбрать модель → появляется бейдж «★ По умолчанию».
+  - Попытка удалить занятый (не-дефолтный) провайдер → диалог «используется в N маршрутах, переключится на X/Y» вместо голой ошибки 409; подтверждение реально удаляет и переключает (проверить `LlmTaskRouteChange` — новые записи `changeType='removed_provider'`, `reason='provider_deleted_auto_migrated'`).
+  - Попытка удалить сам дефолтный провайдер → диалог выбора нового дефолта; после подтверждения новый провайдер становится дефолтом, старый удалён.
+  - `GET /api/v1/admin/llm-providers/:id/removal-impact` (супер-админ) → 200 с полями `affectedRoutesCount`/`affectedTenantsCount`/`inDefaultChain`/`currentDefault`.
+- **Откат:** чисто аддитивная колонка + новый метод рядом со старым — при инциденте безопасно откатить код (старое поведение `assertProviderNotInUse` полностью сохранено для случая «дефолт не назначен»), колонку не обязательно откатывать (default false, ничего не ломает при простое).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-07-04 — Экономный режим лимита ИИ (ТЗ llm-budget-downgrade-tier, 4 фазы, ветка fix/invite-password-existing-user-multi-org)
 
 > ТЗ [`2026-07-04-llm-budget-downgrade-tier.md`](../../plans/tz/2026-07-04-llm-budget-downgrade-tier.md) + архитектура [`2026-07-04-llm-budget-downgrade-tier.md`](../../plans/architecture/2026-07-04-llm-budget-downgrade-tier.md). Третий режим лимита расходов на ИИ `capKind='downgrade'` — при превышении месячного бюджета компании `LlmRouterService` переупорядочивает уже настроенную для задачи цепочку моделей по цене вместо блокировки (`hard`) или молчаливого наблюдения (`soft`). Плюс лимит «по умолчанию для всех компаний» (`llm.budget.default_monthly_cap_rub`, 0=безлимит), действующий только на компании без своего значения. `BudgetAlertCron` расширен на ВСЕ активные Org (было — только с явной строкой `OrgBudgetCap`), иначе уведомление о переходе в экономный режим не долетало бы до компаний без персональной настройки.

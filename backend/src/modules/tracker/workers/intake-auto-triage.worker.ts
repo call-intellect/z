@@ -524,6 +524,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
         externalId: intake.externalId,
         sourceBlockIds: intake.sourceBlockIds,
         linkedMeetingIds: intake.meetingId ? [intake.meetingId] : [],
+        ownerHintRaw: intake.ownerHintRaw ?? null,
         // TZ task-dedup (2026-06-16) — дедуп уже отработал на уровне A
         // (intake create); двойной suggest не нужен.
         skipDedup: true,

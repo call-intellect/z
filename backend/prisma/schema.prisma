@@ -9635,6 +9635,7 @@ model Issue {
   goalId           String? // связь с Goal! (FK opt.)
   meetingId        String? // legacy compatibility
   linkedMeetingIds String[] // видеовстречи из задачи
+  ownerHintRaw     String?
 
   // AI metadata
   sourceBlockIds   String[] // если задача создана AI — откуда вытащил
@@ -10277,6 +10278,8 @@ model IntakeIssue {
   // Фикс linkedMeetingIds 2026-06-17 — ID встречи-источника (source='meeting').
   // При авто-приёме (IntakeAutoTriageWorker) прокидывается в Issue.linkedMeetingIds.
   meetingId String?
+
+  ownerHintRaw String?
 
   rawContent           String  @db.Text // исходный текст
   extractedTitle       String?

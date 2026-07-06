@@ -727,6 +727,7 @@ export class IntakeService {
           // A10 (2026-06-14) — провенанс intake → Issue.
           sourceBlockIds: intake.sourceBlockIds,
           linkedMeetingIds: intake.meetingId ? [intake.meetingId] : [],
+          ownerHintRaw: intake.ownerHintRaw ?? null,
           // TZ task-dedup (2026-06-16) — дедуп уже отработал на уровне A
           // (intake create); двойной suggest не нужен.
           skipDedup: true,

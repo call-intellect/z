@@ -72,6 +72,7 @@ export class TaskDraftMaterializerService {
 
   async materialize(args: MaterializeArgs): Promise<MaterializedTask[]> {
     const { tenantId, channel } = args;
+    const isMeetingDerived = channel === 'meeting' || channel === 'meeting_report';
     const created: MaterializedTask[] = [];
     let skipped = 0;
 
@@ -101,7 +102,12 @@ export class TaskDraftMaterializerService {
           suggestedAssigneeId = null;
         }
       }
-      if (suggestedAssigneeId == null && this.skillRouting && this.cfg.taskRouting.enabled) {
+      if (
+        !isMeetingDerived &&
+        suggestedAssigneeId == null &&
+        this.skillRouting &&
+        this.cfg.taskRouting.enabled
+      ) {
         try {
           const taskText = [title, draft.suggestedAssigneeHint, sourceQuote]
             .filter(Boolean)
@@ -120,6 +126,8 @@ export class TaskDraftMaterializerService {
           suggestedAssigneeId = null;
         }
       }
+
+      const ownerHintRaw = suggestedAssigneeId == null && hint ? hint : null;
 
       const suggestedProjectId = await this.resolveProjectIdByTitle(
         tenantId,
@@ -192,6 +200,7 @@ export class TaskDraftMaterializerService {
           suggestedDuplicateOfIssueId,
           sourceBlockIds: draft.sourceBlockId ? [draft.sourceBlockId] : [],
           meetingId: this.resolveLinkedMeetingId(channel, args.sourceId),
+          ownerHintRaw,
           confidence: confidenceDecimal,
           checklistJson: checklistJson ?? Prisma.JsonNull,
           expiresAt: computeExpiresAt(this.cfg.pendingActions.intakeTtlDays),

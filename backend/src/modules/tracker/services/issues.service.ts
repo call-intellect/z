@@ -236,6 +236,7 @@ export class IssuesService {
           ...(dto.linkedMeetingIds && dto.linkedMeetingIds.length > 0
             ? { linkedMeetingIds: dto.linkedMeetingIds }
             : {}),
+          ownerHintRaw: dto.ownerHintRaw ?? null,
           externalSource: dto.externalSource ?? null,
           externalId: dto.externalId ?? null,
           createdById: userId,

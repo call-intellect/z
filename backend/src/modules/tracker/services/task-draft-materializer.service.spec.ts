@@ -50,8 +50,9 @@ function makeDeps() {
     incTaskSkillRoutingAssigned,
   } as unknown as BusinessMetricsService;
 
+  const suggestAssignee = vi.fn().mockResolvedValue([]);
   const skillRouting = {
-    suggestAssignee: vi.fn().mockResolvedValue([]),
+    suggestAssignee,
   } as unknown as SkillRoutingService;
 
   const service = new TaskDraftMaterializerService(
@@ -73,6 +74,7 @@ function makeDeps() {
     resolve,
     enqueue,
     incTaskDraftMaterialized,
+    suggestAssignee,
   };
 }
 
@@ -214,6 +216,62 @@ describe('TaskDraftMaterializerService', () => {
         data: expect.objectContaining({ meetingId: null }),
       }),
     );
+  });
+
+  it('Ф2: meeting_report + hint-гость (не резолвится) → assignee=null, ownerHintRaw=hint, skill-routing НЕ зван', async () => {
+    const { service, create, suggestAssignee } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача Романа', suggestedAssigneeHint: 'Роман' }],
+    });
+
+    expect(suggestAssignee).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          suggestedAssigneeId: null,
+          ownerHintRaw: 'Роман',
+        }),
+      }),
+    );
+  });
+
+  it('Ф2: meeting_report + hint-сотрудник (резолвится) → assignee=userId, ownerHintRaw=null', async () => {
+    const { service, create, resolve, suggestAssignee } = makeDeps();
+    resolve.mockResolvedValueOnce({ kind: 'resolved', userId: 'user-sergey' });
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача Сергея', suggestedAssigneeHint: 'Сергей' }],
+    });
+
+    expect(suggestAssignee).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          suggestedAssigneeId: 'user-sergey',
+          ownerHintRaw: null,
+        }),
+      }),
+    );
+  });
+
+  it('Ф2: не-встречный канал (chatbox) → skill-routing ВЫЗВАН (регресс не-meeting поведения)', async () => {
+    const { service, suggestAssignee } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'chatbox',
+      sourceId: 'conv-1',
+      drafts: [{ title: 'Задача из чата', suggestedAssigneeHint: 'кто-нибудь' }],
+    });
+
+    expect(suggestAssignee).toHaveBeenCalledTimes(1);
   });
 
   it('chatbox → meetingId = null (регресс)', async () => {

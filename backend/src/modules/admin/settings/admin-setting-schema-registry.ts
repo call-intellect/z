@@ -449,6 +449,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.progressAutoDraftEnabled', z.boolean()],
   ['tracker.progressAutoDraftMinSignals', z.number().int().min(1)],
   ['tracker.progressAutoDraftCron', z.string().min(1)],
+  ['tracker.progressAutoDraftMinConfidence', UNIT_INTERVAL],
+  ['tracker.progressAutoDraftRequireSubstantiveSignal', z.boolean()],
   ['tracker.activityDigestEnabled', z.boolean()],
   ['tracker.automationsEnabled', z.boolean()],
   ['tracker.recurrenceEnabled', z.boolean()],

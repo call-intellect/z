@@ -62,6 +62,24 @@ const SEEDS: SettingSeed[] = [
       'Кадэнс (cron) воркера авто-черновика прогресса. По умолчанию ежедневно в 07:00 UTC.',
   },
   {
+    key: 'tracker.progressAutoDraftMinConfidence',
+    value: 0.35,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Порог уверенности авто-черновика прогресса: черновик с confidence ниже порога тихо гасится и не попадает в «Подтверждения» (анти-fatigue). По умолчанию 0.35, диапазон 0–1.',
+  },
+  {
+    key: 'tracker.progressAutoDraftRequireSubstantiveSignal',
+    value: true,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'medium',
+    description:
+      'Требовать хотя бы один содержательный сигнал (выполненный пункт чек-листа или упоминание задачи в графе) для создания авто-черновика прогресса. По умолчанию вкл: одни смены статуса черновик не создают. Выкл → старое поведение (черновик может родиться и только из смен статуса).',
+  },
+  {
     key: 'tracker.activityDigestEnabled',
     value: true,
     category: 'tracker',

@@ -20,10 +20,10 @@ interface PeriodArgs {
 }
 
 interface DashboardFilterArgs {
-  provider?: string;
-  model?: string;
-  taskType?: string;
-  orgId?: string;
+  provider?: string[];
+  model?: string[];
+  taskType?: string[];
+  orgId?: string[];
 }
 
 const DASHBOARD_TTL_MS = 60_000;
@@ -157,7 +157,8 @@ export class AdminUsageService {
       args.period === 'custom'
         ? `custom_${args.from?.toISOString()}_${args.to?.toISOString()}`
         : args.period;
-    const filterKey = `${args.provider ?? '*'}:${args.model ?? '*'}:${args.taskType ?? '*'}:${args.orgId ?? '*'}`;
+    const csvKey = (v: string[] | undefined) => (v?.length ? [...v].sort().join(',') : '*');
+    const filterKey = `${csvKey(args.provider)}:${csvKey(args.model)}:${csvKey(args.taskType)}:${csvKey(args.orgId)}`;
     return `usage:${kind}:${args.scope}:${tenant}:${periodKey}:${filterKey}`;
   }
 
@@ -173,10 +174,10 @@ export class AdminUsageService {
     const baseWhere: Prisma.AiUsageLogWhereInput = {
       createdAt: { gte: range.gte, lt: range.lt },
       ...tenantWhere,
-      ...(args.provider ? { provider: args.provider } : {}),
-      ...(args.model ? { model: args.model } : {}),
-      ...(args.taskType ? { taskType: args.taskType } : {}),
-      ...(args.scope === 'global' && args.orgId ? { tenantId: args.orgId } : {}),
+      ...(args.provider?.length ? { provider: { in: args.provider } } : {}),
+      ...(args.model?.length ? { model: { in: args.model } } : {}),
+      ...(args.taskType?.length ? { taskType: { in: args.taskType } } : {}),
+      ...(args.scope === 'global' && args.orgId?.length ? { tenantId: { in: args.orgId } } : {}),
     };
 
     const [totalsAgg, failedAgg, byProvider, byModel, byTaskType, counts, topOrgs, trend] =
@@ -211,7 +212,12 @@ export class AdminUsageService {
         args.scope === 'global'
           ? this.fetchTopOrgsByCost(range, 10, args)
           : Promise.resolve(undefined),
-        this.fetchDailyTrend(range, baseWhere),
+        this.fetchDailyTrend(range, {
+          tenantId: args.scope === 'org' ? args.tenantId : args.orgId,
+          provider: args.provider,
+          model: args.model,
+          taskType: args.taskType,
+        }),
       ]);
 
     const result: AdminDashboardResult = {
@@ -262,24 +268,30 @@ export class AdminUsageService {
 
   private async fetchDailyTrend(
     range: { gte: Date; lt: Date },
-    where: Prisma.AiUsageLogWhereInput,
+    filters: {
+      tenantId?: string | string[];
+      provider?: string[];
+      model?: string[];
+      taskType?: string[];
+    },
   ): Promise<Array<{ date: string; costUsd: number; calls: number; failedCalls: number }>> {
     const conditions: Prisma.Sql[] = [
       Prisma.sql`"createdAt" >= ${range.gte}`,
       Prisma.sql`"createdAt" < ${range.lt}`,
     ];
-    if (typeof where.tenantId === 'string') {
-      conditions.push(Prisma.sql`"tenantId" = ${where.tenantId}`);
-    }
-    if (typeof where.provider === 'string') {
-      conditions.push(Prisma.sql`"provider" = ${where.provider}`);
-    }
-    if (typeof where.model === 'string') {
-      conditions.push(Prisma.sql`"model" = ${where.model}`);
-    }
-    if (typeof where.taskType === 'string') {
-      conditions.push(Prisma.sql`"taskType" = ${where.taskType}`);
-    }
+    const inOrEq = (column: string, value: string | string[] | undefined) => {
+      if (value === undefined) return;
+      if (Array.isArray(value)) {
+        if (value.length === 0) return;
+        conditions.push(Prisma.sql`${Prisma.raw(column)} IN (${Prisma.join(value)})`);
+      } else {
+        conditions.push(Prisma.sql`${Prisma.raw(column)} = ${value}`);
+      }
+    };
+    inOrEq('"tenantId"', filters.tenantId);
+    inOrEq('"provider"', filters.provider);
+    inOrEq('"model"', filters.model);
+    inOrEq('"taskType"', filters.taskType);
 
     const rows = await this.prisma.$queryRaw<
       Array<{ day: Date; cost: number; calls: bigint; failed: bigint }>
@@ -331,10 +343,10 @@ export class AdminUsageService {
       by: ['tenantId'],
       where: {
         createdAt: { gte: range.gte, lt: range.lt },
-        tenantId: filters.orgId ? filters.orgId : { not: null },
-        ...(filters.provider ? { provider: filters.provider } : {}),
-        ...(filters.model ? { model: filters.model } : {}),
-        ...(filters.taskType ? { taskType: filters.taskType } : {}),
+        tenantId: filters.orgId?.length ? { in: filters.orgId } : { not: null },
+        ...(filters.provider?.length ? { provider: { in: filters.provider } } : {}),
+        ...(filters.model?.length ? { model: { in: filters.model } } : {}),
+        ...(filters.taskType?.length ? { taskType: { in: filters.taskType } } : {}),
       },
       _sum: { costUsd: true },
       _count: { _all: true },

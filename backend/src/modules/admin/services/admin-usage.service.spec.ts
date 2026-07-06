@@ -109,31 +109,31 @@ describe('AdminUsageService.getDashboard', () => {
     await svc.getDashboard({
       scope: 'global',
       period: 'week',
-      provider: 'kie',
-      model: 'gemini-3.1-pro',
-      taskType: 'summary',
+      provider: ['kie', 'openai-via-proxy'],
+      model: ['gemini-3.1-pro'],
+      taskType: ['summary', 'chapters'],
     });
 
     for (const call of groupBy.mock.calls) {
       const args = call[0] as { where: Record<string, unknown> };
       expect(args.where).toMatchObject({
-        provider: 'kie',
-        model: 'gemini-3.1-pro',
-        taskType: 'summary',
+        provider: { in: ['kie', 'openai-via-proxy'] },
+        model: { in: ['gemini-3.1-pro'] },
+        taskType: { in: ['summary', 'chapters'] },
       });
     }
   });
 
-  it('scope=global + orgId фильтрует tenantId в baseWhere', async () => {
+  it('scope=global + orgId (несколько) фильтрует tenantId через IN в baseWhere', async () => {
     const { prisma, groupBy } = buildDashboardPrismaMock({});
     const svc = new AdminUsageService(prisma, buildCacheMock());
 
-    await svc.getDashboard({ scope: 'global', period: 'week', orgId: 'org_1' });
+    await svc.getDashboard({ scope: 'global', period: 'week', orgId: ['org_1', 'org_2'] });
 
     const firstCall = groupBy.mock.calls[0];
     if (!firstCall) throw new Error('groupBy не вызван');
     const call = firstCall[0] as { where: Record<string, unknown> };
-    expect(call.where).toMatchObject({ tenantId: 'org_1' });
+    expect(call.where).toMatchObject({ tenantId: { in: ['org_1', 'org_2'] } });
   });
 
   it('byModel группирует по provider+model, сортирует по costUsd desc', async () => {

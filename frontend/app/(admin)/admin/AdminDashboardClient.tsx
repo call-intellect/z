@@ -21,6 +21,10 @@ import {
 import { taskTypeLabel } from "@/domain/admin-experiment";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import {
+  MultiSelectCombobox,
+  type MultiSelectOption,
+} from "@/ui/components/admin/MultiSelectCombobox";
 import { Button } from "@/ui/shadcn/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import { Input } from "@/ui/shadcn/input";
@@ -48,16 +52,22 @@ const PERIODS: Array<{ value: AdminPeriod; label: string }> = [
   { value: "custom", label: "Свой период" },
 ];
 
-const ALL_FILTER = "__all__";
+function csv(values: string[]): string | undefined {
+  return values.length > 0 ? values.join(",") : undefined;
+}
+
+function formatDate(d: Date): string {
+  return d.toLocaleDateString("ru-RU");
+}
 
 export function AdminDashboardClient() {
   const [period, setPeriod] = useState<AdminPeriod>("week");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [provider, setProvider] = useState("");
-  const [model, setModel] = useState("");
-  const [taskType, setTaskType] = useState("");
-  const [orgId, setOrgId] = useState("");
+  const [providers, setProviders] = useState<string[]>([]);
+  const [models, setModels] = useState<string[]>([]);
+  const [taskTypes, setTaskTypes] = useState<string[]>([]);
+  const [orgIds, setOrgIds] = useState<string[]>([]);
 
   const isCustom = period === "custom";
   const hasCustomRange = isCustom && Boolean(dateFrom && dateTo);
@@ -81,62 +91,87 @@ export function AdminDashboardClient() {
     [],
   );
 
-  const providerOptions = [
+  const providerOptions: MultiSelectOption[] = [
     ...new Set((optionsQ.data?.byModel ?? []).map((m) => m.provider)),
-  ].sort();
-  const modelOptions = [
+  ]
+    .sort()
+    .map((p) => ({ value: p, label: p }));
+  const modelOptions: MultiSelectOption[] = [
     ...new Set(
       (optionsQ.data?.byModel ?? [])
-        .filter((m) => !provider || m.provider === provider)
+        .filter((m) => providers.length === 0 || providers.includes(m.provider))
         .map((m) => m.model),
     ),
-  ].sort();
-  const taskTypeOptions = [
+  ]
+    .sort()
+    .map((m) => ({ value: m, label: m }));
+  const taskTypeOptions: MultiSelectOption[] = [
     ...new Set((optionsQ.data?.byTaskType ?? []).map((t) => t.taskType)),
-  ].sort();
-  const orgOptions = orgsQ.data?.items ?? [];
+  ]
+    .sort()
+    .map((t) => ({ value: t, label: taskTypeLabel(t) }));
+  const orgOptions: MultiSelectOption[] = (orgsQ.data?.items ?? []).map((o) => ({
+    value: o.id,
+    label: o.name,
+  }));
 
   const q = useAdminQuery(
-    `admin-dashboard:${period}:${dateFrom}:${dateTo}:${provider}:${model}:${taskType}:${orgId}`,
+    `admin-dashboard:${period}:${dateFrom}:${dateTo}:${providers.join(",")}:${models.join(",")}:${taskTypes.join(",")}:${orgIds.join(",")}`,
     async () => {
       if (isCustom && !hasCustomRange) return null;
       const res = await adminUsageApi.getDashboard({
         period,
         ...(hasCustomRange ? { from: dateFrom, to: dateTo } : {}),
-        ...(provider ? { provider } : {}),
-        ...(model ? { model } : {}),
-        ...(taskType ? { taskType } : {}),
-        ...(orgId ? { orgId } : {}),
+        ...(csv(providers) ? { provider: csv(providers) } : {}),
+        ...(csv(models) ? { model: csv(models) } : {}),
+        ...(csv(taskTypes) ? { taskType: csv(taskTypes) } : {}),
+        ...(csv(orgIds) ? { orgId: csv(orgIds) } : {}),
       });
       return adminDashboardFromApi(res);
     },
-    [period, dateFrom, dateTo, provider, model, taskType, orgId, isCustom, hasCustomRange],
+    [period, dateFrom, dateTo, providers, models, taskTypes, orgIds, isCustom, hasCustomRange],
   );
 
   const hasFilters = Boolean(
-    dateFrom || dateTo || provider || model || taskType || orgId,
+    dateFrom ||
+      dateTo ||
+      providers.length ||
+      models.length ||
+      taskTypes.length ||
+      orgIds.length,
   );
+
+  const resolvedRangeLabel = q.data
+    ? `${formatDate(q.data.period.from)} – ${formatDate(q.data.period.to)}`
+    : null;
 
   return (
     <AdminSection
       title="Пульс компании"
       description="Расход LLM, активность пользователей и Org за выбранный период."
       actions={
-        <Select
-          value={period}
-          onValueChange={(v) => setPeriod(v as AdminPeriod)}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIODS.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          {resolvedRangeLabel && (
+            <span className="whitespace-nowrap rounded-md border border-border-subtle bg-bg-card px-2.5 py-1.5 text-xs text-fg-tertiary">
+              {resolvedRangeLabel}
+            </span>
+          )}
+          <Select
+            value={period}
+            onValueChange={(v) => setPeriod(v as AdminPeriod)}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PERIODS.map((p) => (
+                <SelectItem key={p.value} value={p.value}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       }
     >
       <div className="space-y-6">
@@ -163,85 +198,50 @@ export function AdminDashboardClient() {
               </div>
             </>
           )}
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-fg-tertiary">Провайдер</span>
-            <Select
-              value={provider || ALL_FILTER}
-              onValueChange={(v) => {
-                setProvider(v === ALL_FILTER ? "" : v);
-                setModel("");
-              }}
-            >
-              <SelectTrigger className="h-9 w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_FILTER}>Все провайдеры</SelectItem>
-                {providerOptions.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-fg-tertiary">Модель</span>
-            <Select
-              value={model || ALL_FILTER}
-              onValueChange={(v) => setModel(v === ALL_FILTER ? "" : v)}
-            >
-              <SelectTrigger className="h-9 w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_FILTER}>Все модели</SelectItem>
-                {modelOptions.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-fg-tertiary">Модуль</span>
-            <Select
-              value={taskType || ALL_FILTER}
-              onValueChange={(v) => setTaskType(v === ALL_FILTER ? "" : v)}
-            >
-              <SelectTrigger className="h-9 w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_FILTER}>Все модули</SelectItem>
-                {taskTypeOptions.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {taskTypeLabel(t)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-fg-tertiary">Организация</span>
-            <Select
-              value={orgId || ALL_FILTER}
-              onValueChange={(v) => setOrgId(v === ALL_FILTER ? "" : v)}
-            >
-              <SelectTrigger className="h-9 w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_FILTER}>Все организации</SelectItem>
-                {orgOptions.map((o) => (
-                  <SelectItem key={o.id} value={o.id}>
-                    {o.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <MultiSelectCombobox
+            label="Провайдер"
+            placeholder="Все провайдеры"
+            searchPlaceholder="Поиск провайдера…"
+            className="w-48"
+            options={providerOptions}
+            selected={providers}
+            onChange={(next) => {
+              setProviders(next);
+              const allowedModels = new Set(
+                (optionsQ.data?.byModel ?? [])
+                  .filter((m) => next.length === 0 || next.includes(m.provider))
+                  .map((m) => m.model),
+              );
+              setModels((prev) => prev.filter((m) => allowedModels.has(m)));
+            }}
+          />
+          <MultiSelectCombobox
+            label="Модель"
+            placeholder="Все модели"
+            searchPlaceholder="Поиск модели…"
+            className="w-48"
+            options={modelOptions}
+            selected={models}
+            onChange={setModels}
+          />
+          <MultiSelectCombobox
+            label="Модуль"
+            placeholder="Все модули"
+            searchPlaceholder="Поиск модуля…"
+            className="w-56"
+            options={taskTypeOptions}
+            selected={taskTypes}
+            onChange={setTaskTypes}
+          />
+          <MultiSelectCombobox
+            label="Организация"
+            placeholder="Все организации"
+            searchPlaceholder="Поиск организации…"
+            className="w-60"
+            options={orgOptions}
+            selected={orgIds}
+            onChange={setOrgIds}
+          />
           {hasFilters && (
             <Button
               size="sm"
@@ -249,10 +249,10 @@ export function AdminDashboardClient() {
               onClick={() => {
                 setDateFrom("");
                 setDateTo("");
-                setProvider("");
-                setModel("");
-                setTaskType("");
-                setOrgId("");
+                setProviders([]);
+                setModels([]);
+                setTaskTypes([]);
+                setOrgIds([]);
               }}
             >
               Сбросить фильтры

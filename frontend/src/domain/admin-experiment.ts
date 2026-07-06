@@ -105,6 +105,14 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   "chat-v2": "Чат v2 (knowledge)",
   "goal-alignment": "Goal alignment",
   "dashboard-summary": "Дашборд: summary",
+  "company-summary-compile": "Компания: авто-summary",
+  "executable-persona-compile": "Клон: сборка персоны",
+  "issue-progress-draft": "Трекер: черновик прогресса",
+  "probe-formulate": "Probe: формулировка вопроса",
+  "probe-quality-judge": "Probe: судья качества",
+  "probe-value-gate": "Probe: гейт ценности",
+  "sprint-helper-suggest": "Трекер: подсказки спринта",
+  "team-health-analyzer": "Здоровье команды: анализ",
 };
 
 export function taskTypeLabel(taskType: string): string {

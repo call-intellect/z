@@ -3,15 +3,27 @@ import { z } from 'zod';
 export const PeriodSchema = z.enum(['day', 'week', 'month', 'custom']);
 export type AdminPeriod = z.infer<typeof PeriodSchema>;
 
+function csvArray(maxLen: number) {
+  return z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((v) => {
+      if (v === undefined) return undefined;
+      const arr = Array.isArray(v) ? v : v.split(',');
+      const cleaned = arr.map((s) => s.trim()).filter((s) => s.length > 0 && s.length <= maxLen);
+      return cleaned.length > 0 ? cleaned : undefined;
+    });
+}
+
 export const DashboardQuerySchema = z
   .object({
     period: PeriodSchema.default('week'),
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),
-    provider: z.string().min(1).max(60).optional(),
-    model: z.string().min(1).max(120).optional(),
-    taskType: z.string().min(1).max(80).optional(),
-    orgId: z.string().min(1).max(100).optional(),
+    provider: csvArray(60),
+    model: csvArray(120),
+    taskType: csvArray(80),
+    orgId: csvArray(100),
   })
   .refine((v) => v.period !== 'custom' || (v.from !== undefined && v.to !== undefined), {
     message: 'period=custom требует from и to',

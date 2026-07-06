@@ -132,16 +132,17 @@ export async function judgeRun(
   ]);
 
   const P = lensEP.personaClean && (run.det.firstPerson || run.text.length === 0) ? 1 : 0;
+  const fabricated = lensG.fabricated && (lensG.fabricatedClaim ?? '').trim().length > 0;
   const axes: Axes = {
     E: clamp01(lensEP.expertness),
     M: clamp01(lensM.methodFidelity),
-    G: lensG.fabricated ? 0 : 1,
+    G: fabricated ? 0 : 1,
     L: layer.hit || layer.advisoryOnly ? 1 : 0,
     P,
   };
 
   const { verdict, diagnosis, blame } = computeVerdict(q, run, {
-    fabricated: lensG.fabricated,
+    fabricated,
     axes,
     layerAdvisoryOnly: layer.advisoryOnly,
     layerDetail: layer.detail,

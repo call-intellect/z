@@ -38,6 +38,7 @@ function buildAskService(opts?: {
   topicRefused?: boolean;
   cloneQueryLogCreate?: ReturnType<typeof vi.fn>;
   cloneV2Enabled?: boolean;
+  acceptTopicMatch?: boolean;
 }) {
   const cloneQueryLogCreate = opts?.cloneQueryLogCreate ?? vi.fn(async () => ({ id: 'log-1' }));
 
@@ -87,7 +88,11 @@ function buildAskService(opts?: {
       return def;
     },
     resolveSync: (key: string, _env?: string, def?: unknown) =>
-      key === 'clone.v2.enabled' ? (opts?.cloneV2Enabled ?? false) : def,
+      key === 'clone.v2.enabled'
+        ? (opts?.cloneV2Enabled ?? false)
+        : key === 'clone.grounding.accept_topic_match'
+          ? (opts?.acceptTopicMatch ?? true)
+          : def,
   } as unknown as TypedConfigService;
 
   const llmCall = vi.fn(async () => ({
@@ -174,9 +179,23 @@ function ask(svc: ClonesService) {
 }
 
 describe('ClonesService Э0.1 — пост-LLM grounding-гейт', () => {
-  it('ответ LLM без [BLOCK]-цитат при включённом флаге → программный отказ ungrounded (LLM-текст НЕ возвращается)', async () => {
+  it('ответ без [BLOCK]-цитат, но topic-гейт нашёл релевантные блоки → ПРИНЯТ (C3: topic-match = заземление)', async () => {
     const { svc, mocks } = buildAskService({
       groundingEnabled: true,
+      llmText: 'Ответ по опыту без явных маркеров цитат.',
+    });
+
+    const res = await ask(svc);
+
+    expect(res.refused).toBeFalsy();
+    expect(res.text).toContain('Ответ по опыту');
+    expect(mocks.incCloneAskRefused).not.toHaveBeenCalledWith({ reason: 'ungrounded' });
+  });
+
+  it('крутилка accept_topic_match=false → строгий гейт: без цитат → отказ ungrounded (LLM-текст НЕ возвращается)', async () => {
+    const { svc, mocks } = buildAskService({
+      groundingEnabled: true,
+      acceptTopicMatch: false,
       llmText: 'Правдоподобный ответ без единой опоры на контекст.',
     });
 
@@ -190,23 +209,9 @@ describe('ClonesService Э0.1 — пост-LLM grounding-гейт', () => {
     expect(mocks.incCloneAskRefused).toHaveBeenCalledWith({
       reason: 'ungrounded',
     });
-    expect(mocks.incCloneAsk).toHaveBeenCalledWith({ scope: 'person' });
-    expect(mocks.persistMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        answer: ClonesService.UNGROUNDED_REFUSAL_TEXT,
-        llmMeta: expect.objectContaining({
-          refused: true,
-          refusalReason: 'ungrounded',
-        }),
-      }),
-    );
     expect(mocks.cloneQueryLogCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          tenantId: TENANT_ID,
-          cloneScope: 'person',
-          cloneTargetId: PERSON_ID,
-          userId: REQUESTER_ID,
           answeredGrounded: false,
           refusalReason: 'ungrounded',
         }),

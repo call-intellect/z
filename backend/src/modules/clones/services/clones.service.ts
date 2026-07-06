@@ -275,7 +275,7 @@ export class ClonesService {
 
     const citations = this.parseCitations(llmResult.text, subgraph);
 
-    if (this.isUngrounded(citations, 'factual')) {
+    if (this.isUngrounded(citations, 'factual', topicDensity.matchedBlocks >= 1)) {
       return this.persistUngroundedRefusal({
         tenantId: args.tenantId,
         requesterUserId: args.requesterUserId,
@@ -534,7 +534,7 @@ export class ClonesService {
 
     const citations = this.parseCitations(llmResult.text, subgraph);
 
-    if (this.isUngrounded(citations, 'factual')) {
+    if (this.isUngrounded(citations, 'factual', topicDensity.matchedBlocks >= 1)) {
       return this.persistUngroundedRefusal({
         tenantId: args.tenantId,
         requesterUserId: args.requesterUserId,
@@ -761,7 +761,7 @@ export class ClonesService {
 
     const citations = this.parseCitations(llmResult.text, subgraph);
 
-    if (this.isUngrounded(citations, mode)) {
+    if (this.isUngrounded(citations, mode, topicDensity.matchedBlocks >= 1)) {
       return this.persistUngroundedRefusal({
         tenantId: args.tenantId,
         requesterUserId: args.requesterUserId,
@@ -1005,7 +1005,7 @@ export class ClonesService {
 
     const citations = this.parseCitations(llmResult.text, subgraph);
 
-    if (this.isUngrounded(citations, mode)) {
+    if (this.isUngrounded(citations, mode, topicDensity.matchedBlocks >= 1)) {
       return this.persistUngroundedRefusal({
         tenantId: args.tenantId,
         requesterUserId: args.requesterUserId,
@@ -1276,10 +1276,20 @@ export class ClonesService {
     };
   }
 
-  private isUngrounded(citations: CloneCitationDto[], mode: 'factual' | 'judgmental'): boolean {
+  private isUngrounded(
+    citations: CloneCitationDto[],
+    mode: 'factual' | 'judgmental',
+    topicMatched: boolean,
+  ): boolean {
     if (mode === 'judgmental') return false;
     if (!this.cfg.skill.cloneRespondGroundingEnabled) return false;
-    return citations.length === 0;
+    if (citations.length > 0) return false;
+    const acceptTopicMatch = this.cfg.resolveSync<boolean>(
+      'clone.grounding.accept_topic_match',
+      undefined,
+      true,
+    );
+    return !(acceptTopicMatch && topicMatched);
   }
 
   private async persistUngroundedRefusal(args: {
@@ -2350,7 +2360,8 @@ export class ClonesService {
     });
     const entityIds = persons.map((p) => p.entityId).filter((id): id is string => Boolean(id));
 
-    const reasoningBlocks: CloneBlock[] = [];
+    const topK = await this.cfg.getDynamic<number>('clone.retrieval.topK', undefined, 20);
+    let narrowRanked: string[] = [];
     if (entityIds.length > 0) {
       const mentions = await this.prisma.ideaBlockEntity.findMany({
         where: {
@@ -2368,32 +2379,45 @@ export class ClonesService {
       });
       const blockIds = [...new Set(mentions.map((m) => m.blockId))];
       if (blockIds.length > 0) {
-        const topK = await this.cfg.getDynamic<number>('clone.retrieval.topK', undefined, 20);
-        const rankedIds = await this.rankBlockIdsByQuestion(blockIds, args.question, topK);
-        const blocks = await this.prisma.ideaBlock.findMany({
-          where: { id: { in: rankedIds } },
-          select: {
-            id: true,
-            name: true,
-            trustedAnswer: true,
-            evidence: { select: { quote: true }, take: 1 },
-          },
+        narrowRanked = await this.rankBlockIdsByQuestion(blockIds, args.question, topK);
+      }
+    }
+
+    const floorEnabled = await this.cfg.getDynamic<boolean>(
+      'clone.retrieval.base_recall_floor',
+      undefined,
+      true,
+    );
+    const floorIds = floorEnabled
+      ? await this.fetchBaseRecallFloor(args.tenantId, args.question, topK)
+      : [];
+    const fusedIds = this.fuseBlockLists([narrowRanked, floorIds]).slice(0, topK);
+
+    const reasoningBlocks: CloneBlock[] = [];
+    if (fusedIds.length > 0) {
+      const blocks = await this.prisma.ideaBlock.findMany({
+        where: { id: { in: fusedIds } },
+        select: {
+          id: true,
+          name: true,
+          trustedAnswer: true,
+          evidence: { select: { quote: true }, take: 1 },
+        },
+      });
+      const byId = new Map(blocks.map((b) => [b.id, b]));
+      for (const id of fusedIds) {
+        const b = byId.get(id);
+        if (!b) continue;
+        const evidence = b.evidence[0];
+        reasoningBlocks.push({
+          id: b.id,
+          text: b.trustedAnswer ?? b.name,
+          meetingId: null,
+          meetingTitle: null,
+          startMs: null,
+          endMs: null,
+          snippet: evidence?.quote ?? null,
         });
-        const byId = new Map(blocks.map((b) => [b.id, b]));
-        for (const id of rankedIds) {
-          const b = byId.get(id);
-          if (!b) continue;
-          const evidence = b.evidence[0];
-          reasoningBlocks.push({
-            id: b.id,
-            text: b.trustedAnswer ?? b.name,
-            meetingId: null,
-            meetingTitle: null,
-            startMs: null,
-            endMs: null,
-            snippet: evidence?.quote ?? null,
-          });
-        }
       }
     }
 
@@ -2626,6 +2650,51 @@ export class ClonesService {
       );
       return candidateIds.slice(0, topK);
     }
+  }
+
+  private async fetchBaseRecallFloor(
+    tenantId: string,
+    question: string,
+    topK: number,
+  ): Promise<string[]> {
+    const trimmed = (question ?? '').trim();
+    if (!trimmed) return [];
+    let qvec: number[] | null;
+    try {
+      qvec = await this.embedder.embedQuery(trimmed);
+    } catch {
+      return [];
+    }
+    if (!qvec || qvec.length === 0 || !qvec.every((n) => Number.isFinite(n))) return [];
+    try {
+      const literal = `[${qvec.join(',')}]`;
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "IdeaBlock"
+         WHERE "tenantId" = $2 AND "status"::text = 'canonical' AND "embedding" IS NOT NULL
+         ORDER BY "embedding" <=> $1::vector
+         LIMIT ${Math.max(1, Math.floor(topK))}`,
+        literal,
+        tenantId,
+      );
+      return rows.map((r) => r.id);
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'clones.fetchBaseRecallFloor: pgvector-поиск упал — fail-open (без floor)',
+      );
+      return [];
+    }
+  }
+
+  private fuseBlockLists(lists: ReadonlyArray<ReadonlyArray<string>>, rrfK = 60): string[] {
+    const score = new Map<string, number>();
+    for (const list of lists) {
+      for (let rank = 0; rank < list.length; rank++) {
+        const id = list[rank]!;
+        score.set(id, (score.get(id) ?? 0) + 1 / (rrfK + rank + 1));
+      }
+    }
+    return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
   }
 
   private async callCloneRespond(args: {

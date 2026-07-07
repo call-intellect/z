@@ -85,6 +85,7 @@ import { TableEnrichWorker } from '../tables/workers/table-enrich.worker';
 import { TableGraphsyncReconcileCronService } from '../tables/workers/table-graphsync-reconcile.cron';
 import { TableSyncWorker } from '../tables/workers/table-sync.worker';
 import { TrackerModule } from '../tracker/tracker.module';
+import { IssueEmbedWorker } from '../tracker/workers/issue-embed.worker';
 
 import { AnthropicService } from './services/anthropic.service';
 import { DeepSeekService } from './services/deepseek.service';
@@ -194,11 +195,8 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     Specialist314GoalsWorker,
     Specialist315TasksService,
     TaskClarifySweepCron,
-    // Ф5 (TZ 2026-06-16 task-dedup) — consumer `core.goal-embed`. Считает
-    // pgvector-embedding цели (name+description) для семантического дедупа
-    // целей (specialist-3-14 KNN по Goal.embedding вместо ILIKE). Зеркало
-    // IssueEmbedWorker; EmbeddingFallbackService — из @Global EmbeddingsModule.
     GoalEmbedWorker,
+    IssueEmbedWorker,
     // SBA β-5 — cron `30 *‎/4 * * *`: кластеризация Idea → IdeaCluster
     // (KNN + LLM idea-cluster-merge на критической массе).
     IdeaClustererCron,

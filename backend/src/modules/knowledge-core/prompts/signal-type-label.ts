@@ -153,6 +153,7 @@ export const ORG_DOCUMENT_KIND_LABEL_RU: Record<string, string> = {
   process: 'Описание процесса',
   policy: 'Политика',
   instruction: 'Инструкция',
+  task_solution: 'Решение задачи',
 };
 
 /** Ярлык типа орг-документа для промпта; fallback на сам код. */

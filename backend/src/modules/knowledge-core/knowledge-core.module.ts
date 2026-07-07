@@ -71,6 +71,7 @@ import { StructuredDocumentCompilerService } from './services/structured-documen
 import { SprintHelperService } from './services/sprint-helper.service';
 import { SprintReviewService } from './services/sprint-review.service';
 import { TaskAssigneeResolverService } from './services/task-assignee-resolver.service';
+import { TaskSolutionBuildService } from './services/task-solution-build.service';
 import { TemporalConflictService } from './services/temporal-conflict.service';
 import { TemporalProbeService } from './services/temporal-probe.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
@@ -165,6 +166,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     MeetingTitleService,
     ThemeWriteService,
     ThemeFillService,
+    TaskSolutionBuildService,
   ],
   exports: [
     SegmentBuilderService,
@@ -235,6 +237,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     MeetingTitleService,
     ThemeWriteService,
     ThemeFillService,
+    TaskSolutionBuildService,
   ],
 })
 export class KnowledgeCoreModule {}

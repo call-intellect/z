@@ -66,6 +66,7 @@ import { SprintHelperWorker } from '../knowledge-core/workers/sprint-helper.work
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { TaskClarifySweepCron } from '../knowledge-core/workers/task-clarify-sweep.cron';
+import { TaskSolutionBuildCron } from '../knowledge-core/workers/task-solution-build.cron';
 import { ThemeAutofillCron } from '../knowledge-core/workers/theme-autofill.cron';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
 import { RegulationSummarizeCron } from '../knowledge-core/workers/regulation-summarize.cron';
@@ -195,6 +196,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     Specialist314GoalsWorker,
     Specialist315TasksService,
     TaskClarifySweepCron,
+    TaskSolutionBuildCron,
     GoalEmbedWorker,
     IssueEmbedWorker,
     // SBA β-5 — cron `30 *‎/4 * * *`: кластеризация Idea → IdeaCluster

@@ -2708,6 +2708,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **WS** — расширен `tracker/gateways/tracker.gateway.ts` (`conversation.*` + staff-под-room для access-изоляции); `common/ws/redis-io.adapter.ts` (`@socket.io/redis-adapter`, свои pub/sub из cfg).
 - **Пересажено на ядро:** support (`support/*` → Conversation/Message+SupportTicket, 0 Issue-пути), чат задачи (`tracker` comments → Message под work_chat).
 - **Push:** `push/` расширен транспорт-агностичным `PushService` (PushToken apns/fcm/rustore/webpush). **Mobile:** `kora-mobile/` (Expo RN scaffold).
+- **Вход «Новое сообщение» (FE, 2026-07-07, messaging-new-conversation):** `frontend/src/ui/messaging/NewConversationDialog.tsx` — модалка с переключателем «Коллега»/«Внешний/клиент», подключена кнопкой в шапке `MessagesClient.tsx`. Коллега → `messagingApi.createConversation` (dm при одном / group при нескольких); внешний → `messagingApi.startExternal` (`POST /external-conversations`). Переиспользует `ParticipantPicker` (новые пропы `onlyUsers`/`excludeUserIds`). Backend: `ConversationService.findExistingDm` (дедуп личек) + backfill `scripts/backfill-company-channel.ts` (канал «Вся компания» для старых Org).
 
 ## Провайдеры эмбеддингов — CRUD + резолвер (2026-07-02)
 

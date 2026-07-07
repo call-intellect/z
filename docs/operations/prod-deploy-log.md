@@ -62,6 +62,15 @@ docker compose run --rm --no-deps backend \
 
 > Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
 
+### Раздел «Сообщения»: вход «Новое сообщение» (коллега + внешний) + backfill канала «Вся компания» — 2026-07-07 (ветка work/2026-07-07)
+
+Приделан недостающий вход в готовый мессенджер: кнопка «Новое сообщение» + модалка (личка/группа с коллегой + дедуп личек; внешний чат по email/телефону поверх уже включённого `EXTERNAL_CHAT_ENABLED`). Backfill дожимает обязательный канал «Вся компания» + членство всех активных сотрудников для существующих Org. ТЗ [`plans/tz/2026-07-07-messaging-new-conversation.md`](../../plans/tz/2026-07-07-messaging-new-conversation.md). Схему БД НЕ трогаем.
+
+- **🟢 МИГРАЦИЙ БД / SEED / ENV / ФЛАГОВ НЕТ** (Ship-On, новый флаг не вводим; внешняя дверь — поверх включённого `EXTERNAL_CHAT_ENABLED`). Шаги 1/4/5/6/7/9/10 — НЕ затронуты.
+- **Шаг 8 — Backfill (НОВЫЙ, идемпотентный, STEPS `phase:'backfill'`, `skipBootstrap`):** `scripts/backfill-company-channel.ts` — для каждой активной Org дожимает обязательный канал «Вся компания» (`ensureCompanyChannel`, creator = owner→admin→любой активный член) + членство всех активных сотрудников (upsert `source:'auto'`). Повторный прогон = `created:0` (идемпотентно; проверено на dev: 26 Org, 2-й прогон 0 создано, 0 дублей каналов/членов). Доедет `apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend` (backend: дедуп dm + backfill; frontend: кнопка «Новое сообщение» + `NewConversationDialog`).
+- **Шаг 12 — Smoke** (после rebuild): `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (прогонит backfill); раздел «Сообщения» → кнопка «Новое сообщение» видна; «Коллега» → выбор одного → dm-тред открыт, повторный выбор того же → тот же тред (дедуп, без дубля); режим «Внешний» → ввод email → показана ссылка `/c/<token>` с «Скопировать»; у каждой Org виден канал «Вся компания» (`SELECT "tenantId", COUNT(*) FROM "Conversation" WHERE kind='channel' AND "isMandatory"=true GROUP BY "tenantId" HAVING COUNT(*)>1` → 0 строк).
+
 ### Эксперимент с конкретным действием → задача — 2026-07-06 (ветка work/2026-07-02)
 
 Эксперимент (`Experiment`, спец. 3-9) остаётся фактом памяти, но при конкретном действии combo (`specialists-combined`) и `block-ingest` вдобавок заводят задачу в трекер. Провенанс — новая связь `ExperimentTaskLink('derived')` (зеркало `DecisionTaskLink`). ТЗ [`plans/tz/2026-07-06-experiment-to-task.md`](../../plans/tz/2026-07-06-experiment-to-task.md).

@@ -156,7 +156,7 @@ import { createPrismaClient } from './_lib/prisma';
 
 Граф зависимостей: **Ф1 ∥ Ф2** (независимы, бэкенд) → **Ф3** (FE api/domain, зависит от Ф1 контракта дедупа поведенчески, но не по коду) → **Ф4** (FE UI, зависит от Ф3) → **Ф5** (e2e, зависит от Ф4). Ф1 и Ф2 можно вести параллельно; Ф2 самодостаточна.
 
-### Ф1 — Backend: дедуп личек (`dm`) `[ ]`
+### Ф1 — Backend: дедуп личек (`dm`) `[x]`
 **Ценность:** как сотрудник, повторно открывая переписку с коллегой, попадаю в ту же ветку, а не в новый пустой дубль.
 **Что входит:** метод `findExistingDm` (сниппет выше) в `ConversationService`; ветка дедупа в `createConversation` для `kind='dm'` c 2 участниками; unit-тест.
 **Что НЕ входит:** изменение DTO/ответа контроллера; дедуп group/channel.
@@ -167,7 +167,7 @@ import { createPrismaClient } from './_lib/prisma';
 - `grep -n "findExistingDm" conversation.service.ts` → определён и вызывается.
 **Закрывает:** R3.
 
-### Ф2 — Backend: бэкфилл канала «Вся компания» `[ ]`
+### Ф2 — Backend: бэкфилл канала «Вся компания» `[x]`
 **Ценность:** как сотрудник существующей компании, вижу канал «Вся компания» и могу написать всем сразу.
 **Что входит:** `backend/scripts/backfill-company-channel.ts` (сниппет-контур выше, `createPrismaClient()` из `./_lib/prisma`, импорты из `../src`); регистрация в `apply-prod-deploy.ts` `STEPS` (`phase:'backfill'`).
 **Что НЕ входит:** изменение логики листенера/флага `hr_auto_subscribe_enabled`.
@@ -178,7 +178,7 @@ import { createPrismaClient } from './_lib/prisma';
 - `require.main`-guard, чтобы импорт не запускал прогон (память `project_local-toolchain`).
 **Закрывает:** R7.
 
-### Ф3 — Frontend: API + domain для обеих дверей `[ ]`
+### Ф3 — Frontend: API + domain для обеих дверей `[x]`
 **Ценность:** как разработчик UI, имею типизированные вызовы «создать беседу» и «начать внешний чат» и переиспользуемый пикер только-пользователей.
 **Что входит:** проп `onlyUsers` в `ParticipantPicker`; employee-метод `startExternal` в api-слое (сниппет выше) + типы; при необходимости domain-маппер. `createConversation` уже есть — не дублировать.
 **Что НЕ входит:** сам UI модалки (Ф4).
@@ -189,7 +189,7 @@ import { createPrismaClient } from './_lib/prisma';
 - `grep -n "external-conversations" src/api/*.ts` — метод старта добавлен.
 **Закрывает:** R2 (частично), R5 (контракт).
 
-### Ф4 — Frontend: модалка «Новое сообщение» `[ ]`
+### Ф4 — Frontend: модалка «Новое сообщение» `[x]`
 **Ценность:** как сотрудник, из «Сообщений» начинаю переписку с коллегой или внешним клиентом.
 **Что входит:** кнопка «Новое сообщение» в шапке `MessagesClient` (рядом с заголовком, `MessagesClient.tsx:247-255`); модалка с переключателем режима; режим «Коллега» (`ParticipantPicker onlyUsers`, поле названия для группы, submit → `createConversation` → навигация в тред, dm/group по числу выбранных, заголовок группы из имён при пустом); режим «Внешний/клиент» (email/телефон + первое сообщение, submit → `startExternal`, показ `inviteLink` + «Скопировать», обработка `503`); все состояния (loading/ошибка/пусто) по-русски.
 **Что НЕ входит:** управление участниками созданной группы; изменения списка/фильтров.
@@ -242,4 +242,15 @@ tenant-фильтр в `findExistingDm`; отсутствие утечки чу�
 - Приёмка Ф5 со скриншотами.
 
 ## Итог
-_(заполняет tz-orchestrator по завершении: что реализовано целиком, что осталось.)_
+
+**Ф1–Ф4 реализованы, машинно проверены и закоммичены** (ветка `work/2026-07-07`), Ф5 — ждёт выката.
+
+- **Ф1** `d3fc4a1d` — `findExistingDm` + дедуп dm в `createConversation`; 3 unit-теста (vitest 10/10 зелёный).
+- **Ф2** `35b65201` — `scripts/backfill-company-channel.ts` (переиспользует `ensureCompanyChannel`) + регистрация в `apply-prod-deploy.ts` STEPS `phase:'backfill'`. Идемпотентность доказана на dev-БД (26 Org: прогон #2 `created:0`, 0 дублей каналов/членов).
+- **Ф3** `1d1bd27e` — проп `onlyUsers` у `ParticipantPicker` + `startExternal` в `messaging.api.ts`.
+- **Ф4** `bef677d1` — `NewConversationDialog.tsx` + кнопка в `MessagesClient`; оба режима, обработка `503`, inviteLink+копирование, навигация в тред.
+- **Hardening по адверсариальному ревью** `ec9c0b7e` — исключение self-dm (`excludeUserIds`), обновление ленты на «Готово», честный текст email/телефон, сброс вкладки на «Всё» при переходе в новый тред.
+
+**Приёмка:** backend `typecheck`/`lint`/`build` + `vitest` зелёные; frontend `lint`/`build` зелёные (typecheck-шум только в устаревшем `.next/types`, не в `src/`). Адверсариальное ревью: 12 находок → 5 CONFIRMED (все low), 3 исправлены, 2 гонки (partial unique index = схема, вне scope) вынесены в `second-brain/04_не-сделано`.
+
+**Осталось — Ф5** (живая e2e-приёмка «три сотрудника пишут друг другу» + внешняя дверь): требует кода на dev/проде. Push и выкат — по слову владельца. Прод-операция: `apply-prod-deploy.ts --mode update` (backfill; схему/ENV не трогаем) — см. `docs/operations/prod-deploy-log.md`.

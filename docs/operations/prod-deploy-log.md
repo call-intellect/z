@@ -4432,6 +4432,26 @@ docker compose run --rm smoke
 
 ---
 
+### 📄 2026-07-07 — Описание компании: починка авто-summary (паспорт + инкремент + раз в неделю) + прокидка описания/orgContext в извлекающие агенты (ветка work/2026-07-07)
+
+> ТЗ#1: `CompanySummaryCompilerCron` перестаёт писать summary с нуля из последней встречи — короткий паспорт (4–6 предложений, ≤1000 символов), инкремент от текущего описания (флаг `changed`; «нет изменений» → только сдвиг `generatedAt`), выборка по `DURABLE_SIGNAL_TYPES` + `createdAt` (обход null-`dynamicScore`, take 40), пересчёт раз в неделю (24→168ч). ТЗ#2: короткая капсула «## О компании» (+`orgContext` проекты/цели/люди) прокинута в USER-часть block-ingest и tasks-извлечения через общий `CompanyCapsuleService` (ai-модуль).
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (смена дефолта существующей крутилки `companyProfile.summaryRebuildHours` 24→168). **🟢 1 НОВЫЙ PATCH** (`patch-company-summary-weekly.ts`, в STEPS `phase:'patch'` `skipBootstrap`). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** Крутилка `companyProfile.summaryRebuildHours` сменила дефолт `24→168` (code-fallback `typed-config.service.ts` + seed `seed-admin-settings.ts`). На проде существующая строка AdminSetting = `24` (засеяна ранее) — смена дефолта в сиде её НЕ перепишет → нужен patch (Шаг 6). Это крутилка (правило №9), не флаг; `feature-flags.md` не меняется.
+- **Шаги 4/5/8/9/10 (Prisma/postgres-init/backfill/migrate/setup) — НЕ затронуты.**
+- **Шаг 6 — Patch (НОВЫЙ, идемпотентный, зарегистрирован в STEPS `phase:'patch'`, `skipBootstrap`, доезжает `--mode update`):** `docker compose exec backend bun run scripts/patch-company-summary-weekly.ts` — если `AdminSetting['companyProfile.summaryRebuildHours']` всё ещё `24` → ставит `168` (владелец менял вручную = значение не 24 → `[skip]`). Повторный прогон = `[skip]`. Проверено на dev-БД: прогон1 `[updated] 24→168`, прогон2 `[skip] =168`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: новый промпт `company-summary-compile` (паспорт+`changed`+maxLength 1000), компилятор (durable-фильтр по `signalType`/`orderBy createdAt`/take 40/инкремент/ветка `skipped_no_change`), `CompanyProfileService.touchSummaryGeneratedAt`, новый `CompanyCapsuleService` (ai, exported) + инъекция капсулы в USER block-ingest/tasks, `TaskExtractionService` теперь грузит `orgContext` (раньше структурный путь его не получал). Новые лейблы метрик: `company_summary_compile_total{result="skipped_no_change"}`, `company_capsule_injected_total{surface="block_ingest"|"tasks"}`.
+- **Шаг 12 — Smoke** (после выката):
+  - `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `patch-company-summary-weekly.ts` (updated=1 при первом прогоне, далее skip).
+  - Форс cron company-summary на «Ооо луа» (`cmpndk2tw000101mwmixvacuj`) или дождаться недельного гейта → `CompanyProfile.summaryJson.contentMd` — 4–6 предложений ≤1000, читается как паспорт (чем занимается/продукт/клиент/стадия, без пересказа штурма); повторный форс без новых встреч → `curl -s localhost:3000/metrics | grep company_summary_compile_total` — `{result="skipped_no_change"}` растёт, текст не меняется.
+  - В логах LLM-вызовов извлечения (block-ingest и tasks) user-сообщение содержит «## О компании / Чем занимается: …»; `curl -s localhost:3000/metrics | grep company_capsule_injected` — `{surface="block_ingest"}` и `{surface="tasks"}` растут.
+- **Откат:** крутилка admin-editable (порог вернуть в админке); патч идемпотентен (откат не нужен); промпт/капсула/orgContext — `git revert` (капсула fail-open — при откате извлечение работает как раньше). Рискованного переключателя нет.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ## 🚀 Полный чек-лист обновления (Сценарий A: данные сохраняем)
 
 > Стандартный workflow обновления работающего прода. Если БД жалко потерять — это твой путь.

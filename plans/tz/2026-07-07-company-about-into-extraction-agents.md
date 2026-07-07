@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: implemented
 feature: company-about-into-extraction-agents
 date: 2026-07-07
 owner: sergrv80@gmail.com
@@ -81,3 +81,12 @@ relates_to:
 ## Открытые развилки
 
 Нет — развилка про `orgContext` для задач решена и включена в scope (см. Цель + проводка `task-extraction.service`).
+
+## Итог реализации (2026-07-07, ветка work/2026-07-07)
+
+Реализовано **целиком**. Коммит `25e92279`.
+
+- Новый `CompanyCapsuleService` (ai-модуль, providers+exports); капсула «## О компании» — в **USER-часть** block-ingest и tasks (system не тронут → межтенантный prefix-cache цел).
+- Проводка: `block-extraction` грузит капсулу **один раз на извлечение** (surface `block_ingest`) и прокидывает во все окна; `task-extraction` грузит капсулу (surface `tasks`) **и** `orgContext` (проекты/цели/люди) — который до структурного пути `buildTasksStructuredPrompt` раньше не доезжал вовсе.
+- **Проверка вызовов билдеров:** `analyze.worker` НЕ трогали — его `orgCtx` кормит summary/report-промпты (`withOrgContextNote`), а не задачи/блоки (извлечение делегировано сервисам). `tasks.ts:buildTasksPrompt` и `code-fallback.adapter` — только dummy-прогрев, не реальный путь → не трогали.
+- Верификация: typecheck/lint/build зелёные; 7 spec-файлов, 89 кейсов зелёные (capsule fail-open/null; block-ingest+tasks инъекция; task-extraction — `capsule.load(_, 'tasks')`+`orgContext.load(_, null)` вызваны, секции в user; block-extraction — `capsule.load` ровно один раз). Существующие снапшоты (block-ingest SYSTEM, tasks-unified без capsule) не изменились.

@@ -24,6 +24,8 @@ references:
 
 > Актуальный источник о профиле компании — модуль `backend/src/modules/company-foundation` (модели `CompanyProfile` / `FunctionalDomain`, крон-конвейер company-profile-builder / company-summary-compiler / department-detector / domain-expander / maturity-scorer). KPI — `backend/src/modules/kpi`.
 
+> **Авто-описание «чем занимается компания» (`company-summary-compiler`, с 2026-07-07):** короткий паспорт `CompanyProfile.summaryJson.contentMd` (4–6 предложений, ≤1000 симв.), обновляется **инкрементально** — LLM получает текущее описание + новые «долговечные» факты (`signalType ∈ DURABLE_SIGNAL_TYPES`, `orderBy createdAt`; штурм/идеи/гипотезы отфильтрованы), возвращает флаг `changed`; «нет изменений» → только сдвиг `generatedAt`. Пересчёт раз в неделю (`companyProfile.summaryRebuildHours`=168). `summaryPinned` замораживает авто-обновление. Это же описание короткой капсулой «## О компании» (+`orgContext`) прокидывается в извлекающие агенты — см. [[ai-jobs]].
+
 ## Где видны в Фазе 0
 - В Фазе 0 UI нет.
 - Доступно через `/api/v1/search?types[]=process,regulation,...` (только admin/owner — по policy.csv).

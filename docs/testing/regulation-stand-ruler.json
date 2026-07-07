@@ -1,7 +1,7 @@
 {
   "meta": {
     "name": "regulation-stand-ruler",
-    "version": "1.1-with-ownership",
+    "version": "1.2-with-tasksolution",
     "date": "2026-07-03",
     "about": "Эталон (ground truth) под каждый сценарий regulation-stand-corpus.json. Авторский — при прогоне кросс-проверяется слепой разметкой (annotate.ts). Пороги первого прогона = baseline (non-regression), не абсолют.",
     "corpus": "docs/testing/regulation-stand-corpus.json",
@@ -13,7 +13,7 @@
       "compiler.byOrder[n]": "mode(create|extend|null), contentMustContain[], contentMustPreserve[], noDuplicatePoint, steps[]",
       "final": "cardsByType(активные карточки по типу), conflictItems[], deprecated(сколько задепрекейчено)"
     },
-    "rulerCount": 509
+    "rulerCount": 521
   },
   "rulers": {
     "A1.1-regulation-clean": {
@@ -18296,6 +18296,117 @@
           "instruction": 1
         },
         "note": "проговаривающий от 1-го лица -> subject автор (Дарья), норма растёт к её клону"
+      }
+    },
+    "a5-create-from-probe": {
+      "a5": {
+        "created": true,
+        "owner": "Михаил",
+        "subjectPersons": [
+          "Михаил"
+        ],
+        "sourceIssueLinked": true,
+        "solutionGist": "лимитер + очередь ретраев с бэкоффом",
+        "cloneAlsoFed": true
+      }
+    },
+    "a5-daily-mentions": {
+      "a5": {
+        "created": true,
+        "owner": "Дарья",
+        "builtFrom": "daily-mention-no-probe",
+        "sourceIssueLinked": true
+      }
+    },
+    "a5-one-per-task": {
+      "a5": {
+        "created": true,
+        "count": 1,
+        "owner": "Иван",
+        "note": "три захода за день -> ОДНА TaskSolution (апдейт/дополнение), не три; идемпотентность"
+      }
+    },
+    "a5-no-answer": {
+      "a5": {
+        "created": false,
+        "note": "нет содержательного «как решалось» -> сущность НЕ плодим"
+      }
+    },
+    "a5-trivial-gated": {
+      "a5": {
+        "created": false,
+        "note": "тривиальная задача под гейтом сложности -> материализатор не срабатывает"
+      }
+    },
+    "a5-ownership-solver": {
+      "a5": {
+        "created": true,
+        "owner": "Михаил",
+        "subjectPersons": [
+          "Михаил"
+        ],
+        "mustNotOwn": [
+          "Сергей"
+        ],
+        "note": "владелец = решавший Михаил, НЕ рассказавший Сергей (anti-cross-clone, ось A4)"
+      }
+    },
+    "a5-repeat-candidate-instruction": {
+      "a5": {
+        "created": true,
+        "owner": "Михаил",
+        "repeatCandidateInstruction": true,
+        "note": "похожий способ ×N -> repeatGroupKey + флаг кандидата в Инструкцию; инструкция НЕ создаётся авто"
+      }
+    },
+    "a5-dual-purpose": {
+      "a5": {
+        "created": true,
+        "owner": "Дарья",
+        "cloneAlsoFed": true,
+        "note": "двойное назначение: тот же блок кормит клон Дарьи И рождает TaskSolution"
+      }
+    },
+    "a5-owner-not-mentioner": {
+      "a5": {
+        "created": true,
+        "owner": "Иван",
+        "mustNotOwn": [
+          "Дарья"
+        ],
+        "note": "рассказала Дарья, решал Иван -> владелец Иван"
+      }
+    },
+    "a5-extend-daily": {
+      "a5": {
+        "created": true,
+        "count": 1,
+        "owner": "Иван",
+        "contentMustPreserve": [
+          "ночной дамп",
+          "S3"
+        ],
+        "contentMustContain": [
+          "проверка восстановления"
+        ],
+        "note": "опрос + дневное уточнение -> одна сущность, старое сохранено (дополнение)"
+      }
+    },
+    "a5-no-issue-link": {
+      "a5": {
+        "created": false,
+        "note": "не привязано к конкретной задаче (sourceIssue) -> это топливо клона, НЕ TaskSolution; кормит только клон"
+      }
+    },
+    "a5-multi-solver": {
+      "a5": {
+        "created": true,
+        "owner": "Иван",
+        "subjectPersons": [
+          "Иван",
+          "Михаил"
+        ],
+        "note": "соисполнители -> оба в subject (растут оба клона); владелец = основной исполнитель задачи"
       }
     }
   }

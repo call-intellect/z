@@ -1,7 +1,7 @@
 # Промпт для агента: стенд качества агентов регламентов и инструкций
 
 > Готовый брифинг для СВЕЖЕГО агента (новый контекст). Скопируй этот файл целиком как задачу.
-> Корпус+эталон (509 сценариев) УЖЕ ГОТОВЫ. Твоя работа — **написать скрипты стенда и прогнать его батчами
+> Корпус+эталон (521 сценарий) УЖЕ ГОТОВЫ. Твоя работа — **написать скрипты стенда и прогнать его батчами
 > по 50 со стоп-гейтом, снять baseline** качества трёх LLM-агентов регламентов/инструкций.
 > Прод не трогаешь: всё на throwaway-тенанте, read-only к прод-данным.
 
@@ -16,14 +16,15 @@
 | **Карта ситуаций 360°** (что покрываем) | `plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md` |
 | **ТЗ стенда** (контракт: файлы/форматы/метрики/фазы) | `plans/tz/2026-07-03-regulation-instruction-stand.md` |
 | **Этот хэндофф-промпт** | `docs/testing/regulation-stand-agent-prompt.md` |
-| **Корпус** (509 сценариев, полное покрытие карты 360°) | `docs/testing/regulation-stand-corpus.json` |
-| **Эталон** (509 эталонов 1:1 под корпус) | `docs/testing/regulation-stand-ruler.json` |
+| **Корпус** (521 сценарий, полное покрытие карты 360°) | `docs/testing/regulation-stand-corpus.json` |
+| **Эталон** (521 эталон 1:1 под корпус) | `docs/testing/regulation-stand-ruler.json` |
 | **Методология линейки** | `docs/methodology/synthetic-fidelity-eval-method.md` |
+| Сущность «Решение задачи» — архитектура + ТЗ (ось A5) | `plans/architecture/2026-07-07-task-solution-entity.md` · `plans/tz/2026-07-07-task-solution-entity.md` |
 | Скрипты стенда (СОЗДАТЬ) | `backend/scripts/regulation-stand/{stand,seed-reg-feed,annotate,match,judge,report}.ts` |
 | README стенда (СОЗДАТЬ) | `docs/testing/regulation-stand.md` |
 | Отчёт baseline (СГЕНЕРИТ report) | `docs/testing/regulation-stand-report.md` |
 
-**Уже готово (не с нуля):** карта ситуаций, ТЗ, **полный корпус+эталон — 509 сценариев** с покрытием всех
+**Уже готово (не с нуля):** карта ситуаций, ТЗ, **полный корпус+эталон — 521 сценарий** с покрытием всех
 ячеек карты (A1.*/A2.*/A3.*/СК1-9), провалидированы: id корпуса ↔ id эталона 1:1, 0 коллизий. Твоя работа —
 дописать **скрипты стенда** (`backend/scripts/regulation-stand/*`), прогнать фазы (prepare→build→annotate→run→
 judge→report) и снять baseline. Корпус можно точечно дополнять, но основное покрытие уже есть.
@@ -77,12 +78,12 @@ judge→report) и снять baseline. Корпус можно точечно �
 
 ## Что построить (по ТЗ §1)
 
-**Корпус+эталон УЖЕ ГОТОВЫ** (509 сценариев, 1:1, покрытие карты 360°) — их НЕ надо генерить, только использовать
+**Корпус+эталон УЖЕ ГОТОВЫ** (521 сценарий, 1:1, покрытие карты 360°) — их НЕ надо генерить, только использовать
 (можно точечно дополнить). Твоя работа — **скрипты стенда**:
 ```
 backend/scripts/regulation-stand/{stand,seed-reg-feed,annotate,match,judge,report}.ts   # СОЗДАТЬ
-docs/testing/regulation-stand-corpus.json    # ГОТОВ (509 сценариев)
-docs/testing/regulation-stand-ruler.json     # ГОТОВ (509 эталонов 1:1)
+docs/testing/regulation-stand-corpus.json    # ГОТОВ (521 сценарий)
+docs/testing/regulation-stand-ruler.json     # ГОТОВ (521 эталон 1:1)
 docs/testing/regulation-stand.md             # README — СОЗДАТЬ
 docs/testing/regulation-stand-report.md      # отчёт — СГЕНЕРИТ report
 ```
@@ -95,7 +96,7 @@ docs/testing/regulation-stand-report.md      # отчёт — СГЕНЕРИТ r
 `annotate` (слепая разметка) → `run` (read-only сверялка БД↔эталон, вкл. `ownerPersonId`/`personSubjectIds`) →
 `judge` (панель 3 судей) → `report` (scorecard). Сценарии оси A4 несут `requiresPersons`/`ownershipEvent`.
 
-**НЕ гони все 509 разом. Идём батчами по ~50 со стоп-гейтом:**
+**НЕ гони все 521 разом. Идём батчами по ~50 со стоп-гейтом:**
 - Батч из 50 — **стратифицированный срез** по всем агентам/ячейкам (по полям `agentFocus`+`cell`), не 50 однотипных.
 - Цикл на батч: `build` (сценарии батча) → `run` → `judge` → `report(batch)` → **ГЕЙТ РЕШЕНИЯ** (запиши явно):
   `stop-clear` (картина ясна — систематический провал класса воспроизвёлся ИЛИ всё ровно-зелёно → стоп),
@@ -123,9 +124,15 @@ docs/testing/regulation-stand-report.md      # отчёт — СГЕНЕРИТ r
   смена носителя/сирота → старый снимок клона НЕ называет регламент как свой; клон без привязанных правил даёт
   `usedRegulationNames=[]` честно, а не выдуманное имя. (A4.4 требует построить клон и снять трассу `usedRegulationNames` —
   мост к `clone-stand`; для A4.4/desync проведи `role.bearer_changed` Елена→Игорь как в clone-stand.)
+- **A5 Решения задач (`TaskSolution` — новая сущность; гоняется ПОСЛЕ её реализации по ТЗ `plans/tz/2026-07-07-task-solution-entity.md`):**
+  created_correctly (нет ответа/тривиальное → не плодим); one_per_task (идемпотентность суточной сборки);
+  **owner_is_solver (ключевой)** — владелец=решавший, не упомянувший (ось A4); built_from_daily (и из дневных
+  упоминаний, не только опрос); dual_purpose (клон по-прежнему кормится); repeat_candidate (повтор ×N → флаг
+  кандидата в инструкцию); not_a_solution (общее рассуждение без привязки к задаче → только клон). Сценарии A5
+  несут `requiresIssue`/`solverPerson` — сеятель заводит задачу+исполнителя.
 - **Сквозные:** финальные счётчики карточек vs эталон; conflictItems; **идемпотентность (2-й прогон Δ=0)**; целостность версий; депрекация.
 
-Каждый провал → к агенту: A1 / A2 / A3 / A4-владение / pipeline (candidate-miss / route / infra).
+Каждый провал → к агенту: A1 / A2 / A3 / A4-владение / A5-решения-задач / pipeline (candidate-miss / route / infra).
 
 ## Ловушки (ТЗ §8 — учесть обязательно)
 

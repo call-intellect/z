@@ -191,6 +191,14 @@ merge/extension/contradicts — дубль приходит ПОСЛЕ ориг�
   регламент как свой; клон без привязанных правил даёт `usedRegulationNames=[]` (честно), а не выдуманное имя из
   старого снимка. (Требует построить клон и снять трассу `usedRegulationNames` — мост к clone-stand; ось L.)
 
+**A5 Решения задач (`TaskSolution` — после реализации сущности, ТЗ 2026-07-07):**
+- `created_correctly` (создаётся при содержательном ответе; нет ответа/тривиальное → не плодим);
+- `one_per_task` (одна задача → одна сущность, идемпотентность суточной сборки);
+- `owner_is_solver` (**ключевой** — владелец=решавший, не упомянувший; ось A4);
+- `built_from_daily` (собирается и из дневных упоминаний, не только из опроса);
+- `dual_purpose` (клон по-прежнему кормится); `repeat_candidate` (повтор ×N → флаг кандидата в инструкцию, без авто-создания);
+- `not_a_solution` (общее рассуждение без привязки к задаче → НЕ TaskSolution, только клон).
+
 **Сквозные:** `final_card_count` vs эталон · `conflict_items` vs эталон · `idempotency` (второй прогон Δ=0) ·
 `versioning_integrity` (история версий полна) · `deprecation` (проигравший при merge).
 
@@ -264,6 +272,8 @@ A3 (content-loss / dup / structure) · pipeline (candidate-miss / route / infra)
 - [ ] baseline снят: scorecard по A1/A2/A3/**A4 владение** + confusion-матрицы + ловушки + финальные счётчики + идемпотентность;
 - [ ] **ось A4 проверена:** owner/subject-резолв, no_cross_clone_leak, ownership_carry, и **desync_no_fabrication**
   (смена носителя → старый снимок не выдумывает `usedRegulationNames`);
+- [ ] **ось A5 (после реализации `TaskSolution`):** created_correctly · one_per_task · **owner_is_solver** ·
+  built_from_daily · dual_purpose · repeat_candidate · not_a_solution;
 - [ ] провалы атрибутированы к агенту (A1/A2/A3/A4/pipeline); конфигурация прогона (флаги + модели) зафиксирована;
 - [ ] `typecheck/lint/build` зелёные по затронутому; прод не тронут; README `regulation-stand.md` написан;
 - [ ] хэндофф-промпт `regulation-stand-agent-prompt.md` готов (свежий агент берёт и запускает).

@@ -1,16 +1,17 @@
 {
   "meta": {
     "name": "regulation-stand-corpus",
-    "version": "1.1-with-ownership",
+    "version": "1.2-with-tasksolution",
     "date": "2026-07-03",
     "about": "Стартовый синтетический корпус для стенда агентов регламентов/инструкций. Покрывает критические ячейки карты 360° (A1 границы+фильтры, A2 все исходы, A3 создание/дополнение, СК1 жизненный цикл). РАСШИРЯТЬ по plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md (каждая ячейка >=1, критические >=3).",
     "matrix": "plans/analysis/2026-07-03-regulation-instruction-stand-situation-matrix.md",
     "ruler": "docs/testing/regulation-stand-ruler.json",
     "blockFields": "signalType(regulation|process_step|policy), name, criticalQuestion, trustedAnswer, evidenceQuotes[], tags[], ownerCompanyPrior(наша|клиент|гость|неизвестно), meetingExternalLikely, order",
     "note": "order управляет консолидацией: кандидат приходит ПОСЛЕ оригинала. Для арбитр-сценариев order=1 оригинал, order=2 приходящий черновик.",
-    "scenarioCount": 509,
+    "scenarioCount": 521,
     "generatedBy": "fan-out workflow wf_2a0fd48d-29d (18 веток + проверка эталона + критик пробелов) + стартовые 26",
-    "ownershipNote": "A4 — ось «Владение»: регламент/инструкция/политика ВСЕГДА привязана к человеку (ownerPersonId) и растёт к клону (personSubjectIds). Корень фабрикации usedRegulationNames — рассогласование владельца при смене носителя. prepare обязан посеять персон requiresPersons."
+    "ownershipNote": "A4 — ось «Владение»: регламент/инструкция/политика ВСЕГДА привязана к человеку (ownerPersonId) и растёт к клону (personSubjectIds). Корень фабрикации usedRegulationNames — рассогласование владельца при смене носителя. prepare обязан посеять персон requiresPersons.",
+    "a5Note": "A5 — ось «Решения задач» (TaskSolution): суточная сборка из сигналов дня, владелец=решавший, без слияния, повтор→кандидат в инструкцию. Гоняется ПОСЛЕ реализации сущности (ТЗ 2026-07-07-task-solution-entity). Сценарии несут requiresIssue (задача) + solverPerson."
   },
   "scenarios": [
     {
@@ -17893,6 +17894,472 @@
         "Игорь",
         "Сергей",
         "Пётр"
+      ]
+    },
+    {
+      "id": "a5-create-from-probe",
+      "cell": "A5.1",
+      "agentFocus": "task-solution",
+      "channel": "probe",
+      "trap": false,
+      "requiresIssue": {
+        "title": "Вебхуки Bitrix отваливаются по 429",
+        "assignee": "Михаил"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Как решал 429",
+          "criticalQuestion": "Как ты решал задачу с 429?",
+          "trustedAnswer": "Поставил лимитер на исходящие, добавил очередь ретраев с бэкоффом, прогнал на нагрузке 3×.",
+          "evidenceQuotes": [
+            "лимитер + очередь ретраев с бэкоффом"
+          ],
+          "tags": [
+            "bitrix",
+            "429"
+          ],
+          "solverPerson": "Михаил"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-daily-mentions",
+      "cell": "A5.2",
+      "agentFocus": "task-solution",
+      "channel": "chat",
+      "trap": false,
+      "requiresIssue": {
+        "title": "Отчёт «Логистик Плюс» тормозит",
+        "assignee": "Дарья"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "reasoning",
+          "name": "Про отчёт в чате",
+          "criticalQuestion": "Как ускорила отчёт?",
+          "trustedAnswer": "Дарья в чате днём: я сделала предагрегацию витрины и кеш на сутки, стало мгновенно — опроса не было.",
+          "evidenceQuotes": [
+            "предагрегация витрины и кеш на сутки"
+          ],
+          "tags": [
+            "отчёт",
+            "производительность"
+          ],
+          "solverPerson": "Дарья"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-one-per-task",
+      "cell": "A5.3",
+      "agentFocus": "task-solution",
+      "channel": "chat",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Миграция клиента на новый тариф",
+        "assignee": "Иван"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Шаг 1 (утро)",
+          "trustedAnswer": "Иван утром: сначала выгрузил текущие лимиты клиента.",
+          "evidenceQuotes": [
+            "выгрузил лимиты"
+          ],
+          "tags": [
+            "миграция"
+          ],
+          "solverPerson": "Иван"
+        },
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 2,
+          "signalType": "methodology_step",
+          "name": "Шаг 2 (день)",
+          "trustedAnswer": "Иван днём: потом пересчитал по новой сетке и согласовал с клиентом.",
+          "evidenceQuotes": [
+            "пересчитал по новой сетке"
+          ],
+          "tags": [
+            "миграция"
+          ],
+          "solverPerson": "Иван"
+        },
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 3,
+          "signalType": "methodology_step",
+          "name": "Шаг 3 (вечер)",
+          "trustedAnswer": "Иван вечером: включил новый тариф и проверил биллинг.",
+          "evidenceQuotes": [
+            "включил тариф, проверил биллинг"
+          ],
+          "tags": [
+            "миграция"
+          ],
+          "solverPerson": "Иван"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-no-answer",
+      "cell": "A5.4",
+      "agentFocus": "task-solution",
+      "channel": "probe",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Поправить опечатку в футере",
+        "assignee": "Михаил"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "reasoning",
+          "name": "Пустой ответ",
+          "criticalQuestion": "Как решал?",
+          "trustedAnswer": "Да фигня, само решилось, нечего рассказывать.",
+          "evidenceQuotes": [
+            "нечего рассказывать"
+          ],
+          "tags": [],
+          "solverPerson": "Михаил"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-trivial-gated",
+      "cell": "A5.5",
+      "agentFocus": "task-solution",
+      "channel": "probe",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Перезапустить под",
+        "assignee": "Иван",
+        "trivial": true
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "reasoning",
+          "name": "Тривиальное",
+          "trustedAnswer": "Перезапустил под, всё поднялось.",
+          "evidenceQuotes": [
+            "перезапустил"
+          ],
+          "tags": [],
+          "solverPerson": "Иван"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-ownership-solver",
+      "cell": "A5.6",
+      "agentFocus": "task-solution",
+      "channel": "planerka",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Настроить SSO",
+        "assignee": "Михаил"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Кто решал SSO",
+          "criticalQuestion": "Как настроили SSO?",
+          "trustedAnswer": "Сергей на планёрке рассказал, что Михаил настроил SSO: поднял SAML, смапил группы, проверил вход.",
+          "evidenceQuotes": [
+            "Михаил настроил SSO: SAML, маппинг групп"
+          ],
+          "tags": [
+            "sso"
+          ],
+          "solverPerson": "Михаил",
+          "mentionedBy": "Сергей"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-repeat-candidate-instruction",
+      "cell": "A5.7",
+      "agentFocus": "task-solution",
+      "channel": "chat",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Разбор инцидента 429 (снова)",
+        "assignee": "Михаил"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Снова 429",
+          "criticalQuestion": "Как в этот раз?",
+          "trustedAnswer": "Опять 429 у другого клиента — сделал так же: лимитер, очередь ретраев, бэкофф. Уже третий раз так решаю.",
+          "evidenceQuotes": [
+            "уже третий раз так решаю"
+          ],
+          "tags": [
+            "429",
+            "повтор"
+          ],
+          "solverPerson": "Михаил"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-dual-purpose",
+      "cell": "A5.8",
+      "agentFocus": "task-solution",
+      "channel": "probe",
+      "trap": false,
+      "requiresIssue": {
+        "title": "Оптимизация запроса дашборда",
+        "assignee": "Дарья"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Оптимизация",
+          "criticalQuestion": "Как оптимизировала?",
+          "trustedAnswer": "Дарья: вынесла тяжёлый джойн в матвью, добавила частичный индекс, время упало с 4с до 200мс.",
+          "evidenceQuotes": [
+            "матвью + частичный индекс"
+          ],
+          "tags": [
+            "sql",
+            "оптимизация"
+          ],
+          "solverPerson": "Дарья"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-owner-not-mentioner",
+      "cell": "A5.6",
+      "agentFocus": "task-solution",
+      "channel": "chat",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Починка вебхука оплаты",
+        "assignee": "Иван"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "reasoning",
+          "name": "Дарья про Ивана",
+          "trustedAnswer": "Дарья в чате: Иван починил вебхук оплаты — добавил идемпотентный ключ и дедуп по event_id.",
+          "evidenceQuotes": [
+            "Иван добавил идемпотентный ключ"
+          ],
+          "tags": [
+            "вебхук",
+            "оплата"
+          ],
+          "solverPerson": "Иван",
+          "mentionedBy": "Дарья"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-extend-daily",
+      "cell": "A5.3",
+      "agentFocus": "task-solution",
+      "channel": "probe",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Настройка бэкапов",
+        "assignee": "Иван"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Ответ на опрос",
+          "criticalQuestion": "Как настроил бэкапы?",
+          "trustedAnswer": "Иван на опрос: настроил ночной дамп и выгрузку в S3.",
+          "evidenceQuotes": [
+            "ночной дамп + S3"
+          ],
+          "tags": [
+            "бэкап"
+          ],
+          "solverPerson": "Иван"
+        },
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 2,
+          "signalType": "methodology_step",
+          "name": "Уточнение днём",
+          "trustedAnswer": "Иван позже в чате: и ещё добавил проверку восстановления раз в неделю.",
+          "evidenceQuotes": [
+            "проверка восстановления раз в неделю"
+          ],
+          "tags": [
+            "бэкап"
+          ],
+          "solverPerson": "Иван"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-no-issue-link",
+      "cell": "A5.1",
+      "agentFocus": "task-solution",
+      "channel": "planerka",
+      "trap": true,
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "reasoning",
+          "name": "Рассуждение без задачи",
+          "criticalQuestion": "Как вообще подходишь к отладке?",
+          "trustedAnswer": "Михаил рассуждает в общем: я обычно сначала смотрю логи, потом метрики — это мой подход вообще, не про конкретную задачу.",
+          "evidenceQuotes": [
+            "мой подход вообще"
+          ],
+          "tags": [
+            "отладка"
+          ],
+          "solverPerson": "Михаил"
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
+      ]
+    },
+    {
+      "id": "a5-multi-solver",
+      "cell": "A5.6",
+      "agentFocus": "task-solution",
+      "channel": "planerka",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Запуск нового ЦОД",
+        "assignee": "Иван"
+      },
+      "blocks": [
+        {
+          "ownerCompanyPrior": "наша",
+          "meetingExternalLikely": false,
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Вдвоём решали",
+          "criticalQuestion": "Как запускали ЦОД?",
+          "trustedAnswer": "Иван и Михаил вдвоём: Иван поднял сеть, Михаил — стораджи, вместе проверили отказоустойчивость.",
+          "evidenceQuotes": [
+            "Иван сеть, Михаил стораджи"
+          ],
+          "tags": [
+            "цод"
+          ],
+          "solverPerson": "Иван",
+          "coSolvers": [
+            "Иван",
+            "Михаил"
+          ]
+        }
+      ],
+      "requiresPersons": [
+        "Михаил",
+        "Сергей",
+        "Дарья",
+        "Иван"
       ]
     }
   ]

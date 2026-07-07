@@ -10,7 +10,7 @@ const LONG_ANSWER =
 function makeMocks() {
   const prisma: any = {
     issue: { findFirst: vi.fn() },
-    person: { findMany: vi.fn() },
+    person: { findMany: vi.fn(), findFirst: vi.fn(async () => ({ name: 'Владелец' })) },
     ideaBlock: { findMany: vi.fn() },
     taskSolution: {
       findUnique: vi.fn(),
@@ -47,8 +47,23 @@ function makeMocks() {
     getDynamic: vi.fn(async (_key: string, _env: unknown, def: unknown) => def),
   } as any;
 
-  const service = new TaskSolutionBuildService(prisma, docCompiler, embedder, cfg);
-  return { service, prisma, docCompiler, embedder, cfg };
+  const refiner = {
+    extract: vi.fn(async () => ({ ok: true, hasConcreteMethod: true, solverNames: [] as string[] })),
+  } as any;
+
+  const entityResolver = {
+    resolvePersonByHint: vi.fn(async () => null),
+  } as any;
+
+  const service = new TaskSolutionBuildService(
+    prisma,
+    docCompiler,
+    embedder,
+    refiner,
+    entityResolver,
+    cfg,
+  );
+  return { service, prisma, docCompiler, embedder, refiner, entityResolver, cfg };
 }
 
 function block(overrides: Record<string, unknown> = {}) {
@@ -122,6 +137,115 @@ describe('TaskSolutionBuildService.buildOne — гейт содержатель�
     expect(prisma.taskSolution.findUnique).not.toHaveBeenCalled();
     expect(prisma.taskSolution.create).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('TaskSolutionBuildService.buildOne — гейт содержательности (LLM refiner)', () => {
+  function primeCandidate(prisma: any): void {
+    prisma.issue.findFirst.mockResolvedValue({
+      id: 'i1',
+      title: 'Поправить опечатку',
+      description: null,
+      descriptionStripped: null,
+      assignees: [{ userId: 'u1' }],
+    });
+    prisma.person.findMany.mockResolvedValue([{ id: 'p1', userId: 'u1' }]);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ block_id: 'b1' }]);
+    prisma.ideaBlock.findMany.mockResolvedValue([
+      block({ trustedAnswer: 'Да фигня, само решилось, нечего рассказывать по этой теме совсем.' }),
+    ]);
+    prisma.taskSolution.findUnique.mockResolvedValue(null);
+  }
+
+  it('НЕ материализует, когда hasConcreteMethod=false (skippedNoMethod)', async () => {
+    const { service, prisma, refiner } = makeMocks();
+    primeCandidate(prisma);
+    refiner.extract.mockResolvedValue({ ok: true, hasConcreteMethod: false, solverNames: [] });
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('skippedNoMethod');
+    expect(prisma.taskSolution.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('материализует при hasConcreteMethod=false, если решение уже существует (update-путь не режем)', async () => {
+    const { service, prisma, refiner } = makeMocks();
+    primeCandidate(prisma);
+    prisma.taskSolution.findUnique.mockResolvedValue({
+      id: 'ts-old',
+      version: 1,
+      sourceBlockIds: [],
+      skillTags: [],
+      solutionMd: 'старое',
+      currentVersionId: 'cv-old',
+    });
+    refiner.extract.mockResolvedValue({ ok: true, hasConcreteMethod: false, solverNames: [] });
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('updated');
+  });
+
+  it('fallback refiner (ok=false) не гейтит — поведение как раньше', async () => {
+    const { service, prisma, refiner } = makeMocks();
+    primeCandidate(prisma);
+    refiner.extract.mockResolvedValue({ ok: false, hasConcreteMethod: true, solverNames: [] });
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('created');
+  });
+});
+
+describe('TaskSolutionBuildService.buildOne — рост субъектов (соисполнители)', () => {
+  function primeCandidate(prisma: any): void {
+    prisma.issue.findFirst.mockResolvedValue({
+      id: 'i1',
+      title: 'Запуск ЦОД',
+      description: null,
+      descriptionStripped: null,
+      assignees: [{ userId: 'u1' }],
+    });
+    prisma.person.findMany.mockResolvedValue([{ id: 'p1', userId: 'u1' }]);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ block_id: 'b1' }]);
+    prisma.ideaBlock.findMany.mockResolvedValue([block()]);
+    prisma.taskSolution.findUnique.mockResolvedValue(null);
+  }
+
+  it('добавляет резолвнутого соисполнителя в personSubjectIds (union с владельцем)', async () => {
+    const { service, prisma, refiner, entityResolver } = makeMocks();
+    primeCandidate(prisma);
+    refiner.extract.mockResolvedValue({
+      ok: true,
+      hasConcreteMethod: true,
+      solverNames: ['Михаил'],
+    });
+    entityResolver.resolvePersonByHint.mockResolvedValue('p2');
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('created');
+    expect(prisma.taskSolution.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ ownerPersonId: 'p1', personSubjectIds: ['p1', 'p2'] }),
+      }),
+    );
+  });
+
+  it('нерезолвнутое имя игнорируется, владелец остаётся (нет утечки/выдумки)', async () => {
+    const { service, prisma, refiner, entityResolver } = makeMocks();
+    primeCandidate(prisma);
+    refiner.extract.mockResolvedValue({
+      ok: true,
+      hasConcreteMethod: true,
+      solverNames: ['Некто-Неизвестный'],
+    });
+    entityResolver.resolvePersonByHint.mockResolvedValue(null);
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('created');
+    expect(prisma.taskSolution.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ personSubjectIds: ['p1'] }),
+      }),
+    );
   });
 });
 

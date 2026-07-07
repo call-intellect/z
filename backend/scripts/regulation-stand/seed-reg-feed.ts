@@ -29,6 +29,7 @@ const KNOBS: Record<string, unknown> = {
   'taskSolution.minSignalChars': 40,
   'taskSolution.repeatThreshold': 3,
   'taskSolution.repeatSimilarity': 0.85,
+  'taskSolution.refineEnabled': true,
   'aiFeatures.docCompilerEnabled': true,
 };
 

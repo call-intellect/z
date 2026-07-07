@@ -12,7 +12,7 @@ function log(s: string): void {
   process.stdout.write(`${s}\n`);
 }
 
-async function dispatch(mode: Mode, stamp: string): Promise<void> {
+async function dispatch(mode: Mode, stamp: string, prevStamp?: string): Promise<void> {
   switch (mode) {
     case 'prepare':
       await prepare();
@@ -27,13 +27,13 @@ async function dispatch(mode: Mode, stamp: string): Promise<void> {
       await runJudge(stamp);
       break;
     case 'report':
-      runReport(stamp);
+      runReport(stamp, prevStamp);
       break;
     case 'all':
       await build(stamp);
       matchAll(stamp);
       await runJudge(stamp);
-      runReport(stamp);
+      runReport(stamp, prevStamp);
       break;
   }
 }
@@ -46,8 +46,10 @@ async function main(): Promise<void> {
   }
   const mode = raw as Mode;
   const stamp = process.argv[3] ?? new Date().toISOString().replace(/[:.]/g, '-');
-  log(`regulation-stand[A5]: ${mode} (stamp=${stamp})`);
-  await dispatch(mode, stamp);
+  const prevIdx = process.argv.indexOf('--prev');
+  const prevStamp = prevIdx !== -1 ? process.argv[prevIdx + 1] : undefined;
+  log(`regulation-stand[A5]: ${mode} (stamp=${stamp}${prevStamp ? `, prev=${prevStamp}` : ''})`);
+  await dispatch(mode, stamp, prevStamp);
 }
 
 main()

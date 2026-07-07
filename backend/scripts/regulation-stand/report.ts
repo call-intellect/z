@@ -100,7 +100,42 @@ function judgeSection(judged: JudgedScenario[]): string {
   ].join('\n');
 }
 
-export function runReport(stamp: string): string {
+function loadPrevMatches(prevStamp: string): A5Match[] | null {
+  try {
+    const p = resolve(RUNS_DIR, prevStamp, 'match.json');
+    return JSON.parse(readFileSync(p, 'utf8')) as A5Match[];
+  } catch {
+    return null;
+  }
+}
+
+function beforeAfterSection(prevStamp: string, prev: A5Match[], cur: A5Match[]): string {
+  const prevById = new Map(prev.map((m) => [m.scenarioId, m.verdict]));
+  const pt = tallyVerdicts(prev);
+  const ct = tallyVerdicts(cur);
+  const lines: string[] = [];
+  lines.push(`Сравнение с прошлой итерацией \`${prevStamp}\`:`);
+  lines.push('');
+  lines.push('| Вердикт | было | стало |');
+  lines.push('|---|---:|---:|');
+  for (const v of ['PASS', 'PARTIAL', 'FAIL', 'N/A'] as A5Verdict[]) {
+    lines.push(`| ${v} | ${pt[v]} | ${ct[v]} |`);
+  }
+  const changed = cur.filter((m) => prevById.get(m.scenarioId) !== m.verdict);
+  lines.push('');
+  if (changed.length === 0) {
+    lines.push('_Изменений вердиктов нет._');
+  } else {
+    lines.push('| сценарий | было → стало |');
+    lines.push('|---|---|');
+    for (const m of changed) {
+      lines.push(`| ${m.scenarioId} | ${prevById.get(m.scenarioId) ?? '—'} → **${m.verdict}** |`);
+    }
+  }
+  return lines.join('\n');
+}
+
+export function runReport(stamp: string, prevStamp?: string): string {
   const runDir = resolve(RUNS_DIR, stamp);
   const { raw, matches } = matchAll(stamp);
   const judgedPath = resolve(runDir, 'judged.json');
@@ -144,6 +179,16 @@ export function runReport(stamp: string): string {
     lines.push(`| ${v} | ${verdicts[v]} |`);
   }
   lines.push('');
+
+  if (prevStamp) {
+    const prev = loadPrevMatches(prevStamp);
+    if (prev) {
+      lines.push('## Было → стало');
+      lines.push('');
+      lines.push(beforeAfterSection(prevStamp, prev, matches));
+      lines.push('');
+    }
+  }
 
   lines.push('## Метрики A5 (ТЗ §6)');
   lines.push('');
@@ -228,5 +273,7 @@ export function runReport(stamp: string): string {
 if (require.main === module) {
   const stamp = process.argv[2];
   if (!stamp) throw new Error('report: нужен stamp');
-  runReport(stamp);
+  const prevIdx = process.argv.indexOf('--prev');
+  const prevStamp = prevIdx !== -1 ? process.argv[prevIdx + 1] : undefined;
+  runReport(stamp, prevStamp);
 }

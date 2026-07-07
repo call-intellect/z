@@ -44,9 +44,17 @@ function makeService(prisma: PrismaService): TaskSolutionBuildService {
 
   const cfg = {
     getDynamic: async (_key: string, _env: unknown, def: unknown) => def,
+  } as unknown as ConstructorParameters<typeof TaskSolutionBuildService>[5];
+
+  const refiner = {
+    extract: async () => ({ ok: true, hasConcreteMethod: true, solverNames: [] as string[] }),
   } as unknown as ConstructorParameters<typeof TaskSolutionBuildService>[3];
 
-  return new TaskSolutionBuildService(prisma, docCompiler, embedder, cfg);
+  const entityResolver = {
+    resolvePersonByHint: async () => null,
+  } as unknown as ConstructorParameters<typeof TaskSolutionBuildService>[4];
+
+  return new TaskSolutionBuildService(prisma, docCompiler, embedder, refiner, entityResolver, cfg);
 }
 
 async function cleanup(prisma: PrismaService): Promise<void> {

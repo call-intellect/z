@@ -1,0 +1,369 @@
+[
+  {
+    "scenarioId": "a5-create-from-probe",
+    "cell": "A5.1",
+    "trap": false,
+    "keyMetric": "created_correctly",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "owner",
+        "expected": "Михаил",
+        "actual": "Михаил",
+        "pass": true
+      },
+      {
+        "metric": "subjectPersons",
+        "expected": [
+          "Михаил"
+        ],
+        "actual": [
+          "Михаил"
+        ],
+        "pass": true
+      },
+      {
+        "metric": "sourceIssueLinked",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "cloneAlsoFed",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "соответствует эталону"
+  },
+  {
+    "scenarioId": "a5-daily-mentions",
+    "cell": "A5.2",
+    "trap": false,
+    "keyMetric": "built_from_daily",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "owner",
+        "expected": "Дарья",
+        "actual": "Дарья",
+        "pass": true
+      },
+      {
+        "metric": "sourceIssueLinked",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "соответствует эталону"
+  },
+  {
+    "scenarioId": "a5-one-per-task",
+    "cell": "A5.3",
+    "trap": true,
+    "keyMetric": "one_per_task",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "owner",
+        "expected": "Иван",
+        "actual": "Иван",
+        "pass": true
+      },
+      {
+        "metric": "count",
+        "expected": 1,
+        "actual": 1,
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "три захода за день -> ОДНА TaskSolution (апдейт/дополнение), не три; идемпотентность"
+  },
+  {
+    "scenarioId": "a5-no-answer",
+    "cell": "A5.4",
+    "trap": true,
+    "keyMetric": "created_correctly (НЕ плодим)",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": false,
+        "actual": false,
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "нет содержательного «как решалось» -> сущность НЕ плодим"
+  },
+  {
+    "scenarioId": "a5-trivial-gated",
+    "cell": "A5.5",
+    "trap": true,
+    "keyMetric": "created_correctly (НЕ плодим)",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": false,
+        "actual": false,
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "тривиальная задача под гейтом сложности -> материализатор не срабатывает"
+  },
+  {
+    "scenarioId": "a5-ownership-solver",
+    "cell": "A5.6",
+    "trap": true,
+    "keyMetric": "owner_is_solver",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "owner",
+        "expected": "Михаил",
+        "actual": "Михаил",
+        "pass": true
+      },
+      {
+        "metric": "mustNotOwn",
+        "expected": "owner∉[Сергей]",
+        "actual": "Михаил",
+        "pass": true
+      },
+      {
+        "metric": "subjectPersons",
+        "expected": [
+          "Михаил"
+        ],
+        "actual": [
+          "Михаил"
+        ],
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "владелец = решавший Михаил, НЕ рассказавший Сергей (anti-cross-clone, ось A4)"
+  },
+  {
+    "scenarioId": "a5-repeat-candidate-instruction",
+    "cell": "A5.7",
+    "trap": true,
+    "keyMetric": "repeat_candidate",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "owner",
+        "expected": "Михаил",
+        "actual": "Михаил",
+        "pass": true
+      },
+      {
+        "metric": "repeatCandidateInstruction",
+        "expected": true,
+        "actual": false,
+        "pass": true,
+        "na": true,
+        "note": "N/A — эмбеддинги не записаны, репит-группа не тестируема"
+      }
+    ],
+    "verdict": "N/A",
+    "attribution": "—",
+    "diagnosis": "похожий способ ×N -> repeatGroupKey + флаг кандидата в Инструкцию; инструкция НЕ создаётся авто"
+  },
+  {
+    "scenarioId": "a5-dual-purpose",
+    "cell": "A5.8",
+    "trap": false,
+    "keyMetric": "dual_purpose",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "owner",
+        "expected": "Дарья",
+        "actual": "Дарья",
+        "pass": true
+      },
+      {
+        "metric": "cloneAlsoFed",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "двойное назначение: тот же блок кормит клон Дарьи И рождает TaskSolution"
+  },
+  {
+    "scenarioId": "a5-owner-not-mentioner",
+    "cell": "A5.6",
+    "trap": true,
+    "keyMetric": "owner_is_solver",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "owner",
+        "expected": "Иван",
+        "actual": "Иван",
+        "pass": true
+      },
+      {
+        "metric": "mustNotOwn",
+        "expected": "owner∉[Дарья]",
+        "actual": "Иван",
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "рассказала Дарья, решал Иван -> владелец Иван"
+  },
+  {
+    "scenarioId": "a5-extend-daily",
+    "cell": "A5.3",
+    "trap": true,
+    "keyMetric": "one_per_task",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "owner",
+        "expected": "Иван",
+        "actual": "Иван",
+        "pass": true
+      },
+      {
+        "metric": "count",
+        "expected": 1,
+        "actual": 1,
+        "pass": true
+      },
+      {
+        "metric": "contentMustPreserve",
+        "expected": "ночной дамп",
+        "actual": null,
+        "pass": true,
+        "note": "терм «ночной дамп»"
+      },
+      {
+        "metric": "contentMustPreserve",
+        "expected": "S3",
+        "actual": null,
+        "pass": true,
+        "note": "терм «S3»"
+      },
+      {
+        "metric": "contentMustContain",
+        "expected": "проверка восстановления",
+        "actual": null,
+        "pass": true,
+        "note": "терм «проверка восстановления»"
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "опрос + дневное уточнение -> одна сущность, старое сохранено (дополнение)"
+  },
+  {
+    "scenarioId": "a5-no-issue-link",
+    "cell": "A5.1",
+    "trap": true,
+    "keyMetric": "created_correctly (НЕ плодим)",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": false,
+        "actual": false,
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "не привязано к конкретной задаче (sourceIssue) -> это топливо клона, НЕ TaskSolution; кормит только клон"
+  },
+  {
+    "scenarioId": "a5-multi-solver",
+    "cell": "A5.6",
+    "trap": true,
+    "keyMetric": "subject_accuracy (multi-solver)",
+    "checks": [
+      {
+        "metric": "created",
+        "expected": true,
+        "actual": true,
+        "pass": true
+      },
+      {
+        "metric": "owner",
+        "expected": "Иван",
+        "actual": "Иван",
+        "pass": true
+      },
+      {
+        "metric": "subjectPersons",
+        "expected": [
+          "Иван",
+          "Михаил"
+        ],
+        "actual": [
+          "Иван",
+          "Михаил"
+        ],
+        "pass": true
+      }
+    ],
+    "verdict": "PASS",
+    "attribution": "—",
+    "diagnosis": "соисполнители -> оба в subject (растут оба клона); владелец = основной исполнитель задачи"
+  }
+]

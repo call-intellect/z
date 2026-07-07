@@ -70,6 +70,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Cosine-порог похожести решений для группировки повторов. По умолчанию 0.85.',
   },
+  {
+    key: 'taskSolution.refineEnabled',
+    value: true,
+    category: 'ai',
+    section: 'task_solution',
+    severity: 'medium',
+    description:
+      'Аварийный рубильник LLM-уточнения решения: гейт содержательности («само решилось» → не материализуем) + рост клонов соисполнителей (кто реально решал → в subjects). По умолчанию вкл (Ship-On). Выкл → материализация по длине сигнала + subjects=только владелец.',
+  },
 ];
 
 interface Counters {

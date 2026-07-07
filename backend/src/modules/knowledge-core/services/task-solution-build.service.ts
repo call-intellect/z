@@ -5,7 +5,9 @@ import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { EntityResolutionService } from './entity-resolution.service';
 import { StructuredDocumentCompilerService } from './structured-document-compiler.service';
+import { TaskSolutionRefinerService } from './task-solution-refiner.service';
 
 const HOW_SOLVED_SIGNAL_SQL = `'reasoning','rationale','decision_basis','methodology_step'`;
 
@@ -14,6 +16,7 @@ type BuildOutcome =
   | 'updated'
   | 'skippedNoOwner'
   | 'skippedGate'
+  | 'skippedNoMethod'
   | 'skippedNoNew'
   | 'error';
 
@@ -23,6 +26,7 @@ export interface TaskSolutionBuildStats {
   updated: number;
   skippedNoOwner: number;
   skippedGate: number;
+  skippedNoMethod: number;
   skippedNoNew: number;
 }
 
@@ -43,6 +47,10 @@ export class TaskSolutionBuildService {
     private readonly docCompiler: StructuredDocumentCompilerService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embedder: KnowledgeEmbeddingService,
+    @Inject(TaskSolutionRefinerService)
+    private readonly refiner: TaskSolutionRefinerService,
+    @Inject(EntityResolutionService)
+    private readonly entityResolver: EntityResolutionService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
@@ -86,6 +94,7 @@ export class TaskSolutionBuildService {
       updated: 0,
       skippedNoOwner: 0,
       skippedGate: 0,
+      skippedNoMethod: 0,
       skippedNoNew: 0,
     };
 
@@ -104,6 +113,9 @@ export class TaskSolutionBuildService {
             break;
           case 'skippedGate':
             stats.skippedGate += 1;
+            break;
+          case 'skippedNoMethod':
+            stats.skippedNoMethod += 1;
             break;
           case 'skippedNoNew':
             stats.skippedNoNew += 1;
@@ -198,6 +210,36 @@ export class TaskSolutionBuildService {
       const dataClass = this.mostSensitive(blocks.map((b) => b.dataClass));
       const now = new Date();
 
+      const refineEnabled = await this.cfg.getDynamic<boolean>(
+        'taskSolution.refineEnabled',
+        undefined,
+        true,
+      );
+      let subjectIds: string[] = [ownerPersonId];
+      if (refineEnabled) {
+        const refined = await this.refiner.extract({
+          taskTitle: issue.title,
+          assigneeName: await this.personName(tenantId, ownerPersonId),
+          blocks: blocks.map((b) => ({
+            name: b.name,
+            question: b.criticalQuestion,
+            answer: b.trustedAnswer,
+            quotes: (b.evidence ?? [])
+              .map((e) => e.quote)
+              .filter((q): q is string => !!q && q.length > 0)
+              .slice(0, 6),
+          })),
+          tenantId,
+          dataClass,
+          sourceRef: { type: 'issue', id: issueId },
+          nowIso: now.toISOString(),
+        });
+        if (refined.ok && !refined.hasConcreteMethod && !existing) return 'skippedNoMethod';
+        if (refined.ok) {
+          subjectIds = await this.resolveSubjects(tenantId, ownerPersonId, refined.solverNames);
+        }
+      }
+
       const compiled = this.docCompiler.isEnabled()
         ? await this.docCompiler.compile(
             {
@@ -248,7 +290,7 @@ export class TaskSolutionBuildService {
               taskDescription,
               solutionMd: bodyMd,
               ownerPersonId,
-              personSubjectIds: [ownerPersonId],
+              personSubjectIds: subjectIds,
               sourceIssueId: issueId,
               sourceBlockIds,
               skillTags,
@@ -300,7 +342,7 @@ export class TaskSolutionBuildService {
               taskDescription,
               sourceBlockIds: { set: sourceBlockIds },
               skillTags: { set: skillTags },
-              personSubjectIds: { set: [ownerPersonId] },
+              personSubjectIds: { set: subjectIds },
               ownerPersonId,
               dataClass,
               version: newVersion,
@@ -344,6 +386,29 @@ export class TaskSolutionBuildService {
       if (p) return p.id;
     }
     return persons[0]!.id;
+  }
+
+  private async personName(tenantId: string, personId: string): Promise<string | null> {
+    const p = await this.prisma.person.findFirst({
+      where: { id: personId, tenantId },
+      select: { name: true },
+    });
+    return p?.name ?? null;
+  }
+
+  private async resolveSubjects(
+    tenantId: string,
+    ownerPersonId: string,
+    solverNames: readonly string[],
+  ): Promise<string[]> {
+    const ids = new Set<string>([ownerPersonId]);
+    for (const name of solverNames) {
+      const pid = await this.entityResolver
+        .resolvePersonByHint(tenantId, name)
+        .catch(() => null);
+      if (pid) ids.add(pid);
+    }
+    return [...ids];
   }
 
   private async tryWriteEmbedding(id: string, text: string): Promise<string | null> {

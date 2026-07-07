@@ -143,8 +143,10 @@ export function MessagesClient() {
 
   const handleConversationCreated = useCallback(
     async (conversationId: string) => {
-      await mutate();
+      setTab(TABS[0]!);
+      setFeedQuery("");
       openThread(conversationId);
+      await mutate();
     },
     [mutate, openThread],
   );
@@ -200,9 +202,11 @@ export function MessagesClient() {
 
       <NewConversationDialog
         orgId={currentOrgId}
+        currentUserId={user?.id ?? null}
         open={newOpen}
         onOpenChange={setNewOpen}
         onCreated={handleConversationCreated}
+        onListMutate={mutate}
       />
 
       {showContext && activeThread ? (

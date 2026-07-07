@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Copy, Loader2 } from "lucide-react";
-import { useEffect, useState, type JSX, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { ApiError, humanizeApiError } from "@/api/api-error";
@@ -26,16 +26,20 @@ type Mode = "colleague" | "external";
 
 export interface NewConversationDialogProps {
   orgId: string | null;
+  currentUserId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (conversationId: string) => void | Promise<void>;
+  onListMutate: () => void | Promise<unknown>;
 }
 
 export function NewConversationDialog({
   orgId,
+  currentUserId,
   open,
   onOpenChange,
   onCreated,
+  onListMutate,
 }: NewConversationDialogProps): JSX.Element | null {
   const [mode, setMode] = useState<Mode>("colleague");
   const [members, setMembers] = useState<ParticipantPickerValue[]>([]);
@@ -47,8 +51,14 @@ export function NewConversationDialog({
   const [invite, setInvite] = useState<{
     conversationId: string;
     inviteLink: string;
+    via: "email" | "phone";
   } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const excludeUserIds = useMemo(
+    () => (currentUserId ? [currentUserId] : []),
+    [currentUserId],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -73,6 +83,7 @@ export function NewConversationDialog({
 
   const close = () => {
     if (submitting) return;
+    if (invite) void onListMutate();
     onOpenChange(false);
   };
 
@@ -113,9 +124,8 @@ export function NewConversationDialog({
       setError("Нужен email или телефон клиента");
       return;
     }
-    const clientContact = trimmed.includes("@")
-      ? { email: trimmed }
-      : { phone: trimmed };
+    const isEmail = trimmed.includes("@");
+    const clientContact = isEmail ? { email: trimmed } : { phone: trimmed };
     setSubmitting(true);
     setError(null);
     try {
@@ -123,7 +133,7 @@ export function NewConversationDialog({
         clientContact,
         ...(firstMessage.trim() ? { message: firstMessage.trim() } : {}),
       });
-      setInvite(res);
+      setInvite({ ...res, via: isEmail ? "email" : "phone" });
     } catch (e) {
       if (e instanceof ApiError && e.code === "EXTERNAL_CHAT_DISABLED") {
         setError(
@@ -165,6 +175,7 @@ export function NewConversationDialog({
         {invite ? (
           <ExternalInviteResult
             inviteLink={invite.inviteLink}
+            via={invite.via}
             copied={copied}
             onCopy={() => void handleCopy()}
           />
@@ -195,6 +206,7 @@ export function NewConversationDialog({
                     value={members}
                     onChange={setMembers}
                     onlyUsers
+                    excludeUserIds={excludeUserIds}
                     placeholder="Найдите коллегу по имени"
                     disabled={submitting}
                   />
@@ -335,18 +347,21 @@ function ModeTab({
 
 function ExternalInviteResult({
   inviteLink,
+  via,
   copied,
   onCopy,
 }: {
   inviteLink: string;
+  via: "email" | "phone";
   copied: boolean;
   onCopy: () => void;
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-fg-secondary">
-        Переписка создана. Ссылка-приглашение отправлена клиенту — скопируйте её,
-        если хотите переслать вручную.
+        {via === "email"
+          ? "Переписка создана. Ссылка-приглашение отправлена клиенту на email — скопируйте её, если хотите переслать вручную."
+          : "Переписка создана. Автоматическая отправка по номеру телефона пока недоступна — скопируйте ссылку и перешлите клиенту вручную."}
       </p>
       <div className="flex items-center gap-2 rounded-md border border-border bg-bg-surface px-3 py-2">
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-primary">

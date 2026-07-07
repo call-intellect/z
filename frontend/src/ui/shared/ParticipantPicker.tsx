@@ -44,6 +44,7 @@ export interface ParticipantPickerProps {
   disabled?: boolean;
   showChannels?: boolean;
   onlyUsers?: boolean;
+  excludeUserIds?: string[];
 }
 
 function isSameParticipant(
@@ -91,6 +92,7 @@ export function ParticipantPicker({
   disabled = false,
   showChannels = false,
   onlyUsers = false,
+  excludeUserIds,
 }: ParticipantPickerProps): JSX.Element {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -114,10 +116,18 @@ export function ParticipantPicker({
     { revalidateOnFocus: false, dedupingInterval: 60_000 },
   );
 
+  const excludeKey = (excludeUserIds ?? []).join(",");
   const results = useMemo(() => {
-    const items = data?.items ?? [];
-    return onlyUsers ? items.filter((r) => r.type === "user") : items;
-  }, [data, onlyUsers]);
+    let items = data?.items ?? [];
+    if (onlyUsers) items = items.filter((r) => r.type === "user");
+    const exclude = excludeKey ? excludeKey.split(",") : [];
+    if (exclude.length > 0) {
+      items = items.filter(
+        (r) => r.type !== "user" || !exclude.includes(r.userId),
+      );
+    }
+    return items;
+  }, [data, onlyUsers, excludeKey]);
 
   const filteredResults = useMemo(
     () =>

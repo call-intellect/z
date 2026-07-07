@@ -24,10 +24,6 @@ import {
   type ExportCsvQuery,
   FunctionCallsQuerySchema,
   type FunctionCallsQuery,
-  FunctionsUsageQuerySchema,
-  type FunctionsUsageQuery,
-  UsersUsageQuerySchema,
-  type UsersUsageQuery,
 } from '../dto/admin-usage.dto';
 import { type AdminCallLogItem, AdminUsageService } from '../services/admin-usage.service';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
@@ -48,19 +44,10 @@ export class AdminUsageController {
       period: q.period,
       ...(q.from ? { from: q.from } : {}),
       ...(q.to ? { to: q.to } : {}),
-    });
-  }
-
-  @Get('users')
-  async users(@Query(new ZodValidationPipe(UsersUsageQuerySchema)) q: UsersUsageQuery) {
-    return this.svc.getUsersUsage({
-      scope: 'global',
-      period: q.period,
-      ...(q.from ? { from: q.from } : {}),
-      ...(q.to ? { to: q.to } : {}),
-      limit: q.limit,
-      ...(q.cursor ? { cursor: q.cursor } : {}),
-      ...(q.search ? { search: q.search } : {}),
+      ...(q.provider ? { provider: q.provider } : {}),
+      ...(q.model ? { model: q.model } : {}),
+      ...(q.taskType ? { taskType: q.taskType } : {}),
+      ...(q.orgId ? { orgId: q.orgId } : {}),
     });
   }
 
@@ -85,16 +72,6 @@ export class AdminUsageController {
     });
     if (!detail) throw new NotFoundException({ ok: false, error: { code: 'call_not_found' } });
     return detail;
-  }
-
-  @Get('functions')
-  async functions(@Query(new ZodValidationPipe(FunctionsUsageQuerySchema)) q: FunctionsUsageQuery) {
-    return this.svc.getFunctionsUsage({
-      scope: 'global',
-      period: q.period,
-      ...(q.from ? { from: q.from } : {}),
-      ...(q.to ? { to: q.to } : {}),
-    });
   }
 
   @Get('functions/:taskType/calls')
@@ -127,33 +104,12 @@ export class AdminUsageController {
     const filename = `usage-${scope}-${q.period}-${Date.now()}.csv`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    if (q.kind === 'calls') {
-      const result = await this.svc.getCallsLog({
-        scope,
-        ...(tenantId !== undefined ? { tenantId } : {}),
-        limit: 1000,
-      });
-      streamUsageCsv(res, result.items as AdminCallLogItem[]);
-    } else if (q.kind === 'functions') {
-      const result = await this.svc.getFunctionsUsage({
-        scope,
-        ...(tenantId !== undefined ? { tenantId } : {}),
-        period: q.period,
-        ...(q.from ? { from: q.from } : {}),
-        ...(q.to ? { to: q.to } : {}),
-      });
-      streamUsageCsv(res, result.items);
-    } else {
-      const result = await this.svc.getUsersUsage({
-        scope,
-        ...(tenantId !== undefined ? { tenantId } : {}),
-        period: q.period,
-        ...(q.from ? { from: q.from } : {}),
-        ...(q.to ? { to: q.to } : {}),
-        limit: 1000,
-      });
-      streamUsageCsv(res, result.items);
-    }
+    const result = await this.svc.getCallsLog({
+      scope,
+      ...(tenantId !== undefined ? { tenantId } : {}),
+      limit: 1000,
+    });
+    streamUsageCsv(res, result.items as AdminCallLogItem[]);
     res.end();
   }
 }

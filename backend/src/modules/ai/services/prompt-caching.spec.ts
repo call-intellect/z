@@ -95,6 +95,7 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
         findFirst: vi.fn(),
       },
       llmModelPrice: { findFirst: vi.fn(async () => null) },
+      llmModelExperiment: { findMany: vi.fn(async () => []) },
     } as unknown as PrismaService;
 
     const usageRecord = vi.fn();
@@ -162,6 +163,7 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
         findFirst: vi.fn(),
       },
       llmModelPrice: { findFirst: vi.fn(async () => null) },
+      llmModelExperiment: { findMany: vi.fn(async () => []) },
     } as unknown as PrismaService;
 
     const router = new LlmRouterService(

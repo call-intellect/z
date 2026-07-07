@@ -6,6 +6,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { appendJsonWordToUser } from './json-mode.util';
 import type { LlmCompleteInput, LlmCompleteOutput, LlmToolCall } from './llm.types';
 import { LlmError } from './llm.types';
+import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
 import { toOpenAiStrictSchema } from './strict-json-schema.util';
 
 export function ensureJsonHint(instructions: string): string {
@@ -26,7 +27,18 @@ export class OpenAiProxyService {
     });
   }
 
-  async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
+  private buildClient(override: LlmConnectionOverride): OpenAI {
+    return new OpenAI({
+      baseURL: override.baseUrl,
+      apiKey: override.apiKey ?? `${this.cfg.ai.proxy.prefix}:${this.cfg.ai.openai.apiKey}`,
+    });
+  }
+
+  async complete(
+    input: LlmCompleteInput,
+    override?: LlmConnectionOverride,
+  ): Promise<LlmCompleteOutput> {
+    const client = override ? this.buildClient(override) : this.client;
     const model = input.model ?? this.defaultModel;
     const isReasoning = model.startsWith('gpt-5');
 
@@ -84,7 +96,7 @@ export class OpenAiProxyService {
 
     try {
       const response = (await (
-        this.client as unknown as {
+        client as unknown as {
           responses: {
             create: (p: Record<string, unknown>) => Promise<{
               output_text?: string;

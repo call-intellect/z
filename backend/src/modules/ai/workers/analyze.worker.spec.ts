@@ -11,6 +11,7 @@ import type { MeetingsService } from '../../meetings/meetings.service';
 import type { AiQueueService } from '../ai-queue.service';
 import type { AiUsageLogService } from '../services/ai-usage-log.service';
 import type { LlmFallbackService } from '../services/llm-fallback.service';
+import type { LlmCallParams, LlmCallResult, LlmRouterService } from '../services/llm-router.service';
 import type { LlmCompleteOutput } from '../services/llm.types';
 
 import { AnalyzeWorker } from './analyze.worker';
@@ -22,6 +23,7 @@ interface BuildArgs {
   promptInjectionGuardEnabled?: boolean;
   summaryAgentEnabled?: boolean;
   clientProtocolEnabled?: boolean;
+  analyzeWorkerRouterEnabled?: boolean;
   ingestMeetingImpl?: (meetingId: string) => Promise<unknown>;
 }
 
@@ -31,6 +33,8 @@ function buildWorker(args: BuildArgs): {
   enqueueNotify: ReturnType<typeof vi.fn>;
   transitionStatus: ReturnType<typeof vi.fn>;
   llmComplete: ReturnType<typeof vi.fn>;
+  routerCall: ReturnType<typeof vi.fn>;
+  usageRecord: ReturnType<typeof vi.fn>;
   incPromptInjectionAttempt: ReturnType<typeof vi.fn>;
   incIngestFailed: ReturnType<typeof vi.fn>;
   incMeetingFailed: ReturnType<typeof vi.fn>;
@@ -118,7 +122,26 @@ function buildWorker(args: BuildArgs): {
   const meetings = { transitionStatus } as unknown as MeetingsService;
 
   const llm = { complete: args.llmComplete } as unknown as LlmFallbackService;
-  const usage = { record: vi.fn() } as unknown as AiUsageLogService;
+  const legacyComplete = args.llmComplete as unknown as (input: unknown) => Promise<LlmCompleteOutput>;
+  const routerCall = vi.fn(async (params: LlmCallParams): Promise<LlmCallResult> => {
+    const out = await legacyComplete({
+      system: { text: params.systemPrompt, cacheControl: 'ephemeral' },
+      user: params.userMessage,
+      ...(params.tools ? { tools: params.tools } : {}),
+    });
+    return {
+      text: out.text,
+      modelUsed: `${out.provider}:${out.model}`,
+      inputTokens: out.inputTokens,
+      outputTokens: out.outputTokens,
+      cachedTokens: out.cachedTokens ?? 0,
+      durationMs: 0,
+      toolCalls: out.toolCalls,
+    };
+  });
+  const router = { call: routerCall } as unknown as LlmRouterService;
+  const usageRecord = vi.fn();
+  const usage = { record: usageRecord } as unknown as AiUsageLogService;
   const enqueueNotify = vi.fn(async () => undefined);
   const enqueueQualityScore = vi.fn(async () => undefined);
   const enqueueChapters = vi.fn(async () => undefined);
@@ -150,6 +173,9 @@ function buildWorker(args: BuildArgs): {
       ...(args.clientProtocolEnabled !== undefined
         ? { clientProtocolEnabled: args.clientProtocolEnabled }
         : {}),
+      ...(args.analyzeWorkerRouterEnabled !== undefined
+        ? { analyzeWorkerRouterEnabled: args.analyzeWorkerRouterEnabled }
+        : {}),
     },
   } as unknown as TypedConfigService;
   const redis = { client: {} } as unknown as RedisService;
@@ -162,6 +188,7 @@ function buildWorker(args: BuildArgs): {
     redis,
     prisma,
     llm,
+    router,
     usage,
     queue,
     meetings,
@@ -176,6 +203,8 @@ function buildWorker(args: BuildArgs): {
     enqueueNotify,
     transitionStatus,
     llmComplete: args.llmComplete,
+    routerCall,
+    usageRecord,
     incPromptInjectionAttempt,
     incIngestFailed,
     incMeetingFailed,
@@ -589,6 +618,97 @@ describe('AnalyzeWorker.process', () => {
       );
       expect(transitionStatus).not.toHaveBeenCalledWith('m-1', 'failed', expect.anything());
       expect(incMeetingFailed).toHaveBeenCalledWith('analyze');
+    });
+  });
+
+  describe('llm-router migration (Фаза 4, ТЗ analyze-worker-llm-router-migration)', () => {
+    it('рубильник не задан (default ON) → callLlm идёт через router.call с корректными taskType/tenantId, usage.record напрямую не вызывается', async () => {
+      const llmComplete = vi.fn();
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('2-3 предложения о встрече.'));
+      llmComplete.mockResolvedValueOnce(
+        makeLlmOutput('', [
+          {
+            name: 'extract_sales',
+            input: {
+              pain: 'долго закрываются сделки',
+              interest_level: 'high',
+              objections: [],
+              budget: null,
+              decision_maker: null,
+              urgency: null,
+              next_step: 'отправить КП',
+            },
+          },
+        ]),
+      );
+      llmComplete.mockResolvedValueOnce(
+        makeLlmOutput('## Протокол встречи\n2026-06-10 · ...\n\n## Кратко\nОбсудили КП.'),
+      );
+      llmComplete.mockResolvedValueOnce(
+        makeLlmOutput('', [
+          {
+            name: 'extract_follow_up',
+            input: { subject: 'Спасибо', body: 'Уважаемый ...' },
+          },
+        ]),
+      );
+
+      const { worker, routerCall, usageRecord } = buildWorker({
+        type: 'sales',
+        llmComplete,
+      });
+      await (worker as unknown as { process: (j: unknown) => Promise<void> }).process({
+        data: { meetingId: 'm-1', attempt: 1 },
+        id: 'j',
+      });
+
+      expect(routerCall).toHaveBeenCalledTimes(4);
+      const taskTypes = routerCall.mock.calls.map((c) => (c[0] as LlmCallParams).taskType);
+      expect(taskTypes).toEqual(['summary', 'report-by-type', 'client-meeting-split', 'follow-up']);
+      const tenantIds = routerCall.mock.calls.map((c) => (c[0] as LlmCallParams).tenantId);
+      expect(tenantIds.every((t) => t === 'org-1')).toBe(true);
+
+      expect(usageRecord).not.toHaveBeenCalled();
+    });
+
+    it('рубильник OFF (analyzeWorkerRouterEnabled=false) → callLlm идёт через legacy llm.complete, router.call не вызывается, usage.record пишется вручную как раньше', async () => {
+      const llmComplete = vi.fn();
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('Краткое резюме.'));
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('# Отчёт\n\n- пункт 1\n- пункт 2'));
+
+      const { worker, routerCall, usageRecord } = buildWorker({
+        type: 'team',
+        customPrompt: 'Сделай краткий отчёт в формате Markdown',
+        llmComplete,
+        analyzeWorkerRouterEnabled: false,
+      });
+      await (worker as unknown as { process: (j: unknown) => Promise<void> }).process({
+        data: { meetingId: 'm-1', attempt: 1 },
+        id: 'j',
+      });
+
+      expect(routerCall).not.toHaveBeenCalled();
+      expect(llmComplete).toHaveBeenCalledTimes(2);
+      expect(usageRecord).toHaveBeenCalledTimes(2);
+    });
+
+    it('router-путь, customPrompt → agentType "custom" мапится в taskType "custom-prompt" (5-й из 5 задействованных agentType)', async () => {
+      const llmComplete = vi.fn();
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('Краткое резюме.'));
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('# Отчёт\n\n- пункт 1\n- пункт 2'));
+
+      const { worker, routerCall } = buildWorker({
+        type: 'team',
+        customPrompt: 'Сделай краткий отчёт в формате Markdown',
+        llmComplete,
+      });
+      await (worker as unknown as { process: (j: unknown) => Promise<void> }).process({
+        data: { meetingId: 'm-1', attempt: 1 },
+        id: 'j',
+      });
+
+      const taskTypes = routerCall.mock.calls.map((c) => (c[0] as LlmCallParams).taskType);
+      expect(taskTypes).toEqual(['summary', 'custom-prompt']);
     });
   });
 });

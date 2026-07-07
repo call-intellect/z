@@ -1,0 +1,556 @@
+import { Inject, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+
+import { PrismaService } from '../../../common/prisma/prisma.service';
+import type {
+  LlmCostCompaniesQuery,
+  LlmCostCompanyDetailQuery,
+  LlmCostModelQuery,
+  LlmCostModuleQuery,
+  LlmCostOverviewQuery,
+  LlmCostPeriod,
+  LlmCostTaskTypeQuery,
+} from '../dto/llm-cost-dashboard.dto';
+
+import { LLM_COST_MODULE_LABELS, type LlmCostModule, resolveLlmCostModule } from './llm-cost-module-map';
+
+export interface LlmCostTrendPoint {
+  date: string;
+  costUsd: number;
+}
+
+export interface LlmCostOverviewView {
+  period: LlmCostPeriod;
+  /** Фактически применённый диапазон (YYYY-MM-DD, resolveDateRange — либо preset, либо custom). */
+  dateFrom: string;
+  dateTo: string;
+  totals: {
+    costUsd: number;
+    callsCount: number;
+    prevPeriodCostRub: number | null;
+    changePct: number | null;
+    /** Сумма подписочных списаний провайдеров за период — уже включена в costUsd/trend, выделена для прозрачности. */
+    subscriptionCostUsd: number;
+  };
+  trend: LlmCostTrendPoint[];
+  byModel: Array<{ provider: string; model: string; costUsd: number; sharePct: number }>;
+  byModule: Array<{ module: LlmCostModule; label: string; costUsd: number; sharePct: number }>;
+  topCompanies: Array<{ tenantId: string; name: string; costUsd: number; sharePct: number }>;
+}
+
+export interface LlmCostModelDetailView {
+  model: string;
+  totals: { costUsd: number; sharePct: number };
+  trend: LlmCostTrendPoint[];
+  byModule: Array<{ module: LlmCostModule; label: string; costUsd: number; sharePct: number }>;
+}
+
+export interface LlmCostModuleDetailView {
+  module: LlmCostModule;
+  label: string;
+  totals: { costUsd: number; sharePct: number };
+  trend: LlmCostTrendPoint[];
+  byTaskType: Array<{ taskType: string; costUsd: number; callsCount: number }>;
+}
+
+export interface LlmCostCompanyRow {
+  tenantId: string;
+  name: string;
+  costUsd: number;
+  sharePct: number;
+  trend: LlmCostTrendPoint[];
+}
+export interface LlmCostCompaniesView {
+  items: LlmCostCompanyRow[];
+  nextCursor: string | null;
+}
+
+export interface LlmCostCompanyDetailView {
+  tenantId: string;
+  name: string;
+  totals: { costUsd: number };
+  trend: LlmCostTrendPoint[];
+  byModel: Array<{ provider: string; model: string; costUsd: number; sharePct: number }>;
+}
+
+export interface LlmCostTaskTypeDetailView {
+  taskType: string;
+  module: LlmCostModule;
+  totals: { costUsd: number; callsCount: number };
+  trend: LlmCostTrendPoint[];
+}
+
+interface CompaniesCursor {
+  costUsd: number;
+  tenantId: string;
+}
+
+function encodeCompaniesCursor(c: CompaniesCursor): string {
+  return Buffer.from(JSON.stringify(c), 'utf-8').toString('base64');
+}
+
+function decodeCompaniesCursor(raw: string | undefined): CompaniesCursor | null {
+  if (!raw) return null;
+  try {
+    const json = Buffer.from(raw, 'base64').toString('utf-8');
+    const parsed: unknown = JSON.parse(json);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as Record<string, unknown>).costUsd === 'number' &&
+      typeof (parsed as Record<string, unknown>).tenantId === 'string'
+    ) {
+      return parsed as CompaniesCursor;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function decimalToNumber(v: Prisma.Decimal | number | null | undefined): number {
+  if (v === null || v === undefined) return 0;
+  if (typeof (v as unknown as { toNumber?: () => number }).toNumber === 'function') {
+    try {
+      return (v as unknown as { toNumber: () => number }).toNumber();
+    } catch {
+      return 0;
+    }
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function sharePct(part: number, total: number): number {
+  return total > 0 ? (part / total) * 100 : 0;
+}
+
+@Injectable()
+export class LlmCostDashboardService {
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  private periodToDays(period: LlmCostPeriod): number {
+    return period === '7d' ? 7 : period === '30d' ? 30 : 90;
+  }
+
+  private resolveDateRange(q: {
+    period: LlmCostPeriod;
+    dateFrom?: string;
+    dateTo?: string;
+  }): { gte: Date; lt: Date; prevGte: Date } {
+    if (q.dateFrom && q.dateTo) {
+      const gte = new Date(`${q.dateFrom}T00:00:00.000Z`);
+      const lt = new Date(new Date(`${q.dateTo}T00:00:00.000Z`).getTime() + 86_400_000);
+      const prevGte = new Date(gte.getTime() - (lt.getTime() - gte.getTime()));
+      return { gte, lt, prevGte };
+    }
+    return this.dateRange(q.period);
+  }
+
+  private dateRange(period: LlmCostPeriod): { gte: Date; lt: Date; prevGte: Date } {
+    const days = this.periodToDays(period);
+    const now = new Date();
+    const lt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const gte = new Date(lt.getTime() - days * 86_400_000);
+    const prevGte = new Date(gte.getTime() - days * 86_400_000);
+    return { gte, lt, prevGte };
+  }
+
+  private async buildTrend(
+    where: Prisma.AiCostDailyWhereInput,
+    granularity: 'day' | 'week',
+  ): Promise<LlmCostTrendPoint[]> {
+    const rows = await this.prisma.aiCostDaily.groupBy({
+      by: ['date'],
+      where,
+      _sum: { costUsd: true },
+      orderBy: { date: 'asc' },
+    });
+    if (granularity === 'day') {
+      return rows.map((r) => ({
+        date: r.date.toISOString().slice(0, 10),
+        costUsd: decimalToNumber(r._sum.costUsd),
+      }));
+    }
+    const byWeek = new Map<string, number>();
+    for (const r of rows) {
+      const d = r.date;
+      const day = (d.getUTCDay() + 6) % 7;
+      const monday = new Date(d.getTime() - day * 86_400_000);
+      const key = monday.toISOString().slice(0, 10);
+      byWeek.set(key, (byWeek.get(key) ?? 0) + decimalToNumber(r._sum.costUsd));
+    }
+    return [...byWeek.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, costUsd]) => ({ date, costUsd }));
+  }
+
+  /**
+   * Подписочные платежи провайдеров (LlmProviderSubscriptionCharge) — platform-level
+   * расход, НЕ per-org (см. plans/architecture/2026-07-06-llm-provider-subscription-billing.md).
+   * Мёржим в тот же per-date/per-week trend, что и AiCostDaily, чтобы списание было видно
+   * как скачок на графике общего расхода — но не искажаем per-org атрибуцию в AiCostDaily.
+   */
+  private async subscriptionChargesTotal(
+    gte: Date,
+    lt: Date,
+  ): Promise<{ total: number; byDate: Map<string, number> }> {
+    const charges = await this.prisma.llmProviderSubscriptionCharge.findMany({
+      where: { chargeDate: { gte, lt } },
+      select: { chargeDate: true, amountUsd: true },
+    });
+    const byDate = new Map<string, number>();
+    let total = 0;
+    for (const c of charges) {
+      const amount = decimalToNumber(c.amountUsd);
+      total += amount;
+      const key = c.chargeDate.toISOString().slice(0, 10);
+      byDate.set(key, (byDate.get(key) ?? 0) + amount);
+    }
+    return { total, byDate };
+  }
+
+  private mergeSubscriptionChargesIntoTrend(
+    trend: LlmCostTrendPoint[],
+    byDate: Map<string, number>,
+    granularity: 'day' | 'week',
+  ): LlmCostTrendPoint[] {
+    if (byDate.size === 0) return trend;
+    const additions = new Map<string, number>();
+    for (const [dateKey, amount] of byDate) {
+      if (granularity === 'day') {
+        additions.set(dateKey, (additions.get(dateKey) ?? 0) + amount);
+        continue;
+      }
+      const d = new Date(`${dateKey}T00:00:00.000Z`);
+      const day = (d.getUTCDay() + 6) % 7;
+      const monday = new Date(d.getTime() - day * 86_400_000);
+      const key = monday.toISOString().slice(0, 10);
+      additions.set(key, (additions.get(key) ?? 0) + amount);
+    }
+    const byTrendDate = new Map(trend.map((p) => [p.date, p.costUsd]));
+    for (const [date, amount] of additions) {
+      byTrendDate.set(date, (byTrendDate.get(date) ?? 0) + amount);
+    }
+    return [...byTrendDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, costUsd]) => ({ date, costUsd }));
+  }
+
+  async overview(q: LlmCostOverviewQuery): Promise<LlmCostOverviewView> {
+    const { gte, lt, prevGte } = this.resolveDateRange(q);
+    const where: Prisma.AiCostDailyWhereInput = { date: { gte, lt } };
+    const prevWhere: Prisma.AiCostDailyWhereInput = { date: { gte: prevGte, lt: gte } };
+
+    const [
+      totalsAgg,
+      prevTotalsAgg,
+      byModelRows,
+      byTaskTypeRows,
+      byTenantRows,
+      trendRaw,
+      subscription,
+      prevSubscription,
+    ] = await Promise.all([
+      this.prisma.aiCostDaily.aggregate({
+        where,
+        _sum: { costUsd: true, callsCount: true },
+      }),
+      this.prisma.aiCostDaily.aggregate({ where: prevWhere, _sum: { costUsd: true } }),
+      this.prisma.aiCostDaily.groupBy({ by: ['provider', 'model'], where, _sum: { costUsd: true } }),
+      this.prisma.aiCostDaily.groupBy({ by: ['taskType'], where, _sum: { costUsd: true } }),
+      this.prisma.aiCostDaily.groupBy({
+        by: ['tenantId'],
+        where,
+        _sum: { costUsd: true },
+        orderBy: { _sum: { costUsd: 'desc' } },
+        take: 20,
+      }),
+      this.buildTrend(where, q.trend),
+      this.subscriptionChargesTotal(gte, lt),
+      this.subscriptionChargesTotal(prevGte, gte),
+    ]);
+
+    const trend = this.mergeSubscriptionChargesIntoTrend(trendRaw, subscription.byDate, q.trend);
+    const totalCostRub = decimalToNumber(totalsAgg._sum.costUsd) + subscription.total;
+    const callsCount = totalsAgg._sum.callsCount ?? 0;
+    const prevPeriodCostRub = decimalToNumber(prevTotalsAgg._sum.costUsd) + prevSubscription.total;
+    const changePct =
+      prevPeriodCostRub > 0
+        ? ((totalCostRub - prevPeriodCostRub) / prevPeriodCostRub) * 100
+        : null;
+
+    const byModel = byModelRows
+      .map((r) => ({ provider: r.provider, model: r.model, costUsd: decimalToNumber(r._sum.costUsd) }))
+      .sort((a, b) => b.costUsd - a.costUsd)
+      .map((r) => ({ ...r, sharePct: sharePct(r.costUsd, totalCostRub) }));
+
+    const byModuleAgg = new Map<LlmCostModule, number>();
+    for (const r of byTaskTypeRows) {
+      const module = resolveLlmCostModule(r.taskType);
+      byModuleAgg.set(module, (byModuleAgg.get(module) ?? 0) + decimalToNumber(r._sum.costUsd));
+    }
+    const byModule = [...byModuleAgg.entries()]
+      .map(([module, costUsd]) => ({
+        module,
+        label: LLM_COST_MODULE_LABELS[module],
+        costUsd,
+        sharePct: sharePct(costUsd, totalCostRub),
+      }))
+      .sort((a, b) => b.costUsd - a.costUsd);
+
+    const tenantIds = byTenantRows.map((r) => r.tenantId);
+    const orgs =
+      tenantIds.length > 0
+        ? await this.prisma.org.findMany({
+            where: { id: { in: tenantIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const orgNameById = new Map(orgs.map((o) => [o.id, o.name]));
+    const topCompanies = byTenantRows.map((r) => {
+      const costUsd = decimalToNumber(r._sum.costUsd);
+      return {
+        tenantId: r.tenantId,
+        name: orgNameById.get(r.tenantId) ?? r.tenantId,
+        costUsd,
+        sharePct: sharePct(costUsd, totalCostRub),
+      };
+    });
+
+    return {
+      period: q.period,
+      dateFrom: gte.toISOString().slice(0, 10),
+      dateTo: new Date(lt.getTime() - 86_400_000).toISOString().slice(0, 10),
+      totals: {
+        costUsd: totalCostRub,
+        callsCount,
+        prevPeriodCostRub,
+        changePct,
+        subscriptionCostUsd: subscription.total,
+      },
+      trend,
+      byModel,
+      byModule,
+      topCompanies,
+    };
+  }
+
+  async modelDetail(model: string, q: LlmCostModelQuery): Promise<LlmCostModelDetailView> {
+    const { gte, lt } = this.dateRange(q.period);
+    const whereAll: Prisma.AiCostDailyWhereInput = { date: { gte, lt } };
+    const whereModel: Prisma.AiCostDailyWhereInput = { ...whereAll, model };
+
+    const [totalsAgg, modelAgg, byTaskTypeRows, trend] = await Promise.all([
+      this.prisma.aiCostDaily.aggregate({ where: whereAll, _sum: { costUsd: true } }),
+      this.prisma.aiCostDaily.aggregate({ where: whereModel, _sum: { costUsd: true } }),
+      this.prisma.aiCostDaily.groupBy({
+        by: ['taskType'],
+        where: whereModel,
+        _sum: { costUsd: true },
+      }),
+      this.buildTrend(whereModel, q.trend),
+    ]);
+
+    const totalCostRub = decimalToNumber(totalsAgg._sum.costUsd);
+    const modelCostRub = decimalToNumber(modelAgg._sum.costUsd);
+
+    const byModuleAgg = new Map<LlmCostModule, number>();
+    for (const r of byTaskTypeRows) {
+      const module = resolveLlmCostModule(r.taskType);
+      byModuleAgg.set(module, (byModuleAgg.get(module) ?? 0) + decimalToNumber(r._sum.costUsd));
+    }
+    const byModule = [...byModuleAgg.entries()]
+      .map(([module, costUsd]) => ({
+        module,
+        label: LLM_COST_MODULE_LABELS[module],
+        costUsd,
+        sharePct: sharePct(costUsd, modelCostRub),
+      }))
+      .sort((a, b) => b.costUsd - a.costUsd);
+
+    return {
+      model,
+      totals: { costUsd: modelCostRub, sharePct: sharePct(modelCostRub, totalCostRub) },
+      trend,
+      byModule,
+    };
+  }
+
+  async moduleDetail(module: LlmCostModule, q: LlmCostModuleQuery): Promise<LlmCostModuleDetailView> {
+    const { gte, lt } = this.dateRange(q.period);
+    const whereAll: Prisma.AiCostDailyWhereInput = { date: { gte, lt } };
+
+    const [totalsAgg, byTaskTypeAllRows] = await Promise.all([
+      this.prisma.aiCostDaily.aggregate({ where: whereAll, _sum: { costUsd: true } }),
+      this.prisma.aiCostDaily.groupBy({
+        by: ['taskType'],
+        where: whereAll,
+        _sum: { costUsd: true, callsCount: true },
+      }),
+    ]);
+
+    const byTaskTypeForModule = byTaskTypeAllRows.filter(
+      (r) => resolveLlmCostModule(r.taskType) === module,
+    );
+    const totalCostRub = decimalToNumber(totalsAgg._sum.costUsd);
+    const moduleCostRub = byTaskTypeForModule.reduce(
+      (sum, r) => sum + decimalToNumber(r._sum.costUsd),
+      0,
+    );
+
+    const taskTypesInModule = byTaskTypeForModule.map((r) => r.taskType);
+    const trend =
+      taskTypesInModule.length > 0
+        ? await this.buildTrend({ ...whereAll, taskType: { in: taskTypesInModule } }, q.trend)
+        : [];
+
+    const byTaskType = byTaskTypeForModule
+      .map((r) => ({
+        taskType: r.taskType,
+        costUsd: decimalToNumber(r._sum.costUsd),
+        callsCount: r._sum.callsCount ?? 0,
+      }))
+      .sort((a, b) => b.costUsd - a.costUsd);
+
+    return {
+      module,
+      label: LLM_COST_MODULE_LABELS[module],
+      totals: { costUsd: moduleCostRub, sharePct: sharePct(moduleCostRub, totalCostRub) },
+      trend,
+      byTaskType,
+    };
+  }
+
+  async companies(q: LlmCostCompaniesQuery): Promise<LlmCostCompaniesView> {
+    const { gte, lt } = this.dateRange(q.period);
+    const where: Prisma.AiCostDailyWhereInput = { date: { gte, lt } };
+
+    let tenantFilter: string[] | undefined;
+    if (q.search) {
+      const orgs = await this.prisma.org.findMany({
+        where: {
+          OR: [
+            { name: { contains: q.search, mode: 'insensitive' } },
+            { slug: { contains: q.search, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+      });
+      tenantFilter = orgs.map((o) => o.id);
+      if (tenantFilter.length === 0) {
+        return { items: [], nextCursor: null };
+      }
+    }
+
+    const byTenantRows = await this.prisma.aiCostDaily.groupBy({
+      by: ['tenantId'],
+      where: { ...where, ...(tenantFilter ? { tenantId: { in: tenantFilter } } : {}) },
+      _sum: { costUsd: true },
+    });
+
+    const totalCostRub = byTenantRows.reduce((sum, r) => sum + decimalToNumber(r._sum.costUsd), 0);
+
+    let sortedRows = byTenantRows
+      .map((r) => ({ tenantId: r.tenantId, costUsd: decimalToNumber(r._sum.costUsd) }))
+      .sort((a, b) =>
+        b.costUsd !== a.costUsd ? b.costUsd - a.costUsd : a.tenantId.localeCompare(b.tenantId),
+      );
+
+    const cursor = decodeCompaniesCursor(q.cursor);
+    if (cursor) {
+      sortedRows = sortedRows.filter(
+        (r) =>
+          r.costUsd < cursor.costUsd ||
+          (r.costUsd === cursor.costUsd && r.tenantId > cursor.tenantId),
+      );
+    }
+
+    const page = sortedRows.slice(0, q.limit);
+    const hasMore = sortedRows.length > q.limit;
+
+    const orgs =
+      page.length > 0
+        ? await this.prisma.org.findMany({
+            where: { id: { in: page.map((r) => r.tenantId) } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const orgNameById = new Map(orgs.map((o) => [o.id, o.name]));
+
+    const items: LlmCostCompanyRow[] = await Promise.all(
+      page.map(async (r) => ({
+        tenantId: r.tenantId,
+        name: orgNameById.get(r.tenantId) ?? r.tenantId,
+        costUsd: r.costUsd,
+        sharePct: sharePct(r.costUsd, totalCostRub),
+        trend: await this.buildTrend({ tenantId: r.tenantId, date: { gte, lt } }, 'day'),
+      })),
+    );
+
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeCompaniesCursor({ costUsd: last.costUsd, tenantId: last.tenantId })
+        : null;
+
+    return { items, nextCursor };
+  }
+
+  async companyDetail(
+    tenantId: string,
+    q: LlmCostCompanyDetailQuery,
+  ): Promise<LlmCostCompanyDetailView> {
+    const { gte, lt } = this.resolveDateRange(q);
+    const where: Prisma.AiCostDailyWhereInput = {
+      tenantId,
+      date: { gte, lt },
+      ...(q.provider ? { provider: q.provider } : {}),
+      ...(q.model ? { model: q.model } : {}),
+    };
+
+    const [org, totalsAgg, byModelRows, trend] = await Promise.all([
+      this.prisma.org.findUnique({ where: { id: tenantId }, select: { id: true, name: true } }),
+      this.prisma.aiCostDaily.aggregate({ where, _sum: { costUsd: true } }),
+      this.prisma.aiCostDaily.groupBy({ by: ['provider', 'model'], where, _sum: { costUsd: true } }),
+      this.buildTrend(where, q.trend),
+    ]);
+
+    const totalCostRub = decimalToNumber(totalsAgg._sum.costUsd);
+    const byModel = byModelRows
+      .map((r) => ({ provider: r.provider, model: r.model, costUsd: decimalToNumber(r._sum.costUsd) }))
+      .sort((a, b) => b.costUsd - a.costUsd)
+      .map((r) => ({ ...r, sharePct: sharePct(r.costUsd, totalCostRub) }));
+
+    return {
+      tenantId,
+      name: org?.name ?? tenantId,
+      totals: { costUsd: totalCostRub },
+      trend,
+      byModel,
+    };
+  }
+
+  async taskTypeDetail(
+    taskType: string,
+    q: LlmCostTaskTypeQuery,
+  ): Promise<LlmCostTaskTypeDetailView> {
+    const { gte, lt } = this.dateRange(q.period);
+    const where: Prisma.AiCostDailyWhereInput = { taskType, date: { gte, lt } };
+
+    const [totalsAgg, trend] = await Promise.all([
+      this.prisma.aiCostDaily.aggregate({ where, _sum: { costUsd: true, callsCount: true } }),
+      this.buildTrend(where, q.trend),
+    ]);
+
+    return {
+      taskType,
+      module: resolveLlmCostModule(taskType),
+      totals: {
+        costUsd: decimalToNumber(totalsAgg._sum.costUsd),
+        callsCount: totalsAgg._sum.callsCount ?? 0,
+      },
+      trend,
+    };
+  }
+}

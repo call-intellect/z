@@ -14,6 +14,8 @@ export function BarTrend({
   data,
   xKey,
   dataKey,
+  seriesLabel,
+  valueFormatter,
   height = 220,
 }: {
   title: string;
@@ -22,6 +24,8 @@ export function BarTrend({
   data: Record<string, unknown>[];
   xKey: string;
   dataKey: string;
+  seriesLabel?: string;
+  valueFormatter?: (value: number) => string;
   height?: number;
 }) {
   return (
@@ -52,11 +56,12 @@ export function BarTrend({
               tick={{ fill: CHART.faint, fontSize: 12 }}
             />
             <Tooltip
-              content={<ChartTip />}
+              content={<ChartTip valueFormatter={valueFormatter} />}
               cursor={{ fill: "var(--surface-inset)" }}
             />
             <Bar
               dataKey={dataKey}
+              name={seriesLabel ?? dataKey}
               radius={[8, 8, 0, 0]}
               fill="url(#bar)"
               maxBarSize={34}

@@ -336,6 +336,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-admin-setting-llm-models-and-gray.ts',
     hint: 'ai.{anthropic.model,vox.model,deepseek.defaultModel} + gepa.{reflectionLm,taskLm} + ai.mainReport.primary kill-switch + mail.dryRun + operations.daily_digest.deliver_to_webpush + betaOps.*LocalHour/Day часы дайджестов (config Шаг 8 — GRAY: модели LLM, рубильники, часы)',
   },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-embedding-providers.ts',
+    hint: '2 провайдера эмбеддингов (local active/openai-via-proxy inactive) в DB, ключи AES-256-GCM',
+  },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   {
@@ -561,6 +566,19 @@ const STEPS: Step[] = [
   },
   {
     phase: 'patch',
+    script: 'scripts/patch-llm-routes-analyze-worker-1to1.ts',
+    hint: 'форсирует 1:1-легаси-совместимую цепочку (deepseek-v4-pro→minimax→openai-via-proxy gpt-5-mini) для summary/report-by-type/follow-up/custom-prompt/client-meeting-split — миграция analyze.worker на LlmRouterService (ТЗ 2026-07-03), временно, до отдельного решения владельца об экономии на дешёвых моделях',
+    skipBootstrap: true,
+    everyDeploy: true,
+  },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-check-legacy-ab-experiments.ts',
+    hint: 'read-only: предупреждение об активных легаси route.experiment после вывода AdminExperimentsService из эксплуатации (ТЗ 2026-07-03 Фаза 2)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'patch',
     script: 'scripts/patch-enable-shipped-flags.ts',
     skipBootstrap: true,
     everyDeploy: true,
@@ -600,6 +618,18 @@ const STEPS: Step[] = [
     phase: 'patch',
     script: 'scripts/patch-encrypt-tochka-oauth.ts',
     hint: 'AES-256-GCM для tochka oauth tokens',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-encrypt-llm-provider-keys.ts',
+    hint: 'AES-256-GCM для LlmProvider.apiKeyEncrypted (llm-providers-models-routing-admin Ф2 Б5); идемпотентно (isEncrypted-фильтр)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-llm-provider-protocols.ts',
+    hint: 'kie/grsai custom-http → честные протоколы; деактивация опечатки gpt-5-4',
     skipBootstrap: true,
   },
   {
@@ -682,6 +712,12 @@ const STEPS: Step[] = [
   { phase: 'backfill', script: 'scripts/backfill-idea-quality.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-ai-cost-daily-gap.ts',
+    skipBootstrap: true,
+    hint: 'AiCostDaily за 2026-05-09..2026-05-23 — период до появления ночного крона',
+  },
   { phase: 'backfill', script: 'scripts/backfill-meeting-linked-ids.ts', hint: 'IntakeIssue.meetingId → Issue.linkedMeetingIds backfill (intake-issue-linked-meeting-ids-fix, только meeting:-формат externalId)', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-day-report.ts', skipBootstrap: true, hint: 'сборка дневных отчётов из block-ingest за 30 дней (4 сущности)' },
   {
@@ -1222,6 +1258,12 @@ async function runSchemaPhase(
   const preMigrate: Step[] = [
     { phase: 'migrate', script: 'scripts/migrate-task-to-issue.ts', args: ['--apply'] },
     { phase: 'backfill', script: 'scripts/backfill-collapse-legacy-task-duplicates.ts', args: ['--apply'] },
+    {
+      phase: 'backfill',
+      script: 'scripts/backfill-embeddings-gemma-768.ts',
+      hint: 'embeddinggemma 768 dim (TZ 2026-06-30) — после миграции vector(1536)→vector(768) обнуляет все эмбеддинги; backfill через LocalEmbeddingService. Идемпотентно (WHERE embedding IS NULL)',
+      skipBootstrap: true,
+    },
   ];
   for (const s of preMigrate) {
     const r = await runOne(s, false, verbose);

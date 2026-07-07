@@ -1,11 +1,8 @@
-import type {
-  AdminSmokeTestProvider,
-  SmokeTestRunApi,
-} from "@/api/admin-smoke-test.api";
+import type { SmokeTestRunApi } from "@/api/admin-smoke-test.api";
 
 export type SmokeTestRunUi = {
   id: string;
-  provider: AdminSmokeTestProvider | string;
+  provider: string;
   providerLabel: string;
   status: "ok" | "fail";
   statusLabel: string;
@@ -32,21 +29,24 @@ export function providerLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider;
 }
 
-export function mapSmokeTestRun(api: SmokeTestRunApi): SmokeTestRunUi {
+export function mapSmokeTestRun(
+  api: SmokeTestRunApi,
+  resolveLabel: (provider: string) => string = providerLabel,
+): SmokeTestRunUi {
   const status: "ok" | "fail" = api.status === "ok" ? "ok" : "fail";
   return {
-    id: api.id ?? `${api.provider}-${api.ranAt}`,
+    id: api.id ?? `${api.provider}-${api.startedAt}`,
     provider: api.provider,
-    providerLabel: providerLabel(api.provider),
+    providerLabel: resolveLabel(api.provider),
     status,
     statusLabel: status === "ok" ? "Успех" : "Ошибка",
     statusTone: status === "ok" ? "success" : "danger",
     latencyMs: api.latencyMs,
     latencyLabel:
       typeof api.latencyMs === "number" ? `${api.latencyMs} мс` : "—",
-    ranAt: api.ranAt,
-    ranAtLabel: formatDateTime(api.ranAt),
-    message: api.message ?? null,
+    ranAt: api.startedAt,
+    ranAtLabel: formatDateTime(api.startedAt),
+    message: api.error ?? null,
   };
 }
 

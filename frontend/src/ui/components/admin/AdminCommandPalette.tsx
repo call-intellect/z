@@ -318,7 +318,9 @@ function AdminCommandPalette() {
                   <CommandItem
                     key={`task-${task}`}
                     value={`task-${task}`}
-                    onSelect={() => go(`/admin/ai-models?task=${task}`)}
+                    onSelect={() =>
+                      go(`/admin/ai/routing/${encodeURIComponent(task)}`)
+                    }
                   >
                     <PaletteRow
                       icon={ListTree}

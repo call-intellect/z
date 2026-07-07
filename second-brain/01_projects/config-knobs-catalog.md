@@ -168,8 +168,8 @@
 | gepa.reflectionLm | LLM для рефлексии при эволюции промптов | deepseek-v4-pro |
 | gepa.taskLm | LLM для исполнения задачи при эволюции промптов | deepseek-v4-pro |
 | embeddings.provider | Поставщик векторизации | openai-proxy |
-| embeddings.model | Модель векторизации | text-embedding-3-small |
-| embeddings.dimensions | Размерность вектора (менять с пересчётом) | 1536 |
+| embeddings.model | Модель векторизации | embeddinggemma:latest |
+| embeddings.dimensions | Размерность вектора (менять с пересчётом) | 768 |
 | embeddings.batchSize | Размер пачки на векторизацию | 32 |
 | embeddings.chunkTargetTokens | Целевой размер куска текста | 600 |
 | embeddings.chunkOverlapTokens | Перекрытие кусков | 80 |

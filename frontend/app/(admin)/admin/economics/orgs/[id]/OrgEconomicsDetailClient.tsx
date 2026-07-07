@@ -2,12 +2,11 @@
 
 import { useState } from "react";
 
+import Link from "next/link";
+
 import { ApiError } from "@/api/api-error";
 import { adminEconomicsApi } from "@/api/admin-economics.api";
-import type {
-  AdminEconomicsOrgApi,
-  UpdateOrgBudgetRequest,
-} from "@/domain/admin-economics";
+import type { AdminOrgBudgetApi, UpdateOrgBudgetRequest } from "@/domain/admin-economics";
 import { toast } from "sonner";
 import { Button } from "@/ui/shadcn/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
@@ -23,8 +22,8 @@ import { useAdminQuery } from "../../../useAdminQuery";
 
 export function OrgEconomicsDetailClient({ tenantId }: { tenantId: string }) {
   const q = useAdminQuery(
-    `admin-economics-org:${tenantId}`,
-    () => adminEconomicsApi.org(tenantId, { days: 30 }),
+    `admin-economics-org-budget:${tenantId}`,
+    () => adminEconomicsApi.getBudget(tenantId),
     [tenantId],
   );
 
@@ -44,11 +43,9 @@ export function OrgEconomicsDetailClient({ tenantId }: { tenantId: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">
-          {q.data?.orgName ?? tenantId}
-        </h1>
+        <h1 className="text-2xl font-semibold">{tenantId}</h1>
         <p className="text-sm text-fg-tertiary">
-          Per-org разбор затрат AI за 30 дней + бюджет.
+          Бюджет-лимит компании на AI-расход.
         </p>
       </div>
 
@@ -57,9 +54,10 @@ export function OrgEconomicsDetailClient({ tenantId }: { tenantId: string }) {
       {!q.isLoading && q.error && (
         <AdminError message={q.error} onRetry={q.refetch} />
       )}
-      {!q.isLoading && q.data && (
+      {!q.isLoading && !q.isForbidden && !q.error && (
         <OrgDetail
-          data={q.data}
+          tenantId={tenantId}
+          budget={q.data}
           editing={editing}
           onEdit={() => setEditing(true)}
           onCancel={() => setEditing(false)}
@@ -71,13 +69,15 @@ export function OrgEconomicsDetailClient({ tenantId }: { tenantId: string }) {
 }
 
 function OrgDetail({
-  data,
+  tenantId,
+  budget,
   editing,
   onEdit,
   onCancel,
   onSave,
 }: {
-  data: AdminEconomicsOrgApi;
+  tenantId: string;
+  budget: AdminOrgBudgetApi | null;
   editing: boolean;
   onEdit: () => void;
   onCancel: () => void;
@@ -85,41 +85,22 @@ function OrgDetail({
 }) {
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <Stat
-          title="За 30 дней, ₽"
-          value={data.costRubLast30d.toLocaleString("ru-RU")}
-        />
-        <Stat
-          title="Этот месяц, ₽"
-          value={Math.round(data.costRubMonthToDate).toLocaleString("ru-RU")}
-        />
-        <Stat
-          title="Вызовов 30d"
-          value={data.callsCountLast30d.toLocaleString("ru-RU")}
-        />
-        <Stat
-          title="Средний ₽/user"
-          value={Math.round(data.avgCostPerUserRub).toLocaleString("ru-RU")}
-        />
-      </div>
-
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Бюджет</CardTitle>
             {!editing && (
               <Button size="sm" variant="outline" onClick={onEdit}>
-                {data.budget ? "Изменить" : "Установить"}
+                {budget ? "Изменить" : "Установить"}
               </Button>
             )}
           </div>
         </CardHeader>
         <CardContent>
           {editing ? (
-            <BudgetForm data={data} onSave={onSave} onCancel={onCancel} />
-          ) : data.budget ? (
-            <BudgetView data={data} />
+            <BudgetForm budget={budget} onSave={onSave} onCancel={onCancel} />
+          ) : budget ? (
+            <BudgetView budget={budget} />
           ) : (
             <p className="text-sm text-fg-tertiary">
               Лимит не установлен. Алерты не отправляются.
@@ -130,69 +111,39 @@ function OrgDetail({
 
       <Card>
         <CardHeader>
-          <CardTitle>Топ задач по стоимости</CardTitle>
+          <CardTitle>Расход AI</CardTitle>
         </CardHeader>
         <CardContent>
-          <table className="w-full text-sm">
-            <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
-              <tr>
-                <th className="px-3 py-2 text-left">Тип задачи</th>
-                <th className="px-3 py-2 text-right">Стоимость, ₽</th>
-                <th className="px-3 py-2 text-right">Вызовов</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topTaskTypes.map((t) => (
-                <tr key={t.taskType} className="border-t border-border-subtle">
-                  <td className="px-3 py-2 font-mono text-xs">{t.taskType}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {Math.round(t.costRub).toLocaleString("ru-RU")}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {t.calls.toLocaleString("ru-RU")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Link
+            href={`/admin/analytics/llm-cost?view=company&id=${encodeURIComponent(tenantId)}`}
+            className="text-accent hover:underline"
+          >
+            Смотреть расход этой компании →
+          </Link>
         </CardContent>
       </Card>
     </>
   );
 }
 
-function Stat({ title, value }: { title: string; value: string }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm text-fg-tertiary">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-xl font-semibold tabular-nums">{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function BudgetView({ data }: { data: AdminEconomicsOrgApi }) {
-  const b = data.budget!;
+function BudgetView({ budget }: { budget: AdminOrgBudgetApi }) {
   return (
     <div className="space-y-2 text-sm">
       <div>
         Лимит:{" "}
-        <strong>{b.monthlyCapRub?.toLocaleString("ru-RU") ?? "—"} ₽/мес</strong>{" "}
-        ({b.capKind})
+        <strong>
+          {budget.monthlyCapRub != null
+            ? Number(budget.monthlyCapRub).toLocaleString("ru-RU")
+            : "—"}{" "}
+          ₽/мес
+        </strong>{" "}
+        ({budget.capKind})
       </div>
-      <div>Пороги алертов: {b.alertThresholds.join("%, ")}%</div>
-      {b.utilizationPercent != null && (
-        <div>
-          Использовано: <strong>{b.utilizationPercent.toFixed(1)}%</strong>
-        </div>
-      )}
-      {b.lastAlertAt && (
+      <div>Пороги алертов: {budget.alertThresholds.join("%, ")}%</div>
+      {budget.lastAlertAt && (
         <div className="text-xs text-fg-tertiary">
-          Последний алерт: {new Date(b.lastAlertAt).toLocaleString("ru-RU")}{" "}
-          (порог {b.lastAlertThreshold}%)
+          Последний алерт: {new Date(budget.lastAlertAt).toLocaleString("ru-RU")}{" "}
+          (порог {budget.lastAlertThreshold}%)
         </div>
       )}
     </div>
@@ -200,22 +151,22 @@ function BudgetView({ data }: { data: AdminEconomicsOrgApi }) {
 }
 
 function BudgetForm({
-  data,
+  budget,
   onSave,
   onCancel,
 }: {
-  data: AdminEconomicsOrgApi;
+  budget: AdminOrgBudgetApi | null;
   onSave: (body: UpdateOrgBudgetRequest) => Promise<void>;
   onCancel: () => void;
 }) {
   const [monthlyCap, setMonthlyCap] = useState(
-    data.budget?.monthlyCapRub != null ? String(data.budget.monthlyCapRub) : "",
+    budget?.monthlyCapRub != null ? String(budget.monthlyCapRub) : "",
   );
-  const [capKind, setCapKind] = useState<"soft" | "hard">(
-    (data.budget?.capKind as "soft" | "hard") ?? "soft",
+  const [capKind, setCapKind] = useState<"soft" | "hard" | "downgrade">(
+    (budget?.capKind as "soft" | "hard" | "downgrade") ?? "soft",
   );
   const [thresholdsStr, setThresholdsStr] = useState(
-    (data.budget?.alertThresholds ?? [80, 100]).join(","),
+    (budget?.alertThresholds ?? [80, 100]).join(","),
   );
 
   const handleSubmit = () => {
@@ -235,7 +186,7 @@ function BudgetForm({
     <div className="space-y-3">
       <div>
         <Label className="text-xs">
-          Месячный лимит, ₽ (пусто = без лимита)
+          Месячный лимит, ₽ (0 или пусто = без лимита)
         </Label>
         <Input
           value={monthlyCap}
@@ -247,11 +198,16 @@ function BudgetForm({
         <Label className="text-xs">Тип лимита</Label>
         <select
           value={capKind}
-          onChange={(e) => setCapKind(e.target.value as "soft" | "hard")}
+          onChange={(e) =>
+            setCapKind(e.target.value as "soft" | "hard" | "downgrade")
+          }
           className="block w-full rounded border border-border-subtle bg-bg-card px-2 py-1 text-sm"
         >
           <option value="soft">soft (только alert)</option>
           <option value="hard">hard (заблокировать AI)</option>
+          <option value="downgrade">
+            Экономный — переходить на более дешёвую модель
+          </option>
         </select>
       </div>
       <div>

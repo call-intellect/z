@@ -18,6 +18,7 @@ function makeService(
   prisma: any;
   client: any;
   integration: any;
+  analyzeQueue: any;
 } {
   const prisma = {
     $queryRaw: vi.fn().mockResolvedValue([]),
@@ -51,8 +52,9 @@ function makeService(
     client as unknown as ChatboxApiClient,
     integration as unknown as ChatboxIntegrationService,
     analyzeQueue as unknown as ChatboxAnalyzeQueueService,
+    undefined,
   );
-  return { service, prisma, client, integration };
+  return { service, prisma, client, integration, analyzeQueue };
 }
 
 describe('ChatboxChatsService.listChats', () => {
@@ -516,6 +518,109 @@ describe('ChatboxChatsService.sendMessage', () => {
       response: { error: { code: 'chatbox_chat_not_found' } },
     });
     expect(integration.getConfigForSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatboxChatsService.retrySessionAnalyze', () => {
+  it('failed→pending→enqueue: возвращает {ok,pending,jobId}', async () => {
+    const { service, prisma, analyzeQueue } = makeService({
+      prisma: {
+        chatboxChatSession: {
+          findFirst: vi.fn().mockResolvedValue({ id: 's1', analysisStatus: 'failed' }),
+          findMany: vi.fn().mockResolvedValue([]),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+      },
+    });
+    analyzeQueue.enqueue = vi.fn().mockResolvedValue({ jobId: 'job-42' });
+
+    const out = await service.retrySessionAnalyze('t1', 'c1', 's1');
+
+    expect(out).toEqual({ ok: true, analysisStatus: 'pending', jobId: 'job-42' });
+    expect(prisma.chatboxChatSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 's1', tenantId: 't1', analysisStatus: 'failed' },
+        data: { analysisStatus: 'pending' },
+      }),
+    );
+    expect(analyzeQueue.enqueue).toHaveBeenCalledWith('t1', 's1');
+  });
+
+  it('сессия не в failed → session_not_failed, без enqueue', async () => {
+    const { service, prisma, analyzeQueue } = makeService({
+      prisma: {
+        chatboxChatSession: {
+          findFirst: vi.fn().mockResolvedValue({ id: 's1', analysisStatus: 'done' }),
+          findMany: vi.fn().mockResolvedValue([]),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+      },
+    });
+
+    await expect(service.retrySessionAnalyze('t1', 'c1', 's1')).rejects.toMatchObject({
+      response: {
+        error: { code: 'session_not_failed', currentStatus: 'done' },
+      },
+    });
+    expect(analyzeQueue.enqueue).not.toHaveBeenCalled();
+    expect(prisma.chatboxChatSession.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('сессия не найдена → chatbox_chat_not_found', async () => {
+    const { service, analyzeQueue } = makeService({
+      prisma: { chatboxChatSession: { findFirst: vi.fn().mockResolvedValue(null) } },
+    });
+
+    await expect(service.retrySessionAnalyze('t1', 'c1', 'nope')).rejects.toMatchObject({
+      response: { error: { code: 'chatbox_chat_not_found' } },
+    });
+    expect(analyzeQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('race: между read и claim статус сменился → session_state_changed', async () => {
+    const { service, analyzeQueue } = makeService({
+      prisma: {
+        chatboxChatSession: {
+          findFirst: vi
+            .fn()
+            .mockResolvedValueOnce({ id: 's1', analysisStatus: 'failed' })
+            .mockResolvedValueOnce({ analysisStatus: 'analyzing' }),
+          findMany: vi.fn().mockResolvedValue([]),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+      },
+    });
+
+    await expect(service.retrySessionAnalyze('t1', 'c1', 's1')).rejects.toMatchObject({
+      response: {
+        error: { code: 'session_state_changed', currentStatus: 'analyzing' },
+      },
+    });
+    expect(analyzeQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('enqueue бросает → откат pending→failed и проброс ошибки', async () => {
+    const { service, prisma, analyzeQueue } = makeService({
+      prisma: {
+        chatboxChatSession: {
+          findFirst: vi.fn().mockResolvedValue({ id: 's1', analysisStatus: 'failed' }),
+          findMany: vi.fn().mockResolvedValue([]),
+          updateMany: vi
+            .fn()
+            .mockResolvedValueOnce({ count: 1 })
+            .mockResolvedValueOnce({ count: 1 }),
+        },
+      },
+    });
+    analyzeQueue.enqueue = vi.fn().mockRejectedValue(new Error('redis down'));
+
+    await expect(service.retrySessionAnalyze('t1', 'c1', 's1')).rejects.toThrow('redis down');
+
+    expect(prisma.chatboxChatSession.updateMany).toHaveBeenCalledTimes(2);
+    expect(prisma.chatboxChatSession.updateMany.mock.calls[1]![0]).toEqual({
+      where: { id: 's1', tenantId: 't1', analysisStatus: 'pending' },
+      data: { analysisStatus: 'failed' },
+    });
   });
 });
 

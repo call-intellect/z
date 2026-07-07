@@ -6,11 +6,13 @@ import {
   Activity,
   ArrowRight,
   Building2,
+  DollarSign,
   Users as UsersIcon,
 } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 
 import { adminUsageApi } from "@/api/admin-usage.api";
+import { adminOrgsApi } from "@/api/admin-orgs.api";
 import {
   adminDashboardFromApi,
   formatUsd,
@@ -19,6 +21,11 @@ import {
 import { taskTypeLabel } from "@/domain/admin-experiment";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { DateRangeCalendarPopover } from "@/ui/components/admin/DateRangeCalendarPopover";
+import {
+  MultiSelectCombobox,
+  type MultiSelectOption,
+} from "@/ui/components/admin/MultiSelectCombobox";
 import { Button } from "@/ui/shadcn/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
@@ -28,6 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/shadcn/select";
+import { BarTrend, GRAD } from "@/ui/components/dashboard/modern";
 
 import {
   AdminEmpty,
@@ -43,48 +51,222 @@ const PERIODS: Array<{ value: AdminPeriod; label: string }> = [
   { value: "month", label: "Месяц" },
 ];
 
+function csv(values: string[]): string | undefined {
+  return values.length > 0 ? values.join(",") : undefined;
+}
+
+function formatDate(d: Date): string {
+  return d.toLocaleDateString("ru-RU");
+}
+
 export function AdminDashboardClient() {
   const [period, setPeriod] = useState<AdminPeriod>("week");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [providers, setProviders] = useState<string[]>([]);
+  const [models, setModels] = useState<string[]>([]);
+  const [taskTypes, setTaskTypes] = useState<string[]>([]);
+  const [orgIds, setOrgIds] = useState<string[]>([]);
 
-  const q = useAdminQuery(
-    `admin-dashboard:${period}`,
+  const isCustom = period === "custom";
+  const hasCustomRange = isCustom && Boolean(dateFrom && dateTo);
+
+  const optionsQ = useAdminQuery(
+    `admin-dashboard-options:${period}:${dateFrom}:${dateTo}`,
     async () => {
-      const res = await adminUsageApi.getDashboard({ period });
+      if (isCustom && !hasCustomRange) return null;
+      const res = await adminUsageApi.getDashboard({
+        period,
+        ...(hasCustomRange ? { from: dateFrom, to: dateTo } : {}),
+      });
       return adminDashboardFromApi(res);
     },
-    [period],
+    [period, dateFrom, dateTo, isCustom, hasCustomRange],
   );
+
+  const orgsQ = useAdminQuery(
+    "admin-dashboard-orgs",
+    async () => adminOrgsApi.list({ limit: 200 }),
+    [],
+  );
+
+  const providerOptions: MultiSelectOption[] = [
+    ...new Set((optionsQ.data?.byModel ?? []).map((m) => m.provider)),
+  ]
+    .sort()
+    .map((p) => ({ value: p, label: p }));
+  const modelOptions: MultiSelectOption[] = [
+    ...new Set(
+      (optionsQ.data?.byModel ?? [])
+        .filter((m) => providers.length === 0 || providers.includes(m.provider))
+        .map((m) => m.model),
+    ),
+  ]
+    .sort()
+    .map((m) => ({ value: m, label: m }));
+  const taskTypeOptions: MultiSelectOption[] = [
+    ...new Set((optionsQ.data?.byTaskType ?? []).map((t) => t.taskType)),
+  ]
+    .sort()
+    .map((t) => ({ value: t, label: taskTypeLabel(t) }));
+  const orgOptions: MultiSelectOption[] = (orgsQ.data?.items ?? []).map((o) => ({
+    value: o.id,
+    label: o.name,
+  }));
+
+  const q = useAdminQuery(
+    `admin-dashboard:${period}:${dateFrom}:${dateTo}:${providers.join(",")}:${models.join(",")}:${taskTypes.join(",")}:${orgIds.join(",")}`,
+    async () => {
+      if (isCustom && !hasCustomRange) return null;
+      const res = await adminUsageApi.getDashboard({
+        period,
+        ...(hasCustomRange ? { from: dateFrom, to: dateTo } : {}),
+        ...(csv(providers) ? { provider: csv(providers) } : {}),
+        ...(csv(models) ? { model: csv(models) } : {}),
+        ...(csv(taskTypes) ? { taskType: csv(taskTypes) } : {}),
+        ...(csv(orgIds) ? { orgId: csv(orgIds) } : {}),
+      });
+      return adminDashboardFromApi(res);
+    },
+    [period, dateFrom, dateTo, providers, models, taskTypes, orgIds, isCustom, hasCustomRange],
+  );
+
+  const hasFilters = Boolean(
+    dateFrom ||
+      dateTo ||
+      providers.length ||
+      models.length ||
+      taskTypes.length ||
+      orgIds.length,
+  );
+
+  const resolvedRangeLabel = q.data
+    ? `${formatDate(q.data.period.from)} – ${formatDate(q.data.period.to)}`
+    : null;
 
   return (
     <AdminSection
       title="Пульс компании"
       description="Расход LLM, активность пользователей и Org за выбранный период."
       actions={
-        <Select
-          value={period}
-          onValueChange={(v) => setPeriod(v as AdminPeriod)}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIODS.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <DateRangeCalendarPopover
+            from={dateFrom || undefined}
+            to={dateTo || undefined}
+            triggerLabel={resolvedRangeLabel ?? "Выбрать период"}
+            onChange={(range) => {
+              if (range) {
+                setDateFrom(range.from);
+                setDateTo(range.to);
+                setPeriod("custom");
+              } else {
+                setDateFrom("");
+                setDateTo("");
+                setPeriod("week");
+              }
+            }}
+          />
+          <Select
+            value={isCustom ? "" : period}
+            onValueChange={(v) => {
+              setPeriod(v as AdminPeriod);
+              setDateFrom("");
+              setDateTo("");
+            }}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Свой период" />
+            </SelectTrigger>
+            <SelectContent>
+              {PERIODS.map((p) => (
+                <SelectItem key={p.value} value={p.value}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       }
     >
-      {q.isLoading && <AdminLoading rows={6} />}
-      {!q.isLoading && q.isForbidden && <AdminForbidden />}
-      {!q.isLoading && q.error && (
-        <AdminError message={q.error} onRetry={q.refetch} />
-      )}
-      {!q.isLoading && !q.isForbidden && !q.error && q.data && (
-        <DashboardContent data={q.data} />
-      )}
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border-subtle bg-bg-card p-3">
+          <MultiSelectCombobox
+            label="Провайдер"
+            placeholder="Все провайдеры"
+            searchPlaceholder="Поиск провайдера…"
+            className="w-48"
+            options={providerOptions}
+            selected={providers}
+            onChange={(next) => {
+              setProviders(next);
+              const allowedModels = new Set(
+                (optionsQ.data?.byModel ?? [])
+                  .filter((m) => next.length === 0 || next.includes(m.provider))
+                  .map((m) => m.model),
+              );
+              setModels((prev) => prev.filter((m) => allowedModels.has(m)));
+            }}
+          />
+          <MultiSelectCombobox
+            label="Модель"
+            placeholder="Все модели"
+            searchPlaceholder="Поиск модели…"
+            className="w-48"
+            options={modelOptions}
+            selected={models}
+            onChange={setModels}
+          />
+          <MultiSelectCombobox
+            label="Модуль"
+            placeholder="Все модули"
+            searchPlaceholder="Поиск модуля…"
+            className="w-56"
+            options={taskTypeOptions}
+            selected={taskTypes}
+            onChange={setTaskTypes}
+          />
+          <MultiSelectCombobox
+            label="Организация"
+            placeholder="Все организации"
+            searchPlaceholder="Поиск организации…"
+            className="w-60"
+            options={orgOptions}
+            selected={orgIds}
+            onChange={setOrgIds}
+          />
+          {hasFilters && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+                setProviders([]);
+                setModels([]);
+                setTaskTypes([]);
+                setOrgIds([]);
+              }}
+            >
+              Сбросить фильтры
+            </Button>
+          )}
+        </div>
+
+        {q.isLoading && <AdminLoading rows={6} />}
+        {!q.isLoading && q.isForbidden && <AdminForbidden />}
+        {!q.isLoading && q.error && (
+          <AdminError message={q.error} onRetry={q.refetch} />
+        )}
+        {!q.isLoading && isCustom && !hasCustomRange && (
+          <AdminEmpty
+            title="Укажите период"
+            description="Заполните обе даты («Дата от» и «Дата до»), чтобы посмотреть свой период."
+          />
+        )}
+        {!q.isLoading && !q.isForbidden && !q.error && q.data && (
+          <DashboardContent data={q.data} />
+        )}
+      </div>
     </AdminSection>
   );
 }
@@ -94,7 +276,43 @@ function DashboardContent({
 }: {
   data: ReturnType<typeof adminDashboardFromApi>;
 }) {
-  const series30d = useMemo(() => buildMockSeries(data.totals), [data.totals]);
+  const series = useMemo(() => buildTrendSeries(data.trend), [data.trend]);
+
+  const providerChartData = useMemo(
+    () =>
+      data.byProvider
+        .slice(0, 10)
+        .map((p) => ({ name: p.provider, costUsd: Number(p.costUsd.toFixed(4)) })),
+    [data.byProvider],
+  );
+  const modelChartData = useMemo(
+    () =>
+      data.byModel
+        .slice(0, 10)
+        .map((m) => ({
+          name: `${m.provider}/${m.model}`,
+          costUsd: Number(m.costUsd.toFixed(4)),
+        })),
+    [data.byModel],
+  );
+  const functionsChartData = useMemo(
+    () =>
+      data.byTaskType
+        .slice(0, 10)
+        .map((t) => ({
+          name: taskTypeLabel(t.taskType),
+          costUsd: Number(t.costUsd.toFixed(4)),
+        })),
+    [data.byTaskType],
+  );
+  const orgsChartData = useMemo(
+    () =>
+      data.topOrgs.map((o) => ({
+        name: o.name,
+        costUsd: Number(o.costUsd.toFixed(4)),
+      })),
+    [data.topOrgs],
+  );
 
   const functionsCsvRows = useMemo(
     () =>
@@ -105,6 +323,16 @@ function DashboardContent({
         costUsd: t.costUsd,
       })),
     [data.byTaskType],
+  );
+  const modelsCsvRows = useMemo(
+    () =>
+      data.byModel.map((m) => ({
+        provider: m.provider,
+        model: m.model,
+        calls: m.calls,
+        costUsd: m.costUsd,
+      })),
+    [data.byModel],
   );
   const orgsCsvRows = useMemo(
     () =>
@@ -153,59 +381,98 @@ function DashboardContent({
       {}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <SparkCard
-          title="Расход за 30 дней"
+          title="Расход по дням"
           value={formatUsd(data.totals.totalCostUsd)}
-          data={series30d.cost}
+          data={series.cost}
           color="var(--accent)"
           formatValue={(v) => formatUsd(v)}
         />
         <SparkCard
-          title="Вызовы за 30 дней"
+          title="Вызовы по дням"
           value={data.totals.totalCalls.toLocaleString("ru-RU")}
-          data={series30d.calls}
+          data={series.calls}
           color="var(--success, #10b981)"
           formatValue={(v) => Math.round(v).toLocaleString("ru-RU")}
         />
         <SparkCard
-          title="Доля ошибок за 30 дней"
+          title="Доля ошибок по дням"
           value={`${(data.totals.failRate * 100).toFixed(1)}%`}
-          data={series30d.failRate}
+          data={series.failRate}
           color="var(--warning, #f59e0b)"
           formatValue={(v) => `${(v * 100).toFixed(1)}%`}
         />
       </div>
 
       {}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Расход по провайдерам</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data.byProvider.length === 0 ? (
-            <AdminEmpty
-              title="Нет данных"
-              description="За выбранный период ни одного вызова не зафиксировано."
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {data.byProvider.length === 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Расход по провайдерам</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AdminEmpty
+                title="Нет данных"
+                description="За выбранный период (и с учётом фильтров) ни одного вызова не зафиксировано."
+              />
+            </CardContent>
+          </Card>
+        ) : (
+          <BarTrend
+            title="Расход по провайдерам"
+            icon={<Activity size={16} />}
+            grad={GRAD.blue}
+            data={providerChartData}
+            xKey="name"
+            dataKey="costUsd"
+            seriesLabel="Расход, $"
+            valueFormatter={formatUsd}
+          />
+        )}
+
+        {data.byModel.length === 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Расход по моделям</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AdminEmpty
+                title="Нет данных"
+                description="За выбранный период (и с учётом фильтров) ни одного вызова не зафиксировано."
+              />
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            <BarTrend
+              title="Расход по моделям"
+              icon={<Activity size={16} />}
+              grad={GRAD.teal}
+              data={modelChartData}
+              xKey="name"
+              dataKey="costUsd"
+              seriesLabel="Расход, $"
+              valueFormatter={formatUsd}
             />
-          ) : (
-            <ul className="space-y-2">
-              {data.byProvider.map((p) => (
-                <li
-                  key={p.provider}
-                  className="flex items-center justify-between rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
-                >
-                  <span className="font-mono text-xs">{p.provider}</span>
-                  <div className="flex items-center gap-4 text-fg-tertiary">
-                    <span>{p.calls.toLocaleString("ru-RU")} вызовов</span>
-                    <span className="font-medium text-fg-primary">
-                      {formatUsd(p.costUsd)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex justify-end">
+              <AdminCsvDownloadButton
+                rows={modelsCsvRows}
+                columns={[
+                  { key: "provider", label: "Провайдер" },
+                  { key: "model", label: "Модель" },
+                  { key: "calls", label: "Вызовы" },
+                  {
+                    key: "costUsd",
+                    label: "Расход, USD",
+                    format: (v) => Number(v).toFixed(4),
+                  },
+                ]}
+                filename="admin-by-model"
+              />
+            </div>
+          </div>
+        )}
+      </div>
 
       {}
       <Card>
@@ -227,7 +494,7 @@ function DashboardContent({
               filename="admin-functions"
             />
             <Button asChild variant="ghost" size="sm">
-              <Link href="/admin/usage/functions">
+              <Link href="/admin/analytics/functions">
                 Все функции <ArrowRight size={12} />
               </Link>
             </Button>
@@ -240,30 +507,16 @@ function DashboardContent({
               description="Функции AI ещё не вызывались."
             />
           ) : (
-            <ul className="space-y-2">
-              {data.byTaskType.slice(0, 10).map((t) => (
-                <li
-                  key={t.taskType}
-                  className="flex items-center justify-between rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
-                >
-                  <Link
-                    href={`/admin/usage/functions/${encodeURIComponent(t.taskType)}`}
-                    className="flex flex-col gap-0.5 hover:text-accent"
-                  >
-                    <span>{taskTypeLabel(t.taskType)}</span>
-                    <span className="font-mono text-[10px] text-fg-tertiary">
-                      {t.taskType}
-                    </span>
-                  </Link>
-                  <div className="flex items-center gap-4 text-fg-tertiary">
-                    <span>{t.calls.toLocaleString("ru-RU")}</span>
-                    <span className="font-medium text-fg-primary">
-                      {formatUsd(t.costUsd)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <BarTrend
+              title="Расход, $"
+              icon={<DollarSign size={16} />}
+              grad={GRAD.violet}
+              data={functionsChartData}
+              xKey="name"
+              dataKey="costUsd"
+              seriesLabel="Расход, $"
+              valueFormatter={formatUsd}
+            />
           )}
         </CardContent>
       </Card>
@@ -298,22 +551,16 @@ function DashboardContent({
             </div>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2">
-              {data.topOrgs.map((o) => (
-                <li
-                  key={o.tenantId}
-                  className="flex items-center justify-between rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
-                >
-                  <span>{o.name}</span>
-                  <div className="flex items-center gap-4 text-fg-tertiary">
-                    <span>{o.calls.toLocaleString("ru-RU")}</span>
-                    <span className="font-medium text-fg-primary">
-                      {formatUsd(o.costUsd)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <BarTrend
+              title="Расход, $"
+              icon={<DollarSign size={16} />}
+              grad={GRAD.amber}
+              data={orgsChartData}
+              xKey="name"
+              dataKey="costUsd"
+              seriesLabel="Расход, $"
+              valueFormatter={formatUsd}
+            />
           </CardContent>
         </Card>
       )}
@@ -384,73 +631,56 @@ function SparkCard({
         </div>
         <div className="mb-2 text-2xl font-semibold">{value}</div>
         <div className="h-[80px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={data}
-              margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
-            >
-              <XAxis dataKey="day" hide />
-              <Tooltip
-                formatter={(value) => {
-                  const n = typeof value === "number" ? value : Number(value);
-                  return [Number.isFinite(n) ? formatValue(n) : "—", ""];
-                }}
-                labelFormatter={(label) => `День ${String(label)}`}
-                contentStyle={{
-                  fontSize: 11,
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: 6,
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke={color}
-                strokeWidth={1.75}
-                dot={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          {data.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-xs text-fg-tertiary">
+              Нет данных за период
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={data}
+                margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
+              >
+                <XAxis dataKey="day" hide />
+                <Tooltip
+                  formatter={(value) => {
+                    const n = typeof value === "number" ? value : Number(value);
+                    return [Number.isFinite(n) ? formatValue(n) : "—", ""];
+                  }}
+                  labelFormatter={(label) => String(label)}
+                  contentStyle={{
+                    fontSize: 11,
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: 6,
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke={color}
+                  strokeWidth={1.75}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function buildMockSeries(totals: {
-  totalCostUsd: number;
-  totalCalls: number;
-  failRate: number;
-}): {
-  cost: SeriesPoint[];
-  calls: SeriesPoint[];
-  failRate: SeriesPoint[];
-} {
-  const seed = Math.max(
-    1,
-    Math.floor(totals.totalCalls + totals.totalCostUsd * 100),
-  );
-  const cost: SeriesPoint[] = [];
-  const calls: SeriesPoint[] = [];
-  const failRate: SeriesPoint[] = [];
-  const baseCost = totals.totalCostUsd / 30;
-  const baseCalls = totals.totalCalls / 30;
-  const baseFail = Math.max(totals.failRate, 0.001);
-  for (let i = 0; i < 30; i++) {
-    const noiseCost = 0.7 + pseudoRandom(seed + i * 3) * 0.6;
-    const noiseCalls = 0.7 + pseudoRandom(seed + i * 5 + 1) * 0.6;
-    const noiseFail = 0.5 + pseudoRandom(seed + i * 7 + 2);
-    const day = String(i + 1);
-    cost.push({ day, value: Math.max(0, baseCost * noiseCost) });
-    calls.push({ day, value: Math.max(0, baseCalls * noiseCalls) });
-    failRate.push({ day, value: Math.max(0, baseFail * noiseFail) });
-  }
-  return { cost, calls, failRate };
-}
-
-function pseudoRandom(n: number): number {
-  const x = Math.sin(n * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
+function buildTrendSeries(
+  trend: Array<{ date: string; costUsd: number; calls: number; failedCalls: number }>,
+): { cost: SeriesPoint[]; calls: SeriesPoint[]; failRate: SeriesPoint[] } {
+  return {
+    cost: trend.map((t) => ({ day: t.date, value: t.costUsd })),
+    calls: trend.map((t) => ({ day: t.date, value: t.calls })),
+    failRate: trend.map((t) => ({
+      day: t.date,
+      value: t.calls > 0 ? t.failedCalls / t.calls : 0,
+    })),
+  };
 }

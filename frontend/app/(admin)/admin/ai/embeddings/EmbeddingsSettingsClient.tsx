@@ -8,6 +8,7 @@ import {
   Layers,
   Loader2,
   Scissors,
+  Server,
 } from "lucide-react";
 import { toast } from "sonner";
 import { z, type ZodTypeAny } from "zod";
@@ -17,11 +18,16 @@ import { AdminSettingField } from "@/ui/components/admin/AdminSettingField";
 import { AdminSettingHistoryDrawer } from "@/ui/components/admin/AdminSettingHistoryDrawer";
 import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
 import { ApiError } from "@/api/api-error";
-import { useAdminSettingEditor } from "@/hooks/useAdminSettingEditor";
+import {
+  useAdminSettingEditor,
+  type AdminSettingSeverity,
+} from "@/hooks/useAdminSettingEditor";
 import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 import { AdminEmpty } from "../../AdminStateViews";
 import { adminRootCrumb } from "@/ui/components/admin/brand";
+import { EmbeddingProvidersClient } from "./EmbeddingProvidersClient";
 
 type SettingSpec<T> = {
   key: string;
@@ -29,7 +35,19 @@ type SettingSpec<T> = {
   description?: string;
   schema: ZodTypeAny;
   defaultValue: T;
+  requiresReason?: AdminSettingSeverity;
 };
+
+function isSaveBlocked(args: {
+  isDirty: boolean;
+  isSaving: boolean;
+  needsReason: boolean;
+  reason: string;
+}): boolean {
+  if (!args.isDirty || args.isSaving) return true;
+  if (args.needsReason && args.reason.trim().length < 10) return true;
+  return false;
+}
 
 const MODEL_SETTINGS: SettingSpec<unknown>[] = [
   {
@@ -39,6 +57,7 @@ const MODEL_SETTINGS: SettingSpec<unknown>[] = [
       "Кто рассчитывает векторы. Поддерживаем только OpenAI-text-embedding-3-small (см. verified-карту).",
     schema: z.enum(["openai-via-proxy", "ollama"]).default("openai-via-proxy"),
     defaultValue: "openai-via-proxy",
+    requiresReason: "high",
   },
   {
     key: "embeddings.model",
@@ -47,6 +66,7 @@ const MODEL_SETTINGS: SettingSpec<unknown>[] = [
       "По дефолту text-embedding-3-small. Смена модели требует реиндексации всей базы.",
     schema: z.string().min(3).max(64).default("text-embedding-3-small"),
     defaultValue: "text-embedding-3-small",
+    requiresReason: "high",
   },
   {
     key: "embeddings.dimensions",
@@ -55,6 +75,7 @@ const MODEL_SETTINGS: SettingSpec<unknown>[] = [
       "Для text-embedding-3-small — 1536. Должна совпадать с pgvector-индексом.",
     schema: z.number().int().min(64).max(4096).default(1536),
     defaultValue: 1536,
+    requiresReason: "destructive",
   },
 ];
 
@@ -62,12 +83,16 @@ const CHUNK_SETTINGS: SettingSpec<unknown>[] = [
   {
     key: "embeddings.chunkTargetTokens",
     label: "Целевой размер чанка (токены)",
+    description:
+      "На сколько токенов делится длинный текст (документ, транскрипт) перед расчётом эмбеддинга. Меньше — точнее поиск, но больше кусков и дороже; больше — грубее поиск, но дешевле.",
     schema: z.number().int().min(64).max(2000).default(512),
     defaultValue: 512,
   },
   {
     key: "embeddings.chunkOverlapTokens",
     label: "Перекрытие чанков (токены)",
+    description:
+      "Сколько токенов конца предыдущего чанка повторяется в начале следующего — не даёт потерять смысл фразы, разрезанной ровно по границе чанка.",
     schema: z.number().int().min(0).max(500).default(64),
     defaultValue: 64,
   },
@@ -84,6 +109,7 @@ const BATCH_SETTINGS: SettingSpec<unknown>[] = [
 ];
 
 const TABS: AdminTabDef[] = [
+  { value: "providers", label: "Провайдеры", icon: Server },
   { value: "model", label: "Модель", icon: DatabaseZap },
   { value: "chunking", label: "Chunking", icon: Scissors },
   { value: "batch", label: "Batch", icon: Boxes },
@@ -103,9 +129,10 @@ export function EmbeddingsSettingsClient() {
       title="Эмбеддинги"
       description="Провайдер, размер чанков, batch и реиндексация. Смена модели или размерности требует полной реиндексации pgvector-индексов."
     >
-      <AdminTabs tabs={TABS} defaultTab="model">
+      <AdminTabs tabs={TABS} defaultTab="providers">
         {(active) => (
           <>
+            {active === "providers" && <EmbeddingProvidersClient />}
             {active === "model" && (
               <SettingsGrid
                 settings={MODEL_SETTINGS}
@@ -170,12 +197,18 @@ function SettingRow<T>({
   const editor = useAdminSettingEditor<T>(spec.key, {
     schema: spec.schema,
     defaultValue: spec.defaultValue,
+    requiresReason: spec.requiresReason,
   });
+
+  const needsReason =
+    spec.requiresReason === "high" || spec.requiresReason === "destructive";
+  const [reason, setReason] = useState("");
 
   const handleSave = async () => {
     try {
-      await editor.save();
+      await editor.save(needsReason ? reason : undefined);
       toast.success(`Настройка ${spec.key} сохранена`);
+      setReason("");
     } catch (e) {
       const msg =
         e instanceof ApiError
@@ -209,6 +242,19 @@ function SettingRow<T>({
           </button>
         }
       />
+      {needsReason ? (
+        <div className="mt-3 flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-fg-secondary">
+            Причина изменения (обязательна, не короче 10 символов)
+          </label>
+          <Textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            disabled={editor.isLoading || editor.isSaving}
+            rows={2}
+          />
+        </div>
+      ) : null}
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="text-[10px] text-fg-tertiary">
           <span className="font-mono">{spec.key}</span>
@@ -217,7 +263,10 @@ function SettingRow<T>({
           <Button
             size="sm"
             variant="ghost"
-            onClick={editor.reset}
+            onClick={() => {
+              editor.reset();
+              setReason("");
+            }}
             disabled={!editor.isDirty || editor.isSaving}
           >
             Сбросить
@@ -225,7 +274,12 @@ function SettingRow<T>({
           <Button
             size="sm"
             onClick={() => void handleSave()}
-            disabled={!editor.isDirty || editor.isSaving}
+            disabled={isSaveBlocked({
+              isDirty: editor.isDirty,
+              isSaving: editor.isSaving,
+              needsReason,
+              reason,
+            })}
           >
             {editor.isSaving ? (
               <Loader2 size={12} className="mr-1 animate-spin" />

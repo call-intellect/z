@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { ALL_LLM_TASK_TYPES } from '../../ai/services/llm-router.service';
 import type { AdminPeriod } from '../dto/admin-usage.dto';
 
 import { AdminCacheService } from './admin-cache.service';
@@ -18,6 +17,13 @@ interface PeriodArgs {
   period: AdminPeriod;
   from?: Date;
   to?: Date;
+}
+
+interface DashboardFilterArgs {
+  provider?: string[];
+  model?: string[];
+  taskType?: string[];
+  orgId?: string[];
 }
 
 const DASHBOARD_TTL_MS = 60_000;
@@ -87,24 +93,15 @@ export interface AdminDashboardResult {
     failedCalls: number;
   };
   byProvider: Array<{ provider: string; costUsd: number; calls: number }>;
+  byModel: Array<{ provider: string; model: string; costUsd: number; calls: number }>;
   byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
   topOrgs?: Array<{ tenantId: string; name: string; costUsd: number; calls: number }>;
+  trend: Array<{ date: string; costUsd: number; calls: number; failedCalls: number }>;
   counts?: {
     orgsTotal: number;
     usersTotal: number;
     activeUsers7d: number;
   };
-}
-
-export interface AdminUsersUsageRow {
-  userId: string;
-  userEmail: string;
-  userName: string;
-  tenantId: string | null;
-  tenantName: string | null;
-  totalCostUsd: number;
-  totalCalls: number;
-  byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
 }
 
 export interface AdminCallLogItem {
@@ -135,23 +132,6 @@ export interface AdminCallDetail extends AdminCallLogItem {
   responsePreview: string | null;
 }
 
-export interface AdminFunctionUsageRow {
-  taskType: string;
-  hasRoute: boolean;
-  isActive: boolean;
-  experimentEnabled: boolean;
-  currentProvider: string | null;
-  fallbackChain: string[];
-  totalCalls: number;
-  failedCalls: number;
-  failRate: number;
-  avgCostUsd: number;
-  avgDurationMs: number;
-  avgInputTokens: number;
-  avgOutputTokens: number;
-  totalCostUsd: number;
-}
-
 @Injectable()
 export class AdminUsageService {
   private readonly logger = new Logger(AdminUsageService.name);
@@ -171,16 +151,20 @@ export class AdminUsageService {
     return {};
   }
 
-  private cacheKey(args: ScopeArgs & PeriodArgs, kind: string): string {
+  private cacheKey(args: ScopeArgs & PeriodArgs & DashboardFilterArgs, kind: string): string {
     const tenant = args.scope === 'org' ? (args.tenantId ?? '*') : '*';
     const periodKey =
       args.period === 'custom'
         ? `custom_${args.from?.toISOString()}_${args.to?.toISOString()}`
         : args.period;
-    return `usage:${kind}:${args.scope}:${tenant}:${periodKey}`;
+    const csvKey = (v: string[] | undefined) => (v?.length ? [...v].sort().join(',') : '*');
+    const filterKey = `${csvKey(args.provider)}:${csvKey(args.model)}:${csvKey(args.taskType)}:${csvKey(args.orgId)}`;
+    return `usage:${kind}:${args.scope}:${tenant}:${periodKey}:${filterKey}`;
   }
 
-  async getDashboard(args: ScopeArgs & PeriodArgs): Promise<AdminDashboardResult> {
+  async getDashboard(
+    args: ScopeArgs & PeriodArgs & DashboardFilterArgs,
+  ): Promise<AdminDashboardResult> {
     const cacheKey = this.cacheKey(args, 'dashboard');
     const cached = this.cache.get<AdminDashboardResult>(cacheKey);
     if (cached) return cached;
@@ -190,32 +174,51 @@ export class AdminUsageService {
     const baseWhere: Prisma.AiUsageLogWhereInput = {
       createdAt: { gte: range.gte, lt: range.lt },
       ...tenantWhere,
+      ...(args.provider?.length ? { provider: { in: args.provider } } : {}),
+      ...(args.model?.length ? { model: { in: args.model } } : {}),
+      ...(args.taskType?.length ? { taskType: { in: args.taskType } } : {}),
+      ...(args.scope === 'global' && args.orgId?.length ? { tenantId: { in: args.orgId } } : {}),
     };
 
-    const [totalsAgg, failedAgg, byProvider, byTaskType, counts, topOrgs] = await Promise.all([
-      this.prisma.aiUsageLog.aggregate({
-        where: baseWhere,
-        _sum: { costUsd: true },
-        _count: { _all: true },
-      }),
-      this.prisma.aiUsageLog.count({
-        where: { ...baseWhere, success: false },
-      }),
-      this.prisma.aiUsageLog.groupBy({
-        by: ['provider'],
-        where: baseWhere,
-        _sum: { costUsd: true },
-        _count: { _all: true },
-      }),
-      this.prisma.aiUsageLog.groupBy({
-        by: ['taskType'],
-        where: baseWhere,
-        _sum: { costUsd: true },
-        _count: { _all: true },
-      }),
-      args.scope === 'global' ? this.fetchGlobalCounts() : Promise.resolve(undefined),
-      args.scope === 'global' ? this.fetchTopOrgsByCost(range, 10) : Promise.resolve(undefined),
-    ]);
+    const [totalsAgg, failedAgg, byProvider, byModel, byTaskType, counts, topOrgs, trend] =
+      await Promise.all([
+        this.prisma.aiUsageLog.aggregate({
+          where: baseWhere,
+          _sum: { costUsd: true },
+          _count: { _all: true },
+        }),
+        this.prisma.aiUsageLog.count({
+          where: { ...baseWhere, success: false },
+        }),
+        this.prisma.aiUsageLog.groupBy({
+          by: ['provider'],
+          where: baseWhere,
+          _sum: { costUsd: true },
+          _count: { _all: true },
+        }),
+        this.prisma.aiUsageLog.groupBy({
+          by: ['provider', 'model'],
+          where: baseWhere,
+          _sum: { costUsd: true },
+          _count: { _all: true },
+        }),
+        this.prisma.aiUsageLog.groupBy({
+          by: ['taskType'],
+          where: baseWhere,
+          _sum: { costUsd: true },
+          _count: { _all: true },
+        }),
+        args.scope === 'global' ? this.fetchGlobalCounts() : Promise.resolve(undefined),
+        args.scope === 'global'
+          ? this.fetchTopOrgsByCost(range, 10, args)
+          : Promise.resolve(undefined),
+        this.fetchDailyTrend(range, {
+          tenantId: args.scope === 'org' ? args.tenantId : args.orgId,
+          provider: args.provider,
+          model: args.model,
+          taskType: args.taskType,
+        }),
+      ]);
 
     const result: AdminDashboardResult = {
       scope: args.scope,
@@ -237,6 +240,15 @@ export class AdminUsageService {
           calls: r._count._all,
         }))
         .sort((a, b) => b.costUsd - a.costUsd),
+      byModel: byModel
+        .map((r) => ({
+          provider: r.provider,
+          model: r.model,
+          costUsd: decimalToNumber(r._sum.costUsd),
+          calls: r._count._all,
+        }))
+        .sort((a, b) => b.costUsd - a.costUsd)
+        .slice(0, 20),
       byTaskType: byTaskType
         .map((r) => ({
           taskType: r.taskType ?? 'unknown',
@@ -245,12 +257,62 @@ export class AdminUsageService {
         }))
         .sort((a, b) => b.costUsd - a.costUsd)
         .slice(0, 20),
+      trend,
       ...(counts !== undefined ? { counts } : {}),
       ...(topOrgs !== undefined ? { topOrgs } : {}),
     };
 
     this.cache.setWithTtl(cacheKey, result, DASHBOARD_TTL_MS);
     return result;
+  }
+
+  private async fetchDailyTrend(
+    range: { gte: Date; lt: Date },
+    filters: {
+      tenantId?: string | string[];
+      provider?: string[];
+      model?: string[];
+      taskType?: string[];
+    },
+  ): Promise<Array<{ date: string; costUsd: number; calls: number; failedCalls: number }>> {
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`"createdAt" >= ${range.gte}`,
+      Prisma.sql`"createdAt" < ${range.lt}`,
+    ];
+    const inOrEq = (column: string, value: string | string[] | undefined) => {
+      if (value === undefined) return;
+      if (Array.isArray(value)) {
+        if (value.length === 0) return;
+        conditions.push(Prisma.sql`${Prisma.raw(column)} IN (${Prisma.join(value)})`);
+      } else {
+        conditions.push(Prisma.sql`${Prisma.raw(column)} = ${value}`);
+      }
+    };
+    inOrEq('"tenantId"', filters.tenantId);
+    inOrEq('"provider"', filters.provider);
+    inOrEq('"model"', filters.model);
+    inOrEq('"taskType"', filters.taskType);
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ day: Date; cost: number; calls: bigint; failed: bigint }>
+    >(Prisma.sql`
+      SELECT
+        date_trunc('day', "createdAt") AS day,
+        COALESCE(SUM("costUsd"), 0)::float8 AS cost,
+        COUNT(*) AS calls,
+        COUNT(*) FILTER (WHERE "success" = false) AS failed
+      FROM "AiUsageLog"
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `);
+
+    return rows.map((r) => ({
+      date: r.day.toISOString().slice(0, 10),
+      costUsd: r.cost,
+      calls: Number(r.calls),
+      failedCalls: Number(r.failed),
+    }));
   }
 
   private async fetchGlobalCounts(): Promise<{
@@ -275,10 +337,17 @@ export class AdminUsageService {
   private async fetchTopOrgsByCost(
     range: { gte: Date; lt: Date },
     limit: number,
+    filters: DashboardFilterArgs = {},
   ): Promise<Array<{ tenantId: string; name: string; costUsd: number; calls: number }>> {
     const rows = await this.prisma.aiUsageLog.groupBy({
       by: ['tenantId'],
-      where: { createdAt: { gte: range.gte, lt: range.lt }, tenantId: { not: null } },
+      where: {
+        createdAt: { gte: range.gte, lt: range.lt },
+        tenantId: filters.orgId?.length ? { in: filters.orgId } : { not: null },
+        ...(filters.provider?.length ? { provider: { in: filters.provider } } : {}),
+        ...(filters.model?.length ? { model: { in: filters.model } } : {}),
+        ...(filters.taskType?.length ? { taskType: { in: filters.taskType } } : {}),
+      },
       _sum: { costUsd: true },
       _count: { _all: true },
       orderBy: { _sum: { costUsd: 'desc' } },
@@ -299,120 +368,6 @@ export class AdminUsageService {
         costUsd: decimalToNumber(r._sum.costUsd),
         calls: r._count._all,
       }));
-  }
-
-  async getUsersUsage(
-    args: ScopeArgs & PeriodArgs & { limit: number; cursor?: string; search?: string },
-  ): Promise<{ items: AdminUsersUsageRow[]; nextCursor: string | null }> {
-    const range = periodToRange(args);
-    const tenantWhere = this.buildTenantWhere(args);
-    const baseWhere: Prisma.AiUsageLogWhereInput = {
-      createdAt: { gte: range.gte, lt: range.lt },
-      userId: { not: null },
-      ...tenantWhere,
-    };
-
-    const grouped = await this.prisma.aiUsageLog.groupBy({
-      by: ['userId'],
-      where: baseWhere,
-      _sum: { costUsd: true },
-      _count: { _all: true },
-      orderBy: { _sum: { costUsd: 'desc' } },
-      take: args.limit + 1,
-    });
-
-    const userIds = grouped.map((r) => r.userId).filter((x): x is string => x !== null);
-    if (userIds.length === 0) {
-      return { items: [], nextCursor: null };
-    }
-
-    const usersFilter: Prisma.UserWhereInput = { id: { in: userIds } };
-    if (args.search) {
-      usersFilter.OR = [
-        { email: { contains: args.search, mode: 'insensitive' } },
-        { name: { contains: args.search, mode: 'insensitive' } },
-      ];
-    }
-    const users = await this.prisma.user.findMany({
-      where: usersFilter,
-      select: { id: true, email: true, name: true },
-    });
-    const usersById = new Map(users.map((u) => [u.id, u]));
-
-    const breakdownRows = await this.prisma.aiUsageLog.groupBy({
-      by: ['userId', 'taskType'],
-      where: { ...baseWhere, userId: { in: userIds } },
-      _sum: { costUsd: true },
-      _count: { _all: true },
-    });
-    const breakdownByUser = new Map<
-      string,
-      Array<{ taskType: string; costUsd: number; calls: number }>
-    >();
-    for (const r of breakdownRows) {
-      if (!r.userId) continue;
-      const existing = breakdownByUser.get(r.userId) ?? [];
-      existing.push({
-        taskType: r.taskType ?? 'unknown',
-        costUsd: decimalToNumber(r._sum.costUsd),
-        calls: r._count._all,
-      });
-      breakdownByUser.set(r.userId, existing);
-    }
-
-    const tenantNamesByUser = new Map<string, { id: string; name: string }>();
-    if (args.scope === 'global') {
-      const memberships = await this.prisma.membership.findMany({
-        where: { userId: { in: userIds } },
-        select: {
-          userId: true,
-          orgId: true,
-          org: { select: { name: true } },
-        },
-      });
-      for (const m of memberships) {
-        if (!tenantNamesByUser.has(m.userId)) {
-          tenantNamesByUser.set(m.userId, { id: m.orgId, name: m.org.name });
-        }
-      }
-    }
-
-    const visibleUserIds = new Set(users.map((u) => u.id));
-    const items: AdminUsersUsageRow[] = grouped
-      .filter((r) => r.userId && visibleUserIds.has(r.userId))
-      .map((r) => {
-        const userId = r.userId as string;
-        const user = usersById.get(userId);
-        const tenant =
-          args.scope === 'org'
-            ? args.tenantId
-              ? { id: args.tenantId, name: '' }
-              : null
-            : (tenantNamesByUser.get(userId) ?? null);
-        return {
-          userId,
-          userEmail: user?.email ?? '',
-          userName: user?.name ?? '',
-          tenantId: tenant?.id ?? null,
-          tenantName: tenant?.name ?? null,
-          totalCostUsd: decimalToNumber(r._sum.costUsd),
-          totalCalls: r._count._all,
-          byTaskType: (breakdownByUser.get(userId) ?? [])
-            .sort((a, b) => b.costUsd - a.costUsd)
-            .slice(0, 10),
-        };
-      });
-
-    const hasMore = items.length > args.limit;
-    const trimmed = hasMore ? items.slice(0, args.limit) : items;
-    const nextCursor =
-      hasMore && trimmed.length > 0
-        ? encodeCursor({
-            createdAt: new Date().toISOString(),
-            id: trimmed[trimmed.length - 1]!.userId,
-          })
-        : null;
-    return { items: trimmed, nextCursor };
   }
 
   async getCallsLog(
@@ -516,82 +471,6 @@ export class AdminUsageService {
     };
   }
 
-  async getFunctionsUsage(
-    args: ScopeArgs & PeriodArgs,
-  ): Promise<{ items: AdminFunctionUsageRow[] }> {
-    const range = periodToRange(args);
-    const tenantWhere = this.buildTenantWhere(args);
-    const baseWhere: Prisma.AiUsageLogWhereInput = {
-      createdAt: { gte: range.gte, lt: range.lt },
-      ...tenantWhere,
-    };
-
-    const routes = await this.prisma.llmTaskRoute.findMany({
-      where: { tenantId: null },
-    });
-    const routesByTaskType = new Map(routes.map((r) => [r.taskType, r]));
-
-    const byTaskTypeAgg = await this.prisma.aiUsageLog.groupBy({
-      by: ['taskType'],
-      where: { ...baseWhere, taskType: { not: null } },
-      _count: { _all: true },
-      _sum: {
-        costUsd: true,
-        durationMs: true,
-        inputTokens: true,
-        outputTokens: true,
-      },
-    });
-    const failedAgg = await this.prisma.aiUsageLog.groupBy({
-      by: ['taskType'],
-      where: { ...baseWhere, taskType: { not: null }, success: false },
-      _count: { _all: true },
-    });
-    const failedByTaskType = new Map(failedAgg.map((r) => [r.taskType ?? '', r._count._all]));
-
-    const aggByTaskType = new Map(byTaskTypeAgg.map((r) => [r.taskType ?? '', r]));
-
-    const items: AdminFunctionUsageRow[] = ALL_LLM_TASK_TYPES.map((taskType) => {
-      const route = routesByTaskType.get(taskType);
-      const providers = parseProvidersJson(route?.providers);
-      const currentProvider =
-        providers[0] !== undefined
-          ? `${providers[0].provider}${providers[0].model ? `:${providers[0].model}` : ''}`
-          : null;
-      const fallbackChain = providers
-        .slice(1)
-        .map((p) => `${p.provider}${p.model ? `:${p.model}` : ''}`);
-      const exp = route?.experiment as { enabled?: boolean } | null | undefined;
-
-      const agg = aggByTaskType.get(taskType);
-      const totalCalls = agg?._count._all ?? 0;
-      const failedCalls = failedByTaskType.get(taskType) ?? 0;
-      const totalCostUsd = decimalToNumber(agg?._sum.costUsd);
-      const sumDurationMs = agg?._sum.durationMs ?? 0;
-      const sumInputTokens = agg?._sum.inputTokens ?? 0;
-      const sumOutputTokens = agg?._sum.outputTokens ?? 0;
-
-      return {
-        taskType,
-        hasRoute: route !== undefined,
-        isActive: route?.isActive ?? false,
-        experimentEnabled: exp?.enabled === true,
-        currentProvider,
-        fallbackChain,
-        totalCalls,
-        failedCalls,
-        failRate: totalCalls > 0 ? failedCalls / totalCalls : 0,
-        avgCostUsd: totalCalls > 0 ? totalCostUsd / totalCalls : 0,
-        avgDurationMs: totalCalls > 0 ? sumDurationMs / totalCalls : 0,
-        avgInputTokens: totalCalls > 0 ? sumInputTokens / totalCalls : 0,
-        avgOutputTokens: totalCalls > 0 ? sumOutputTokens / totalCalls : 0,
-        totalCostUsd,
-      };
-    });
-
-    return { items };
-  }
-
   async getFunctionCalls(
     args: ScopeArgs & { taskType: string; limit: number; experimentGroup?: 'A' | 'B' },
   ): Promise<{ items: AdminCallLogItem[] }> {
@@ -651,42 +530,6 @@ export class AdminUsageService {
       sourceRef: parseSourceRef(r.sourceRef),
     };
   }
-}
-
-function parseProvidersJson(
-  raw: Prisma.JsonValue | null | undefined,
-): Array<{ provider: string; model?: string }> {
-  if (!raw) return [];
-  let arr: unknown;
-  if (Array.isArray(raw)) {
-    arr = raw;
-  } else if (
-    typeof raw === 'object' &&
-    raw !== null &&
-    Array.isArray((raw as { providers?: unknown }).providers)
-  ) {
-    arr = (raw as { providers: unknown[] }).providers;
-  } else {
-    return [];
-  }
-  const result: Array<{ provider: string; model?: string }> = [];
-  for (const item of arr as unknown[]) {
-    if (typeof item === 'string') {
-      result.push({ provider: item });
-      continue;
-    }
-    if (typeof item === 'object' && item !== null) {
-      const p = (item as { provider?: unknown }).provider;
-      const m = (item as { model?: unknown }).model;
-      if (typeof p === 'string') {
-        result.push({
-          provider: p,
-          ...(typeof m === 'string' && m.length > 0 ? { model: m } : {}),
-        });
-      }
-    }
-  }
-  return result;
 }
 
 function parseSourceRef(raw: Prisma.JsonValue): { type: string; id: string } | null {

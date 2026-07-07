@@ -40,7 +40,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
       apiKey,
       defaultHeaders: provider.defaultHeaders,
     });
-    const model = input.model ?? provider.defaultModel ?? 'gpt-4o-mini';
+    const model = input.model ?? provider.defaultModelKey ?? provider.defaultModel ?? 'gpt-4o-mini';
 
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const messages: Array<{ role: 'system' | 'user'; content: string }> = [
@@ -197,15 +197,6 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
   }
 
   private normalizeProviderName(slug: string): LlmCompleteOutput['provider'] {
-    switch (slug) {
-      case 'anthropic':
-      case 'minimax':
-      case 'openai-via-proxy':
-      case 'deepseek':
-      case 'ollama':
-        return slug;
-      default:
-        return 'deepseek';
-    }
+    return slug;
   }
 }

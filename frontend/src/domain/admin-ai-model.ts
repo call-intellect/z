@@ -57,6 +57,7 @@ const CHANGE_TYPE_LABEL: Record<string, string> = {
   started_ab: "Запущен A/B-тест",
   stopped_ab: "Остановлен A/B-тест",
   reset_to_default: "Сброс к дефолту",
+  chain_replaced: "Изменена цепочка маршрута",
 };
 
 export function tierLabel(tier: AiModelTier): string {
@@ -99,8 +100,8 @@ export function formatLatency(ms: number): string {
   return `${(ms / 1000).toFixed(1)} с`;
 }
 
-export function formatCostRub(usd: number): string {
-  const rub = usd * 90;
+export function formatRub(rub: number | null): string {
+  if (rub === null) return "—";
   if (rub < 1) return `${(rub * 100).toFixed(2)} коп`;
   return `${rub.toFixed(2)} ₽`;
 }

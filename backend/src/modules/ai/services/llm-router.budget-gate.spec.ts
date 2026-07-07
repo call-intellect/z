@@ -34,6 +34,7 @@ function build(opts: BuildOpts = {}) {
   const prisma = {
     llmTaskRoute: { findMany },
     llmModelPrice: { findFirst: priceFindFirst },
+    llmModelExperiment: { findMany: vi.fn(async () => []) },
   } as unknown as PrismaService;
 
   const deepseekComplete = vi.fn(async () => makeOutput('deepseek'));

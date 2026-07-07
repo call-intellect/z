@@ -267,7 +267,7 @@ function makePrismaDeps(
     },
     async writeBlock(args): Promise<void> {
       await prisma.$executeRawUnsafe(
-        'UPDATE "IdeaBlock" SET embedding = $1::vector(1536), "contextHeaderVersion" = $2 WHERE id = $3 AND "tenantId" = $4',
+        'UPDATE "IdeaBlock" SET embedding = $1::vector(768), "contextHeaderVersion" = $2 WHERE id = $3 AND "tenantId" = $4',
         `[${args.vector.join(',')}]`,
         CONTEXT_HEADER_VERSION,
         args.id,

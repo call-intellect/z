@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, type ReactNode } from "react";
+import { Info } from "lucide-react";
 import type { ZodTypeAny } from "zod";
 
 import { Input } from "@/ui/shadcn/input";
@@ -13,6 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/shadcn/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/ui/shadcn/tooltip";
 import { cn } from "@/ui/shadcn/lib/utils";
 
 type Props<T> = {
@@ -44,9 +51,21 @@ export function AdminSettingField<T>({
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <div className="flex items-start justify-between gap-2">
-        <label htmlFor={id} className="text-sm font-medium text-fg-primary">
-          {label}
-        </label>
+        <div className="flex items-center gap-1.5">
+          <label htmlFor={id} className="text-sm font-medium text-fg-primary">
+            {label}
+          </label>
+          {description ? (
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger type="button" tabIndex={-1} className="text-fg-tertiary">
+                  <Info size={13} />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">{description}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
+        </div>
         {rightSlot ? <div className="shrink-0">{rightSlot}</div> : null}
       </div>
       {description ? (

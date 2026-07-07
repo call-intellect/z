@@ -10,3 +10,4 @@ coverage
 .vscode
 .idea
 prisma/.tmp
+.claude/settings.json

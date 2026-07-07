@@ -133,7 +133,7 @@ export async function backfillGoalEmbeddings(
           continue;
         }
         await prisma.$executeRawUnsafe(
-          'UPDATE "Goal" SET embedding = $1::vector(1536), "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
+          'UPDATE "Goal" SET embedding = $1::vector(768), "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
           `[${vector.join(',')}]`,
           sha256Hex(text),
           g.id,

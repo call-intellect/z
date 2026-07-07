@@ -22,7 +22,12 @@ export class OllamaNativeProtocolAdapter implements LlmProtocolAdapter {
   }): Promise<LlmCompleteOutput> {
     const { provider, input } = args;
     try {
-      return await this.ollama.complete(input);
+      return await this.ollama.complete(input, {
+        baseUrl: provider.baseUrl,
+        apiKey: provider.apiKey,
+        defaultHeaders: provider.defaultHeaders,
+        timeoutMs: provider.timeoutMs,
+      });
     } catch (err) {
       if (err instanceof LlmError) throw err;
       const message = err instanceof Error ? err.message : String(err);

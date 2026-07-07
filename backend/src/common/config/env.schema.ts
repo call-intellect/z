@@ -146,6 +146,7 @@ const EmbeddingsSchema = z.object({
   OPENAI_PROXY_API_KEY: z.string().optional(),
   OPENAI_PROXY_EMBEDDINGS_URL: z.string().url().default('https://proxy.agent-lia.ru/v1/embeddings'),
   EMBEDDING_FALLBACK_LOCAL_URL: z.string().url().optional(),
+  EMBEDDING_LOCAL_API_KEY: z.string().optional(),
   EMBEDDING_BATCH_SIZE: z.coerce.number().int().positive().default(100),
   EMBEDDING_CHUNK_TARGET_TOKENS: z.coerce.number().int().positive().default(400),
   EMBEDDING_CHUNK_OVERLAP_TOKENS: z.coerce.number().int().positive().default(50),
@@ -254,6 +255,7 @@ const AiFeatureFlagsSchema = z.object({
   DOC_COMPILER_ENABLED: zBool(true),
   REGULATION_GATE_STRICT_ENABLED: zBool(true),
   ASSIGNMENT_NOTIFICATIONS_ENABLED: zBool(true),
+  KNOWLEDGE_DEMO_ORG_INGEST_ENABLED: zBool(true),
 });
 
 const HashingSchema = z.object({
@@ -671,7 +673,7 @@ const BudgetSchema = z.object({
   PROVIDER_SMOKE_TEST_ENABLED: zBool(true),
   PROVIDER_SMOKE_TEST_INTERVAL_MINUTES: z.coerce.number().int().positive().default(30),
   PROVIDER_SMOKE_TEST_FAIL_THRESHOLD: z.coerce.number().int().positive().default(3),
-  USE_PROTOCOL_ADAPTER_REGISTRY: zBool(false),
+  USE_PROTOCOL_ADAPTER_REGISTRY: zBool(true),
 });
 
 const TrackerSchema = z.object({

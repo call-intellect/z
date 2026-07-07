@@ -1,9 +1,12 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma, type LlmRouteTier } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { CurrencyRateService } from '../../admin/economics/currency-rate.service';
+
+import type { StringWithSuggestions } from './llm.types';
 
 export type AiAgentType =
   | 'transcribe'
@@ -14,7 +17,7 @@ export type AiAgentType =
   | 'custom'
   | 'client_protocol';
 
-export type AiProvider =
+export type AiProvider = StringWithSuggestions<
   | 'anthropic'
   | 'vox'
   | 'openai'
@@ -23,7 +26,8 @@ export type AiProvider =
   | 'deepseek'
   | 'ollama'
   | 'kie'
-  | 'grsai';
+  | 'grsai'
+>;
 
 export interface RecordAiUsageInput {
   tenantId?: string | null;
@@ -73,6 +77,7 @@ export class AiUsageLogService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Optional() @Inject(CurrencyRateService) private readonly currencyRate?: CurrencyRateService,
   ) {}
 
   async record(input: RecordAiUsageInput): Promise<string | null> {
@@ -83,6 +88,15 @@ export class AiUsageLogService {
         undefined,
         PREVIEW_MAX_BYTES_FALLBACK,
       );
+      let costRub: Prisma.Decimal | undefined;
+      try {
+        const rate = await this.currencyRate?.getCurrentUsdRubRate();
+        if (rate !== undefined && Number.isFinite(rate) && rate > 0) {
+          costRub = new Prisma.Decimal((input.costUsd * rate).toFixed(4));
+        }
+      } catch {
+        costRub = undefined;
+      }
       const created = await this.prisma.aiUsageLog.create({
         data: {
           tenantId: input.tenantId ?? null,
@@ -100,6 +114,7 @@ export class AiUsageLogService {
             ? { reasoningTokens: input.reasoningTokens }
             : {}),
           costUsd: new Prisma.Decimal(input.costUsd.toFixed(6)),
+          ...(costRub !== undefined ? { costRub } : {}),
           durationMs: input.durationMs,
           success: input.success,
           errorText: input.errorText ?? null,

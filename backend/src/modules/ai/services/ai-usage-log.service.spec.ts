@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { CurrencyRateService } from '../../admin/economics/currency-rate.service';
 
 import { AiUsageLogService, truncatePreview } from './ai-usage-log.service';
 
@@ -14,7 +15,16 @@ function makeCfg(previewMaxBytes?: number): TypedConfigService {
   } as unknown as TypedConfigService;
 }
 
-function makeServices(previewMaxBytes?: number): {
+function makeCurrencyRate(rate: number): CurrencyRateService {
+  return {
+    getCurrentUsdRubRate: vi.fn(async () => rate),
+  } as unknown as CurrencyRateService;
+}
+
+function makeServices(
+  previewMaxBytes?: number,
+  currencyRate?: CurrencyRateService,
+): {
   service: AiUsageLogService;
   create: ReturnType<typeof vi.fn>;
   addCost: ReturnType<typeof vi.fn>;
@@ -29,7 +39,7 @@ function makeServices(previewMaxBytes?: number): {
   } as unknown as BusinessMetricsService;
 
   return {
-    service: new AiUsageLogService(prisma, metrics, makeCfg(previewMaxBytes)),
+    service: new AiUsageLogService(prisma, metrics, makeCfg(previewMaxBytes), currencyRate),
     create,
     addCost,
   };
@@ -115,6 +125,45 @@ describe('AiUsageLogService.record', () => {
     const call = create.mock.calls[0]?.[0] as { data: Record<string, unknown> };
     expect(call.data['requestPreview']).toBe('abcd');
     expect(call.data['responsePreview']).toBe('ABCD');
+  });
+
+  it('считает costRub через CurrencyRateService', async () => {
+    const { service, create } = makeServices(undefined, makeCurrencyRate(90));
+    await service.record({
+      agentType: 'summary',
+      model: 'm',
+      provider: 'anthropic',
+      costUsd: 1,
+      durationMs: 1,
+      success: true,
+    });
+    const call = create.mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    const costRub = call.data['costRub'] as { toFixed: (n: number) => string };
+    expect(costRub.toFixed(4)).toBe('90.0000');
+  });
+
+  it('сбой CurrencyRateService не роняет запись, costRub отсутствует', async () => {
+    const currencyRate = {
+      getCurrentUsdRubRate: vi.fn(async () => {
+        throw new Error('fx down');
+      }),
+    } as unknown as CurrencyRateService;
+    const { service, create } = makeServices(undefined, currencyRate);
+
+    await expect(
+      service.record({
+        agentType: 'summary',
+        model: 'm',
+        provider: 'anthropic',
+        costUsd: 1,
+        durationMs: 1,
+        success: true,
+      }),
+    ).resolves.toBe('log-1');
+    const call = create.mock.calls[0]?.[0] as { data: Record<string, unknown> };
+    expect(call.data['costRub']).toBeUndefined();
   });
 });
 

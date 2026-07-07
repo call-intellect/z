@@ -14,6 +14,7 @@ import {
 import { ApiExcludeController } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
@@ -24,6 +25,10 @@ import {
   type CreateLlmProviderDto,
   ListLlmProvidersQuerySchema,
   type ListLlmProvidersQuery,
+  RemoveProviderSchema,
+  type RemoveProviderDto,
+  SetDefaultProviderSchema,
+  type SetDefaultProviderDto,
   UpdateLlmProviderSchema,
   type UpdateLlmProviderDto,
 } from './dto/admin-llm-providers.dto';
@@ -54,6 +59,19 @@ export class AdminLlmProvidersController {
     return this.svc.getById(id);
   }
 
+  @Get(':id/removal-impact')
+  previewRemoval(@Param('id') id: string) {
+    return this.svc.previewRemoval(id);
+  }
+
+  @Post(':id/set-default')
+  setDefault(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetDefaultProviderSchema)) dto: SetDefaultProviderDto,
+  ) {
+    return this.svc.setDefaultProvider(id, dto.model);
+  }
+
   @Post()
   create(
     @Body(new ZodValidationPipe(CreateLlmProviderSchema))
@@ -72,13 +90,22 @@ export class AdminLlmProvidersController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.svc.softDelete(id);
+  remove(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(RemoveProviderSchema)) dto: RemoveProviderDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.svc.softDeleteWithFallback(id, dto.reassignDefaultTo, user.id);
   }
 
   @Post(':id/smoke-test')
   async smoke(@Param('id') id: string) {
     const provider = await this.svc.getById(id);
     return this.smokeTest.testProvider(provider.name);
+  }
+
+  @Post(':id/models/discover')
+  discoverModels(@Param('id') id: string) {
+    return this.svc.discoverModels(id);
   }
 }

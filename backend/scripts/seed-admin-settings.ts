@@ -904,6 +904,12 @@ function buildSettings(): SettingSeed[] {
       'medium',
       'Legacy summary-агент в analyze.worker (false = сводка только из summaryFast / meeting-report-fast)',
     ],
+    [
+      'aiFeatures.analyzeWorkerRouterEnabled',
+      envBool('ANALYZE_WORKER_ROUTER_ENABLED', true),
+      'high',
+      'Аварийный рубильник: главный отчёт о встрече идёт через LlmRouterService (true, канон) или через легаси LlmFallbackService (false, откат при инциденте). Временный — снимается после периода стабилизации.',
+    ],
   ];
   for (const [key, value, severity, description] of aiFeatures) {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });
@@ -921,6 +927,28 @@ function buildSettings(): SettingSeed[] {
       envFloat('LLM_CACHE_HIT_RATIO_WARN_THRESHOLD', 0.6),
       'low',
       'Порог доли cache-хитов по DeepSeek (0..1): ниже — WARN в логи (возможно taskType ушёл на некэширующий провайдер)',
+    ],
+    [
+      'llm.router.defaultChain',
+      [
+        { provider: 'deepseek', model: null },
+        { provider: 'openai-via-proxy', model: null },
+        { provider: 'kie', model: 'gemini-3.1-pro' },
+      ],
+      'high',
+      'Дефолт-цепочка провайдеров для taskType без явного маршрута (primary→secondary→tertiary). Раньше — хардкод DEFAULT_FALLBACK_CHAIN в коде.',
+    ],
+    [
+      'llm.budget.enforce_enabled',
+      envBool('LLM_BUDGET_ENFORCE_ENABLED', false),
+      'high',
+      'Жёсткий лимит месячного бюджета на ИИ: false = только наблюдение (превышение логируется, вызовы не блокируются), true = новые вызовы ИИ отклоняются при превышении лимита компании. Включение — отдельное решение владельца (см. docs/operations/feature-flags.md, пункт 1).',
+    ],
+    [
+      'llm.budget.currencyRateFallbackUsdRub',
+      envFloat('CURRENCY_RATE_FALLBACK_USD_RUB', 90),
+      'low',
+      'Запасной курс USD→RUB на случай, если свежих данных о курсе ЦБ нет (таблица currency_rates пуста или синк не сработал). Используется CurrencyRateService и при построчной подстраховке расчёта costRub.',
     ],
   ];
   for (const [key, value, severity, description] of llm) {

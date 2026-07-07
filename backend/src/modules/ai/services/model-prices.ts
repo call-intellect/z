@@ -41,7 +41,6 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   'gemini-3-pro': { inputPer1M: 0.5, outputPer1M: 3.5 },
   'gemini-3.1-pro': { inputPer1M: 0.5, outputPer1M: 3.5 },
   'gemini-3-flash': { inputPer1M: 0, outputPer1M: 0 },
-  'gpt-5-4': { inputPer1M: 0, outputPer1M: 0 },
 };
 
 export function calcCostUsd(

@@ -149,7 +149,7 @@ export class TypedConfigService {
   get cors() {
     const allowed: string[] = [this.get('PUBLIC_FRONTEND_URL')];
     if (this.runtime.isDevelopment) {
-      allowed.push('http://localhost:3000', 'http://localhost:3001');
+      allowed.push('http://localhost:3000', 'http://localhost:3001', 'http://localhost:4000', 'http://localhost:4001');
     }
     return { allowed } as const;
   }
@@ -279,14 +279,14 @@ export class TypedConfigService {
         provider: this.resolveSync<string>(
           'embeddings.provider',
           'EMBEDDING_PROVIDER',
-          'openai-via-proxy',
+          'local',
         ),
         model: this.resolveSync<string>(
           'embeddings.model',
           'EMBEDDING_MODEL',
-          'text-embedding-3-small',
+          'embeddinggemma:latest',
         ),
-        dimensions: this.resolveSync<number>('embeddings.dimensions', 'EMBEDDING_DIMENSIONS', 1536),
+        dimensions: this.resolveSync<number>('embeddings.dimensions', 'EMBEDDING_DIMENSIONS', 768),
         proxyApiKey: this.get('OPENAI_PROXY_API_KEY'),
         proxyEmbeddingsUrl: this.resolveSync<string>(
           'embeddings.proxyEmbeddingsUrl',
@@ -296,6 +296,10 @@ export class TypedConfigService {
         fallbackLocalUrl: this.resolveSync<string | undefined>(
           'embeddings.fallbackLocalUrl',
           'EMBEDDING_FALLBACK_LOCAL_URL',
+        ),
+        localApiKey: this.resolveSync<string | undefined>(
+          'embeddings.localApiKey',
+          'EMBEDDING_LOCAL_API_KEY',
         ),
         batchSize: this.resolveSync<number>('embeddings.batchSize', 'EMBEDDING_BATCH_SIZE', 100),
         chunkTargetTokens: this.resolveSync<number>(
@@ -539,6 +543,11 @@ export class TypedConfigService {
       clientProtocolEnabled: this.resolveSync<boolean>(
         'aiFeatures.clientProtocolEnabled',
         'CLIENT_PROTOCOL_ENABLED',
+        true,
+      ),
+      analyzeWorkerRouterEnabled: this.resolveSync<boolean>(
+        'aiFeatures.analyzeWorkerRouterEnabled',
+        'ANALYZE_WORKER_ROUTER_ENABLED',
         true,
       ),
       docCompilerEnabled: this.resolveSync<boolean>(
@@ -1770,7 +1779,11 @@ export class TypedConfigService {
       currencyRateApiUrl: String(
         this.get('CURRENCY_RATE_API_URL') ?? 'https://www.cbr-xml-daily.ru/daily_json.js',
       ),
-      currencyFallbackUsdRub: Number(this.get('CURRENCY_RATE_FALLBACK_USD_RUB') ?? 90),
+      currencyFallbackUsdRub: this.resolveSync<number>(
+        'llm.budget.currencyRateFallbackUsdRub',
+        'CURRENCY_RATE_FALLBACK_USD_RUB',
+        90,
+      ),
       providerSmokeTestEnabled: this.get('PROVIDER_SMOKE_TEST_ENABLED') !== false,
       providerSmokeTestIntervalMinutes: Number(
         this.get('PROVIDER_SMOKE_TEST_INTERVAL_MINUTES') ?? 30,

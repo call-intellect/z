@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
+import { CryptoModule } from '../../common/crypto/crypto.module';
+
 import { AdminAuditInterceptor } from './admin.audit.interceptor';
 import { AdminAiModule } from './ai/ai.module';
 import { AdminAiModelsController } from './ai-models/ai-models.controller';
@@ -9,7 +11,6 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminAuditModule } from './audit/admin-audit.module';
 import { ContentAdminModule } from './content/content-admin.module';
 import { AdminDemoController } from './controllers/admin-demo.controller';
-import { AdminExperimentsController } from './controllers/admin-experiments.controller';
 import { AdminFunctionsController } from './controllers/admin-functions.controller';
 import { AdminHealthController } from './controllers/admin-health.controller';
 import { AdminOrgsController } from './controllers/admin-orgs.controller';
@@ -20,25 +21,28 @@ import { OrgAdminMemoryAccessController } from './controllers/org-admin-memory-a
 import { AdminCronsModule } from './crons/admin-crons.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { AdminEconomicsController } from './economics/admin-economics.controller';
+import { AdminEmbeddingProvidersController } from './economics/admin-embedding-providers.controller';
+import { AdminEmbeddingProvidersService } from './economics/admin-embedding-providers.service';
 import { AdminLlmModelsController } from './economics/admin-llm-models.controller';
 import { AdminLlmModelsService } from './economics/admin-llm-models.service';
 import { AdminLlmProvidersController } from './economics/admin-llm-providers.controller';
 import { AdminLlmProvidersService } from './economics/admin-llm-providers.service';
 import { BudgetAlertCron } from './economics/budget-alert.cron';
 import { CurrencyRateSyncCron } from './economics/currency-rate-sync.cron';
-import { CurrencyRateService } from './economics/currency-rate.service';
+import { CurrencyRateModule } from './economics/currency-rate.module';
 import { DailyCostAggregatorCron } from './economics/daily-cost-aggregator.cron';
+import { LlmCostDashboardController } from './economics/llm-cost-dashboard.controller';
+import { LlmCostDashboardService } from './economics/llm-cost-dashboard.service';
 import { OrgEconomicsController } from './economics/org-economics.controller';
 import { OrgEconomicsCron } from './economics/org-economics.cron';
 import { ProviderSmokeTestCron } from './economics/provider-smoke-test.cron';
+import { ProviderSubscriptionChargeCron } from './economics/provider-subscription-charge.cron';
 import { UnitEconomicsService } from './economics/unit-economics.service';
 import { AdminEntitlementsModule } from './entitlements/entitlements.module';
 import { AdminIncidentsModule } from './incidents/admin-incidents.module';
 import { IntegrationKeysAdminController } from './integration-keys.controller';
 import { IntegrationsAdminModule } from './integrations/integrations-admin.module';
 import { LlmPreferenceDatasetController } from './llm-preference-dataset/llm-preference-dataset.controller';
-import { LlmRoutesController } from './llm-routes/llm-routes.controller';
-import { LlmRoutesService } from './llm-routes/llm-routes.service';
 import { AdminMediaModule } from './media/admin-media.module';
 import { MeetingsAdminController } from './meetings-admin.controller';
 import { AdminPlansModule } from './plans/plans.module';
@@ -53,7 +57,6 @@ import { AdminPromptTemplatesController } from './prompt-templates/prompt-templa
 import { AdminPromptTemplatesService } from './prompt-templates/prompt-templates.service';
 import { RecordingsAdminController } from './recordings-admin.controller';
 import { AdminCacheService } from './services/admin-cache.service';
-import { AdminExperimentsService } from './services/admin-experiments.service';
 import { AdminFunctionsService } from './services/admin-functions.service';
 import { AdminHealthService } from './services/admin-health.service';
 import { AdminOrgsService } from './services/admin-orgs.service';
@@ -85,6 +88,8 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     PlatformAdminModule,
     AdminSkillTraitConceptsModule,
     OnboardingModule,
+    CryptoModule,
+    CurrencyRateModule,
   ],
   controllers: [
     AdminDemoController,
@@ -92,7 +97,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     MeetingsAdminController,
     AiUsageAdminController,
     RecordingsAdminController,
-    LlmRoutesController,
     AdminAiModelsController,
     AdminPromptTemplatesController,
     AdminPromptExperimentsController,
@@ -100,7 +104,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     MeetingResultFeedbackController,
     AdminUsageController,
     AdminFunctionsController,
-    AdminExperimentsController,
     AdminPricesController,
     AdminOrgsController,
     AdminHealthController,
@@ -108,7 +111,9 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     OrgAdminMemoryAccessController,
     AdminLlmProvidersController,
     AdminLlmModelsController,
+    AdminEmbeddingProvidersController,
     AdminEconomicsController,
+    LlmCostDashboardController,
     OrgEconomicsController,
     AdminTelegramBotController,
     LlmPreferenceDatasetController,
@@ -117,7 +122,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
   providers: [
     AdminAuditInterceptor,
     SuperAdminAuditInterceptor,
-    LlmRoutesService,
     AdminAiModelsService,
     AdminPromptTemplatesService,
     PromptTemplatesPreviewService,
@@ -126,20 +130,21 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminCacheService,
     AdminUsageService,
     AdminFunctionsService,
-    AdminExperimentsService,
     AdminPricesService,
     AdminOrgsService,
     AdminHealthService,
     OrgAdminKnowledgeService,
     AdminLlmProvidersService,
     AdminLlmModelsService,
+    AdminEmbeddingProvidersService,
     UnitEconomicsService,
-    CurrencyRateService,
+    LlmCostDashboardService,
     DailyCostAggregatorCron,
     OrgEconomicsCron,
     BudgetAlertCron,
     CurrencyRateSyncCron,
     ProviderSmokeTestCron,
+    ProviderSubscriptionChargeCron,
     AdminTelegramBotService,
     SignalTypeMonitorService,
   ],
@@ -149,7 +154,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminCacheService,
     AdminUsageService,
     AdminFunctionsService,
-    AdminExperimentsService,
     AdminPricesService,
     AdminOrgsService,
     AdminHealthService,
@@ -159,12 +163,13 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminLlmProvidersService,
     AdminLlmModelsService,
     UnitEconomicsService,
-    CurrencyRateService,
+    CurrencyRateModule,
     DailyCostAggregatorCron,
     OrgEconomicsCron,
     BudgetAlertCron,
     CurrencyRateSyncCron,
     ProviderSmokeTestCron,
+    ProviderSubscriptionChargeCron,
   ],
 })
 export class AdminModule {}

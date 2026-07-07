@@ -23,7 +23,7 @@ export interface VectorLiteralResult {
  * Построить безопасный pgvector-литерал.
  *
  * @param vec  кандидат-вектор (например результат embedQuery).
- * @param expectedDim ожидаемая размерность колонки (обычно EMBEDDING_DIMENSIONS=1536).
+ * @param expectedDim ожидаемая размерность колонки (берётся из cfg.ai.embeddings.dimensions, дефолт 768 для embeddinggemma).
  */
 export function buildVectorLiteral(
   vec: number[] | null | undefined,

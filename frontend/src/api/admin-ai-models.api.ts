@@ -46,6 +46,7 @@ export type TaskTypeMetricsApi = {
     successCalls: number;
     failedCalls: number;
     totalCostUsd: number;
+    totalCostRub: number | null;
     fallbackCalls: number;
     fallbackRate: number;
   };
@@ -57,8 +58,10 @@ export type TaskTypeMetricsApi = {
       avgLatencyMs: number;
       p95LatencyMs: number;
       costUsd: number;
+      costRub: number | null;
     }
   >;
+  usdRubRate: number | null;
 };
 
 export type RouteChangeApi = {
@@ -107,6 +110,43 @@ export type AddProviderRequest = {
   reason?: string;
 };
 
+export type PutChainEntryRequest = {
+  tier: AiModelTier;
+  providerName: string;
+  model?: string | null;
+  priority: number;
+};
+
+export type PutChainRequest = {
+  entries: PutChainEntryRequest[];
+  isActive: boolean;
+  pinnedVersionNote?: string | null;
+  reason: string;
+};
+
+export type PutChainResponse = { ok: true; warnings: string[] };
+
+export type BulkReassignScope = "unassigned" | "provider";
+
+export type BulkReassignAffectedApi = {
+  taskType: string;
+  tier: AiModelTier;
+  currentProviderName: string | null;
+  currentModel: string | null;
+};
+
+export type BulkReassignPreviewRequest = {
+  scope: BulkReassignScope;
+  tier?: AiModelTier;
+  fromProviderName?: string;
+};
+
+export type BulkReassignRequest = BulkReassignPreviewRequest & {
+  toProviderName: AiModelProvider;
+  toModel: string;
+  reason: string;
+};
+
 export type CreateExperimentRequest = {
   taskType: string;
   controlModel: string;
@@ -116,6 +156,18 @@ export type CreateExperimentRequest = {
   splitPercent: number;
   durationDays: number;
   notes?: string;
+};
+
+export type ExperimentMetricsApi = {
+  model: string;
+  totalCalls: number;
+  failedCalls: number;
+  failRate: number;
+  avgCostUsd: number;
+  avgDurationMs: number;
+  avgInputTokens: number;
+  avgOutputTokens: number;
+  totalCostUsd: number;
 };
 
 export const adminAiModelsApi = {
@@ -143,6 +195,28 @@ export const adminAiModelsApi = {
   addProvider: (taskType: string, body: AddProviderRequest) =>
     apiClient.post<{ ok: true }>(
       `/api/v1/admin/ai-models/${encodeURIComponent(taskType)}/add-provider`,
+      body,
+    ),
+
+  putChain: (taskType: string, body: PutChainRequest) =>
+    apiClient.put<PutChainResponse>(
+      `/api/v1/admin/ai-models/${encodeURIComponent(taskType)}/chain`,
+      body,
+    ),
+
+  previewBulkReassign: (req: BulkReassignPreviewRequest) => {
+    const search = new URLSearchParams();
+    search.set("scope", req.scope);
+    if (req.tier) search.set("tier", req.tier);
+    if (req.fromProviderName) search.set("fromProviderName", req.fromProviderName);
+    return apiClient.get<{ affected: BulkReassignAffectedApi[] }>(
+      `/api/v1/admin/ai-models/bulk-reassign/preview?${search.toString()}`,
+    );
+  },
+
+  bulkReassign: (body: BulkReassignRequest) =>
+    apiClient.post<{ ok: true; updated: number }>(
+      "/api/v1/admin/ai-models/bulk-reassign",
       body,
     ),
 
@@ -194,8 +268,8 @@ export const adminAiModelsApi = {
   experimentAnalytics: (id: string) =>
     apiClient.get<{
       experiment: ModelExperimentApi;
-      control: Record<string, number | string>;
-      variant: Record<string, number | string>;
+      control: ExperimentMetricsApi;
+      variant: ExperimentMetricsApi;
     }>(
       `/api/v1/admin/llm-model-experiments/${encodeURIComponent(id)}/analytics`,
     ),

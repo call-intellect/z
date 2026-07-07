@@ -249,3 +249,69 @@ describe('GrsaiService.complete — retry/error handling', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('GrsaiService.complete — connection-override (Ф3)', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    vi.clearAllMocks();
+  });
+
+  it('override.baseUrl/apiKey бьёт по override-URL, а не по ENV proxy/direct логике', async () => {
+    const events = [
+      'data: {"choices":[{"delta":{"content":"override"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n',
+      'data: [DONE]\n',
+    ];
+    const fetchMock = vi.fn(async () => sseResponse(events));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const svc = new GrsaiService(makeProxyCfg());
+    const out = await svc.complete(
+      { system: { text: 's' }, user: 'u', model: 'gemini-3-pro' },
+      { baseUrl: 'https://override.grsai.example', apiKey: 'override-key' },
+    );
+
+    expect(out.text).toBe('override');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe('https://override.grsai.example/v1/chat/completions');
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer override-key');
+  });
+
+  it('override.baseUrl уже с /v1 → не дублируется', async () => {
+    const events = [
+      'data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n',
+      'data: [DONE]\n',
+    ];
+    const fetchMock = vi.fn(async () => sseResponse(events));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const svc = new GrsaiService(makeProxyCfg());
+    await svc.complete(
+      { system: { text: 's' }, user: 'u', model: 'gemini-3-pro' },
+      { baseUrl: 'https://override.grsai.example/v1', apiKey: 'k' },
+    );
+
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe('https://override.grsai.example/v1/chat/completions');
+  });
+
+  it('override.apiKey отсутствует → Authorization без Bearer-значения (пустая строка)', async () => {
+    const events = [
+      'data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n',
+      'data: [DONE]\n',
+    ];
+    const fetchMock = vi.fn(async () => sseResponse(events));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const svc = new GrsaiService(makeProxyCfg());
+    await svc.complete(
+      { system: { text: 's' }, user: 'u', model: 'gemini-3-pro' },
+      { baseUrl: 'https://override.grsai.example', apiKey: null },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('');
+  });
+});

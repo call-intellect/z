@@ -70,10 +70,17 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         refId: sessionId,
       })) ?? null;
     try {
-      await this.prisma.chatboxChatSession.updateMany({
-        where: { id: sessionId, tenantId },
+      const claimed = await this.prisma.chatboxChatSession.updateMany({
+        where: { id: sessionId, tenantId, analysisStatus: 'pending' },
         data: { analysisStatus: 'analyzing' },
       });
+      if (claimed.count === 0) {
+        await this.syncLog?.skip(run, 'session not pending (already claimed/done/failed)');
+        this.logger.debug(
+          `ChatboxAnalyze: session=${sessionId} уже не pending — пропуск (race/idempotency)`,
+        );
+        return;
+      }
 
       const summary = await this.ingest.generateSummary(tenantId, sessionId);
       if (summary !== null) {

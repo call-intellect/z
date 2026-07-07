@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AnthropicMessagesProtocolAdapter } from './adapters/anthropic-messages.adapter';
 import { CustomHttpProtocolAdapter } from './adapters/custom-http.adapter';
+import { GrsaiProtocolAdapter } from './adapters/grsai-native.adapter';
+import { KieProtocolAdapter } from './adapters/kie-native.adapter';
 import { OllamaNativeProtocolAdapter } from './adapters/ollama-native.adapter';
 import { OpenAiChatProtocolAdapter } from './adapters/openai-chat.adapter';
 import { OpenAiResponsesProtocolAdapter } from './adapters/openai-responses.adapter';
@@ -21,6 +23,10 @@ export class LlmProtocolAdapterRegistry {
     anthropicMessages: AnthropicMessagesProtocolAdapter,
     @Inject(OllamaNativeProtocolAdapter)
     ollamaNative: OllamaNativeProtocolAdapter,
+    @Inject(KieProtocolAdapter)
+    kieNative: KieProtocolAdapter,
+    @Inject(GrsaiProtocolAdapter)
+    grsaiNative: GrsaiProtocolAdapter,
     @Inject(CustomHttpProtocolAdapter)
     customHttp: CustomHttpProtocolAdapter,
   ) {
@@ -29,6 +35,8 @@ export class LlmProtocolAdapterRegistry {
       openaiResponses,
       anthropicMessages,
       ollamaNative,
+      kieNative,
+      grsaiNative,
       customHttp,
     ];
     for (const a of adapters) {

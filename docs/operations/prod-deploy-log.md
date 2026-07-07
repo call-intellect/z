@@ -149,6 +149,22 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-06 — Фикс каскадной потери тиров роутинга + балковый инструмент + фильтры company-detail (ветка fix/invite-password-existing-user-multi-org)
+
+> Найден и исправлен реальный баг: `AdminLlmProvidersService.migrateRoutesToDefault()` при НЕСКОЛЬКИХ последовательных удалениях провайдеров подряд каскадно удалял (не переключал) tier-строки `LlmTaskRoute`, если новый дефолт-провайдер случайно совпадал с давно нетронутым другим тиром — см. [[llm-router]] §«Инцидент 2026-07-06» (second-brain/01_projects). Дедуп-удаление убрано, теперь всегда UPDATE. Плюс новый инструмент `POST /admin/ai-models/bulk-reassign` (+ `GET .../preview`) — явное безопасное балковое переключение с обязательным preview+reason, UI-кнопка на `/admin/ai/routing`. Плюс `byModel` в `llm-cost` дашборде (overview + company-detail) теперь включает `provider` (была неоднозначность при одинаковом имени модели у разных провайдеров), и company-detail получил `dateFrom`/`dateTo`/`provider`/`model` фильтры.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ.** **🟢 НОВЫХ ENV/ФЛАГОВ НЕТ.** **🟢 Новых патчей/сидов/бэкафиллов нет** (восстановление локальных dev-данных после инцидента — разовая ручная операция, не prod-скрипт). Docker rebuild backend+frontend обязателен (новые эндпоинты + фронт).
+
+- **Шаг 1/4/5/6/7/8/9/10 — не затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - `/admin/ai/routing` под суперадмином → кнопка «Балковое назначение» → scope=«все НЕ назначенные» → предпросмотр должен показывать **0** затронутых (если роутинг не поломан) — если больше 0, разобраться, почему появились пустые тиры.
+  - `GET /api/v1/admin/ai-models/bulk-reassign/preview?scope=provider&fromProviderName=kie` → 200, `affected` — непустой список реальных занятых маршрутов.
+  - `/admin/analytics/llm-cost?view=company&id=<любая компания>` → в таблице «по моделям» есть столбец «Провайдер»; фильтры «Дата от/до»/«Провайдер»/«Модель» реально сужают `$`-сумму и график.
+- **Откат:** чисто исправление логики (delete→update) + два новых READ/WRITE эндпоинта, ничего не ломает при откате кода — старые маршруты как были.
+
+---
+
 ### 📄 2026-07-04 — graph-edge-enrichment: словарь judgeRelation 6→12 типов + direction + backfill рёбер (ветка work/2026-07-02)
 
 > ТЗ [`plans/tz/2026-07-04-graph-edge-enrichment.md`](../../plans/tz/2026-07-04-graph-edge-enrichment.md). Судья связей `entity-graph-builder` теперь ставит точные бизнес-типы (responsible_for/owned_by/manages/reports_to/collaborates_with/measured_by) вместо слабого `mentions_with` + направление `direction`. Промпт вынесен в `entity-graph-builder.prompt.ts` (code-fallback).
@@ -231,6 +247,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-06 — Провайдер по подписке (ТЗ llm-provider-subscription-billing, 3 фазы, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ [`2026-07-06-llm-provider-subscription-billing.md`](../../plans/tz/2026-07-06-llm-provider-subscription-billing.md) + архитектура [`2026-07-06-llm-provider-subscription-billing.md`](../../plans/architecture/2026-07-06-llm-provider-subscription-billing.md). Провайдер можно пометить `billingMode='subscription'` (фикс. сумма/мес вместо оплаты за токен — токены всё равно считаются, просто бесплатны). Новый ежедневный cron `ProviderSubscriptionChargeCron` пишет реальное списание в день годовщины подписки; дашборд `/admin/analytics/llm-cost` показывает его как скачок в графике + отдельную сумму `subscriptionCostUsd`. Попутно исправлен баг: `openai-chat`/`custom-http` адаптеры читали легаси ENV-поле `defaultModel` вместо реального DB-поля `defaultModelKey` — у DB-провайдеров без явной модели в вызове тихо подставлялся хардкод `gpt-4o-mini` (ломало смоук-тест и реальные вызовы; живьём подтверждено на `minimaxio2`).
+>
+> **🟡 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA** (3 колонки на `llm_providers` + новая таблица `llm_provider_subscription_charges`). **🟢 НОВЫХ ENV/ФЛАГОВ НЕТ.** **🟢 Новых патчей/сидов/бэкафиллов нет.** **🟡 Новый @Cron** (`provider-subscription-charge`, `0 5 * * *`, in-process — отдельного действия не требует, просто появится в логах CronManager). Docker rebuild backend+frontend обязателен.
+
+- **Шаг 4 — Prisma миграция, авто через `prisma migrate deploy`**: `20260706150000_add_llm_provider_subscription_billing` — аддитивная (3 колонки на `llm_providers` + `CREATE TABLE llm_provider_subscription_charges` + FK/индексы), существующие строки не трогает.
+  - **⚠️ Локальная AGE-грабля (см. память `project-age-search-path-ddl-trap`):** если миграцию применяешь НЕ через `prisma migrate deploy` (например, руками через `psql < migration.sql` на локальной dev-БД) — первой строкой файла обязателен `SET search_path TO "public";`, иначе `CREATE TABLE` уйдёт в `ag_catalog`. На прод это НЕ грозит (там `migrate deploy` без AGE search_path-подмены), но если у кого-то локальный AGE-образ — предупреди.
+- **Шаг 1/5/6/7/8/9/10 — не затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - `/admin/ai/catalog` под суперадмином → «Редактировать» провайдера → «Тип тарификации» = «По подписке» → появляются поля суммы/даты → сохранение → бейдж «по подписке: $X/мес» на карточке.
+  - Логи backend после старта: `CronManager: найдено N @Cron-методов` — N должно включать новый `provider-subscription-charge` (grep `provider-subscription-charge` в логах после первого прогона в 05:00 UTC).
+  - `/admin/analytics/llm-cost` → после первого реального списания в ответе `GET /api/v1/admin/llm-cost/overview` поле `totals.subscriptionCostUsd` > 0 в периоде, когда было списание; график показывает скачок в день списания.
+  - Smoke-тест любого `openai-chat`-провайдера БЕЗ `defaultModel` в ENV-легаси (т.е. любой DB-добавленный, кроме `deepseek`) → успешен (регрессия на баг `gpt-4o-mini`).
+- **Откат:** чисто аддитивно — новые колонки/таблица не используются существующим кодом при `billingMode='per_token'` (дефолт), откат кода безопасен без отката схемы.
+
+---
+
 ### 📄 2026-07-03 — Живое пространство темы + карта «Второй мозг» (living-topic-space + second-brain-by-branches, ветка work/2026-07-02)
 
 > ТЗ [`plans/tz/2026-07-02-living-topic-space.md`](../../plans/tz/2026-07-02-living-topic-space.md) + [`plans/tz/2026-07-02-second-brain-by-branches.md`](../../plans/tz/2026-07-02-second-brain-by-branches.md). **Фича A — «Живое пространство темы»:** тему заводит человек (`Theme.origin=user`, `visibility=personal|team`), Кора авто-наполняет её блоками ≥ порога 0.72 (cron `theme-autofill`, pgvector без LLM), убранное лишнее → `ThemeExclusion`; провенанс «почему» — `ThemeIdeaBlock.addedVia/score/reason`; мост «обязательство→задача»; живой вид темы. **Фича B — «Второй мозг по 12 веткам»:** read-only карта областей компании (деривация ветки из связей, БЕЗ изменения схемы). Полный контракт — в ТЗ.
@@ -245,6 +280,24 @@ docker compose run --rm --no-deps backend \
 - **Шаг 12 — Smoke** (после выката): `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` прогоняет `seed-admin-setting-theme-autofill.ts` (created=5 при первом прогоне, потом no-op); 5 крутилок `theme.autofill.*` видны в `/admin/ai/knowledge-core` (section `theme`); Swagger `/api/docs` содержит новые маршруты `/knowledge/themes` (POST/PATCH/pin/commitments) и `/knowledge/branches`; cron `theme-autofill` (@Cron '35 * * * *') и метрики в `/metrics`: `docker compose exec backend sh -c 'curl -s localhost:3000/metrics | grep -E "theme_autofill|theme_exclusions|branches_map"'` (`z_theme_autofill_added_total`/`z_theme_exclusions_total`/`z_branches_map_ms`). Схема БД у фичи B не менялась.
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-06 — Провайдер по умолчанию в каталоге LLM (ТЗ llm-provider-default-fallback, 3 фазы, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ [`2026-07-06-llm-provider-default-fallback.md`](../../plans/tz/2026-07-06-llm-provider-default-fallback.md) + архитектура [`2026-07-06-llm-provider-default-fallback.md`](../../plans/architecture/2026-07-06-llm-provider-default-fallback.md). Назначение одного провайдера «по умолчанию» в `/admin/ai/catalog`; удаление занятого провайдера теперь показывает предпросмотр (число маршрутов) и автопереключает на дефолт вместо блокировки 409.
+>
+> **🟡 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA** (1 boolean-колонка). **🟢 НОВЫХ ENV/ФЛАГОВ НЕТ.** **🟢 Новых патчей/сидов/бэкафиллов нет.** Docker rebuild backend+frontend обязателен.
+
+- **Шаг 4 — Prisma миграция, авто через `prisma migrate deploy`**: `20260706142414_add_llm_provider_is_default` — аддитивная (`ALTER TABLE "llm_providers" ADD COLUMN "isDefaultProvider" BOOLEAN NOT NULL DEFAULT false`), существующие строки не трогает.
+- **Шаг 1/5/6/7/8/9/10 — не затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - `/admin/ai/catalog` под суперадмином → у одного из провайдеров можно нажать «Сделать по умолчанию», выбрать модель → появляется бейдж «★ По умолчанию».
+  - Попытка удалить занятый (не-дефолтный) провайдер → диалог «используется в N маршрутах, переключится на X/Y» вместо голой ошибки 409; подтверждение реально удаляет и переключает (проверить `LlmTaskRouteChange` — новые записи `changeType='removed_provider'`, `reason='provider_deleted_auto_migrated'`).
+  - Попытка удалить сам дефолтный провайдер → диалог выбора нового дефолта; после подтверждения новый провайдер становится дефолтом, старый удалён.
+  - `GET /api/v1/admin/llm-providers/:id/removal-impact` (супер-админ) → 200 с полями `affectedRoutesCount`/`affectedTenantsCount`/`inDefaultChain`/`currentDefault`.
+- **Откат:** чисто аддитивная колонка + новый метод рядом со старым — при инциденте безопасно откатить код (старое поведение `assertProviderNotInUse` полностью сохранено для случая «дефолт не назначен»), колонку не обязательно откатывать (default false, ничего не ломает при простое).
 
 ---
 
@@ -264,6 +317,24 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-07-04 — Экономный режим лимита ИИ (ТЗ llm-budget-downgrade-tier, 4 фазы, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ [`2026-07-04-llm-budget-downgrade-tier.md`](../../plans/tz/2026-07-04-llm-budget-downgrade-tier.md) + архитектура [`2026-07-04-llm-budget-downgrade-tier.md`](../../plans/architecture/2026-07-04-llm-budget-downgrade-tier.md). Третий режим лимита расходов на ИИ `capKind='downgrade'` — при превышении месячного бюджета компании `LlmRouterService` переупорядочивает уже настроенную для задачи цепочку моделей по цене вместо блокировки (`hard`) или молчаливого наблюдения (`soft`). Плюс лимит «по умолчанию для всех компаний» (`llm.budget.default_monthly_cap_rub`, 0=безлимит), действующий только на компании без своего значения. `BudgetAlertCron` расширен на ВСЕ активные Org (было — только с явной строкой `OrgBudgetCap`), иначе уведомление о переходе в экономный режим не долетало бы до компаний без персональной настройки.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (`OrgBudgetCap.capKind` уже был `String`, не enum — третье значение не требует изменения схемы). **🟢 НОВЫХ ENV НЕТ** (новая крутилка — чистый `AdminSetting`, Ship-On, дефолт 0=безопасно). **🟢 Новых патчей/сидов/бэкафиллов нет.** Docker rebuild backend+frontend обязателен (новая опция формы на фронте).
+
+- **Шаг 1/4/5 — ENV/Prisma/postgres-init: не затронуты.** Новая крутилка `llm.budget.default_monthly_cap_rub` зарегистрирована в `admin-setting-schema-registry.ts` (Zod `z.number().nonnegative()`) — виден и редактируем через общий список настроек администратора без отдельного seed (code-fallback 0 работает сразу после рестарта).
+- **Шаг 6/7/8/9/10 — патчей/сидов/бэкафиллов/миграций/setup нет.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - `/admin/economics/orgs/[id]` под суперадмином → форма «Бюджет» показывает третий вариант «Экономный — переходить на более дешёвую модель» в select «Тип лимита»; сохранение с `capKind=downgrade` и `monthlyCapRub=0` → в ответе/при перезагрузке страницы лимит показывает «без лимита» (0 сохранился как NULL).
+  - Ручной прогон `PATCH /api/v1/admin/orgs/:id/budget` с `{monthlyCapRub: 5000, capKind: 'downgrade', alertThresholds:[80,100]}` под суперадмином → 200; следующий реальный вызов ИИ для этой Org при `mtdRub>=5000` уходит через более дешёвую модель настроенной цепочки (проверить `AiUsageLog` — новая запись с `fallbackReason='budget_downgrade'`).
+  - Новая крутилка `llm.budget.default_monthly_cap_rub` видна и редактируема в общем списке AdminSetting (`GET /api/v1/admin/settings` или соответствующий экран) — дефолт `0`.
+  - `BudgetAlertCron` (раз в 2 часа) — после выката первый прогон логирует `capsScanned` = число активных Org (было — только число Org с явной строкой `OrgBudgetCap`); не должно быть ошибок в логе про `org.findMany`/`orgBudgetCap.upsert`.
+- **Откат:** чисто аддитивная фича — новый режим `downgrade` просто не выбирается в UI при откате кода; существующие `soft`/`hard` компании не затронуты (ветки кода для них байт-в-байт прежние). Кода отката/kill-switch не требуется — не деньги/доступ по CLAUDE.md принципу 8 (безопасный дефолт 0 = без эффекта).
+
+---
+
 ### 📄 2026-07-03 — «Мастер» с 79% до 99: ассертивный синтез + эмбеддинг-резолв + детерминизм периода + AGE (ветка work/2026-07-02)
 
 > ТЗ `plans/tz/2026-07-03-recall-master-to-99.md`. Последняя миля recall: ассертивный, но заземлённый синтез (гейт заземления в режиме `lenient` — абстин только на реальной выдумке `fabricated`, промпт-правило 4 «отвечай при основании», обязательная структура) — Ф1; эмбеддинг-grounding резолва сущности (KNN по `Entity.embedding` поверх лексики) — Ф2; детерминизм периода понималщика (регэксп-override LLM) — Ф3; стабилизация графа AGE (search_path скриптового клиента + collision-safe dollar-quote + фоновая реконсиляция граф↔реляционка) — Ф4; deep-hop обход графа AGE в recall (fail-open к реляционному) — Ф5. Коммиты `562c292e`/`0ac3265a`/`ad02161b`/`bcfdd7c3`/`7ed8fc34`/`75c49c2d`. Приёмка Ф6 — after-report `plans/analysis/2026-07-03-recall-master-to-99-after.md`.
@@ -278,6 +349,104 @@ docker compose run --rm --no-deps backend \
 - **Шаг 12 — Smoke** (после выката): `apply-prod-deploy.ts --mode update` → `seed-admin-setting-recall-to-99.ts` (created=10, потом no-op); 10 крутилок в `/admin/ai/knowledge-core` (section `knowledge`); вопрос «Кто отвечает за безопасность?» → называет человека (не пустой отказ), «покажи встречи за неделю» → перечень встреч; на реально пустом (бюджет/зарплаты) — по-прежнему честный отказ (не выдумывает); `/metrics` — новый cron `graph-reconcile` (@Cron '25 * * * *', после первого срабатывания рёбра `z_graph` растут): `docker compose exec backend sh -c 'curl -s localhost:3000/metrics | grep -E "graph_reconcile|chat_v2_grounding_embedding|chat_v2_graph_cypher"'`.
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-03 — Расход на LLM: консолидированный дашборд (ТЗ llm-cost-dashboard, 9 фаз, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ [`2026-07-03-llm-cost-dashboard.md`](../../plans/tz/2026-07-03-llm-cost-dashboard.md) + архитектура [`2026-07-03-llm-cost-dashboard.md`](../../plans/architecture/2026-07-03-llm-cost-dashboard.md). Новый экран `/admin/analytics/llm-cost` (5 уровней: общий → модель → раздел → компания → компания×модель, график по дням/неделям) поверх существующей `AiCostDaily` (копится с 24 мая 2026, до этого ТЗ ни один экран её не читал). Консолидирует 8 разрозненных путей расхода: 2 полный редирект (`/admin/analytics/economics`, `/admin/analytics/functions`), 3 хирургия — денежная часть вырезана, остальное осталось (`/admin/analytics/orgs`, `/admin/economics/orgs/[id]`, `/admin/analytics/functions/[taskType]` + попутный дедуп дублирующего редактора цепочки моделей), 3 мёртвых удалены насовсем (`/admin/economics`, `/admin/usage/functions(+[taskType])`, `/admin/usage/users` + `getUsersUsage`/`getFunctionsUsage`/`UnitEconomicsService.getGlobal()`).
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (только чтение существующей `AiCostDaily`). **🟢 НОВЫХ ENV/ФЛАГОВ НЕТ** (Ship-On, чистая read-only витрина). **🟡 1 НОВЫЙ BACKFILL-СКРИПТ (в STEPS).** Docker rebuild backend+frontend обязателен (новый контроллер + новый фронт-экран).
+
+- **Шаг 1/4/5 — ENV/Prisma/postgres-init: не затронуты.** Новых полей/таблиц/индексов нет — только чтение существующей `AiCostDaily`.
+- **Шаг 6 — патчей нет.**
+- **Шаг 7 — сидов нет** (таксономия `taskType → module` — код-константа, не `AdminSetting`).
+- **Шаг 8 — Backfill (уже в STEPS `phase:'backfill'`, `skipBootstrap:true`, идемпотентен):**
+  - `docker compose exec backend bun run scripts/backfill-ai-cost-daily-gap.ts` — досчитывает `AiCostDaily` за 2026-05-09..2026-05-23 (период до появления ночного `DailyCostAggregatorCron`, раньше 9 мая исходных данных `AiUsageLog` физически нет). Идемпотентен: pre-check по `count` в диапазоне дат + `@@unique` на `AiCostDaily` защищают от дублей при повторном прогоне.
+- **Шаг 9/10 — миграции/боты: не затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke (после выката):**
+  - Swagger-раздел скрыт (`@ApiExcludeController`, как и все соседи-admin) — **проверить руками**: `GET /api/v1/admin/llm-cost/overview?period=30d` под суперадмин-сессией → 200 с `totals`/`trend`/`byModel`/`byModule`/`topCompanies`.
+  - Заход в браузере на `/admin/analytics/llm-cost` под суперадмином → рендерится уровень 1 (график + 3 плитки «по модели/разделу/компании»); клик по любой ведёт на `?view=...`, `←` возвращает назад.
+  - Старые URL `/admin/analytics/economics` и `/admin/analytics/functions` → редирект на `/admin/analytics/llm-cost` (второй — с `?view=module`); `/admin/economics`, `/admin/usage/functions`, `/admin/usage/users` → 404 (удалены физически, не редирект).
+  - `/admin/analytics/orgs` — колонка расхода заменена ссылкой «Смотреть расход →»; `/admin/economics/orgs/[id]` — форма бюджет-лимита (`PATCH .../budget`) по-прежнему работает; `/admin/org/economics` (self-service, вне scope) — без изменений в поведении.
+  - `/admin/ai/routing/[taskType]` вкладка «Метрики» — рядом с tier/success-разбивкой появилась врезка «Расход по общему дашборду».
+- **Откат:** чисто read-only консолидация — при инциденте достаточно оставить старые редиректы/файлы недокоммиченными (нет kill-switch, не требуется по CLAUDE.md принципу 8 — не деньги/доступ).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-03 — Три vNext-фичи LLM-роутинга: A/B реально сплитует, costRub/hard-cap бюджета, analyze.worker → LlmRouterService (ветка fix/invite-password-existing-user-multi-org)
+
+
+
+> Три независимых ТЗ, выделенных из реестра не-сделанного при закрытии `llm-providers-models-routing-admin`:
+> 1. [`2026-07-03-llm-model-ab-experiments-real-split.md`](../../plans/tz/2026-07-03-llm-model-ab-experiments-real-split.md) — `LlmModelExperiment` стал единственным работающим A/B-механизмом (было: только запоминал намерение), sticky-split по `meetingId`; легаси `/admin/experiments*` (бэк+фронт+nav) снесён; новая вкладка «A/B-тест» на `/admin/ai/routing/[taskType]`.
+> 2. [`2026-07-03-llm-budget-cost-rub-hard-cap-fix.md`](../../plans/tz/2026-07-03-llm-budget-cost-rub-hard-cap-fix.md) — `AiUsageLog.costRub` пишется на каждой новой записи; `BudgetGuardService.getMtdRub()` считает построчно с fx-fallback (устойчиво к переходному месяцу). `llm.budget.enforce_enabled` НЕ включён — отдельное решение владельца.
+> 3. [`2026-07-03-analyze-worker-llm-router-migration.md`](../../plans/tz/2026-07-03-analyze-worker-llm-router-migration.md) — главный отчёт о встрече (`analyze.worker`, 5 операций) переведён на `LlmRouterService.call()` вместо легаси `LlmFallbackService`; модели на первом шаге строго 1:1 как раньше (`deepseek-v4-pro`→`minimax:MiniMax-M2.5`→`openai-via-proxy:gpt-5-mini`); временный kill-switch `aiFeatures.analyzeWorkerRouterEnabled` (default ON) на период стабилизации.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ** (только `///`-комментарии на `LlmTaskRoute.experiment`/`AiUsageLog.experimentGroup` — deprecated-пометка, без изменения структуры). **🟢 НОВЫХ ENV НЕТ. 🟢 1 НОВЫЙ АВАРИЙНЫЙ РУБИЛЬНИК** (`aiFeatures.analyzeWorkerRouterEnabled`, тип A, default ON) **+ 2 НОВЫХ PATCH-СКРИПТА (оба в STEPS).** Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Новый флаг `aiFeatures.analyzeWorkerRouterEnabled` — чистый AdminSetting (`resolveSync`, code-fallback `true`), ENV-фолбэк `ANALYZE_WORKER_ROUTER_ENABLED` опционален (только для экстренного оверрайда без похода в админку). Строка добавлена в `docs/operations/feature-flags.md` (раздел «🔴 Аварийные рубильники», тип A) — при инциденте на главном отчёте о встрече `ANALYZE_WORKER_ROUTER_ENABLED=false` в `.env` + `docker compose up -d backend` откатывает на легаси `LlmFallbackService` без rebuild.
+- **Шаг 4/5 — Prisma/postgres-init: не затронуты.** Только `///`-комментарии в `schema.prisma` (deprecated-пометка `LlmTaskRoute.experiment`, актуализация `AiUsageLog.experimentGroup`) — не требуют `prisma generate`/миграции для применения на проде (комментарии не часть SQL).
+- **Шаг 6 — One-off patch-скрипты (оба идемпотентны, оба УЖЕ в STEPS `phase:'patch'`, `skipBootstrap:true`, порядок между собой не важен, но должны идти ПОСЛЕ существующего `patch-llm-routes-report-chain-deepseek.ts`):**
+  - `docker compose exec backend bun run scripts/patch-check-legacy-ab-experiments.ts` — READ-ONLY, только логирует WARN, если на момент выката есть активные легаси A/B-эксперименты (`route.experiment.enabled=true`, ещё не истёк срок) — их нужно вручную пересоздать в новом UI (`/admin/ai/routing/[taskType]` → вкладка «A/B-тест»). На dev-БД активных не найдено.
+  - `docker compose exec backend bun run scripts/patch-llm-routes-analyze-worker-1to1.ts` — форсирует 1:1-легаси-цепочку (tier-строки `editedByAdmin=true`) для 5 `taskType` аналайз-воркера (`summary`/`report-by-type`/`follow-up`/`custom-prompt`/`client-meeting-split`). **`everyDeploy:true`** — прогоняется на КАЖДОМ деплое (защита от случайного отката на дешёвые модели при будущих ресидах `seed-llm-task-routes-default.ts`, который иначе пропустил бы эти строки по `editedByAdmin`, но явное `everyDeploy` — дополнительная страховка). Идемпотентен (повторный прогон → та же цепочка).
+- **Шаг 7 — Seed через `apply-prod-deploy` STEPS, авто:** `scripts/seed-admin-settings.ts` (уже в STEPS, `phase:'seed-base'`, без изменения регистрации) подхватит новую строку `aiFeatures.analyzeWorkerRouterEnabled=true` автоматически при следующем прогоне — отдельной регистрации не требует.
+- **Шаги 8/9/10 (backfill/migrate/setup) — НЕ затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката, порядок важен — сначала Шаг 6 патчи, потом смоук):
+  - `/admin/ai/routing/summary` (или любой из 5 taskType аналайз-воркера) → вкладка «Цепочка» показывает `deepseek/deepseek-v4-pro` первым — подтверждает, что патч Шага 6 применился.
+  - `/admin/ai/routing/summary` → вкладка «A/B-тест» открывается, форма запуска эксперимента отправляется без 404/500 (новый UI-потребитель `/admin/llm-model-experiments*`).
+  - Старый `/admin/experiments` → 404 (страница снесена), пункт «A/B-эксперименты» отсутствует в меню.
+  - **Критичный smoke на главный отчёт:** сгенерировать/пересчитать реальный отчёт о встрече (любой существующий воркер-путь `analyze.worker`) и убедиться, что отчёт приходит без ошибок при `aiFeatures.analyzeWorkerRouterEnabled=true` (default) — самый рискованный пункт выката; при любой аномалии — `ANALYZE_WORKER_ROUTER_ENABLED=false` в `.env` + `docker compose up -d backend` для мгновенного отката без rebuild.
+  - `AiUsageLog` новых записей — колонка `costRub` заполнена (не NULL) для новых вызовов ИИ.
+- **Откат:** Шаг 6 патчи — идемпотентны и не нуждаются в откате сами по себе; поведенческий откат аналайз-воркера — через ENV-рубильник (см. Шаг 1/12), без даунтайма и без пересборки образа.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — Управление LLM-провайдерами/моделями/маршрутизацией (ТЗ llm-providers-models-routing-admin, ветка fix/invite-password-existing-user-multi-org)
+
+> ТЗ `plans/tz/2026-07-02-llm-providers-models-routing-admin.md`, 10 фаз. DB-реестр `LlmProvider` стал **боевым источником правды** для всех 7 легаси-провайдеров (`anthropic`/`minimax`/`openai-via-proxy`/`deepseek`/`ollama`/`kie`/`grsai`) вместо захардкоженного ENV-switch: honest-адаптеры с connection-override (baseUrl/ключ/прокси/таймаут реально читаются из БД), новые `kie-native`/`grsai-native` протоколы (заменили фейковый `custom-http`, из-за которого smoke этих двух провайдеров был гарантированно красным), дискавери моделей (`GET {baseUrl}/models`), единый write-API маршрутов (`PUT /admin/ai-models/:taskType/chain`, заменил дублирующий `PUT /admin/llm-routes/:taskType`), дефолт-цепочка вынесена в `AdminSetting` (`llm.router.defaultChain`). Фронт: 2 экрана — «Провайдеры и модели» (`/admin/ai/catalog`, полноценный CRUD) и «Маршрутизация» (`/admin/ai/routing`, единая точка правки).
+>
+> Побочно найдено и закрыто в процессе: (1) ключи `LlmProvider.apiKeyEncrypted` хранились и отдавались наружу **в открытом виде** — зашифрованы AES-256-GCM + замаскированы во всех ответах API; (2) `buildFromEnv('openai-via-proxy')` отдавал непрефиксованный ключ — 401 на втором tier дефолт-цепочки при флаге ON без DB-строки; (3) `admin-usage/functions` и `admin-analytics/functions` (отдельная страница «Функции») тоже писали через теперь-удалённый `PUT /admin/llm-routes/:taskType` — переведены на `putChain`.
+>
+> **🟡 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA. 🟡 ФЛАГ `USE_PROTOCOL_ADAPTER_REGISTRY` СМЕНИЛ ДЕФОЛТ false→true (поведенческое изменение критичного chat-пути, доказано 29 parity-тестами — см. риски ниже). 🟢 НОВЫХ ENV НЕТ. 🟢 2 НОВЫХ PATCH + 1 ОБНОВЛЁННЫЙ SEED (все в STEPS).** Docker rebuild backend+frontend обязателен.
+
+- **Шаг 1 — ENV: новых ключей нет.** Существующий `USE_PROTOCOL_ADAPTER_REGISTRY` (`env.schema.ts`) сменил дефолт `zBool(false)`→`zBool(true)` — это **не новый ключ**, а Ship-On переключение поведения (CLAUDE.md принцип 8): DB-реестр провайдеров становится боевым для dispatch вместо legacy-switch. Строка в `docs/operations/feature-flags.md` (раздел «🔴 Аварийные рубильники», тип A) — рубильник на случай инцидента: `USE_PROTOCOL_ADAPTER_REGISTRY=false` в `.env` откатывает на прежний legacy-switch (прямые ENV-сервисы, поведение до 2026-07-02) без даунтайма и без отката кода.
+- **Шаг 4 — Prisma миграция, авто через `prisma migrate deploy`** (migrate-контейнер на `docker compose up -d`): `20260702165640_llm_provider_proxy_defaults` — аддитивная (4 колонки на `llm_providers`: `useProxy Boolean @default(false)`, `proxyPath String?`, `timeoutMs Int?`, `defaultModelKey String?`; данные существующих строк не трогает). Соответствует `data-model.md` §«LlmProvider».
+- **Шаг 6 — One-off patch-скрипты (порядок неважен между собой, оба идемпотентны, оба УЖЕ в STEPS `phase:'patch'`, `skipBootstrap:true`):**
+  - `docker compose exec backend bun run scripts/patch-encrypt-llm-provider-keys.ts` — шифрует АES-256-GCM все `LlmProvider.apiKeyEncrypted`, которые ещё хранятся plaintext (гейт `!isEncrypted(...)` — уже зашифрованные пропускает). Повторный прогон = 0 изменений.
+  - `docker compose exec backend bun run scripts/patch-llm-provider-protocols.ts` — чинит строки `kie`/`grsai`, засеянные ДО этой фазы с фейковым `protocolKind='custom-http'`: переводит на честные `kie-native`/`grsai-native` (+`grsai` получает `useProxy=true, proxyPath='grsai'`), деактивирует опечатку-модель `kie/gpt-5-4` (реальный ключ — `gpt-5.4`, с точкой). Повторный прогон = `providersPatched=0, modelsDeactivated=0`.
+- **Шаг 7 — Seed через apply-prod-deploy STEPS, авто** (`docker compose exec backend bun run scripts/apply-prod-deploy.ts`): `scripts/seed-default-llm-providers-and-models.ts` (`phase:'seed-llm-core'`, уже в STEPS, без изменений реестрации) — обновлён: 7 провайдеров получают `defaultModelKey` (совпадает с реально используемым дефолтом каждого легаси-сервиса — `deepseek-v4-flash`/`gpt-5-mini`/`qwen3:30b-a3b-instruct-2507`/`MiniMax-M2.5`/`claude-sonnet-4-6`/`gemini-3.1-pro`); 4 протухшие модели (`gpt-4o`/`gpt-4o-mini`/`deepseek-chat`/`qwen3.5:9b`) деактивированы; 5 реально маршрутизируемых моделей добавлены. Идемпотентно (create-if-missing, admin-правки не перезаписывает).
+- **Шаги 5/8/9/10 — НЕ затронуты.** postgres-init/backfill/migrate/setup — не требуются (аддитивные колонки без vector/HNSW).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката, порядок важен — сначала Шаг 6 патчи, потом смоук):
+  - `GET /api/v1/admin/llm-providers` (супер-админ) → 7 провайдеров, `hasApiKey:true` у всех с ключом, ни один ответ не содержит подстроку `gcm:v1` или plaintext-ключ.
+  - `POST /api/v1/admin/llm-providers/:id/smoke-test` для `kie`/`grsai` → `success:true` (были гарантированно `false` до патча Шага 6 — если красные, патч не применился или credentials невалидны, проверить оба варианта раздельно).
+  - `POST /api/v1/admin/llm-providers/:id/models/discover` на любом `openai-chat`/`openai-responses`/`kie-native`/`grsai-native`-провайдере → `{ok:true, models:[...]}` (для `anthropic-messages` — ожидаемо `400 discovery_not_supported`).
+  - `/admin/ai/catalog` открывается, CRUD провайдера (создать тестового → редактировать → удалить) работает без 500.
+  - `/admin/ai/routing` открывается, детальная `/admin/ai/routing/chat-v2` — вкладка «Цепочка» сохраняет через новый `PUT .../chain` (проверить в Network-вкладке браузера сам путь и 200-ответ), вкладки «Метрики»/«История» без дублирования.
+  - `/admin/llm-routes` (старый путь) → 404/redirect, НЕ 500 (backend-контроллер удалён Шагом раньше в этой же фазе).
+  - **Критичный smoke на живой чат-путь:** прогнать реальный AI-вызов (любой существующий воркер, использующий `LlmRouterService.call()` — например, ручное создание meeting-summary) и убедиться, что ответ приходит успешно **при включённом флаге** (`USE_PROTOCOL_ADAPTER_REGISTRY=true` по умолчанию) — это самый рискованный пункт выката, 29 parity-тестов доказывают эквивалентность на уровне юнит-тестов, но реальный прод-трафик через registry-путь ранее не проходил.
+- **Откат при инциденте:** `USE_PROTOCOL_ADAPTER_REGISTRY=false` в `.env` + `docker compose up -d backend` (без rebuild) — мгновенный откат dispatch на legacy-switch, миграция/сиды/патчи не откатываются (они аддитивны и безвредны в любом состоянии флага).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — CRUD провайдеров эмбеддингов (ТЗ embedding-providers-crud)
+
+> ТЗ `plans/tz/2026-07-02-embedding-providers-crud.md`. Управляемые из админки провайдеры эмбеддингов (`EmbeddingProvider`/`EmbeddingModel`): резолвер рантайма читает активных провайдеров из БД по `priority` и строит fallback-цепочку (было — ENV-переключатель `embeddings.provider`, теперь он депрекейтнут и служит code-fallback при пустой БД). CRUD на `/admin/ai/embeddings` вкладка «Провайдеры» (endpoint / ключ AES-256-GCM / модели / цены / priority / smoke / баннер реиндексации). Публичный контракт `embed()` не изменён.
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`). 🟢 НОВЫХ ENV НЕТ. 🟢 1 НОВЫЙ СИД (в STEPS).** Docker rebuild backend+frontend.
+
+- **Шаг 4 — Prisma миграция, авто через `prisma migrate deploy`** (migrate-контейнер на `docker compose up -d`): `20260702155742_embedding_providers` — аддитивная (2 таблицы `embedding_providers`/`embedding_models` + индексы + FK; данные не трогает, backfill не нужен). **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«EmbeddingProvider / EmbeddingModel».
+- **Шаг 7 — Seed через apply-prod-deploy STEPS, авто** (`docker compose exec backend bun run scripts/apply-prod-deploy.ts`): `scripts/seed-embedding-providers.ts` (`phase:'seed-base'`) — 2 провайдера: `local` (embeddinggemma:latest, 768, active, priority 10) + `openai-via-proxy` (text-embedding-3-small, 1536, inactive из-за dimension-mismatch, priority 20), ключи шифруются AES-256-GCM из существующих ENV (`EMBEDDING_*`/`OPENAI_PROXY_*`/`PROXY_PREFIX`/`CRYPTO_MASTER_KEY`). Идемпотентно (create-if-missing). **Новых ENV НЕТ.**
+- **Шаги 1/5/6/8/9/10 — НЕ затронуты.** **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. **Шаг 12 — Smoke** (после выката): Swagger нет (admin `@ApiExcludeController`); `GET /api/v1/admin/embedding-providers` под супер-админом → 2 провайдера; на `/admin/ai/embeddings` вкладка «Провайдеры» (CRUD провайдеров/моделей, smoke, баннер needsReindex).
 
 ---
 
@@ -677,6 +846,33 @@ docker compose run --rm --no-deps backend \
   - `scripts/seed-admin-setting-report-archive.ts` (`phase:'seed-base'`) — крутилка `operations.report_archive.recent_limit`=12.
 - **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`MonthlyDigestService` + `monthly-digest.prompt.ts` — один capable LLM-вызов json_schema strict → вердикт/письмо/компас/тренд + `clampMonthVerdict`; `OperationsMonthlyDigestCron` `@Cron('0 * * * *')` + МСК-гейт 1-е число/час; `MonthlyDigestController` 4 эндпоинта; `available-periods` на daily/weekly/monthly; `weekly-per-person` goalContributionNet range-sum; метрики `coo_monthly_digest_*`). Frontend (`MonthCompanyHero` на `/month` owner-only; `PeriodNavigator`+`PeriodEmptyState` на героях дня/недели/месяца; value-recap переведён на `PeriodNavigator`).
 - **Шаг 12 — Smoke** (после выката): `psql \d "monthly_operations_digests"` содержит `periodYm`/`verdictJson`/`weekTrendJson`/`deliveredAt`; крон `operations-monthly-digest` в логах виден (часовой, гейт 1-го числа); после `POST /api/v1/dashboard/operations/monthly-digest/generate?period=YYYY-MM` (admin) запись несёт непустой `verdictJson`; Swagger `GET monthly-digest/{latest,available-periods}` + `GET {daily,weekly}-digest/available-periods` → 200 под owner, 403 под member; на `/month` под owner виден «Месяц компании» (вердикт+тренд по неделям → письмо → компас+темп → таблица план/факт → решить/фокус); на героях дня/недели/месяца работает ‹ ›-навигатор + архив-попап + «К последнему». Флаги `betaOps.monthlyDigestEnabled` / `operations.report_archive.recent_limit` в админке.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-07-02 — Демо-орг LLM-гейт (dev token-saver)
+
+> Крутилка-рубильник `knowledge.demoOrgIngestEnabled` (тип A). Гейт в `WorkerOrgGate.checkOrThrow` скипает фоновые воркеры для демо-оргов (`Org.demoWorkspaceSeededAt != null`), когда флаг OFF. Коммит `fcb4278a`.
+
+- **Шаг 1 — ENV: 1 новый опц.** `KNOWLEDGE_DEMO_ORG_INGEST_ENABLED` (zBool default **true**, `backend/src/common/config/env.schema.ts`). **Прод-действий НЕ требует** — без ENV дефолт true = демо-орги обрабатываются как раньше. Тип A kill-switch (реестр — `docs/operations/feature-flags.md`), резолв `resolveSync` admin→ENV→code. `false` ставить только в dev (не жечь токены на демо-кабинетах).
+- **Шаги 4–12 — НЕ затронуты** (миграций/seed/скриптов/rebuild-зависимостей нет; только код воркер-гейта + env.schema + registry).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-30 — Миграция эмбеддингов на embeddinggemma 768 dim (локальная Ollama через llm.korateam.ru/v1)
+
+> ТЗ `plans/tz/2026-06-30-embeddinggemma-768-migration.md`. Переключение embedding-стека с `text-embedding-3-small` (OpenAI через `proxy.agent-lia.ru`, 1536 dim) на локальную Ollama-модель `embeddinggemma:latest` (768 dim) через `https://llm.korateam.ru/v1`. **🟡 ОПАСНАЯ МИГРАЦИЯ СХЕМЫ: 26 колонок `vector(1536) → vector(768)`** — после применения миграции все существующие эмбеддинги обнулятся (несовместимая размерность), retrieval в degraded-режиме до завершения backfill.
+>
+> **🟢 1 ENV-добавление (`EMBEDDING_LOCAL_API_KEY`). 🟡 1 опасная миграция схемы (vector dim). 🟡 1 backfill-скрипт (через apply-prod-deploy STEPS, `phase:'backfill'`, `skipBootstrap:true`).** Дефолты `EMBEDDING_PROVIDER=local` / `EMBEDDING_MODEL=embeddinggemma:latest` / `EMBEDDING_DIMENSIONS=768` уже зашиты в `env.schema.ts` — работают «из коробки» при наличии `EMBEDDING_FALLBACK_LOCAL_URL`.
+
+- **Шаг 1 — ENV: 1 новый опц.** `EMBEDDING_LOCAL_API_KEY` (string, optional, `backend/src/common/config/env.schema.ts:149`). Используется `LocalEmbeddingService` для `Authorization: Bearer ${EMBEDDING_LOCAL_API_KEY}` на `https://llm.korateam.ru/v1/embeddings`. Без ключа запрос идёт без `Authorization` — если шлюз открытый, эмбеддинги работают; если требует ключ — 401. Тип B (секрет), в `ADMIN_FALLBACK_ENV_KEYS` не входит. Дефолты `EMBEDDING_PROVIDER`/`EMBEDDING_MODEL`/`EMBEDDING_DIMENSIONS` уже на новой модели в `env.schema.ts` (effective с этого push).
+- **Шаг 4 — Prisma — ОПАСНАЯ МИГРАЦИЯ, авто через `prisma migrate deploy`** (`docker compose up -d` → migrate-контейнер): новая миграция `embeddings_vector_768` — `ALTER COLUMN ... TYPE vector(768)` на 26 колонках (`MeetingTranscriptChunk.embedding`, `SourceEpisode.embedding`, `IdeaBlock.embedding`, `Entity.embedding`, `Theme.embedding`, `Goal.embedding`, `PersonKnowledgeCategoryEmbedding.embedding`, `Process.embedding`, `ProcessTemplate.embedding`, `Regulation.embedding`, `Instruction.embedding`, `Policy.embedding`, `Decision.embedding`, `Insight.embedding`, `Idea.embedding`, `IdeaCluster.embedding`, `ProbeEvent.questionEmbedding`, `SkillTrait.embedding`, `SkillTraitConcept.embedding`, `SubjectMemory.embedding`, `RolePrinciple.embedding`, `PracticeSkill.triggerEmbedding`, `Issue.embedding`, `HelpfulnessTrait.embedding`, `PromptFeedback.inputEmbedding`, `PromptRule.embedding`). **ПОСЛЕ МИГРАЦИИ ВСЕ ЭМБЕДДИНГИ = NULL** (pgvector требует совпадения размерности). Prisma автоматически сгенерит SQL при локальном `bun run prisma:migrate -- --name embeddings_vector_768`. Если Prisma не пересоздаст HNSW-индексы — добавить руками (m=16, ef_construction=128, vector_cosine_ops) по шаблону `backend/scripts/postgres-init.sql`. **backfill ОБЯЗАТЕЛЕН сразу после** (Шаг 8). Соответствует `data-model.md` §«Embeddings».
+- **Шаг 8 — Backfill через apply-prod-deploy STEPS, авто** (`docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`): `scripts/backfill-embeddings-gemma-768.ts` (`phase:'backfill'`, `skipBootstrap:true`). Проходит по 24 активным таблицам (skip `ProbeEvent`/`PromptFeedback` — нет очевидного текстового поля), достаёт текст через `CONCAT_WS('\\n\\n', …)` по заранее зафиксированному списку полей (IdeaBlock→`trustedAnswer+criticalQuestion`, Decision→`statement+rationale`, Issue→`description+identifier`, и т.д.), эмбеддит через `EmbeddingFallbackService` (primary `local`→`embeddinggemma:latest`), пишет `UPDATE … SET embedding = $1::vector(768)`. Companion `embeddingModelVersion='gemma-768'` для `SourceEpisode`. Идемпотентен (`WHERE embedding IS NULL`). Флаги: `--dry-run`, `--only=<table>`, `--batch=<N>`. На проде **обязательно дождаться завершения** перед smoke Шага 12 (стартовая выборка может занять минуты при большом объёме).
+- **Шаги 5/6/9/10 (postgres-init/patch/migrate/setup) — НЕ затронуты.** Шаг 7 (seed) — НЕ затронут. **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend: `LocalEmbeddingService` шлёт `Authorization: Bearer ${EMBEDDING_LOCAL_API_KEY}`; `EmbeddingFallbackService` теперь primary=local→fallback=openai-proxy (было наоборот). Frontend изменений нет.
+- **Шаг 12 — Smoke** (после выката): `psql -c '\d "IdeaBlock"'` → `embedding | vector(768)`; `psql -c 'SELECT COUNT(*) FROM "IdeaBlock" WHERE embedding IS NOT NULL'` → ожидаемое число строк после backfill; `curl -fsS https://korateam.ru/health` (или ping-эндпоинт) → 200; в логах `LocalEmbeddingService embed batch=… tokens=…` (нет 401 от llm.korateam.ru); семантический поиск в `/me/insights` или RAG в чате v2 возвращает результаты по новым эмбеддингам. **Если Шаг 8 не завершился** — `SELECT COUNT(*) FROM … WHERE embedding IS NULL` покажет остаток, прогон `docker compose exec backend bun run scripts/backfill-embeddings-gemma-768.ts` повторно (идемпотентно).
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
 

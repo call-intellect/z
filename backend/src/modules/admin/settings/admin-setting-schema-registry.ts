@@ -64,6 +64,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.segment_overlap_ratio', UNIT_INTERVAL],
   ['knowledge.contextual_header_enabled', z.boolean()],
   ['knowledge.theme_summary_enabled', z.boolean()],
+  ['knowledge.demoOrgIngestEnabled', z.boolean()],
   ['knowledge.specialists_combined_enabled', z.boolean()],
   ['knowledge.skeleton_pass_enabled', z.boolean()],
   ['knowledge.header_map_enabled', z.boolean()],
@@ -190,9 +191,23 @@ const registry = new Map<string, ZodTypeAny>([
   ['aiFeatures.regulationMinMaterializeConfidence', UNIT_INTERVAL],
   ['aiFeatures.regulationConsolidatorEnabled', z.boolean()],
   ['aiFeatures.clientProtocolEnabled', z.boolean()],
+  ['aiFeatures.analyzeWorkerRouterEnabled', z.boolean()],
+
+  ['llm.budget.enforce_enabled', z.boolean()],
+  ['llm.budget.currencyRateFallbackUsdRub', z.number().positive()],
+  ['llm.budget.default_monthly_cap_rub', z.number().nonnegative()],
 
   ['llm.cacheSmokeEnabled', z.boolean()],
   ['llm.cacheHitRatioWarnThreshold', UNIT_INTERVAL],
+  // Ф6 llm-providers-models-routing-admin (2026-07-02, Б11) — дефолт-цепочка
+  // провайдеров для taskType без явного маршрута (primary→secondary→tertiary).
+  [
+    'llm.router.defaultChain',
+    z
+      .array(z.object({ provider: z.string(), model: z.string().nullable().optional() }))
+      .min(1)
+      .max(5),
+  ],
 
   ['embeddings.provider', z.string().trim().min(1)],
   ['embeddings.model', z.string().trim().min(1)],

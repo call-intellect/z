@@ -1,4 +1,12 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import {
   Prisma,
   type LlmRouteTier,
@@ -9,17 +17,29 @@ import {
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ALL_LLM_TASK_TYPES, LlmRouterService } from '../../ai/services/llm-router.service';
+import { CurrencyRateService } from '../economics/currency-rate.service';
 
+import { PROVIDER_NAMES } from './dto/ai-models.dto';
 import type {
   AddProviderDto,
   CreateExperimentDto,
   MetricsQueryDto,
   ProviderName,
+  PutChainDto,
   SwitchPrimaryDto,
   TierValue,
 } from './dto/ai-models.dto';
 
 const TIERS_ORDER: LlmRouteTier[] = ['primary', 'secondary', 'tertiary'];
+
+interface MetricsRawRow {
+  tier: LlmRouteTier | null;
+  success: boolean;
+  cnt: number;
+  duration_sum: string | null;
+  cost_usd_sum: string | null;
+  cost_rub_sum: string | null;
+}
 
 const TASK_TYPE_GROUP: Record<string, 'ai-pipeline' | 'knowledge-core' | 'competitor-parity'> = {
   summary: 'ai-pipeline',
@@ -75,6 +95,7 @@ export interface TaskTypeMetricsView {
     successCalls: number;
     failedCalls: number;
     totalCostUsd: number;
+    totalCostRub: number | null;
     fallbackCalls: number;
     fallbackRate: number;
   };
@@ -86,8 +107,10 @@ export interface TaskTypeMetricsView {
       avgLatencyMs: number;
       p95LatencyMs: number;
       costUsd: number;
+      costRub: number | null;
     }
   >;
+  usdRubRate: number | null;
 }
 
 @Injectable()
@@ -98,6 +121,9 @@ export class AdminAiModelsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(CurrencyRateService)
+    private readonly currencyRate?: CurrencyRateService,
   ) {}
 
   async list(filters: { group?: string; search?: string }): Promise<TaskTypeRouteView[]> {
@@ -312,6 +338,239 @@ export class AdminAiModelsService {
     return { ok: true };
   }
 
+  /**
+   * Ф6 (2026-07-02): единый write-API цепочки маршрута — заменяет все
+   * tier-строки taskType одним запросом. providerName валидируется против
+   * union(активный реестр LlmProvider, legacy-7); модель — мягко (warning).
+   */
+  async putChain(
+    taskType: string,
+    dto: PutChainDto,
+    userId: string,
+  ): Promise<{ ok: true; warnings: string[] }> {
+    this.assertKnownTaskType(taskType);
+    const before = await this.detail(taskType);
+
+    const dbProviders = await this.prisma.llmProvider.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    const knownProviders = new Set<string>([...dbProviders.map((p) => p.name), ...PROVIDER_NAMES]);
+
+    for (const entry of dto.entries) {
+      if (!knownProviders.has(entry.providerName)) {
+        throw new UnprocessableEntityException({
+          ok: false,
+          error: {
+            code: 'route_provider_unknown',
+            message: `providerName="${entry.providerName}" не найден ни в реестре LlmProvider, ни в legacy-списке`,
+          },
+        });
+      }
+    }
+
+    const usedProviderIds = dbProviders
+      .filter((p) => dto.entries.some((e) => e.providerName === p.name))
+      .map((p) => p.id);
+    const dbModels =
+      usedProviderIds.length > 0
+        ? await this.prisma.llmModel.findMany({
+            where: { isActive: true, providerId: { in: usedProviderIds } },
+            select: { modelKey: true },
+          })
+        : [];
+    const knownModels = new Set(dbModels.map((m) => m.modelKey));
+    const warnings: string[] = [];
+    for (const entry of dto.entries) {
+      if (entry.model && !knownModels.has(entry.model)) {
+        warnings.push(`model_not_in_catalog: ${entry.providerName}/${entry.model}`);
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.llmTaskRoute.deleteMany({
+        where: { tenantId: null, taskType, tier: { not: null } },
+      });
+      await tx.llmTaskRoute.createMany({
+        data: dto.entries.map((e) => ({
+          tenantId: null,
+          taskType,
+          tier: e.tier,
+          priority: e.priority,
+          providerName: e.providerName,
+          model: e.model ?? null,
+          isActive: dto.isActive,
+          editedByAdmin: true,
+          ...(dto.pinnedVersionNote !== undefined
+            ? { pinnedVersionNote: dto.pinnedVersionNote }
+            : {}),
+        })),
+      });
+    });
+
+    const after = await this.detail(taskType);
+    await this.writeAuditLog({
+      taskType,
+      tier: dto.entries[0]?.tier ?? 'primary',
+      changeType: 'chain_replaced',
+      before,
+      after,
+      userId,
+      reason: dto.reason,
+    });
+    this.metrics.incAdminAiModelsRouteChange({ taskType, changeType: 'chain_replaced' });
+    await this.router.refreshCache();
+    return { ok: true, warnings };
+  }
+
+  async previewBulkReassign(params: {
+    scope: 'unassigned' | 'provider';
+    tier?: TierValue;
+    fromProviderName?: string;
+  }): Promise<{
+    affected: Array<{
+      taskType: string;
+      tier: TierValue;
+      currentProviderName: string | null;
+      currentModel: string | null;
+    }>;
+  }> {
+    const tiers: LlmRouteTier[] = params.tier ? [params.tier] : TIERS_ORDER;
+
+    if (params.scope === 'provider') {
+      const rows = await this.prisma.llmTaskRoute.findMany({
+        where: { tenantId: null, tier: { in: tiers }, providerName: params.fromProviderName },
+        select: { taskType: true, tier: true, providerName: true, model: true },
+      });
+      return {
+        affected: rows.map((r) => ({
+          taskType: r.taskType,
+          tier: r.tier as TierValue,
+          currentProviderName: r.providerName,
+          currentModel: r.model,
+        })),
+      };
+    }
+
+    const existing = await this.prisma.llmTaskRoute.findMany({
+      where: { tenantId: null, tier: { in: tiers } },
+      select: { taskType: true, tier: true },
+    });
+    const existingKeys = new Set(existing.map((r) => `${r.taskType}::${r.tier}`));
+    const affected: Array<{
+      taskType: string;
+      tier: TierValue;
+      currentProviderName: null;
+      currentModel: null;
+    }> = [];
+    for (const taskType of ALL_LLM_TASK_TYPES) {
+      for (const tier of tiers as TierValue[]) {
+        if (!existingKeys.has(`${taskType}::${tier}`)) {
+          affected.push({ taskType, tier, currentProviderName: null, currentModel: null });
+        }
+      }
+    }
+    return { affected };
+  }
+
+  /**
+   * Ф-фича 2026-07-06 — бальковый инструмент роутинга: (а) заполнить все
+   * НЕ назначенные (taskType,tier)-пары выбранным провайдером+моделью, или
+   * (б) переключить ВСЕ маршруты с одного провайдера на другой одним явным
+   * действием (вместо неявной каскадной миграции при удалении провайдера).
+   */
+  async bulkReassign(
+    params: {
+      scope: 'unassigned' | 'provider';
+      tier?: TierValue;
+      fromProviderName?: string;
+      toProviderName: string;
+      toModel: string;
+      reason: string;
+    },
+    userId: string,
+  ): Promise<{ ok: true; updated: number }> {
+    const dbProviders = await this.prisma.llmProvider.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: { name: true },
+    });
+    const knownProviders = new Set<string>([...dbProviders.map((p) => p.name), ...PROVIDER_NAMES]);
+    if (!knownProviders.has(params.toProviderName)) {
+      throw new UnprocessableEntityException({
+        ok: false,
+        error: {
+          code: 'route_provider_unknown',
+          message: `providerName="${params.toProviderName}" не найден ни в реестре LlmProvider, ни в legacy-списке`,
+        },
+      });
+    }
+
+    const { affected } = await this.previewBulkReassign(params);
+    if (affected.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of affected) {
+        if (params.scope === 'provider') {
+          await tx.llmTaskRoute.updateMany({
+            where: {
+              tenantId: null,
+              taskType: item.taskType,
+              tier: item.tier,
+              providerName: params.fromProviderName,
+            },
+            data: {
+              providerName: params.toProviderName,
+              model: params.toModel,
+              editedByAdmin: true,
+            },
+          });
+        } else {
+          await tx.llmTaskRoute.create({
+            data: {
+              tenantId: null,
+              taskType: item.taskType,
+              tier: item.tier,
+              priority: 0,
+              providerName: params.toProviderName,
+              model: params.toModel,
+              isActive: true,
+              editedByAdmin: true,
+            },
+          });
+        }
+        await tx.llmTaskRouteChange.create({
+          data: {
+            taskType: item.taskType,
+            tenantId: null,
+            tier: item.tier,
+            changeType: 'bulk_reassign',
+            before: {
+              providerName: item.currentProviderName,
+              model: item.currentModel,
+            } as unknown as Prisma.InputJsonValue,
+            after: {
+              providerName: params.toProviderName,
+              model: params.toModel,
+            } as unknown as Prisma.InputJsonValue,
+            changedById: userId,
+            reason: params.reason,
+          },
+        });
+      }
+    });
+
+    for (const item of affected) {
+      this.metrics.incAdminAiModelsRouteChange({
+        taskType: item.taskType,
+        changeType: 'bulk_reassign',
+      });
+    }
+    await this.router.refreshCache();
+    return { ok: true, updated: affected.length };
+  }
+
   async history(taskType: string, limit = 50): Promise<LlmTaskRouteChange[]> {
     this.assertKnownTaskType(taskType);
     return this.prisma.llmTaskRouteChange.findMany({
@@ -328,36 +587,67 @@ export class AdminAiModelsService {
       period === '24h' ? 24 * 3600_000 : period === '7d' ? 7 * 24 * 3600_000 : 30 * 24 * 3600_000;
     const since = new Date(Date.now() - ms);
 
-    const grouped = await this.prisma.aiUsageLog.groupBy({
-      by: ['tier', 'success'],
-      where: { taskType, createdAt: { gte: since } },
-      _count: { _all: true },
-      _sum: { costUsd: true, durationMs: true },
-    });
+    const usdRubRate = (await this.currencyRate?.getCurrentUsdRubRate().catch(() => null)) ?? null;
+    const fxForCoalesce = usdRubRate ?? 0;
 
-    const perTier = {
-      primary: { calls: 0, successRate: 0, avgLatencyMs: 0, p95LatencyMs: 0, costUsd: 0 },
-      secondary: { calls: 0, successRate: 0, avgLatencyMs: 0, p95LatencyMs: 0, costUsd: 0 },
-      tertiary: { calls: 0, successRate: 0, avgLatencyMs: 0, p95LatencyMs: 0, costUsd: 0 },
-    } satisfies TaskTypeMetricsView['perTier'];
+    const grouped = await this.prisma.$queryRaw<MetricsRawRow[]>`
+      SELECT
+        tier,
+        success,
+        COUNT(*)::int AS cnt,
+        SUM("durationMs")::text AS duration_sum,
+        SUM("costUsd")::text AS cost_usd_sum,
+        SUM(COALESCE("costRub", "costUsd" * ${fxForCoalesce}))::text AS cost_rub_sum
+      FROM "AiUsageLog"
+      WHERE "taskType" = ${taskType} AND "createdAt" >= ${since}
+      GROUP BY tier, success
+    `;
+
+    const perTier: TaskTypeMetricsView['perTier'] = {
+      primary: {
+        calls: 0,
+        successRate: 0,
+        avgLatencyMs: 0,
+        p95LatencyMs: 0,
+        costUsd: 0,
+        costRub: null,
+      },
+      secondary: {
+        calls: 0,
+        successRate: 0,
+        avgLatencyMs: 0,
+        p95LatencyMs: 0,
+        costUsd: 0,
+        costRub: null,
+      },
+      tertiary: {
+        calls: 0,
+        successRate: 0,
+        avgLatencyMs: 0,
+        p95LatencyMs: 0,
+        costUsd: 0,
+        costRub: null,
+      },
+    };
 
     const tierTotals: Record<
       LlmRouteTier,
-      { ok: number; fail: number; latency: number; cost: number }
+      { ok: number; fail: number; latency: number; cost: number; costRub: number }
     > = {
-      primary: { ok: 0, fail: 0, latency: 0, cost: 0 },
-      secondary: { ok: 0, fail: 0, latency: 0, cost: 0 },
-      tertiary: { ok: 0, fail: 0, latency: 0, cost: 0 },
+      primary: { ok: 0, fail: 0, latency: 0, cost: 0, costRub: 0 },
+      secondary: { ok: 0, fail: 0, latency: 0, cost: 0, costRub: 0 },
+      tertiary: { ok: 0, fail: 0, latency: 0, cost: 0, costRub: 0 },
     };
     for (const row of grouped) {
       const tier = (row.tier ?? 'primary') as LlmRouteTier;
       const bucket = tierTotals[tier];
       if (!bucket) continue;
-      const n = row._count._all;
+      const n = row.cnt;
       if (row.success) bucket.ok += n;
       else bucket.fail += n;
-      bucket.latency += row._sum.durationMs ?? 0;
-      bucket.cost += decimalToNumber(row._sum.costUsd);
+      bucket.latency += Number.parseFloat(row.duration_sum ?? '0') || 0;
+      bucket.cost += Number.parseFloat(row.cost_usd_sum ?? '0') || 0;
+      bucket.costRub += usdRubRate !== null ? Number.parseFloat(row.cost_rub_sum ?? '0') || 0 : 0;
     }
 
     const latencyRows = await this.prisma.aiUsageLog.findMany({
@@ -381,6 +671,7 @@ export class AdminAiModelsService {
       perTier[t].avgLatencyMs = calls > 0 ? Math.round(tot.latency / calls) : 0;
       perTier[t].p95LatencyMs = arr.length > 0 ? (arr[Math.floor(arr.length * 0.95)] ?? 0) : 0;
       perTier[t].costUsd = Math.round(tot.cost * 1_000_000) / 1_000_000;
+      perTier[t].costRub = usdRubRate !== null ? Math.round(tot.costRub * 1_000_000) / 1_000_000 : null;
     }
 
     const totalCalls = perTier.primary.calls + perTier.secondary.calls + perTier.tertiary.calls;
@@ -389,6 +680,10 @@ export class AdminAiModelsService {
       tierTotals.primary.fail + tierTotals.secondary.fail + tierTotals.tertiary.fail;
     const totalCost =
       perTier.primary.costUsd + perTier.secondary.costUsd + perTier.tertiary.costUsd;
+    const totalCostRub =
+      usdRubRate !== null
+        ? (perTier.primary.costRub ?? 0) + (perTier.secondary.costRub ?? 0) + (perTier.tertiary.costRub ?? 0)
+        : null;
     const fallbackCalls = perTier.secondary.calls + perTier.tertiary.calls;
     const fallbackRate = totalCalls > 0 ? fallbackCalls / totalCalls : 0;
 
@@ -399,10 +694,12 @@ export class AdminAiModelsService {
         successCalls,
         failedCalls,
         totalCostUsd: Math.round(totalCost * 1_000_000) / 1_000_000,
+        totalCostRub: totalCostRub !== null ? Math.round(totalCostRub * 1_000_000) / 1_000_000 : null,
         fallbackCalls,
         fallbackRate,
       },
       perTier,
+      usdRubRate,
     };
   }
 
@@ -449,6 +746,7 @@ export class AdminAiModelsService {
     });
     this.metrics.incAdminAiModelsExperimentStarted({ taskType: exp.taskType });
     this.logger.log({ id, taskType: exp.taskType, userId }, 'LlmModelExperiment started');
+    await this.router.refreshCache();
     return { ok: true as const };
   }
 
@@ -461,6 +759,7 @@ export class AdminAiModelsService {
     });
     this.metrics.incAdminAiModelsExperimentStopped({ taskType: exp.taskType });
     this.logger.log({ id, taskType: exp.taskType, userId }, 'LlmModelExperiment stopped');
+    await this.router.refreshCache();
     return { ok: true as const };
   }
 
@@ -575,6 +874,7 @@ export class AdminAiModelsService {
     });
     if (status === 'running') {
       this.metrics.incAdminAiModelsExperimentStarted({ taskType: args.taskType });
+      await this.router.refreshCache();
     }
     await this.writeAuditLogSimple({
       taskType: args.taskType,

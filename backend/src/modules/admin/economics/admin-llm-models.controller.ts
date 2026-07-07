@@ -14,6 +14,7 @@ import {
 import { ApiExcludeController } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
@@ -24,6 +25,8 @@ import {
   type CreateLlmModelDto,
   ListLlmModelsQuerySchema,
   type ListLlmModelsQuery,
+  RemoveModelSchema,
+  type RemoveModelDto,
   UpdateLlmModelSchema,
   type UpdateLlmModelDto,
 } from './dto/admin-llm-models.dto';
@@ -57,6 +60,16 @@ export class AdminLlmModelsController {
     return this.svc.listPriceHistory(id);
   }
 
+  @Get(':id/removal-impact')
+  previewRemoval(@Param('id') id: string) {
+    return this.svc.previewRemoval(id);
+  }
+
+  @Post(':id/set-default')
+  setDefault(@Param('id') id: string) {
+    return this.svc.setDefaultModel(id);
+  }
+
   @Post()
   create(@Body(new ZodValidationPipe(CreateLlmModelSchema)) dto: CreateLlmModelDto) {
     return this.svc.create(dto);
@@ -71,7 +84,11 @@ export class AdminLlmModelsController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.svc.softDelete(id);
+  remove(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(RemoveModelSchema)) dto: RemoveModelDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.svc.softDeleteWithFallback(id, dto, user.id);
   }
 }

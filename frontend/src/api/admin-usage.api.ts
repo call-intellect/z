@@ -4,21 +4,17 @@ import type {
   AdminCallDetailApi,
   AdminCallsLogApi,
   AdminDashboardApi,
-  AdminFunctionsUsageApi,
   AdminPeriod,
-  AdminUsersUsageApi,
 } from "@/domain/admin-usage";
 
 export type DashboardRequest = {
   period: AdminPeriod;
   from?: string;
   to?: string;
-};
-
-export type UsersUsageRequest = DashboardRequest & {
-  limit?: number;
-  cursor?: string;
-  search?: string;
+  provider?: string;
+  model?: string;
+  taskType?: string;
+  orgId?: string;
 };
 
 export type CallsLogRequest = {
@@ -29,8 +25,6 @@ export type CallsLogRequest = {
   cursor?: string;
 };
 
-export type FunctionsUsageRequest = DashboardRequest;
-
 export type FunctionCallsRequest = {
   limit?: number;
 };
@@ -39,18 +33,13 @@ export type ExportCsvRequest = {
   period: AdminPeriod;
   from?: string;
   to?: string;
-  kind?: "calls" | "users" | "functions";
+  kind?: "calls" | "functions";
 };
 
 export const adminUsageApi = {
   getDashboard: (req: DashboardRequest) =>
     apiClient.get<AdminDashboardApi>(
       `/api/v1/admin/usage/dashboard${buildQuery({ ...req })}`,
-    ),
-
-  getUsers: (req: UsersUsageRequest) =>
-    apiClient.get<AdminUsersUsageApi>(
-      `/api/v1/admin/usage/users${buildQuery({ ...req })}`,
     ),
 
   getCalls: (req: CallsLogRequest) =>
@@ -61,11 +50,6 @@ export const adminUsageApi = {
   getCallDetails: (callId: string) =>
     apiClient.get<AdminCallDetailApi>(
       `/api/v1/admin/usage/calls/${encodeURIComponent(callId)}`,
-    ),
-
-  getFunctions: (req: FunctionsUsageRequest) =>
-    apiClient.get<AdminFunctionsUsageApi>(
-      `/api/v1/admin/usage/functions${buildQuery({ ...req })}`,
     ),
 
   getFunctionCalls: (taskType: string, req: FunctionCallsRequest = {}) =>

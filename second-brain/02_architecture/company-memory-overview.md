@@ -33,7 +33,7 @@ updated: 2026-05-31
 Унифицированный приёмник: LiveKit-встречи, Telegram-бот, email, in-app заметки, трекер задач, документы (PDF/DOCX/MD). Каждый источник пишет в `RawEvent` через свой адаптер (`meeting.adapter`, `telegram.adapter`, `text.adapter`, `tracker.adapter`, `document.adapter`). Это «уши» компании. Детали: [[../01_projects/ingest-and-sources]], [[../01_projects/conversational-channels]].
 
 ### Слой 2 — Атомы знания
-Из сырых событий выделяются **IdeaBlock'и** — атомарные мысли (одна идея, одно решение, один факт). У каждого блока есть `signalType` (decision / fact / rationale / regulation / process_step / pain / risk / idea / commitment / …). Параллельно достаются **Entity** — упомянутые сущности (person/customer/project/product/vendor/…). На атомах считается embedding (`text-embedding-3-small`, 1536-dim) и работает гибридный поиск (cosine 0.7 + BM25 0.3). Детали: [[knowledge-core]].
+Из сырых событий выделяются **IdeaBlock'и** — атомарные мысли (одна идея, одно решение, один факт). У каждого блока есть `signalType` (decision / fact / rationale / regulation / process_step / pain / risk / idea / commitment / …). Параллельно достаются **Entity** — упомянутые сущности (person/customer/project/product/vendor/…). На атомах считается embedding (`embeddinggemma:latest`, 768-dim) и работает гибридный поиск (cosine 0.7 + BM25 0.3). Детали: [[knowledge-core]].
 
 ### Слой 3 — Специалисты (10 виртуальных «отделов»)
 Каждый собирает свою область знаний из общего потока блоков. Работают по единому контракту (§5 зонтичного ТЗ `2026-05-21-second-brain-agents-umbrella.md`), но каждый — независимый воркер с собственным LLM-промптом. Все подписаны на `core.specialist-routing` и сами решают, тригерится их логика по `signalType` или нет. Нового специалиста можно добавить без переделки ядра — через `CardSpecialistRegistry`.
@@ -104,7 +104,7 @@ LiveKit-встреча / Telegram / email / трекер / документ / in
    block-ingest.worker
         ├─ нарезка на ≤2000 токенов
         ├─ LLM выделяет IdeaBlock'и (signalType, текст, evidence)
-        ├─ embedding (text-embedding-3-small, 1536-dim)
+        ├─ embedding (embeddinggemma:latest, 768-dim)
         └─ Entity (findOrCreate)
         │
         ▼ debounce 30s

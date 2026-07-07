@@ -27,12 +27,30 @@ type: architecture
 - **Claude / Anthropic — НЕ закупаем** (решение владельца; Opus/Claude не закупается, DeepSeek-v4 — primary). Канал `anthropic` в роутере **реализован** (`case 'anthropic'` → `AnthropicService`, capability=`sensitive`), но по стандарту маршрутизации не назначается primary для COS-задач и отфильтровывается на private-данных (`sensitive < private`). См. [llm-cache-status.md](llm-cache-status.md) (строка 11) и [llm-providers-verified.md](../01_projects/llm-providers-verified.md).
 - **Прочие каналы роутера:** `openai-via-proxy` (gpt-5* через `proxy.agent-lia.ru/v1/responses`), `minimax` (Anthropic-совместимый, прямой). Полная verified-карта — [llm-providers-verified.md](../01_projects/llm-providers-verified.md).
 
-### Embeddings — OpenAI через прокси (`OpenAiProxyEmbeddingService`)
+#### DB-реестр `LlmProvider` — боевой источник подключений (2026-07-02)
 
-- **Сервис:** `OpenAiProxyEmbeddingService` (`embeddings/services/openai-proxy-embedding.service.ts`), провайдер `openai-via-proxy` (`EMBEDDING_PROVIDER`).
-- **Endpoint:** `https://proxy.agent-lia.ru/v1/embeddings` (OpenAI-совместимый), auth `Bearer myFeedproxy3128:<KEY>`.
-- **Модель:** `text-embedding-3-small`, размерность `1536`.
-- **Прочее:** доступны `local` (self-hosted) и `openai-direct` как альтернативы `EMBEDDING_PROVIDER`.
+С 2026-07-02 (`USE_PROTOCOL_ADAPTER_REGISTRY=true` по умолчанию, Ship-On) все 7 провайдеров резолвятся через `ProviderInfoResolver` из таблицы `LlmProvider`, а не из ENV напрямую:
+
+- **Резолв:** `ProviderInfoResolver.resolveByName(name)` — сперва DB-строка `LlmProvider` (кэш 60с), при отсутствии — `buildFromEnv()` (тот же ENV, что раньше читали легаси-сервисы конструкторами — обратная совместимость гарантирована parity-тестами).
+- **Прокси-формула** (единственная реализация, в резолвере): `useProxy=false` → `baseUrl` как есть; `useProxy=true, proxyPath=null` → корневой `PROXY_BASE_URL`; `useProxy=true, proxyPath='X'` → `{proxyRoot}/X/v1`. Ключ при `useProxy=true` префиксуется `PROXY_PREFIX:`.
+- **Честные протоколы** (`ProtocolKind`): `openai-chat`/`openai-responses`/`anthropic-messages`/`ollama-native`/`kie-native`/`grsai-native`/`custom-http` — каждый резолвится в `LlmProtocolAdapterRegistry`. `kie-native`/`grsai-native` заменили фейковый `custom-http`, на котором до этой фазы smoke kie/grsai был гарантированно красным (несуществующий протокол).
+- **Connection-override:** легаси-сервисы (`AnthropicService`/`MinimaxService`/`OllamaService`/`KieService`/`GrsaiService`/`OpenAiProxyService`) принимают опциональный `override?: LlmConnectionOverride` — без override поведение байт-в-байт как раньше (ENV), с override — строят клиент/URL из переданных значений (DB).
+- **Дискавери моделей:** `POST /api/v1/admin/llm-providers/:id/models/discover` → `GET {effectiveBaseUrl}/models` (OpenAI-формат); недоступно для `anthropic-messages` (нет `/models` в Anthropic API).
+- **Дефолт-модель провайдера:** `LlmProvider.defaultModelKey` — приоритет в `dispatch()`: `params.model ?? entry.model ?? defaultModelKey ?? легаси-дефолт-сервиса`.
+- **dataClass-фильтр:** читает `LlmProvider.capability` из БД с фолбэком на хардкод-карту `PROVIDER_CAPABILITY` (код).
+- **Дефолт-цепочка** (когда для taskType нет маршрута) — `AdminSetting` ключ `llm.router.defaultChain` (code-fallback = прежний хардкод `DEFAULT_FALLBACK_CHAIN`: deepseek→openai-via-proxy→kie/gemini-3.1-pro).
+- **Kill-switch:** `USE_PROTOCOL_ADAPTER_REGISTRY=false` в `.env` откатывает на legacy ENV-switch (прежнее поведение) без изменения кода — см. `feature-flags.md`.
+- **Управление из UI:** `/admin/ai/catalog` (CRUD провайдеров/моделей, см. [[../01_projects/admin]]).
+- **ТЗ:** [plans/tz/2026-07-02-llm-providers-models-routing-admin.md](../../plans/tz/2026-07-02-llm-providers-models-routing-admin.md).
+
+### Embeddings — локальная Ollama через `llm.korateam.ru` (`LocalEmbeddingService`)
+
+- **Сервис:** `LocalEmbeddingService` (`embeddings/services/local-embedding.service.ts`), провайдер `local` (`EMBEDDING_PROVIDER=local` — primary с 2026-06-30).
+- **Endpoint:** `https://llm.korateam.ru/v1/embeddings` (Ollama OpenAI-совместимый), auth `Bearer ${EMBEDDING_LOCAL_API_KEY}` (опционально).
+- **Модель:** `embeddinggemma:latest`, размерность `768` (MRL, можно резать до 512/256/128/64).
+- **Fallback:** `OpenAiProxyEmbeddingService` (`EMBEDDING_PROVIDER=openai-via-proxy` → `https://proxy.agent-lia.ru/v1/embeddings`, модель `text-embedding-3-small`, 1536-dim). Цепочка в `EmbeddingFallbackService.buildChain()`.
+- **Схема БД:** все `vector(N)` колонки мигрированы на `vector(768)` (см. `plans/tz/2026-06-30-embeddinggemma-768-migration.md`). HNSW-индексы `vector_cosine_ops` остались (`m=16, ef_construction=128`).
+- **Прочее:** `EMBEDDING_PROVIDER=openai-direct` задекларирован в схеме, но реализации нет.
 
 ## Что это меняет для проекта
 
@@ -54,11 +72,15 @@ LLM_MAIN_REPORT_PRIMARY=deepseek
 VOX_API_URL=https://vox.agent-lia.ru
 VOX_API_TOKEN=...
 
-# Embeddings (OpenAI через proxy.agent-lia.ru)
-EMBEDDING_PROVIDER=openai-via-proxy
-EMBEDDING_MODEL=text-embedding-3-small
+# Embeddings (локальная Ollama — embeddinggemma 768 dim, primary с 2026-06-30)
+EMBEDDING_PROVIDER=local
+EMBEDDING_MODEL=embeddinggemma:latest
+EMBEDDING_DIMENSIONS=768
+EMBEDDING_FALLBACK_LOCAL_URL=https://llm.korateam.ru/v1
+EMBEDDING_LOCAL_API_KEY=sk-emb-...
+# Fallback на OpenAI через прокси (цепочка: local → openai-via-proxy)
 OPENAI_PROXY_EMBEDDINGS_URL=https://proxy.agent-lia.ru/v1/embeddings
-OPENAI_API_KEY=sk-proj-...
+OPENAI_PROXY_API_KEY=sk-proj-...
 
 # MiniMax (Anthropic-совместимый канал роутера)
 MINIMAX_API_KEY=...

@@ -5,8 +5,8 @@ import { Bot, CircleDollarSign, Plug, Zap } from "lucide-react";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
 import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
 
-import { LlmModelsClient } from "../../llm/models/LlmModelsClient";
-import { LlmProvidersClient } from "../../llm/providers/LlmProvidersClient";
+import { LlmModelsClient } from "./LlmModelsClient";
+import { LlmProvidersClient } from "./LlmProvidersClient";
 import { LlmPricesClient } from "../../llm-prices/LlmPricesClient";
 import { SmokeTestClient } from "./SmokeTestClient";
 import { adminRootCrumb } from "@/ui/components/admin/brand";

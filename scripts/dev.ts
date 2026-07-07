@@ -1,30 +1,62 @@
 #!/usr/bin/env bun
-/**
- * Локальный dev-стек одной командой из корня: `bun run dev`.
- *
- * Поднимает СРАЗУ backend + frontend (нативно через Bun, без контейнеров):
- *   - backend  → http://localhost:3000  (API + воркеры BullMQ in-process)
- *   - frontend → http://localhost:3001  (Next.js dev)
- *
- * Модель локальной разработки (без отдельного docker-compose.dev.yml):
- *   - Единый источник правды по compose — корневой `docker-compose.yml` (он же
- *     прод). Локально из него нужен только Postgres: `docker compose up -d postgres`.
- *     Redis — хостовый. Back/front — нативно, НЕ контейнерами.
- *   - ENV — единый корневой `.env` (без `.env.local`). Бэку подаём явно через
- *     `--env-file=../.env`, т.к. Bun сам грузит `.env` только из cwd (backend/).
- *     Frontend env-файла не требует — клиент по умолчанию ходит на :3000.
- *
- * Backend запускается БЕЗ `--watch`: на arm64/WSL bun --watch ломает трансляцию
- * TS (`as const`), поэтому hot-reload бэка недоступен — после правок кода бэка
- * перезапусти `bun run dev`. Frontend (next dev) свой hot-reload сохраняет.
- *
- * LiveKit (видеовстречи, для chatbox не нужен) — отдельно: `bun run livekit`.
- * Ctrl+C останавливает backend+frontend.
- *
- * Предполагается, что Postgres(+pgvector) поднят и `.env` (DATABASE_URL,
- * REDIS_URL) заполнен.
- */
+import { connect } from 'node:net';
 
+const COMPOSE_FILE = 'docker-compose.dev.yml';
+const DEP_SERVICES = ['postgres', 'redis', 'minio'];
+
+const redisUrl = new URL(process.env.REDIS_URL ?? 'redis://localhost:56381');
+const redisHost = redisUrl.hostname;
+const redisPort = Number(redisUrl.port || '6379');
+
+const waitForTcp = (host: string, port: number, timeoutMs: number): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    const attempt = (): void => {
+      const socket = connect({ host, port });
+      socket.once('connect', () => {
+        socket.destroy();
+        resolve();
+      });
+      socket.once('error', () => {
+        socket.destroy();
+        if (Date.now() >= deadline) {
+          reject(new Error(`${host}:${port} не отвечает за ${timeoutMs}ms`));
+        } else {
+          setTimeout(attempt, 500);
+        }
+      });
+    };
+    attempt();
+  });
+};
+
+const ensureDeps = async (): Promise<void> => {
+  console.log('▶ Поднимаю docker-зависимости (postgres/redis/minio)…');
+  const up = Bun.spawn(['docker', 'compose', '-f', COMPOSE_FILE, 'up', '-d', ...DEP_SERVICES], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  if ((await up.exited) !== 0) {
+    console.error('✖ Не удалось поднять docker-зависимости. Docker-демон запущен?');
+    process.exit(1);
+  }
+  try {
+    await waitForTcp(redisHost, redisPort, 30_000);
+  } catch (err) {
+    console.error(`✖ Redis (${redisHost}:${redisPort}) не готов: ${(err as Error).message}`);
+    process.exit(1);
+  }
+  console.log(`✓ Зависимости готовы (Redis ${redisHost}:${redisPort})`);
+};
+
+await ensureDeps();
+
+// detached:true → setsid(), каждый сервис становится лидером своей группы
+// процессов. Это даёт возможность убить его ВМЕСТЕ со всеми потомками
+// (напр. `bun run dev` во frontend/ порождает `next dev`, который порождает
+// `next-server`+postcss-воркеры) через process.kill(-pid, sig) — обычный
+// proc.kill() убивает только прямого потомка, внуки остаются сиротами и
+// продолжают писать в консоль после Ctrl+C.
 const services = [
   { name: 'backend', cmd: ['bun', '--env-file=../.env', 'src/main.ts'], cwd: 'backend' },
   { name: 'frontend', cmd: ['bun', 'run', 'dev'], cwd: 'frontend' },
@@ -35,6 +67,7 @@ const services = [
     stdout: 'inherit',
     stderr: 'inherit',
     env: process.env,
+    detached: true,
   }),
 }));
 
@@ -45,40 +78,56 @@ console.log(
   `   backend   → http://localhost:${backendPort}   (Swagger /api/docs, health /health)`,
 );
 console.log(`   frontend  → http://localhost:${frontendPort}`);
-console.log('   Ctrl+C — остановит оба сервиса\n');
+console.log('   Ctrl+C — остановит оба сервиса (вместе со всеми их потомками)\n');
+
+// killGroup убивает всю группу процессов (сервис + все его потомки), а не
+// только прямого child. Отсутствие группы (ESRCH — процесс уже мёртв) —
+// штатный случай при повторном вызове, не ошибка.
+const killGroup = (pid: number, signal: NodeJS.Signals): void => {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    /* группа уже мертва — ок */
+  }
+};
 
 let shuttingDown = false;
 const shutdown = async (): Promise<void> => {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log('\n⏹ Останавливаю backend+frontend…');
-  // 1) мягко (SIGTERM)
-  for (const { proc } of services) {
-    try {
-      proc.kill();
-    } catch {
-      /* noop */
-    }
-  }
-  // 2) ждём до 2.5с — иначе backend с BullMQ-воркерами тормозит graceful-shutdown
+  console.log('\n⏹ Останавливаю backend+frontend (вместе с потомками)…');
+  for (const { proc } of services) killGroup(proc.pid, 'SIGTERM');
   await Promise.race([
     Promise.all(services.map((s) => s.proc.exited)),
     new Promise((r) => setTimeout(r, 2500)),
   ]);
-  // 3) добиваем SIGKILL, чтобы не осталось осиротевших процессов «фоном»
-  for (const { proc } of services) {
-    try {
-      proc.kill(9);
-    } catch {
-      /* noop */
-    }
-  }
+  for (const { proc } of services) killGroup(proc.pid, 'SIGKILL');
   process.exit(0);
 };
+
 process.on('SIGINT', () => void shutdown());
 process.on('SIGTERM', () => void shutdown());
 
-// Если любой из сервисов упал — гасим остальные.
+// Страховка от «осиротевшего стека»: если dev.ts упадёт по необработанному
+// исключению до чистого SIGINT/SIGTERM-пути, дочерние процессы иначе
+// продолжат жить бесконечно (их родитель — init, сигнал терминала до них
+// не долетает — ровно так ловился этот баг).
+process.on('uncaughtException', (err) => {
+  console.error('✖ dev.ts упал по необработанному исключению:', err);
+  void shutdown();
+});
+process.on('unhandledRejection', (err) => {
+  console.error('✖ dev.ts: необработанный rejection:', err);
+  void shutdown();
+});
+// Синхронный последний рубеж: если процесс всё же завершается мимо
+// shutdown() (напр. process.exit() вызван откуда-то ещё), SIGKILL группам
+// уходит здесь — 'exit' не умеет ждать async, но kill(9) и не нужно ждать.
+process.on('exit', () => {
+  if (shuttingDown) return;
+  for (const { proc } of services) killGroup(proc.pid, 'SIGKILL');
+});
+
 await Promise.race(services.map((s) => s.proc.exited));
 console.error('✖ Один из сервисов завершился — останавливаю стек.');
 void shutdown();

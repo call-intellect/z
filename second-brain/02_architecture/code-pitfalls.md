@@ -778,6 +778,12 @@ hard-delete `Entity` каскад срабатывает только на св�
 OR (toEntityId = id AND toType IN (NULL,'entity'))`. Образец — `backend/scripts/backfill-purge-junk-entities.ts`
 (чистка мусорных сущностей графа, ТЗ [`2026-06-25-knowledge-graph-hygiene.md`](../../plans/tz/2026-06-25-knowledge-graph-hygiene.md) Ф5).
 
+## Tailwind `data-[attr]` — presence-selector, не value-selector (2026-07-06)
+
+`frontend/src/ui/shadcn/command.tsx` (`CommandItem`) использовал `data-[disabled]:pointer-events-none`. Tailwind без явного значения матчит по **присутствию** атрибута, а не по его значению. Библиотека `cmdk` всегда рендерит `data-disabled="false"` для НЕ-disabled item (не убирает атрибут условно) — поэтому `pointer-events:none` навешивался на КАЖДЫЙ item списка, а не только на реально disabled. Баг был живым во всех прежних usage (`CommandPalette`, `AdminCommandPalette`, `SprintCreateWizard`), но незаметен — клавиатурная навигация (Enter) не задевает pointer-events, только клик мышью.
+
+**Правило:** любой `data-[attr]:...` в Tailwind — presence-only. Если библиотека рендерит атрибут со строковым булевым значением безусловно (`"true"`/`"false"`), нужен явный `data-[attr=true]:...`. Фикс — `data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50`. Подробности — [[../05_история/2026-07-06-admin-dashboard-charts-filters]].
+
 ## `EntityType` в ключе резолва/мёржа расщепляет одноимённые сущности (2026-07-03)
 
 Тип — это **атрибут** реального объекта, а НЕ ключ его идентичности. Когда `EntityType`

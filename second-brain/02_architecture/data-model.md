@@ -293,6 +293,41 @@ LlmModelPrice {
 }
 ```
 
+### LlmProvider + LlmModel — реестр LLM-провайдеров (боевой источник с 2026-07-02)
+
+`LlmProvider` (`@@map("llm_providers")`) — раньше существовал как «спящая» витрина (заполнялся, но dispatch шёл мимо, по ENV-switch); с ТЗ `2026-07-02-llm-providers-models-routing-admin` (миграция `20260702165640_llm_provider_proxy_defaults` добавила 4 поля) стал боевым при `USE_PROTOCOL_ADAPTER_REGISTRY=true` (дефолт). Подробно про резолв — [[ai-integration]] §«DB-реестр LlmProvider».
+
+```
+LlmProvider {
+  id, name (@unique, slug: 'deepseek'|'openai-via-proxy'|'anthropic'|'ollama'|'minimax'|'kie'|'grsai'),
+  displayName, baseUrl,
+  protocolKind ('openai-chat'|'openai-responses'|'anthropic-messages'|'ollama-native'|'kie-native'|'grsai-native'|'custom-http'),
+  capability ('public'|'internal'|'sensitive'|'private', default 'public' — dataClass-фильтр роутера),
+  apiKeyEncrypted? (AES-256-GCM, формат gcm:v1:..., НИКОГДА не отдаётся в API-ответах — только hasApiKey),
+  defaultHeaders? (Json),
+  globalRps?,
+  isActive (default true),
+  useProxy (default false, 2026-07-02) — идёт ли через proxy.agent-lia.ru,
+  proxyPath? (2026-07-02) — слаг пути на прокси (напр. 'grsai'); null = корневой прокси,
+  timeoutMs? (2026-07-02) — переопределение hard-timeout dispatch,
+  defaultModelKey? (2026-07-02) — модель, если её не задали ни вызов, ни маршрут,
+  lastSmokeAt?, lastSmokeSuccess?, lastSmokeError?,
+  deletedAt? (soft-delete)
+  @@index([isActive, protocolKind])
+}
+
+LlmModel {
+  id, providerId (FK → LlmProvider),
+  modelKey, displayName,
+  contextWindow?, capabilitiesJson? (Json),
+  category? ('flagship'|'fast'|'reasoning'|'embedding'|'experimental'),
+  isActive (default true), verifiedAt?, notes?
+  @@unique([providerId, modelKey])
+}
+```
+
+Управление — `/admin/ai/catalog` (см. [[../01_projects/admin]]). Удаление/деактивация провайдера с активным маршрутом или в дефолт-цепочке — 409 `provider_in_use_by_routes`.
+
 ### Расширения существующих моделей
 
 **`User.isSuperAdmin: Boolean (default false)`** — флаг владельца Z-Admin (Фаза 7). Bypass RBAC.
@@ -2170,6 +2205,72 @@ enum PersonaStatus {
 - **`MessageReport`** (новая) — жалоба на сообщение (UGC report). Поля: `tenantId`, `messageId`, `conversationId`, `reporterUserId`, `reason` (VarChar(500)?). `@@index([tenantId, messageId])`, `@@index([tenantId, conversationId])`. Только запись/лог (модераторский разбор — follow-up).
 
 **Удаление аккаунта (App Review 5.1.1(v)):** `POST /api/v1/account/delete` → `AccountsService.deleteAccount` в транзакции: `User.deletedAt=now()` (идемпотентно — если уже удалён, не перетирается) + `PushToken.deleteMany` + `ChannelBinding.deleteMany` + `ConversationMember.deleteMany` + revoke всех `UserSession`. Полная анонимизация PII (email/name) — осознанный follow-up (см. `04_не-сделано`).
+
+## EmbeddingProvider + EmbeddingModel — управляемые провайдеры эмбеддингов (2026-07-02, миграция `20260702155742_embedding_providers`)
+
+**Источник:** ТЗ [`plans/tz/2026-07-02-embedding-providers-crud.md`](../../plans/tz/2026-07-02-embedding-providers-crud.md). **Отдельный bounded-context от `LlmProvider`/`LlmTaskRoute`** — это НЕ chat-LLM, а движок эмбеддингов, управляемый из админки (`/admin/ai/embeddings` вкладка «Провайдеры»). Резолвер рантайма `EmbeddingProviderResolverService` читает активных провайдеров из этих таблиц по `priority` (было — ENV-переключатель `embeddings.provider`); `EmbeddingFallbackService.buildChain()` строит fallback-цепочку из БД, при пустой БД падает на code-fallback `cfg.ai.embeddings`. Аддитивная миграция (2 таблицы + индексы + FK, данные не трогает, backfill не нужен). Сид `seed-embedding-providers.ts` (idempotent, в `apply-prod-deploy` STEPS `phase:'seed-base'`) переносит 2 провайдера. Подробно — [[module-map]] §«embeddings».
+
+### EmbeddingProvider
+
+```
+EmbeddingProvider {
+  id, name @unique, displayName, baseUrl,
+  protocolKind ('openai-embeddings' | 'ollama-embeddings'),
+  apiKeyEncrypted?,               -- AES-256-GCM (CryptoService.encrypt на записи; в ответах API только hasApiKey)
+  defaultHeaders Json?,
+  isActive Boolean, priority Int, -- резолв активных по priority (меньше = раньше)
+  needsReindex Boolean,           -- баннер реиндексации при смене размерности активного провайдера
+  lastSmokeAt?, lastSmokeOk?, lastSmokeError?,
+  createdAt, updatedAt
+  models EmbeddingModel[]
+}
+```
+
+`@@map("embedding_providers")`. Ключ провайдера хранится шифрованным (AES-256-GCM), наружу отдаётся только `hasApiKey`.
+
+### EmbeddingModel
+
+```
+EmbeddingModel {
+  id, providerId → EmbeddingProvider (onDelete Cascade),
+  modelKey, displayName,
+  dimensions Int,                 -- размерность вектора (768 / 1536); гейт activate при несовпадении с текущей колонкой
+  pricePerMillionInputTokensKopecks?,  -- справочная цена (НЕ биллинг)
+  isActive Boolean, verifiedAt?, notes?,
+  createdAt, updatedAt
+}
+```
+
+`@@map("embedding_models")`. Активация провайдера с моделью, чья `dimensions` не совпадает с размерностью текущей vector-колонки, блокируется гардом `embedding_dimension_mismatch_requires_reindex` (нужен реиндекс — воркер вне scope этого ТЗ, остаётся заглушка `ReindexTab`).
+
+## LlmProvider += подписочная тарификация + LlmProviderSubscriptionCharge (2026-07-06, миграция `20260706150000_add_llm_provider_subscription_billing`)
+
+**Источник:** ТЗ [`plans/tz/2026-07-06-llm-provider-subscription-billing.md`](../../plans/tz/2026-07-06-llm-provider-subscription-billing.md). Не все LLM-провайдеры берут деньги за токен — часть (например MiniMax) продаётся по фиксированной ежемесячной подписке с квотой запросов (в этой итерации закрыт только УЧЁТ СТОИМОСТИ, без rate-limit enforcement квоты — сознательная граница scope, см. `04_не-сделано`).
+
+```
+LlmProvider += {
+  billingMode                 String   @default("per_token")  -- 'per_token' | 'subscription'
+  subscriptionMonthlyCostUsd  Decimal? @db.Decimal(10, 2)
+  subscriptionStartedAt       DateTime?
+}
+```
+
+`billingMode='subscription'` ⇒ `LlmRouterService.computeCostUsd()` возвращает `0` СРАЗУ, минуя `LlmModelPrice`/`MODEL_PRICES` и unpriced-метрику — токены (input/output/cached) всё равно пишутся в `AiUsageLog` как обычно, просто бесплатны. Валидация (`AdminLlmProvidersService.assertSubscriptionFieldsValid`): `billingMode='subscription'` требует оба поля суммы/даты (422 `subscription_fields_required`, считает ЭФФЕКТИВНЫЕ значения — новые из DTO ИЛИ уже сохранённые в БД).
+
+```
+LlmProviderSubscriptionCharge {         -- @@map("llm_provider_subscription_charges")
+  id, providerId → LlmProvider (onDelete Cascade), providerName,
+  chargeDate DateTime @db.Date,        -- день фактического списания (годовщина subscriptionStartedAt, клампом на конец месяца)
+  amountUsd  Decimal @db.Decimal(10, 2),
+  createdAt
+
+  @@unique([providerId, chargeDate])   -- идемпотентность повторного прогона крона в тот же день
+}
+```
+
+**Platform-level расход, НЕ per-org** — принципиально отдельно от `AiCostDaily` (которая per-`tenantId`, используется бюджетами компаний). Подписку платит платформа провайдеру, не конкретный клиент — писать её в `AiCostDaily` означало бы приписать чужой расход случайному Org. `ProviderSubscriptionChargeCron` (`0 5 * * *`) раз в день проверяет все `billingMode='subscription'` провайдеры: если сегодня — день-годовщина `subscriptionStartedAt` (с клампом на конец короткого месяца, напр. старт 31-го → 28/29 февраля) и charge на сегодня ещё не создан — создаёт запись на `subscriptionMonthlyCostUsd`. `LlmCostDashboardService.overview()` мёржит платежи периода поверх `AiCostDaily`-агрегатов В ТОТ ЖЕ `trend`/`totals.costUsd` (видно как скачок в день списания — решение владельца, не размазывается по дням), плюс отдельно светит `totals.subscriptionCostUsd` для прозрачности отчёта.
+
+**Побочный баг, найденный и исправленный в этом же ТЗ:** `openai-chat`/`custom-http` протокол-адаптеры (`backend/src/modules/ai/services/protocol-adapter/adapters/`) резолвили модель по умолчанию через `provider.defaultModel` (легаси ENV-only поле, живёт только у 6 хардкод-провайдеров из `ProviderInfoResolver.buildFromEnv`) вместо `provider.defaultModelKey` (реальное, admin-редактируемое поле из БД) — у ЛЮБОГО добавленного через админку openai-chat-провайдера без прописанного `defaultModel`-легаси вызов без явной модели молча падал на хардкод `'gpt-4o-mini'`. Фикс — `input.model ?? provider.defaultModelKey ?? provider.defaultModel ?? 'gpt-4o-mini'`.
 
 ## COS-слой — модели (указатель, 2026-07-05)
 

@@ -29,11 +29,17 @@ export class LocalEmbeddingService implements EmbeddingProvider {
       input: texts,
     });
 
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const apiKey = this.cfg.ai.embeddings.localApiKey;
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
     let response: Response;
     try {
       response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body,
       });
     } catch (err) {

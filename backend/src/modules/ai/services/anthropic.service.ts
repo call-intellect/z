@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 
 import type { LlmCompleteInput, LlmCompleteOutput, LlmTool, LlmToolCall } from './llm.types';
 import { LlmError } from './llm.types';
+import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
 
 @Injectable()
 export class AnthropicService {
@@ -18,10 +19,21 @@ export class AnthropicService {
     });
   }
 
-  async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
+  private buildClient(override: LlmConnectionOverride): Anthropic {
+    return new Anthropic({
+      apiKey: override.apiKey ?? this.cfg.ai.anthropic.apiKey,
+      baseURL: override.baseUrl,
+    });
+  }
+
+  async complete(
+    input: LlmCompleteInput,
+    override?: LlmConnectionOverride,
+  ): Promise<LlmCompleteOutput> {
     const model = input.model ?? this.cfg.ai.anthropic.model;
+    const client = override ? this.buildClient(override) : this.client;
     try {
-      return await this.completeStreaming(input, model);
+      return await this.completeStreaming(input, model, client);
     } catch (err) {
       const status = extractStatus(err);
       if (status === 403) {
@@ -31,7 +43,7 @@ export class AnthropicService {
         `Anthropic streaming не удался (${status ?? 'no-status'}): ${errMsg(err)}; fallback на non-streaming`,
       );
       try {
-        return await this.completeNonStreaming(input, model);
+        return await this.completeNonStreaming(input, model, client);
       } catch (err2) {
         const status2 = extractStatus(err2);
         throw new LlmError(`Anthropic non-streaming также упал: ${errMsg(err2)}`, status2, err2);
@@ -42,9 +54,10 @@ export class AnthropicService {
   private async completeStreaming(
     input: LlmCompleteInput,
     model: string,
+    client: Anthropic,
   ): Promise<LlmCompleteOutput> {
     const { tools, toolChoice } = buildAnthropicToolBindings(input);
-    const stream = await this.client.messages.stream({
+    const stream = await client.messages.stream({
       model,
       max_tokens: input.maxTokens ?? 4096,
       ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
@@ -61,9 +74,10 @@ export class AnthropicService {
   private async completeNonStreaming(
     input: LlmCompleteInput,
     model: string,
+    client: Anthropic,
   ): Promise<LlmCompleteOutput> {
     const { tools, toolChoice } = buildAnthropicToolBindings(input);
-    const message = await this.client.messages.create({
+    const message = await client.messages.create({
       model,
       max_tokens: input.maxTokens ?? 4096,
       ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),

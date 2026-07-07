@@ -5,6 +5,8 @@ export const ProtocolKindSchema = z.enum([
   'openai-responses',
   'anthropic-messages',
   'ollama-native',
+  'kie-native',
+  'grsai-native',
   'custom-http',
 ]);
 
@@ -18,12 +20,19 @@ export const CreateLlmProviderSchema = z.object({
   defaultHeaders: z.record(z.string(), z.string()).optional(),
   globalRps: z.number().int().positive().optional(),
   isActive: z.boolean().default(true),
+  useProxy: z.boolean().default(false),
+  proxyPath: z.string().max(120).nullable().optional(),
+  timeoutMs: z.number().int().positive().nullable().optional(),
+  defaultModelKey: z.string().max(120).nullable().optional(),
+  billingMode: z.enum(['per_token', 'subscription']).default('per_token'),
+  subscriptionMonthlyCostUsd: z.number().nonnegative().nullable().optional(),
+  subscriptionStartedAt: z.string().datetime().nullable().optional(),
 });
 export type CreateLlmProviderDto = z.infer<typeof CreateLlmProviderSchema>;
 
-export const UpdateLlmProviderSchema = CreateLlmProviderSchema.partial().omit({
-  name: true,
-});
+export const UpdateLlmProviderSchema = CreateLlmProviderSchema.partial()
+  .omit({ name: true })
+  .extend({ apiKey: z.string().nullable().optional() });
 export type UpdateLlmProviderDto = z.infer<typeof UpdateLlmProviderSchema>;
 
 export const ListLlmProvidersQuerySchema = z.object({
@@ -33,3 +42,15 @@ export const ListLlmProvidersQuerySchema = z.object({
     .default(false),
 });
 export type ListLlmProvidersQuery = z.infer<typeof ListLlmProvidersQuerySchema>;
+
+export const SetDefaultProviderSchema = z.object({
+  model: z.string().trim().min(1),
+});
+export type SetDefaultProviderDto = z.infer<typeof SetDefaultProviderSchema>;
+
+export const RemoveProviderSchema = z.object({
+  reassignDefaultTo: z
+    .object({ providerId: z.string().min(1), model: z.string().trim().min(1) })
+    .optional(),
+});
+export type RemoveProviderDto = z.infer<typeof RemoveProviderSchema>;

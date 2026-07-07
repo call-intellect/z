@@ -81,16 +81,9 @@ LlmTaskRoute {
 - `NULL` — глобальный дефолт от super_admin (видят все Org).
 - не-NULL — override на конкретную Org (Z-Admin Фаза 7).
 
-**`experiment` Json (Фаза 7):**
-```
-{
-  enabled: bool,
-  modelA: string, modelB: string,
-  splitPercent: number,
-  startedAt: ISO, endsAt: ISO
-}
-```
-Когда `enabled=true` — LlmRouter рандомно выбирает A/B и пишет `experimentGroup` в `AiUsageLog`. На Фазе 0 поле есть, логика A/B — Фаза 7.
+**`experiment` Json — DEPRECATED (2026-07-03).** Легаси-механизм A/B (рандомный выбор A/B на каждый вызов, `/admin/experiments`) выведен из эксплуатации целиком (ТЗ [`2026-07-03-llm-model-ab-experiments-real-split.md`](../../plans/tz/2026-07-03-llm-model-ab-experiments-real-split.md)). Поле больше не читается/не пишется новым кодом — оставлено в схеме без функции.
+
+**Канонический A/B-механизм сегодня — `LlmModelExperiment`** (отдельная таблица: `controlModel/controlProvider/variantModel/variantProvider/splitPercent/status('draft'|'running'|'stopped'|'completed')/startedAt/endsAt/createdById/notes`). `LlmRouterService.chooseProviders()` читает активные (`status='running'`, в окне `[startedAt,endsAt)`) записи из in-memory кэша (`activeModelExperiments`, обновляется в `refreshCache()`), деление трафика — **sticky по `meetingId`** (`simpleHash(experimentId::meetingId) % 100 < splitPercent`), а не рандом на каждый вызов — один и тот же `meetingId` всегда попадает в одну группу. Управление — REST `/admin/llm-model-experiments*` (`AdminAiModelsService`), UI — вкладка «A/B-тест» на `/admin/ai/routing/[taskType]` (`ExperimentTabSection.tsx`).
 
 ## LlmModelPrice (версионируемая прайс-карта)
 
@@ -121,7 +114,7 @@ AiUsageLog {
   reasoningTokens?, costUsd Decimal(10,6),
   durationMs, success, errorText?,
   sourceRef Json? (NEW: { type, id }),
-  experimentGroup? (NEW: 'A'|'B'),
+  experimentGroup? ('A' control | 'B' variant, из LlmModelExperiment; | 'gepa_candidate'),
   createdAt
 }
 ```
@@ -188,3 +181,15 @@ Anthropic) возвращают; пишется в AiUsageLog.
 - `card-rollup.service`
 
 Спека `llm-router.service.spec.ts` обновлена под новый findFirst+create контракт `setRoute()` (вместо upsert — composite unique с NULL не поддерживается Prisma).
+
+## Инцидент 2026-07-06 — каскадная потеря тиров при последовательном удалении провайдеров
+
+**Симптом:** после серии удалений провайдеров через `/admin/ai/catalog` (deepseek → openai-via-proxy → сам openai-via-proxy как дефолт → minimax) у ~176 taskType пропали `primary`/`tertiary` тиры целиком — остался только `secondary`, и то указывал на реально нерабочего в тот момент `minimax` (empty response). Функции («анализ и функции сломались» — со слов владельца) фактически лишились всей fallback-цепочки.
+
+**Корень:** `AdminLlmProvidersService.migrateRoutesToDefault()` (llm-provider-default-fallback, эта же дата) содержал дедуп-проверку «если дефолт-провайдер уже встречается в этой же группе на ДРУГОМ тире — не переключать мигрирующую строку, а УДАЛИТЬ её» (архитектурное решение Р2, задумывалось против одного разового дублирования при одном удалении). На практике при НЕСКОЛЬКИХ последовательных удалениях подряд (дефолт-провайдер меняется каждый раз) это каскадно съедало тир за тиром: как только новый дефолт случайно совпадал с давно нетронутым `secondary`, любая следующая миграция primary/tertiary на этот же дефолт распознавалась как «дубликат» и удалялась вместо обновления.
+
+**Фикс:** дедуп-удаление убрано полностью — `migrateRoutesToDefault` теперь ВСЕГДА обновляет мигрирующую строку, никогда не удаляет (constraint `@@unique([taskType, tenantId, tier, providerName])` включает `tier`, так что два тира с одним и тем же provider — легальное, не конфликтующее состояние; визуальное задвоение цепочки безопаснее молчаливой потери резервного уровня).
+
+**Восстановление локальных данных** (не код, разовая операция): реактивированы 6 soft-deleted провайдеров (`UPDATE llm_providers SET "deletedAt"=NULL, "isActive"=true`), затем прогнаны напрямую (в обход once-only ledger агрегатора) `scripts/seed-llm-default-primary-deepseek-pro.ts` (169 primary восстановлено) и `scripts/patch-normalize-llm-chains-deepseek-openai-kie.ts` (190 secondary/tertiary восстановлено) — оба идемпотентны, штатно входят в `apply-prod-deploy.ts`.
+
+**Новый инструмент как раз для таких случаев без каскадного риска** — `AdminAiModelsService.bulkReassign()` (`POST /api/v1/admin/ai-models/bulk-reassign`, UI-кнопка «Балковое назначение» на `/admin/ai/routing`): явно, одним подтверждаемым действием с обязательным preview и `reason` (audit-лог), либо (а) заполняет все реально ПУСТЫЕ (taskType,tier)-пары, либо (б) переключает ВСЕ маршруты с одного явно выбранного провайдера на другой — вместо неявной цепной реакции при удалении провайдера.

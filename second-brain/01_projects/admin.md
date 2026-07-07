@@ -21,6 +21,17 @@ updated: 2026-06-03
 > **«Команда» (`/structure`)** и карточку сотрудника `/structure/persons/[id]`. См.
 > [[frontend-pages]] §«Команда» и [[rbac-access-control]] §Frontend.
 
+## `/admin` — Пульс компании (главная страница админки)
+
+Обзорный дашборд: KPI-плитки (расход, доля ошибок, орг/юзеры, активные за 7 дн.), реальный дневной тренд (расход/вызовы/доля ошибок), разбивки «по провайдерам» / «по моделям» / «топ функций» / «топ организаций».
+
+- **API:** `GET /api/v1/admin/usage/dashboard` — `AdminUsageController`/`AdminUsageService` (`backend/src/modules/admin/{controllers,services}/admin-usage.*`), источник данных — `AiUsageLog` напрямую (НЕ `AiCostDaily` — это отдельный источник для `/admin/analytics/llm-cost`, см. ниже). Query: `period` (day/week/month/custom + from/to), `provider`, `model`, `taskType`, `orgId` — все опциональные CSV-массивы (`?provider=a,b`, `{in:[...]}` в Prisma), применяются согласованно ко всем срезам (totals/byProvider/byModel/byTaskType/topOrgs/trend), т.к. один и тот же `baseWhere`.
+- **`trend`** — реальный дневной ряд через `$queryRaw` (`date_trunc('day', "createdAt")`), с 2026-07-06 заменил фейковый псевдослучайный мок (`buildMockSeries`/`pseudoRandom` — генерировал шум от seed, не реальные данные).
+- **`byModel`** — новая разбивка `groupBy(['provider','model'])` (аналог disambiguation-фикса в `llm-cost-dashboard` от того же дня).
+- **Фронт:** `frontend/app/(admin)/admin/AdminDashboardClient.tsx`. Панель фильтров: провайдер/модель/модуль/организация — `MultiSelectCombobox` (поиск+мультиселект, `src/ui/components/admin/MultiSelectCombobox.tsx`, Popover+Command), опции из «unfiltered»-запроса (паттерн `optionsQ`); период — `DateRangeCalendarPopover` (`src/ui/components/admin/DateRangeCalendarPopover.tsx`, react-day-picker `mode="range"`, кнопка Применить/Сбросить) как единая точка входа для custom-диапазона (не через отдельный пункт «Свой период» в дропдауне) + графики через переиспользуемые `BarTrend`/recharts-компоненты `@/ui/components/dashboard/modern` (с `valueFormatter`/`seriesLabel` — тултип показывает `$`-формат, не сырой `costUsd`), а не списки `<ul>`.
+- **Не путать** с `/admin/analytics/llm-cost` — это отдельный, более глубокий (5-уровневый) дашборд расхода на `AiCostDaily`, включая помесячную подписочную тарификацию провайдеров; здесь — верхнеуровневый «пульс» на сырых логах вызовов.
+- **ТЗ:** [plans/tz/2026-07-06-admin-dashboard-charts-filters.md](../../plans/tz/2026-07-06-admin-dashboard-charts-filters.md).
+
 ## Крутилки курации и напоминаний (AdminSetting)
 
 С 2026-06-03 (Action Center, Фаза C2) 14 платформенных дефолтов лестницы
@@ -167,31 +178,40 @@ admin-поверхности с разбором конкретной карто
 
 ## AI и модели
 
-### `/admin/llm-routes` — Управление роутами LLM
+### `/admin/ai/catalog` — Провайдеры и модели (2026-07-02, переработано целиком)
 
-Страница для super_admin: таблица всех ~80 `taskType` (типов задач LLM) с
-цепочкой моделей primary → secondary → tertiary. Позволяет менять провайдера
-и модель для любого taskType без правки seed-скриптов.
+Единый экран super_admin для реестра LLM-провайдеров (`LlmProvider`/`LlmModel`) — DB-реестр стал **боевым источником правды** для dispatch (раньше был витриной, вызовы шли по захардкоженному ENV-switch). Табы: «Провайдеры» (CRUD), «Модели» (CRUD, фильтр по провайдеру), «Цены» (`LlmPricesClient`, не менялся), «Smoke-тесты» (починен — список из реального реестра, не хардкода).
 
-- **API:** `GET / PUT /api/v1/admin/llm-routes` —
-  `backend/src/modules/admin/llm-routes/llm-routes.controller.ts`.
-- **Защита:** `CookieAuthGuard` + `SuperAdminGuard`. Не-super_admin получает
-  403 → UI показывает `AdminForbidden`.
-- **Фронт:**
-  - `frontend/app/(admin)/admin/llm-routes/page.tsx`
-  - `frontend/app/(admin)/admin/llm-routes/LlmRoutesClient.tsx`
-  - `frontend/app/(admin)/admin/llm-routes/EditRouteDialog.tsx`
-  - `frontend/src/api/admin-llm-routes.api.ts`
-  - `frontend/src/domain/admin-llm-route.ts`
-  - `frontend/src/hooks/useLlmRoutes.ts`
-- **Особенности:**
-  - Поддерживается оба формата записи `LlmTaskRoute`: нормализованный
-    (по `tier`) и legacy (`providers` JSON-массив).
-  - После сохранения роут получает `editedByAdmin=true` — seed-скрипты его
-    больше не перезатирают (см. `safe-seed-rules`).
-  - Для DeepSeek-Pro в модалке предупреждение про автоконвертацию
-    `json_schema → tools` (ТЗ `deepseek-pro-output-format-fix`).
-- **ТЗ:** [plans/archive/2026-05-25-admin-llm-routes-frontend.md](../../plans/archive/2026-05-25-admin-llm-routes-frontend.md).
+- **Провайдеры:** `name`(slug)/`displayName`/`baseUrl`/`protocolKind` (7: `openai-chat`/`openai-responses`/`anthropic-messages`/`ollama-native`/`kie-native`/`grsai-native`/`custom-http`)/`capability` (dataClass-фильтр роутера)/ключ (шифруется AES-256-GCM, в ответах только `hasApiKey`)/тумблер «Напрямую / Через прокси» (`useProxy`+`proxyPath`, эффективный `baseUrl`/ключ строит `ProviderInfoResolver` по единой формуле)/`timeoutMs`/`defaultModelKey` (с кнопкой «Получить модели» — дискавери `GET {baseUrl}/models`, импорт выбранных)/`globalRps`/доп. HTTP-заголовки/`isActive`/smoke-тест. Удаление или деактивация провайдера, у которого есть активный маршрут или он в дефолт-цепочке — блокируется 409 `provider_in_use_by_routes`.
+- **Модели:** `providerId`+`modelKey`(уникальны в паре)/`displayName`/`contextWindow`/`category`/`notes`/`isActive`.
+- **API:** `/api/v1/admin/llm-providers` (CRUD+`:id/smoke-test`+`:id/models/discover`), `/api/v1/admin/llm-models` (CRUD) — см. [api-layer.md](api-layer.md).
+- **Фронт:** `frontend/app/(admin)/admin/ai/catalog/{CatalogClient,LlmProvidersClient,LlmModelsClient,SmokeTestClient}.tsx` (провайдеры/модели перенесены сюда из легаси `admin/llm/providers|models/` — та папка удалена).
+- **Защита:** `CookieAuthGuard` + `SuperAdminGuard` + `SuperAdminAuditInterceptor`, `@ApiExcludeController` (не в Swagger).
+- **ТЗ:** [plans/tz/2026-07-02-llm-providers-models-routing-admin.md](../../plans/tz/2026-07-02-llm-providers-models-routing-admin.md).
+
+### `/admin/ai/routing` — Маршрутизация (2026-07-02, единственная точка правки)
+
+Единый экран цепочек `taskType → provider(+model) по tier`. **Заменяет** удалённый `/admin/llm-routes` (дублировал этот же путь записи другим форматом — контроллер `LlmRoutesController` удалён из бэкенда) и legacy `/admin/ai-models/*` (список слит сюда, деталка `TaskTypeDetailsClient` — в `RoutingDetailClient`, тройное дублирование метрик/истории на вкладке «Цепочка» устранено).
+
+- **Список** (`RoutingClient.tsx`) — таблица taskType по группам (ai-pipeline/knowledge-core/competitor-parity), read-only бейджи по tier, ссылка «Подробно».
+- **Деталка** (`[taskType]/RoutingDetailClient.tsx`) — 3 вкладки: «Цепочка» (редактор по tier: Select провайдера из живого реестра `LlmProvider`, Select/ручной ввод модели, поле «причина» — сохранение через единый `PUT /api/v1/admin/ai-models/:taskType/chain`), «Метрики» (+ курс `usdRubRate` от `CurrencyRateService`, раньше был хардкод 90 ₽/$), «История». A/B-контролы (`switchPrimary` с `abSplitPercent`) скрыты из UI — `LlmModelExperiment` рантаймом не читается (см. «Не сделано» ниже), решение владельца — не чинить в этом ТЗ.
+- **API:** `PUT /api/v1/admin/ai-models/:taskType/chain` — валидирует `providerName` по union(активный DB-реестр, legacy-7) → 422 `route_provider_unknown`; модель вне каталога — `warnings`, не блок.
+- **Побочный фикс:** `/admin/usage/functions/:taskType` и `/admin/analytics/functions/:taskType` («Функции») тоже писали цепочку через теперь-удалённый `/admin/llm-routes` — их save-хендлеры переведены на `putChain` (позиция в массиве → tier: 0=primary/1=secondary/2+=tertiary).
+- **Навигация:** пункт «Управление роутами LLM» убран из меню (страница удалена).
+- **ТЗ:** [plans/tz/2026-07-02-llm-providers-models-routing-admin.md](../../plans/tz/2026-07-02-llm-providers-models-routing-admin.md).
+
+### `/admin/analytics/llm-cost` — Расход на LLM, консолидированный дашборд (2026-07-03)
+
+Единый экран super_admin с лестницей из 5 уровней: **общий итог → по модели → по смысловому разделу → по компании → по компании×модели**, график по дням/неделям на каждом уровне (переключатель `7д/30д/90д`, дефолт 30 дней). Источник данных — **`AiCostDaily`** (посуточная агрегация `tenantId×date×taskType×provider×model`, наполняется `DailyCostAggregatorCron` с 24 мая 2026), **не** `AiUsageLog` — впервые подключён читатель к таблице, которая копилась месяц без единого потребителя. Все суммы только в рублях.
+
+Заменяет 8 разрозненных путей расхода на LLM:
+- **Полный редирект (2):** `/admin/analytics/economics` (общая юнит-экономика) и `/admin/analytics/functions` (список функций LLM) — теперь 307 на новый дашборд.
+- **Хирургия — денежная часть вырезана, остальное осталось (3):** `/admin/analytics/orgs` (список организаций — колонка расхода в USD заменена ссылкой на уровень 5), `/admin/economics/orgs/[id]` (юнит-экономика компании — расчёт расхода и топ-задачи убраны в пользу ссылки, форма редактирования бюджет-лимита осталась без изменений), `/admin/analytics/functions/[taskType]` (деталь функции — собственный дублирующий редактор цепочки моделей, вызывавший тот же `putChain`, что и «Роутинг моделей», — убран в пользу ссылки туда; блок «Последние вызовы» остался).
+- **Мёртвые пути удалены насовсем, не редирект (3):** `/admin/economics`, `/admin/usage/functions(+[taskType])`, `/admin/usage/users` — redirect-заглушки в никуда + обслуживающий их код (`getUsersUsage`, `getFunctionsUsage`, `UnitEconomicsService.getGlobal()`).
+
+Вкладка «Метрики» `/admin/ai/routing/[taskType]` получила встроенную вырезку из нового источника (не просто ссылку) — рядом с существующей tier/success-разбивкой, которую не тронули.
+
+**API:** `LlmCostDashboardController` (см. [api-layer.md](api-layer.md) §«Расход на LLM»). **ТЗ + архитектура:** [`plans/tz/2026-07-03-llm-cost-dashboard.md`](../../plans/tz/2026-07-03-llm-cost-dashboard.md) / [`plans/architecture/2026-07-03-llm-cost-dashboard.md`](../../plans/architecture/2026-07-03-llm-cost-dashboard.md).
 
 ### `/admin/clones` — Доступы к клонам (2026-05-26)
 
@@ -224,6 +244,15 @@ admin-поверхности с разбором конкретной карто
 - **История бага:** до 2026-07-02 страница писала фантомные `daySignals.*` (рубильник/порог детектора/локальный час), которых бэк НЕ читал — крутилки молча ничего не делали (фича с самого начала жила на `dayReport.*`/`daily-checkin.*`). Переведена на реальные ключи в рамках унификации phantom-ключей (`plans/tz/2026-07-02-admin-knob-fe-backend-key-unification.md`). `daySignals.processLocalHour` (без читателя — коллектор на хардкод-cron MSK 05:00) вынесен в `plans/tz/2026-07-02-cron-schedules-env-to-admin-settings.md`.
 - **Guard:** рецидив phantom-ключа на любой `*SettingsClient.tsx` ловит backend-тест `admin-setting-fe-keys.guard.spec.ts` (`feKeys ⊆ registeredSettingKeys()`).
 - **Навигация:** пункт «Фиксатор чек-инов» в admin-навигации (`frontend/app/(admin)/admin/navigation.ts`).
+
+### `/admin/ai/embeddings` — вкладка «Провайдеры» (2026-07-02)
+
+Страница super_admin: CRUD управляемых провайдеров эмбеддингов (`EmbeddingProvider`/`EmbeddingModel`), которые резолвер рантайма читает из БД вместо ENV-переключателя. На каждого провайдера — endpoint (`baseUrl` + `protocolKind`), API-ключ (шифруется AES-256-GCM, в ответах только `hasApiKey`), список моделей с размерностью (`dimensions`) и справочной ценой (не биллинг), `priority`, кнопки активации и smoke-проверки, баннер `needsReindex` при смене размерности активного провайдера. Активация с несовпадающей размерностью блокируется гардом `embedding_dimension_mismatch_requires_reindex` (сам реиндекс-воркер вне scope — остаётся заглушка `ReindexTab`).
+
+- **API:** 10 маршрутов `/api/v1/admin/embedding-providers` под `SuperAdminGuard` (см. [api-layer.md](api-layer.md) §«Провайдеры эмбеддингов»), `AdminEmbeddingProvidersController` + `AdminEmbeddingProvidersService` в `backend/src/modules/admin/economics/`.
+- **Фронт:** `frontend/app/(admin)/admin/ai/embeddings/EmbeddingProvidersClient.tsx` (вкладка «Провайдеры»), слои `frontend/src/api/admin-embedding-providers.api.ts` + `frontend/src/domain/admin-embedding-provider.ts`.
+- **Защита:** `CookieAuthGuard` + `SuperAdminGuard`.
+- **ТЗ:** [plans/tz/2026-07-02-embedding-providers-crud.md](../../plans/tz/2026-07-02-embedding-providers-crud.md). Модели — [[../02_architecture/data-model]] §«EmbeddingProvider / EmbeddingModel».
 
 ## Тенанты (Org)
 

@@ -1,44 +1,23 @@
 import { apiClient } from "./api-client";
 
-export const ADMIN_SMOKE_TEST_PROVIDERS = [
-  "openai",
-  "deepseek",
-  "anthropic",
-  "ollama",
-  "vox",
-  "minimax",
-  "grsai",
-  "kie",
-] as const;
-
-export type AdminSmokeTestProvider =
-  (typeof ADMIN_SMOKE_TEST_PROVIDERS)[number];
-
 export type SmokeTestRunApi = {
   id?: string;
-  provider: AdminSmokeTestProvider | string;
+  provider: string;
   status: "ok" | "fail";
   latencyMs: number | null;
-  ranAt: string;
-  message?: string | null;
-};
-
-export type AdminSmokeTestStatusApi = {
-  providers: Array<{
-    provider: AdminSmokeTestProvider | string;
-    lastRun?: SmokeTestRunApi | null;
-  }>;
+  startedAt: string;
+  error?: string;
 };
 
 export const adminSmokeTestApi = {
-  run: (provider: AdminSmokeTestProvider | string) =>
+  run: (provider: string) =>
     apiClient.post<SmokeTestRunApi>(
       `/api/v1/admin/ai/smoke-test/${encodeURIComponent(provider)}`,
       {},
     ),
 
   runAll: () =>
-    apiClient.post<{ runs: SmokeTestRunApi[] }>(
+    apiClient.post<{ items: SmokeTestRunApi[] }>(
       "/api/v1/admin/ai/smoke-test/all",
       {},
     ),
@@ -46,10 +25,5 @@ export const adminSmokeTestApi = {
   history: (limit = 50) =>
     apiClient.get<{ items: SmokeTestRunApi[] }>(
       `/api/v1/admin/ai/smoke-test/history?limit=${limit}`,
-    ),
-
-  status: () =>
-    apiClient.get<AdminSmokeTestStatusApi>(
-      "/api/v1/admin/ai/smoke-test/status",
     ),
 };

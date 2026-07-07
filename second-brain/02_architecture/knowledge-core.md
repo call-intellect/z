@@ -25,7 +25,7 @@ RawEvent (Фаза 1)
 block-ingest.worker
    ├─ SegmentBuilder      — разбивает payload на скользящие окна (≤2000 токенов)
    ├─ BlockExtraction     — LLM вызов с JSON Schema strict, taskType='block-ingest'
-   ├─ KnowledgeEmbedding  — батч-эмбеддинг embed(criticalQuestion + trustedAnswer), header-less (text-embedding-3-small, 1536-dim)
+   ├─ KnowledgeEmbedding  — батч-эмбеддинг embed(criticalQuestion + trustedAnswer), header-less (embeddinggemma:latest, 768-dim)
    └─ persist             — Prisma transaction: IdeaBlock(draft) + Evidence + Entity (findOrCreate)
    ↓ enqueueBlockDistill (debounce 30s)
 block-distill.worker

@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ChevronDown, FileText, Shield } from "lucide-react";
+import { ArrowLeft, ChevronDown, FileText, Shield } from "lucide-react";
 
 import { cn } from "@/ui/shadcn/lib/utils";
 import { AdminCommandPaletteProvider } from "@/ui/components/admin/AdminCommandPalette";
@@ -79,6 +79,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 ⌘K
               </kbd>
             </div>
+            <Link
+              href="/dashboard"
+              className="mb-3 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
+            >
+              <ArrowLeft size={13} />
+              Вернуться в кабинет
+            </Link>
             <nav className="rounded-lg border border-border-subtle bg-bg-card p-2">
               <div className="flex flex-col gap-1.5">
                 {ADMIN_NAV_SECTIONS.map((section) => (

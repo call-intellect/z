@@ -7,6 +7,7 @@ import {
   Inject,
   Param,
   Post,
+  Put,
   Query,
   UseGuards,
   UseInterceptors,
@@ -23,12 +24,18 @@ import { AdminAiModelsService } from './ai-models.service';
 import {
   AddProviderSchema,
   type AddProviderDto,
+  BulkReassignPreviewSchema,
+  type BulkReassignPreviewDto,
+  BulkReassignSchema,
+  type BulkReassignDto,
   CreateExperimentSchema,
   type CreateExperimentDto,
   ListAiModelsQuerySchema,
   type ListAiModelsQueryDto,
   MetricsQuerySchema,
   type MetricsQueryDto,
+  PutChainSchema,
+  type PutChainDto,
   SwitchPrimarySchema,
   type SwitchPrimaryDto,
 } from './dto/ai-models.dto';
@@ -82,6 +89,32 @@ export class AdminAiModelsController {
   ) {
     this.assertUser(user);
     return this.svc.removeProvider(taskType, providerId, user.id);
+  }
+
+  @Put('ai-models/:taskType/chain')
+  async putChain(
+    @Param('taskType') taskType: string,
+    @Body(new ZodValidationPipe(PutChainSchema)) dto: PutChainDto,
+    @CurrentUser() user: CurrentUserPayload | null | undefined,
+  ) {
+    this.assertUser(user);
+    return this.svc.putChain(taskType, dto, user.id);
+  }
+
+  @Get('ai-models/bulk-reassign/preview')
+  async previewBulkReassign(
+    @Query(new ZodValidationPipe(BulkReassignPreviewSchema)) query: BulkReassignPreviewDto,
+  ) {
+    return this.svc.previewBulkReassign(query);
+  }
+
+  @Post('ai-models/bulk-reassign')
+  async bulkReassign(
+    @Body(new ZodValidationPipe(BulkReassignSchema)) dto: BulkReassignDto,
+    @CurrentUser() user: CurrentUserPayload | null | undefined,
+  ) {
+    this.assertUser(user);
+    return this.svc.bulkReassign(dto, user.id);
   }
 
   @Get('ai-models/:taskType/history')

@@ -1,3 +1,5 @@
+export type StringWithSuggestions<T extends string> = T | (string & Record<never, never>);
+
 export interface LlmTool {
   name: string;
   description: string;
@@ -46,7 +48,9 @@ export interface LlmCompleteOutput {
   cachedTokens?: number;
   cacheCreationTokens?: number;
   model: string;
-  provider: 'anthropic' | 'minimax' | 'openai-via-proxy' | 'deepseek' | 'ollama' | 'kie' | 'grsai';
+  provider: StringWithSuggestions<
+    'anthropic' | 'minimax' | 'openai-via-proxy' | 'deepseek' | 'ollama' | 'kie' | 'grsai'
+  >;
   toolCalls?: LlmToolCall[];
 }
 

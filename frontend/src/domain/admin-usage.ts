@@ -19,12 +19,24 @@ export type AdminDashboardApi = {
     failedCalls: number;
   };
   byProvider: Array<{ provider: string; costUsd: number; calls: number }>;
+  byModel: Array<{
+    provider: string;
+    model: string;
+    costUsd: number;
+    calls: number;
+  }>;
   byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
   topOrgs?: Array<{
     tenantId: string;
     name: string;
     costUsd: number;
     calls: number;
+  }>;
+  trend: Array<{
+    date: string;
+    costUsd: number;
+    calls: number;
+    failedCalls: number;
   }>;
   counts?: {
     orgsTotal: number;
@@ -44,12 +56,24 @@ export type AdminDashboardDomain = {
     failRate: number;
   };
   byProvider: Array<{ provider: string; costUsd: number; calls: number }>;
+  byModel: Array<{
+    provider: string;
+    model: string;
+    costUsd: number;
+    calls: number;
+  }>;
   byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
   topOrgs: Array<{
     tenantId: string;
     name: string;
     costUsd: number;
     calls: number;
+  }>;
+  trend: Array<{
+    date: string;
+    costUsd: number;
+    calls: number;
+    failedCalls: number;
   }>;
   counts: {
     orgsTotal: number;
@@ -77,41 +101,11 @@ export function adminDashboardFromApi(
       failRate: totalCalls > 0 ? api.totals.failedCalls / totalCalls : 0,
     },
     byProvider: api.byProvider,
+    byModel: api.byModel,
     byTaskType: api.byTaskType,
     topOrgs: api.topOrgs ?? [],
+    trend: api.trend,
     counts: api.counts ?? null,
-  };
-}
-
-export type AdminUsersUsageRowApi = {
-  userId: string;
-  userEmail: string;
-  userName: string;
-  tenantId: string | null;
-  tenantName: string | null;
-  totalCostUsd: number;
-  totalCalls: number;
-  byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
-};
-
-export type AdminUsersUsageApi = {
-  items: AdminUsersUsageRowApi[];
-  nextCursor: string | null;
-};
-
-export type AdminUsersUsageRowDomain = AdminUsersUsageRowApi;
-
-export type AdminUsersUsageDomain = {
-  items: AdminUsersUsageRowDomain[];
-  nextCursor: string | null;
-};
-
-export function adminUsersUsageFromApi(
-  api: AdminUsersUsageApi,
-): AdminUsersUsageDomain {
-  return {
-    items: api.items,
-    nextCursor: api.nextCursor,
   };
 }
 
@@ -176,39 +170,6 @@ export type AdminCallDetailDomain = AdminCallLogItemDomain & {
   requestPreview: string | null;
   responsePreview: string | null;
 };
-
-export type AdminFunctionUsageRowApi = {
-  taskType: string;
-  hasRoute: boolean;
-  isActive: boolean;
-  experimentEnabled: boolean;
-  currentProvider: string | null;
-  fallbackChain: string[];
-  totalCalls: number;
-  failedCalls: number;
-  failRate: number;
-  avgCostUsd: number;
-  avgDurationMs: number;
-  avgInputTokens: number;
-  avgOutputTokens: number;
-  totalCostUsd: number;
-};
-
-export type AdminFunctionsUsageApi = {
-  items: AdminFunctionUsageRowApi[];
-};
-
-export type AdminFunctionUsageRowDomain = AdminFunctionUsageRowApi;
-
-export type AdminFunctionsUsageDomain = {
-  items: AdminFunctionUsageRowDomain[];
-};
-
-export function adminFunctionsUsageFromApi(
-  api: AdminFunctionsUsageApi,
-): AdminFunctionsUsageDomain {
-  return { items: api.items };
-}
 
 export function formatUsd(value: number): string {
   if (value === 0) return "$0";

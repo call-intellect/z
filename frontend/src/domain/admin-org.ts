@@ -27,8 +27,6 @@ export type AdminOrgRowApi = {
   ownerEmail: string | null;
   membersCount: number;
   meetingsCount: number;
-  costUsdInPeriod: number;
-  callsInPeriod: number;
   deletedAt: string | null;
   createdAt: string;
 };

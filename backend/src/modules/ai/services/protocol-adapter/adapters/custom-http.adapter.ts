@@ -18,7 +18,7 @@ export class CustomHttpProtocolAdapter implements LlmProtocolAdapter {
     input: LlmCompleteInput;
   }): Promise<LlmCompleteOutput> {
     const { provider, input } = args;
-    const model = input.model ?? provider.defaultModel ?? 'default';
+    const model = input.model ?? provider.defaultModelKey ?? provider.defaultModel ?? 'default';
 
     const headers: Record<string, string> = {
       'content-type': 'application/json',

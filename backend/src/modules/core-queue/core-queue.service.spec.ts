@@ -49,6 +49,21 @@ describe('CoreQueueService.enqueueSpecialistsCombined — WP-A дескрипт�
     expect(payload.meetingId).toBe('m-1');
   });
 
+  it('externalId с ":" санитизируется в jobId, но сохраняется в payload', async () => {
+    const { service, add } = buildService();
+
+    await service.enqueueSpecialistsCombined({
+      tenantId: 'tenant-1',
+      sourceType: 'chat',
+      externalId: 'msg:abc:def',
+    });
+
+    const [, payload, opts] = add.mock.calls[0]!;
+    expect(opts.jobId).not.toContain(':');
+    expect(opts.jobId).toBe('specialists_combined_chat_msg_abc_def');
+    expect(payload.externalId).toBe('msg:abc:def');
+  });
+
   it('delayMs>0 прокидывается в jobOpts.delay', async () => {
     const { service, add } = buildService();
 

@@ -121,11 +121,11 @@ describe('OpenAiChatProtocolAdapter — thinking-models guard', () => {
       model: 'deepseek-v4-flash',
     });
     expect(lastCallArgs?.['response_format']).toBeUndefined();
-    expect(lastCallArgs?.['tool_choice']).toEqual({ type: 'function', function: { name: 'submit_facts' } });
+    expect(lastCallArgs?.['tool_choice']).toBe('auto');
     expect(lastCallArgs?.['tools']).toBeDefined();
   });
 
-  it('pro + json_schema (без tools) → автоконверт в tool + tool_choice=function(forced) + hint + guard.schema-to-tool', async () => {
+  it('pro + json_schema (без tools) → автоконверт в tool + tool_choice=auto + hint + guard.schema-to-tool', async () => {
     const { metrics, guard } = makeMetricsMock();
     const adapter = new OpenAiChatProtocolAdapter(makeCfg(), metrics);
     nextCreateImpl = async () =>
@@ -155,7 +155,7 @@ describe('OpenAiChatProtocolAdapter — thinking-models guard', () => {
       model: 'deepseek-v4-pro',
     });
     expect(lastCallArgs?.['response_format']).toBeUndefined();
-    expect(lastCallArgs?.['tool_choice']).toEqual({ type: 'function', function: { name: 'submit_facts' } });
+    expect(lastCallArgs?.['tool_choice']).toBe('auto');
     expect(lastCallArgs?.['tools']).toEqual([
       {
         type: 'function',

@@ -47,10 +47,8 @@ const MANIFEST = resolve(DOCS, 'task-stand-manifest.json');
 const RUNS = resolve(DOCS, 'task-stand-runs');
 
 const PIPELINE_CHANNELS = new Set(['meeting', 'chat', 'telegram', 'email', 'decision']);
-const FREE_NOTE_CHANNELS = new Set(['chat', 'telegram', 'email']);
 const SCENARIO_TIMEOUT_MS = 300_000;
 const MEETING_TIMEOUT_MS = 600_000;
-const CONTENT_MATCH_THRESHOLD = 0.4;
 const QUIESCENCE_INTERVAL_MS = 4_000;
 const QUIESCENCE_INITIAL_DELAY_MS = 15_000;
 const QUIESCENCE_QUIET_POLLS = 3;
@@ -422,11 +420,13 @@ async function submitFreeNote(
   text: string,
 ): Promise<string> {
   const userId = (speaker && manifest.people[speaker]) || manifest.ownerUserIdA;
+  const extId = `chat:${pseudoUlid()}`;
   const raw = await services.conversational.ingestFreeNote({
     tenantId: manifest.orgA,
     userId,
     text,
     occurredAt: new Date(),
+    sourceExternalId: extId,
   });
   return raw.id;
 }
@@ -958,44 +958,11 @@ async function reconcileMeetings(
   }
 }
 
-function normalizeText(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/ё/g, 'е')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function inputKeywords(scenario: BankScenario): string[] {
-  const turns = scenarioTurns(scenario.input);
-  const text = turns.map((t) => t.text).join(' ');
-  const norm = normalizeText(text);
-  return [...new Set(norm.split(' ').filter((w) => w.length > 3))];
-}
-
-function matchFraction(keywords: string[], candidateText: string): number {
-  if (keywords.length === 0) return 0;
-  const set = new Set(normalizeText(candidateText).split(' '));
-  let hit = 0;
-  for (const w of keywords) if (set.has(w)) hit += 1;
-  return hit / keywords.length;
-}
-
-async function reconcileByContent(
+async function reconcileByLineage(
   prisma: PrismaClient,
   tenantId: string,
   results: RawObservation[],
-  scenarioById: Map<string, BankScenario>,
 ): Promise<void> {
-  const needy = results.filter(
-    (r) =>
-      FREE_NOTE_CHANNELS.has(r.channel) &&
-      r.observed.intakeIssues.length === 0 &&
-      r.observed.issues.length === 0,
-  );
-  if (needy.length === 0) return;
-
   const claimedIntake = new Set<string>();
   const claimedIssue = new Set<string>();
   for (const r of results) {
@@ -1004,48 +971,44 @@ async function reconcileByContent(
     if (r.injected.directIssueId) claimedIssue.add(r.injected.directIssueId);
   }
 
-  const [intakeRows, issueRows] = await Promise.all([
-    prisma.intakeIssue.findMany({ where: { tenantId } }),
-    prisma.issue.findMany({ where: { tenantId }, include: ISSUE_OBSERVE_INCLUDE }),
-  ]);
-
   for (const r of results) {
-    if (!FREE_NOTE_CHANNELS.has(r.channel)) continue;
-    if (r.observed.intakeIssues.length > 0 || r.observed.issues.length > 0) continue;
-    const scenario = scenarioById.get(r.scenarioId);
-    if (!scenario) continue;
-    const keywords = inputKeywords(scenario);
-    if (keywords.length === 0) continue;
+    const rawEventIds = r.injected.rawEventIds ?? [];
+    if (rawEventIds.length === 0) continue;
 
-    let best: { kind: 'intake' | 'issue'; frac: number; intake?: IntakeRow; issue?: IssueObserveRow } | null =
-      null;
-    for (const c of intakeRows) {
-      if (claimedIntake.has(c.id)) continue;
-      const frac = matchFraction(keywords, `${c.rawContent} ${c.extractedTitle ?? ''}`);
-      if (frac >= CONTENT_MATCH_THRESHOLD && (!best || frac > best.frac)) {
-        best = { kind: 'intake', frac, intake: c };
+    const evid = await prisma.ideaBlockEvidence.findMany({
+      where: { tenantId, rawEventId: { in: rawEventIds } },
+      select: { blockId: true },
+    });
+    const blockIds = [...new Set(evid.map((e) => e.blockId))];
+    if (blockIds.length === 0) continue;
+
+    const [intakeRows, issueRows] = await Promise.all([
+      prisma.intakeIssue.findMany({ where: { tenantId, sourceBlockIds: { hasSome: blockIds } } }),
+      prisma.issue.findMany({
+        where: { tenantId, sourceBlockIds: { hasSome: blockIds } },
+        include: ISSUE_OBSERVE_INCLUDE,
+      }),
+    ]);
+
+    for (const row of intakeRows) {
+      if (!claimedIntake.has(row.id)) {
+        r.observed.intakeIssues.push(mapIntakeRow(row));
+        claimedIntake.add(row.id);
       }
     }
-    for (const c of issueRows) {
-      if (claimedIssue.has(c.id)) continue;
-      const frac = matchFraction(keywords, `${c.title} ${c.descriptionStripped ?? ''}`);
-      if (frac >= CONTENT_MATCH_THRESHOLD && (!best || frac > best.frac)) {
-        best = { kind: 'issue', frac, issue: c };
+    for (const row of issueRows) {
+      if (!claimedIssue.has(row.id)) {
+        r.observed.issues.push(mapIssueRow(row));
+        claimedIssue.add(row.id);
       }
     }
-    if (!best) continue;
 
-    if (best.kind === 'intake' && best.intake) {
-      r.observed.intakeIssues.push(mapIntakeRow(best.intake));
-      claimedIntake.add(best.intake.id);
-    } else if (best.kind === 'issue' && best.issue) {
-      r.observed.issues.push(mapIssueRow(best.issue));
-      claimedIssue.add(best.issue.id);
-    }
     recomputeT1Combined(r);
-    log(
-      `  reconcile-content[${r.scenarioId}] ${best.kind} frac=${best.frac.toFixed(2)} intake=${r.observed.intakeIssues.length} issue=${r.observed.issues.length}`,
-    );
+    if (intakeRows.length + issueRows.length > 0) {
+      log(
+        `  reconcile-lineage[${r.scenarioId}] blocks=${blockIds.length} intake=${r.observed.intakeIssues.length} issue=${r.observed.issues.length}`,
+      );
+    }
   }
 }
 
@@ -1063,7 +1026,6 @@ export async function inject(opts: RunOpts): Promise<RawObservation[]> {
   const manifest = loadManifest();
   const all = loadScenarios();
   const selected = selectScenarios(all, opts);
-  const scenarioById = new Map(selected.map((s) => [s.id, s]));
   const t1Set = pickT1(selected);
   const headCommit = readHeadCommit();
 
@@ -1109,7 +1071,7 @@ export async function inject(opts: RunOpts): Promise<RawObservation[]> {
         );
       }
       await reconcileMeetings(infra.prisma, manifest.orgA, results);
-      await reconcileByContent(infra.prisma, manifest.orgA, results, scenarioById);
+      await reconcileByLineage(infra.prisma, manifest.orgA, results);
     });
   } finally {
     await infra.close();

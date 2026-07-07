@@ -75,10 +75,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
           },
         },
       ];
-      body['tool_choice'] = {
-        type: 'function',
-        function: { name: autoConvertedToolName },
-      };
+      body['tool_choice'] = 'auto';
       const lastMsg = messages[messages.length - 1];
       if (lastMsg && lastMsg.role === 'user') {
         lastMsg.content += `\n\nВажно: верни результат через вызов инструмента ${autoConvertedToolName}.`;

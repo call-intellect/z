@@ -97,6 +97,17 @@ docker compose run --rm --no-deps backend \
 - **Шаг 12 — Smoke:** после разбора встречи с «грязной» речью постановщика — `Issue.descriptionStripped` короткое
   структурное (без слов-паразитов), заголовок чистый, дословная цитата в `IntakeIssue.rawContent` («Цитата: …»).
 
+### Цикл 2 (2026-07-07) — chat tasks + embedding (ветка work/2026-07-02)
+
+Фикс: `enqueueSpecialistsCombined` строил BullMQ jobId из `externalId` источника, а реальный chat-ingest/tracker/bitrix кладут id с `:` (`msg:<id>`, `tracker:issue:...`) → BullMQ отвергал jobId → стадия specialists-combined не запускалась → задачи из чата/telegram/bitrix/tracker НЕ создавались (встречи работали: externalId=ULID без `:`). Санитизация jobId (`:`→`_`, коммит dfcbbe35). Плюс регистрация `IssueEmbedWorker` (очередь `core.issue-embed`, коммит ef29da5d) → `Issue.embedding` считается → дедуп ожил. tracker_event исключён из specialists-combined (гейт), иначе события жизненного цикла плодят дубли.
+
+- **🟢 МИГРАЦИЙ БД / SEED / ENV / ФЛАГОВ НЕТ** — только код (Шаги 1/4/6/7 не затронуты). Едет с деплоем кода.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после rebuild):
+  - После выката: создать задачу из **ЧАТА** (не встречи) — раньше не создавалась (jobId `:` срывал specialists-combined). Проверить: сообщение с action_item в чате → появляется IntakeIssue/Issue. Grep логов: НЕТ `Custom Id cannot contain :` и НЕТ `enqueueSpecialistsCombined упал`.
+  - Очередь `core.issue-embed` активна (`IssueEmbedWorker` зарегистрирован, коммит ef29da5d): после создания задачи — `Issue.embedding IS NOT NULL`. Grep: НЕ должно быть постоянного `IssueEmbedQueueService: queue не инициализирована`.
+  - `tracker_event` НЕ плодит задачи: изменение статуса / создание Issue не порождает новый дубль-intake (specialists-combined исключает `sourceType=tracker_event`).
+
 ### Задачи встречи: привязка к встрече + назначенец гостя (вариант А) — 2026-07-06 (ветка work/2026-07-02)
 
 Фикс: combo (`SpecialistsCombinedService`) по `channel=meeting_report` не проставлял `meetingId` → задачи встречи не попадали в карточку, назначенец гостя авто-уходил на постороннего сотрудника. Теперь materializer резолвит `meetingId` из `report_<id>` → `IntakeIssue.meetingId` → `Issue.linkedMeetingIds`; `meeting_report`=always-promote (без skill-routing/owner-fallback); имя гостя-владельца сохраняется в `ownerHintRaw` (без исполнителя) + FE-пометка «по словам гостя». ТЗ [`plans/tz/2026-07-06-meeting-tasks-linkage-fix.md`](../../plans/tz/2026-07-06-meeting-tasks-linkage-fix.md). 5 коммитов (`c5878f21`/`e2a7c71b`/`ac94a2b3`/`4abc5aad`/`2aa5b50a`).

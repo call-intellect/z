@@ -8,6 +8,16 @@
 
 ## 0. TL;DR
 
+- **Цикл 2 (2026-07-07) — ГЛАВНАЯ находка: задачи создавались ТОЛЬКО из встреч.** `enqueueSpecialistsCombined`
+  строил BullMQ jobId из `externalId` источника; реальный chat-ingest кладёт `msg:<id>`, tracker `tracker:issue:...`,
+  bitrix — своё (все с `:`). BullMQ отвергает jobId с `:` → стадия specialists-combined не запускалась → задачи из
+  чата/telegram/bitrix/tracker НЕ создавались (встречи работали: externalId=ULID без `:`). **Фикс** (коммит dfcbbe35):
+  санитизация jobId (`:`→`_`). После фикса: 3 прогона стенда на свежих тенантах — все 6-7 conversational-задач
+  создаются (было 0), 0 ошибок jobId, текст структурный. tracker_event исключён из specialists-combined (гейт),
+  иначе события жизненного цикла задач плодят дубли. Embedding AI-Issue (Ф1, коммит ef29da5d) заполняется 2/2 →
+  дедуп ожил (tracker_event-дубль пойман suggestedDuplicateOfIssueId). Откат форса tool_choice (прокси 400 на
+  thinking-моделях). Остаточные (решение владельца): дедуп title+description размывается (cosine 0.60<0.88,
+  plans/tz/2026-07-07-dedup-title-embedding-tuning.md); чистые free-notes null-source (plans/tz/2026-07-07-freenote-null-source-no-tasks.md).
 - **Т11 (качество текста задачи) — подтверждён и ИСПРАВЛЕН.** Baseline: описание задачи = дословная речь
   постановщика со словами-паразитами. После фикса Ф5 (`plans/tz/2026-07-04-task-text-reformulation.md`):
   описание = короткий структурный текст по сути, факты сохранены. Доказано на meeting-сценариях K.

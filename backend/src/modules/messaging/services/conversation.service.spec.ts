@@ -61,6 +61,106 @@ describe('ConversationService.ensureCompanyChannel', () => {
   });
 });
 
+describe('ConversationService dm dedup', () => {
+  function membershipFindMany() {
+    return vi.fn((args: { where: { userId: { in: string[] } } }) =>
+      Promise.resolve(args.where.userId.in.map((userId) => ({ userId }))),
+    );
+  }
+
+  it('второй dm с тем же собеседником → тот же id, create не вызывается повторно', async () => {
+    const create = vi.fn().mockResolvedValue({ id: 'dm_1' });
+    const findFirst = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'dm_1' });
+    const findUniqueOrThrow = vi.fn().mockResolvedValue({ id: 'dm_1' });
+    const prisma = {
+      membership: { findMany: membershipFindMany() },
+      conversation: { create, findFirst, findUniqueOrThrow },
+    } as unknown as PrismaService;
+    const service = new ConversationService(prisma);
+
+    const first = await service.createConversation({
+      tenantId: 'org_1',
+      kind: 'dm',
+      createdByUserId: 'a',
+      memberUserIds: ['b'],
+    });
+    const second = await service.createConversation({
+      tenantId: 'org_1',
+      kind: 'dm',
+      createdByUserId: 'a',
+      memberUserIds: ['b'],
+    });
+
+    expect(first.id).toBe('dm_1');
+    expect(second.id).toBe('dm_1');
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(findUniqueOrThrow).toHaveBeenCalledTimes(1);
+  });
+
+  it('dm с другим собеседником → другой id (findFirst=null → create)', async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce({ id: 'dm_ab' })
+      .mockResolvedValueOnce({ id: 'dm_ac' });
+    const findFirst = vi.fn().mockResolvedValue(null);
+    const prisma = {
+      membership: { findMany: membershipFindMany() },
+      conversation: { create, findFirst, findUniqueOrThrow: vi.fn() },
+    } as unknown as PrismaService;
+    const service = new ConversationService(prisma);
+
+    const r1 = await service.createConversation({
+      tenantId: 'org_1',
+      kind: 'dm',
+      createdByUserId: 'a',
+      memberUserIds: ['b'],
+    });
+    const r2 = await service.createConversation({
+      tenantId: 'org_1',
+      kind: 'dm',
+      createdByUserId: 'a',
+      memberUserIds: ['c'],
+    });
+
+    expect(r1.id).toBe('dm_ab');
+    expect(r2.id).toBe('dm_ac');
+    expect(findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it('group из тех же людей → всегда новый id, дедуп не срабатывает', async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce({ id: 'g_1' })
+      .mockResolvedValueOnce({ id: 'g_2' });
+    const findFirst = vi.fn();
+    const prisma = {
+      membership: { findMany: membershipFindMany() },
+      conversation: { create, findFirst, findUniqueOrThrow: vi.fn() },
+    } as unknown as PrismaService;
+    const service = new ConversationService(prisma);
+
+    const r1 = await service.createConversation({
+      tenantId: 'org_1',
+      kind: 'group',
+      createdByUserId: 'a',
+      memberUserIds: ['b'],
+    });
+    const r2 = await service.createConversation({
+      tenantId: 'org_1',
+      kind: 'group',
+      createdByUserId: 'a',
+      memberUserIds: ['b'],
+    });
+
+    expect(r1.id).toBe('g_1');
+    expect(r2.id).toBe('g_2');
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+});
+
 describe('ConversationService.isMandatory / getMemberRole', () => {
   it('isMandatory читает флаг', async () => {
     const prisma = {

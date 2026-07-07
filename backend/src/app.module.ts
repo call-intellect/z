@@ -126,6 +126,7 @@ import { StructureModule } from './modules/structure/structure.module';
 import { SupportModule } from './modules/support/support.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { TagsModule } from './modules/tags/tags.module';
+import { TaskSolutionsModule } from './modules/task-solutions/task-solutions.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { TrackerModule } from './modules/tracker/tracker.module';
 import { UsersModule } from './modules/users/users.module';
@@ -295,6 +296,8 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     Specialist31Module,
 
     RegulationsModule,
+
+    TaskSolutionsModule,
 
     ProcessesModule,
 

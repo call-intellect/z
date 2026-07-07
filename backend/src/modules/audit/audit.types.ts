@@ -33,6 +33,8 @@ export const AUDIT = {
   CARD_RESTORE: 'card.restore',
   REGULATION_DELETE: 'regulation.delete',
   REGULATION_RESTORE: 'regulation.restore',
+  TASK_SOLUTION_DELETE: 'task_solution.delete',
+  TASK_SOLUTION_RESTORE: 'task_solution.restore',
   DECISION_DELETE: 'decision.delete',
   DECISION_RESTORE: 'decision.restore',
   MEETING_LINK_TO_CARD: 'meeting.link_to_card',

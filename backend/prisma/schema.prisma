@@ -2601,6 +2601,7 @@ model Org {
   processSteps    ProcessStep[]
   regulations     Regulation[]
   instructions    Instruction[]
+  taskSolutions   TaskSolution[]
   policies        Policy[]
   tools           Tool[]
   metrics         Metric[]
@@ -4181,6 +4182,7 @@ model CardVersion {
   processesAsCurrent   Process[]     @relation("ProcessCurrentVersion")
   regulationsAsCurrent Regulation[]  @relation("RegulationCurrentVersion")
   instructionCurrent   Instruction[] @relation("InstructionCurrentVersion")
+  taskSolutionsAsCurrent TaskSolution[] @relation("TaskSolutionCurrentVersion")
   policiesAsCurrent    Policy[]      @relation("PolicyCurrentVersion")
   /// SBA β-3 — обратное relation для Decision.currentVersionId.
   decisionsAsCurrent   Decision[]    @relation("DecisionCurrentVersion")
@@ -5203,6 +5205,7 @@ model Person {
   /// SBA α-7 — Person как owner регламента / политики (см. sub-TZ §4, §6).
   ownedRegulations            Regulation[]                       @relation("RegulationOwnerPerson")
   instructionsOwned           Instruction[]                      @relation("InstructionOwnerPerson")
+  taskSolutionsOwned          TaskSolution[]                     @relation("TaskSolutionOwner")
   ownedPolicies               Policy[]                           @relation("PolicyOwnerPerson")
   /// SBA α-7 wave 2 — Person как owner ProcessTemplate.
   ownedProcessTemplates       ProcessTemplate[]                  @relation("ProcessTemplateOwnerPerson")
@@ -6353,6 +6356,49 @@ model Instruction {
   @@index([currentVersionId])
   @@index([tenantId, deletedAt])
   @@map("instructions")
+}
+
+model TaskSolution {
+  id                      String                      @id @default(cuid())
+  tenantId                String
+  title                   String                      @db.VarChar(300)
+  taskDescription         String                      @db.Text
+  solutionMd              String                      @db.Text
+  ownerPersonId           String
+  personSubjectIds        String[]                    @default([])
+  sourceIssueId           String
+  sourceBlockIds          String[]                    @default([])
+  skillTags               String[]                    @default([])
+  status                  ProcessStatus               @default(active)
+  version                 Int                         @default(1)
+  currentVersionId        String?
+  confidence              Float?
+  promotedToInstructionId String?
+  repeatGroupKey          String?                     @db.VarChar(120)
+  candidateInstruction    Boolean                     @default(false)
+  previewQuote            String?                     @db.Text
+  previewSourceRef        Json?
+  dataClass               DataClass                   @default(internal)
+  dataClassAudit          Json?
+  embedding               Unsupported("vector(768)")?
+  lastConfirmedAt         DateTime?
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  deletedAt               DateTime?
+  deletedById             String?
+
+  org            Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPerson    Person       @relation("TaskSolutionOwner", fields: [ownerPersonId], references: [id])
+  sourceIssue    Issue        @relation("TaskSolutionIssue", fields: [sourceIssueId], references: [id], onDelete: Cascade)
+  currentVersion CardVersion? @relation("TaskSolutionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, sourceIssueId])
+  @@index([tenantId, status])
+  @@index([tenantId, ownerPersonId])
+  @@index([tenantId, repeatGroupKey])
+  @@index([currentVersionId])
+  @@index([tenantId, deletedAt])
+  @@map("task_solutions")
 }
 
 /// Policy — политика (Фаза 0a, группа Б). UI в Фазе α-7.
@@ -9785,6 +9831,8 @@ model Issue {
   experimentLinks ExperimentTaskLink[] @relation("ExperimentTaskLinkIssue")
 
   taskSources TaskSource[]
+
+  taskSolutions TaskSolution[] @relation("TaskSolutionIssue")
 
   @@unique([projectId, sequenceId])
   @@unique([tenantId, identifier])

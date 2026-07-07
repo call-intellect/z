@@ -1344,7 +1344,7 @@ export class TypedConfigService {
       summaryRebuildHours: this.resolveSync<number>(
         'companyProfile.summaryRebuildHours',
         undefined,
-        24,
+        168,
       ),
       summaryMinSourceBlocks: this.resolveSync<number>(
         'companyProfile.summaryMinSourceBlocks',

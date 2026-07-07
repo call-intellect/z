@@ -1829,7 +1829,7 @@ function buildSettings(): SettingSeed[] {
     ],
     [
       'companyProfile.summaryRebuildHours',
-      envInt('COMPANY_PROFILE_SUMMARY_REBUILD_HOURS', 24),
+      envInt('COMPANY_PROFILE_SUMMARY_REBUILD_HOURS', 168),
       'low',
       'Интервал пересчёта авто-summary компании (часы)',
     ],

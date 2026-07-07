@@ -22,7 +22,7 @@ date: 2026-05-22
 
 **НЕ источник:** mentioned-блоки; `signalType` вне набора клона (`expertise/experience/competence` → `KnowledgeProfile` специалист 3-2; `process_step` надличностный → специалист 3-1; `decision` → специалист 3-3); внешние Person'ы (relationship≠'employee').
 
-> ⚠️ **Вскрыто боевым прод-тестом 2026-06-22** ([[../05_история/2026-06-22-clone-prod-test-and-signaltype-tz]]): узкий набор `{reasoning, rationale, decision_basis}` — узкое место. block-ingest метит «как сотрудник работает» как `methodology_step` («Шаг методологии»), а не `reasoning` → эти блоки до клона НЕ доходят, профиль не наполняется (у активных Org 0 клонов). Гейт `<5` делает полный skip. Фикс (расширить набор на `methodology_step`, единая константа + 3 рубежа + backfill) — ТЗ [`plans/tz/2026-06-22-clone-signaltype-methodology-step.md`](../../plans/tz/2026-06-22-clone-signaltype-methodology-step.md), реализация не начата. Набор скопирован литералом в ≥6 местах — рассинхрон и есть корень.
+> ✅ **Вскрыто прод-тестом 2026-06-22 и исправлено в тот же день** ([[../05_история/2026-06-22-clone-prod-test-and-signaltype-tz]]): узкий набор `{reasoning, rationale, decision_basis}` был узким местом — block-ingest метит «как сотрудник работает» как `methodology_step` («Шаг методологии»), а не `reasoning`, и эти блоки до клона не доходили (у активных Org 0 клонов), гейт `<5` давал полный skip. **Фикс реализован** (ТЗ [`plans/tz/2026-06-22-clone-signaltype-methodology-step.md`](../../plans/tz/2026-06-22-clone-signaltype-methodology-step.md)): `methodology_step` добавлен в набор; вместо литерала-копии в ≥6 местах — **единая экспортируемая константа** `SKILL_SUBJECT_SIGNAL_TYPES` + `SKILL_SUBJECT_SIGNAL_TYPE_SET` в `backend/src/modules/knowledge-core/constants/skill-signal-types.ts` (один источник для гейта-воркера и всех выборок).
 
 ## Жизненный цикл
 
@@ -157,7 +157,7 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 | Доступ | Чистый RBAC (owner/admin/self/manager) | + явный ACL через модель **`CloneAccessGrant`** (см. [[../02_architecture/data-model]] §Clones v2) — per-pair (grantee × subject) с опц. `expiresAt` и `revokedAt` |
 | Антифальшивка | ≥2 reasoning-блока с cosine≥0.70 | **Без изменений** — программное правило живёт до LLM, действует одинаково на v1 и v2 |
 | Дисклеймер | Обязательный «(клон; могу ошибаться)» | **Без изменений** |
-| Флаг | — | `CLONE_V2_ENABLED` (default off). v1 и v2 живут параллельно для A/B. |
+| Флаг | — | `CLONE_V2_ENABLED` — kill-switch, **ВКЛ по умолчанию** (Ship-On, `zBool(true)` в `env.schema.ts`). v2 — основной путь диалога с клоном; v1 остаётся дешёвой one-shot-веткой (не A/B). Ship-On и рядом стоящие `CLONE_RESPOND_GROUNDING_ENABLED` / `PRACTICE_SKILLS_ENABLED` — тоже kill-switch ON. |
 
 Связанные изменения:
 - API: добавлены 2 endpoint'а в [[api-layer]] §Clones.

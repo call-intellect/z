@@ -25,7 +25,7 @@ type: project
 
 ## Шаблоны по типу
 
-Enum `MeetingType` ([schema.prisma](../../backend/prisma/schema.prisma)) содержит 14 типов — все перечислены ниже. Реестр промптов — [`backend/src/modules/ai/services/prompts/index.ts`](../../backend/src/modules/ai/services/prompts/index.ts); тип без отдельного промпта переиспользует близкий по смыслу формат.
+Enum `MeetingType` ([schema.prisma](../../backend/prisma/schema.prisma)) содержит 13 типов — все перечислены ниже. Реестр промптов — [`backend/src/modules/ai/services/prompts/index.ts`](../../backend/src/modules/ai/services/prompts/index.ts); тип без отдельного промпта переиспользует близкий по смыслу формат.
 
 ### `team` — Командная встреча
 - что обсудили
@@ -145,7 +145,7 @@ Enum `MeetingType` ([schema.prisma](../../backend/prisma/schema.prisma)) сод�
 При создании встречи можно передать поле `custom_prompt: string`. Если заполнено — AI на этапе `analyze` использует **его** вместо стандартного шаблона по типу.
 
 - **Где задаётся:** в API при создании встречи (Crossmark или сам Z UI), в раскрывающейся секции «Свой промпт отчёта».
-- **Что меняется:** этап `analyze` берёт `custom_prompt` как system-инструкцию для Claude Sonnet, диалог-транскрипт идёт в user-сообщение, ответ сохраняется в `ai_result.custom_output_md` (markdown-текст), `structured_data` остаётся `null`.
+- **Что меняется:** этап `analyze` берёт `custom_prompt` как system-инструкцию для LLM через `llm-router` (taskType `custom-report`/`custom-prompt`, стандарт — DeepSeek-primary, не Claude Sonnet), диалог-транскрипт идёт в user-сообщение, ответ сохраняется в `ai_result.custom_output_md` (markdown-текст), `structured_data` остаётся `null`.
 - **Что не меняется:** `summary` (краткое содержание 2-3 предложения) генерится всегда отдельным вызовом — это не зависит от типа.
 - **Тип всё равно нужен** — для статистики, группировки, тарифных лимитов. Просто содержание отчёта определяется промптом.
 

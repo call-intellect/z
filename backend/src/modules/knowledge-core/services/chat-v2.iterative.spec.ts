@@ -68,6 +68,8 @@ function makeService(over: Over = {}): {
     getDynamic: vi.fn(async (key: string, _env: unknown, def: unknown) => {
       if (key === 'rag.rerank_min_pool') return minPool;
       if (key === 'rag.rrf_k') return 60;
+      if (key === 'knowledge.chatV2CascadeEnabled') return false;
+      if (key === 'knowledge.chatV2BaseRecallFloor') return false;
       return def;
     }),
     aiFeatures: { promptInjectionGuardEnabled: false },
@@ -129,7 +131,10 @@ function ranked(ids: string[]): RankedBlockId[] {
 }
 
 function asInternal(svc: ChatV2Service): {
-  runRetrieval: (i: unknown, c: unknown) => Promise<string[]>;
+  runRetrieval: (
+    i: unknown,
+    c: unknown,
+  ) => Promise<{ blockIds: string[]; approximate: boolean }>;
 } {
   return svc as never;
 }
@@ -167,7 +172,7 @@ describe('ChatV2Service — одношаговый retrieval (второй ци�
 
     expect(fetchCandidates).toHaveBeenCalledTimes(1);
     expect(count).not.toHaveBeenCalled();
-    expect(out).toEqual(['a', 'b']);
+    expect(out.blockIds).toEqual(['a', 'b']);
   });
 
   it('большой пул > rerank_min_pool → единственный LLM-вызов в retrieval — rag-rerank', async () => {
@@ -191,6 +196,6 @@ describe('ChatV2Service — одношаговый retrieval (второй ци�
 
     const types = llmTaskTypes(llmCall);
     expect(types).toEqual(['rag-rerank']);
-    expect(out.length).toBeLessThanOrEqual(18);
+    expect(out.blockIds.length).toBeLessThanOrEqual(18);
   });
 });

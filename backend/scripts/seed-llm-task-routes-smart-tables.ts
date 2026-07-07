@@ -28,9 +28,8 @@ const CHEAP_CHAIN: TierEntry[] = [
 ];
 
 const SEEDS: TaskRouteSeed[] = [
-  { taskType: 'table-infer-schema', chain: CAPABLE_CHAIN },
+  { taskType: 'table-infer-schema', chain: CHEAP_CHAIN },
   { taskType: 'table-architect-pass', chain: CAPABLE_CHAIN },
-  { taskType: 'table-entity-check', chain: CAPABLE_CHAIN },
   { taskType: 'table-extract-rows', chain: CHEAP_CHAIN },
   { taskType: 'table-auto-fill', chain: CHEAP_CHAIN },
   { taskType: 'table-semantic-filter', chain: CHEAP_CHAIN },

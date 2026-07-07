@@ -1,0 +1,344 @@
+{
+  "stamp": "2026-07-05T08-45-24-114Z",
+  "orgId": "cmr4ztnfj0001hgbwuij7xc3n",
+  "bearers": [
+    {
+      "name": "Сергей",
+      "clone": "ceo",
+      "personResolved": true,
+      "profileResolved": true,
+      "activeTraitCount": 9,
+      "expectedCount": 4,
+      "matchedCount": 1,
+      "derivationPassed": 1,
+      "personaIn": 1,
+      "unmatched": [
+        {
+          "methodId": "ceo-data",
+          "derivedStatement": "Принимает решения исключительно на основе когортного анализа и распределений, принципиально отвергая средние показатели и интуитивные суждения как обманчивые."
+        },
+        {
+          "methodId": "ceo-nodeadline",
+          "derivedStatement": "Принимает обязательства по срокам только после получения эмпирических данных с пробного прогона или замеров, считая любые оценки без измерений гаданием."
+        },
+        {
+          "methodId": "ceo-retention",
+          "derivedStatement": "При оценке любых задач или фичей он руководствуется исключительно их влиянием на удержание пользователей и безжалостно отсекает всё, что не даёт retention-эффекта."
+        }
+      ],
+      "details": [
+        {
+          "methodId": "ceo-data",
+          "derivedStatement": "Принимает решения исключительно на основе когортного анализа и распределений, принципиально отвергая средние показатели и интуитивные суждения как обманчивые.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "ceo-nodeadline",
+          "derivedStatement": "Принимает обязательства по срокам только после получения эмпирических данных с пробного прогона или замеров, считая любые оценки без измерений гаданием.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "ceo-pilot",
+          "derivedStatement": "Он всегда сначала тестирует любое изменение на малой группе, чтобы измерить эффект и выявить проблемы, прежде чем масштабировать его на всю аудиторию.",
+          "matched": true,
+          "matchedTraitId": "1288dfbb-5ccb-4497-91fb-f1da4759b270",
+          "matchedStatement": "Похоже, склонен перед любым широким развёртыванием сначала запускать пилот на узкой группе, замерять метрики и только потом делать общую раскатку — в большинстве случаев мотивирует это тем, что пилот дешевле отката и позволяет поймать проблему до того, как её увидят все.",
+          "hasSourceBlocks": true,
+          "derived": true,
+          "inPersona": true
+        },
+        {
+          "methodId": "ceo-retention",
+          "derivedStatement": "При оценке любых задач или фичей он руководствуется исключительно их влиянием на удержание пользователей и безжалостно отсекает всё, что не даёт retention-эффекта.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        }
+      ]
+    },
+    {
+      "name": "Михаил",
+      "clone": "integrator",
+      "personResolved": true,
+      "profileResolved": true,
+      "activeTraitCount": 6,
+      "expectedCount": 4,
+      "matchedCount": 1,
+      "derivationPassed": 1,
+      "personaIn": 1,
+      "unmatched": [
+        {
+          "methodId": "int-logs",
+          "derivedStatement": "Он всегда ищет первопричину через логи и метрики до внесения любых изменений в код, считая, что фикс без диагностики — это лечение симптома, а не проблемы."
+        },
+        {
+          "methodId": "int-monitor",
+          "derivedStatement": "Он не считает задачу завершённой, пока не обеспечит её наблюдаемость через мониторинг, метрики, алерты и дашборды, превращая это в обязательный этап закрытия."
+        },
+        {
+          "methodId": "int-stage",
+          "derivedStatement": "Считает полноценное тестирование на staging-среде обязательным и необсуждаемым этапом перед любым выкатом в продакшен, исключающим ставку на удачу."
+        }
+      ],
+      "details": [
+        {
+          "methodId": "int-logs",
+          "derivedStatement": "Он всегда ищет первопричину через логи и метрики до внесения любых изменений в код, считая, что фикс без диагностики — это лечение симптома, а не проблемы.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "int-backoff",
+          "derivedStatement": "При столкновении с частотными ограничениями внешних систем применяет экспоненциальный откат с джиттером вместо агрессивных немедленных повторных попыток.",
+          "matched": true,
+          "matchedTraitId": "adc6d4d8-0b4a-409f-bffc-4b52919d863e",
+          "matchedStatement": "Похоже, склонен при столкновении с rate limiting (429) применять экспоненциальный backoff с джиттером, а не повторять запросы немедленно — в большинстве случаев рассматривает ограничения внешней системы по частоте как сигнал к нарастающей паузе, а не к настойчивому ретраю.",
+          "hasSourceBlocks": true,
+          "derived": true,
+          "inPersona": true
+        },
+        {
+          "methodId": "int-monitor",
+          "derivedStatement": "Он не считает задачу завершённой, пока не обеспечит её наблюдаемость через мониторинг, метрики, алерты и дашборды, превращая это в обязательный этап закрытия.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "int-stage",
+          "derivedStatement": "Считает полноценное тестирование на staging-среде обязательным и необсуждаемым этапом перед любым выкатом в продакшен, исключающим ставку на удачу.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        }
+      ]
+    },
+    {
+      "name": "Дарья",
+      "clone": "marketer",
+      "personResolved": true,
+      "profileResolved": true,
+      "activeTraitCount": 14,
+      "expectedCount": 4,
+      "matchedCount": 0,
+      "derivationPassed": 0,
+      "personaIn": 0,
+      "unmatched": [
+        {
+          "methodId": "mkt-base",
+          "derivedStatement": "Перед любой рассылкой он считает обязательным очищать и валидировать базу контактов — удалять дубли и невалидные адреса, чтобы избежать искажения метрик и напрасных расходов."
+        },
+        {
+          "methodId": "mkt-segment",
+          "derivedStatement": "Всегда сегментирует аудиторию по поведенческим признакам перед коммуникацией и адаптирует сообщение под каждый сегмент вместо массовой рассылки."
+        },
+        {
+          "methodId": "mkt-ab",
+          "derivedStatement": "Принимает решения о масштабировании исключительно на основе статистически значимых результатов A/B-тестов на малой выборке, не полагаясь на интуицию."
+        },
+        {
+          "methodId": "mkt-unit",
+          "derivedStatement": "Принимает решения о запуске или закрытии рекламных каналов исключительно на основе предварительной юнит-модели, допуская вложения только при условии, что LTV перекрывает CAC."
+        }
+      ],
+      "details": [
+        {
+          "methodId": "mkt-base",
+          "derivedStatement": "Перед любой рассылкой он считает обязательным очищать и валидировать базу контактов — удалять дубли и невалидные адреса, чтобы избежать искажения метрик и напрасных расходов.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "mkt-segment",
+          "derivedStatement": "Всегда сегментирует аудиторию по поведенческим признакам перед коммуникацией и адаптирует сообщение под каждый сегмент вместо массовой рассылки.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "mkt-ab",
+          "derivedStatement": "Принимает решения о масштабировании исключительно на основе статистически значимых результатов A/B-тестов на малой выборке, не полагаясь на интуицию.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "mkt-unit",
+          "derivedStatement": "Принимает решения о запуске или закрытии рекламных каналов исключительно на основе предварительной юнит-модели, допуская вложения только при условии, что LTV перекрывает CAC.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        }
+      ]
+    },
+    {
+      "name": "Елена",
+      "clone": "support",
+      "personResolved": true,
+      "profileResolved": true,
+      "activeTraitCount": 6,
+      "expectedCount": 3,
+      "matchedCount": 0,
+      "derivationPassed": 0,
+      "personaIn": 0,
+      "unmatched": [
+        {
+          "methodId": "sup-severity",
+          "derivedStatement": "Он использует жёсткую формальную классификацию по severity как единственный критерий, определяющий маршрут и срочность эскалации, полностью исключая субъективные оценки."
+        },
+        {
+          "methodId": "sup-sla4h",
+          "derivedStatement": "Он превращает время первого отклика клиенту в неукоснительное обязательство: тишина после обращения неприемлема, даже если решение ещё не готово, а при нарушениях ищет причину в организации процесса, чтобы избавить человека от тревожной неизвестности."
+        },
+        {
+          "methodId": "sup-postmortem",
+          "derivedStatement": "Любой инцидент или сбой он разбирает (post-mortem) и обязательно доводит разбор до конкретных изменений в регламенте, чтобы исключить повторение — иначе считает разбор бесполезным."
+        }
+      ],
+      "details": [
+        {
+          "methodId": "sup-severity",
+          "derivedStatement": "Он использует жёсткую формальную классификацию по severity как единственный критерий, определяющий маршрут и срочность эскалации, полностью исключая субъективные оценки.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "sup-sla4h",
+          "derivedStatement": "Он превращает время первого отклика клиенту в неукоснительное обязательство: тишина после обращения неприемлема, даже если решение ещё не готово, а при нарушениях ищет причину в организации процесса, чтобы избавить человека от тревожной неизвестности.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "sup-postmortem",
+          "derivedStatement": "Любой инцидент или сбой он разбирает (post-mortem) и обязательно доводит разбор до конкретных изменений в регламенте, чтобы исключить повторение — иначе считает разбор бесполезным.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        }
+      ]
+    },
+    {
+      "name": "Игорь",
+      "clone": "support",
+      "personResolved": true,
+      "profileResolved": true,
+      "activeTraitCount": 8,
+      "expectedCount": 3,
+      "matchedCount": 1,
+      "derivationPassed": 1,
+      "personaIn": 1,
+      "unmatched": [
+        {
+          "methodId": "sup-early",
+          "derivedStatement": "Он проактивно инициирует эскалацию при первом сигнале риска задержки, не дожидаясь фактического срыва сроков."
+        },
+        {
+          "methodId": "sup-strict",
+          "derivedStatement": "Действует на упреждение: при первых признаках роста нагрузки усиливает ресурсы, воспринимая SLA как нерушимую границу и исключая даже малейший риск его нарушения."
+        }
+      ],
+      "details": [
+        {
+          "methodId": "sup-postmortem-i",
+          "derivedStatement": "Системно извлекает уроки из инцидентов через пост-мортемы и фиксирует выводы в процессах и регламентах, чтобы предотвратить повторение ошибок.",
+          "matched": true,
+          "matchedTraitId": "e8f183ce-fdbb-4b18-bc4d-c2aba5a89c41",
+          "matchedStatement": "Похоже, после каждого серьёзного инцидента обычно проводит пост-мортем: фиксирует факты, находит причину, назначает владельцев исправлений и вносит правки в процесс/регламент.",
+          "hasSourceBlocks": true,
+          "derived": true,
+          "inPersona": true
+        },
+        {
+          "methodId": "sup-early",
+          "derivedStatement": "Он проактивно инициирует эскалацию при первом сигнале риска задержки, не дожидаясь фактического срыва сроков.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        },
+        {
+          "methodId": "sup-strict",
+          "derivedStatement": "Действует на упреждение: при первых признаках роста нагрузки усиливает ресурсы, воспринимая SLA как нерушимую границу и исключая даже малейший риск его нарушения.",
+          "matched": false,
+          "matchedTraitId": null,
+          "matchedStatement": null,
+          "hasSourceBlocks": false,
+          "derived": false,
+          "inPersona": false
+        }
+      ]
+    }
+  ],
+  "falseMerge": {
+    "supportRoleResolved": true,
+    "activeBearerName": "Игорь",
+    "activeVersion": 2,
+    "leakCount": 0,
+    "leakDetail": [],
+    "frozenPresent": false,
+    "versions": [
+      {
+        "roleVersion": 2,
+        "status": "active",
+        "bearerName": "Игорь",
+        "traits": 7
+      },
+      {
+        "roleVersion": 1,
+        "status": "superseded",
+        "bearerName": "Игорь",
+        "traits": 6
+      }
+    ],
+    "pass": false
+  }
+}

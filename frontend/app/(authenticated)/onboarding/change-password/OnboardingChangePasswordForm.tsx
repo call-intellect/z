@@ -55,7 +55,7 @@ export function OnboardingChangePasswordForm() {
       }
       await refresh();
       toast.success("Пароль установлен.");
-      router.replace("/meetings");
+      router.replace("/dashboard");
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === "current_password_invalid") {

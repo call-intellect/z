@@ -13,7 +13,6 @@ import {
 describe('probeWindow', () => {
   it('immediate для критичных reason', () => {
     expect(probeWindow('task.assignee_unresolved')).toBe('immediate');
-    expect(probeWindow('consistency_violation.R3')).toBe('immediate');
     expect(probeWindow('kr_checkpoint_suggested')).toBe('immediate');
   });
 
@@ -587,18 +586,24 @@ describe('resolveProbeProvenance (центральный гейт политик
 describe('MACHINE_FILLABLE_REASONS (защита human-only)', () => {
   it('содержит машинно-закрываемые gap-reason', () => {
     expect(MACHINE_FILLABLE_REASONS.has('card.merge_suggestion')).toBe(true);
-    expect(MACHINE_FILLABLE_REASONS.has('experiment.no_owner')).toBe(true);
-    expect(
-      MACHINE_FILLABLE_REASONS.has('process_template.step_without_owner'),
-    ).toBe(true);
   });
 
-  it('НЕ содержит regulation / attribution / decision', () => {
+  it('НЕ содержит снесённые process_template-вопросы', () => {
+    expect(
+      MACHINE_FILLABLE_REASONS.has('process_template.step_without_owner'),
+    ).toBe(false);
+    expect(
+      MACHINE_FILLABLE_REASONS.has('process_template.missing_output_artifact'),
+    ).toBe(false);
+  });
+
+  it('НЕ содержит regulation / attribution / decision / experiment', () => {
     expect(MACHINE_FILLABLE_REASONS.has('regulation.missing_owner')).toBe(false);
     expect(
       MACHINE_FILLABLE_REASONS.has('attribution.unresolved_at_ingest'),
     ).toBe(false);
     expect(MACHINE_FILLABLE_REASONS.has('decision.missing_decider')).toBe(false);
     expect(MACHINE_FILLABLE_REASONS.has('decision.overdue')).toBe(false);
+    expect(MACHINE_FILLABLE_REASONS.has('experiment.no_owner')).toBe(false);
   });
 });

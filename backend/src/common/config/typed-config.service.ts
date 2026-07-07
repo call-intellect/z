@@ -647,6 +647,16 @@ export class TypedConfigService {
         12,
       ),
       entityMergeThreshold: this.get('ENTITY_MERGE_THRESHOLD'),
+      entityConsolidateSameNameEnabled: this.resolveSync<boolean>(
+        'knowledge.entityConsolidateSameNameEnabled',
+        undefined,
+        true,
+      ),
+      entityConsolidateSameNameBatchSize: this.resolveSync<number>(
+        'knowledge.entityConsolidateSameNameBatchSize',
+        undefined,
+        200,
+      ),
       entityResolverCron: this.get('ENTITY_RESOLVER_CRON'),
       regulationConsolidatorCron: this.get('REGULATION_CONSOLIDATOR_CRON'),
       blockIngestWindowSegments: this.resolveSync<number>('knowledge.blockIngestWindowSegments', 'BLOCK_INGEST_WINDOW_SEGMENTS', 5),
@@ -683,6 +693,11 @@ export class TypedConfigService {
         'knowledge.entityGraphMinComentions',
         'ENTITY_GRAPH_MIN_COMENTIONS',
         2,
+      ),
+      entityGraphPairsPerOrg: this.resolveSync<number>(
+        'knowledge.entityGraphPairsPerOrg',
+        undefined,
+        50,
       ),
       themeClustererCron: this.get('THEME_CLUSTERER_CRON'),
       themeClusteringMinBlocks: this.resolveSync<number>(
@@ -898,6 +913,23 @@ export class TypedConfigService {
       maxZipSizeMb,
       maxZipSizeBytes: maxZipSizeMb * 1024 * 1024,
     };
+  }
+
+  async themeAutofillOpts(): Promise<{
+    enabled: boolean;
+    threshold: number;
+    scanWindowDays: number;
+    maxPerScan: number;
+    dedupeSimilarity: number;
+  }> {
+    const [enabled, threshold, scanWindowDays, maxPerScan, dedupeSimilarity] = await Promise.all([
+      this.getDynamic<boolean>('theme.autofill.enabled', undefined, true),
+      this.getDynamic<number>('theme.autofill.threshold', undefined, 0.72),
+      this.getDynamic<number>('theme.autofill.scanWindowDays', undefined, 14),
+      this.getDynamic<number>('theme.autofill.maxPerScan', undefined, 50),
+      this.getDynamic<number>('theme.autofill.dedupeSimilarity', undefined, 0.97),
+    ]);
+    return { enabled, threshold, scanWindowDays, maxPerScan, dedupeSimilarity };
   }
 
   get smartTables() {
@@ -1206,7 +1238,7 @@ export class TypedConfigService {
       rateLimitPerDay: this.resolveSync<number>(
         'probe.rateLimitPerDay',
         'PROBE_RATE_LIMIT_PER_USER_PER_DAY',
-        20,
+        5,
       ),
       expiryDays: this.resolveSync<number>('probe.expiryDays', 'PROBE_EXPIRY_DAYS', 14),
       priorityRefreshCron: this.get('PROBE_PRIORITY_REFRESH_CRON'),
@@ -1634,6 +1666,8 @@ export class TypedConfigService {
         insightNoMitigation: this.get('PROACTIVE_RULE_INSIGHT_NO_MITIGATION_ENABLED') !== false,
         experimentRunningTooLong:
           this.get('PROACTIVE_RULE_EXPERIMENT_RUNNING_TOO_LONG_ENABLED') !== false,
+        experimentResultWithoutLesson:
+          this.get('PROACTIVE_RULE_EXPERIMENT_RESULT_WITHOUT_LESSON_ENABLED') !== false,
         processStaleReview: this.get('PROACTIVE_RULE_PROCESS_STALE_REVIEW_ENABLED') !== false,
         roleLowCompleteness: this.get('PROACTIVE_RULE_ROLE_LOW_COMPLETENESS_ENABLED') !== false,
         departmentNoDomain: this.get('PROACTIVE_RULE_DEPARTMENT_NO_DOMAIN_ENABLED') !== false,

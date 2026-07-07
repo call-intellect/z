@@ -11,6 +11,7 @@ import { TableAgentService } from './services/table-agent.service';
 import { TableEnrichQueueService } from './services/table-enrich-queue.service';
 import { TableEnrichService } from './services/table-enrich.service';
 import { TableFileParserService } from './services/table-file-parser.service';
+import { TableGraphSyncService } from './services/table-graph-sync.service';
 import { TableImportService } from './services/table-import.service';
 import { TablePropertiesService } from './services/table-properties.service';
 import { TableRowsService } from './services/table-rows.service';
@@ -45,6 +46,7 @@ import { TablesService } from './services/tables.service';
     TableEnrichQueueService,
     TableEnrichService,
     TableEnrichListener,
+    TableGraphSyncService,
   ],
   exports: [
     TablesService,
@@ -55,6 +57,7 @@ import { TablesService } from './services/tables.service';
     TableSyncQueueService,
     TableEnrichService,
     TableEnrichQueueService,
+    TableGraphSyncService,
   ],
 })
 export class TablesModule {}

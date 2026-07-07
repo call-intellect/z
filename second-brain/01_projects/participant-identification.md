@@ -1,20 +1,26 @@
 ---
 title: Жёсткая идентификация участников встречи
 created: 2026-05-25
+updated: 2026-07-05
 status: active
+related:
+  - 01_projects/tracker.md
+  - 01_projects/task-closure-method-capture-flow.md
 ---
 
-# Жёсткая идентификация участников встречи (Task.assigneeUserId)
+# Жёсткая идентификация участников встречи
 
-## Зачем
+> ⚠️ **Актуализировано 2026-07-05.** Модель `Task` и `enum TaskStatus` **дропнуты 2026-06-25** (коммит `ec41a025`, Ф8 «снести модель Task»). Задача теперь = `IntakeIssue` → `Issue`, исполнитель — через M:M `IssueAssignee` (не `Task.assigneeUserId`). Извлечение задач встреч идёт **не** отдельными воркерами, а через combo `knowledge-specialists-combined` → `TaskDraftMaterializerService` → `IntakeIssue`. Резолв исполнителя в combo-пути делает `AssigneeResolverService` (tracker, `via: 'name' | 'memory'`). См. [[tracker]] §«Combo — единый источник задач», [[task-closure-method-capture-flow]]. Ниже — исходная логика жёсткой идентификации; идентификация участника встречи (`ParticipantContextService`) **жива**, а `TaskAssigneeResolverService` остался в knowledge-core как провайдер, но сейчас никем не инжектится (dormant).
 
-Раньше AI извлекал задачи из транскрипта и заполнял только `Task.assigneeRaw` строкой («Иван»). Поле `Task.assigneeUserId` существовало в БД, но никогда не заполнялось — даже когда host'ы заходили в LiveKit с identity `host:<userId>`. Из-за этого:
+## Зачем (исходная мотивация)
+
+Раньше AI извлекал задачи из транскрипта и заполнял только `assigneeRaw` строкой («Иван»), без связи с `User.id` — даже когда host'ы заходили в LiveKit с identity `host:<userId>`. Из-за этого:
 
 - UI задач не показывал аватар/ссылку на профиль исполнителя.
 - Не работал фильтр «мои задачи» по `User.id`.
 - AI-чат компании и Employee Clones не могли связать обсуждение с конкретным сотрудником.
 
-ТЗ 2026-05-25 [`hard-participant-identification`](../../plans/archive/2026-05-25-hard-participant-identification.md) добавил жёсткую цепочку: LiveKit → Participant → AI-промпт → LLM → Task.assigneeUserId.
+ТЗ 2026-05-25 [`hard-participant-identification`](../../plans/archive/2026-05-25-hard-participant-identification.md) добавил жёсткую цепочку: LiveKit → Participant → AI-промпт → LLM → исполнитель по `User.id`.
 
 ## Архитектура цепочки
 
@@ -22,39 +28,30 @@ status: active
 LiveKit join (livekitIdentity="host:<userId>")
    → Participant{userId, name, livekitIdentity, role}
        → транскрипт + IdeaBlock
-            → ParticipantContextService.loadForMeeting(meetingId)
+            → ParticipantContextService.loadForMeeting(meetingId)   ← жив
                   → AiParticipantContext[] { livekitIdentity, displayName, userId, fullName, role }
-                       → buildTasksV2Prompt / buildTasksStructuredPrompt
-                           (system: правила, user: блок участников, schema: assigneeUserId)
-                            → LLM возвращает { assigneeRaw, assigneeUserId | null }
-                                 → TaskAssigneeResolverService.resolve(...)
-                                      → Task { assigneeRaw, assigneeUserId } в БД
+                       → combo knowledge-specialists-combined (блок участников в шапке)
+                            → task-черновик { assigneeRaw }
+                                 → TaskDraftMaterializerService → AssigneeResolverService.resolve(...)
+                                      → IntakeIssue → Issue + IssueAssignee (M:M) в БД
 ```
 
 ## Компоненты
 
 - **`AiParticipantContext`** (`backend/src/modules/ai/services/prompts/participant-context.ts`) — единый тип контекста участника для AI-промптов. Helper `formatParticipantsForPrompt()` собирает компактный текстовый блок «- "Анна" (userId=user_abc, role=host)».
 - **`ParticipantContextService`** (`backend/src/modules/ai/services/participant-context.service.ts`) — загрузка из БД (`Participant JOIN User`). Гость → `userId=null`. Хост'ы первыми, потом гости. Зарегистрирован в `@Global() AiModule`.
-- **`TaskAssigneeResolverService`** (`backend/src/modules/knowledge-core/services/task-assignee-resolver.service.ts`) — 4 ветки:
-  1. LLM вернул валидный `assigneeUserId` (есть в participants) → принимаем.
-  2. LLM вернул `assigneeUserId`, которого нет в participants → null + метрика `llm_hallucination` + fallback по имени.
-  3. Только `assigneeRaw` → точный case-insensitive матч по `displayName` или `fullName`. Один матч → ставим userId.
-  4. ≥2 матчей → null + ambiguous=true + метрика `duplicate_name`.
-- **Промпты** (3 точки):
-  - `backend/src/modules/knowledge-core/prompts/tasks-v2.prompt.ts` — для `tasks-v2` (knowledge-core, `meeting-analyze-v2.worker`).
-  - `backend/src/modules/ai/services/prompts/tasks-unified.ts` — единый builder, опция `participants?: AiParticipantContext[]`.
-  - `backend/src/modules/ai/services/prompts/tasks-structured.ts` — обёртка для `TaskExtractionService` (legacy `tasks-extract.worker`). Принимает `participants` через `TasksStructuredPromptInput`.
-- **Воркеры**:
-  - `backend/src/modules/ai/workers/tasks-extract.worker.ts` — legacy путь поверх сырого диалога.
-  - `backend/src/modules/knowledge-core/workers/meeting-analyze-v2.worker.ts` — v2 путь поверх IdeaBlock'ов. Оба загружают participants и резолвят результат.
+- **`AssigneeResolverService`** (`backend/src/modules/tracker/services/assignee-resolver.service.ts`) — активный резолвер исполнителя в combo-пути. `resolve(tenantId, rawName)` → точный матч по имени (`via:'name'`) → память субъекта (`via:'memory'`) → `needsAssignee`+candidates (probe `task.assignee_unresolved`, см. [[probe-agent]]).
+- **`TaskAssigneeResolverService`** (`backend/src/modules/knowledge-core/services/task-assignee-resolver.service.ts`) — **dormant**: остался как провайдер в `KnowledgeCoreModule`, но ни один потребитель его больше не инжектит (в `intake.service.ts` — только исторический комментарий). Логика 4 веток (валидный userId / hallucination-fallback / точный матч по имени / ambiguous `duplicate_name`) сохранена в файле, метрика `z_task_assignee_ambiguous_total` из него больше не пишется.
+- **Промпт участников:** блок участников (`AiParticipantContext[]`) собирает `formatParticipantsForPrompt()` и кладёт в шапку combo-извлечения (`knowledge-specialists-combined`). Старые точки `tasks-v2.prompt.ts` / `tasks-structured.ts` / `tasks-unified.ts` удалены вместе с моделью Task.
+- **Воркеры:** отдельные `tasks-extract.worker.ts` и `meeting-analyze-v2.worker.ts` **удалены**. Анализ встречи идёт через `ai/workers/analyze.worker.ts` + `meeting-speaker-analyzer.worker.ts`; задачи — через combo (см. [[workers-queues]] `core.specialists-combined`).
 
-## Prisma
+## Prisma (актуально)
 
-- `Task.assigneeUserId String?` — уже существовало.
-- `Task.assignee User? @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)` — добавлена в ТЗ.
-- `User.assignedTasks Task[] @relation("TaskAssignee")` — симметричная.
-- `@@index([assigneeUserId])` — для фильтра «мои задачи».
-- `onDelete: SetNull` — при удалении User'а `assigneeUserId` обнуляется, но Task остаётся (`assigneeRaw` хранит историческую строку).
+Модели `Task` и `enum TaskStatus` **дропнуты 2026-06-25** (коммит `ec41a025`) — полей `Task.assigneeUserId` / `Task.assignee` / `User.assignedTasks` в схеме больше НЕТ. Исполнитель задачи хранится в M:M:
+
+- `IntakeIssue` — черновик задачи из combo-извлечения (до подтверждения / auto-triage).
+- `Issue` — материализованная задача; исполнитель — через связку `IssueAssignee` (M:M, `Issue` × `User`), а не скалярным полем.
+- Идентификация участника встречи по-прежнему живёт в `Participant{userId, livekitIdentity, role}` (её читает `ParticipantContextService`).
 
 ## Метрики
 
@@ -84,6 +81,8 @@ Cardinality безопасна: tenant + 2 reason = ~2N рядов на N тен
 
 ## Связь с другими заметками
 
+- [tracker.md](tracker.md) — §«Дроп legacy-модели Task» и §«Combo — единый источник задач»: актуальная архитектура извлечения/назначения задач (Issue/IssueAssignee, combo→IntakeIssue).
+- [task-closure-method-capture-flow.md](task-closure-method-capture-flow.md) — сквозная карта атрибуции реплик (`evidence.authorPersonId`) и петли извлечения задач.
 - [ai-jobs.md](ai-jobs.md) — общая карта AI-jobs и провайдеров.
 - [conversational-channels.md](conversational-channels.md) — правила one-user-one-org (host'ы всегда зарегистрированы в Org).
 - [../02_architecture/data-model.md](../02_architecture/data-model.md) — Prisma-схема.

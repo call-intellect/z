@@ -435,6 +435,22 @@ N:1 к IdeaBlock — один блок может агрегировать мн�
 
 **Дроп двух полей надзора за внедрением решений** (2026-06-30, миграция `20260630020000_drop_decision_implementation_fields`, ТЗ [`2026-06-29-decisions-operational-cleanup`](../../plans/tz/2026-06-29-decisions-operational-cleanup.md)) — две производные колонки контролёра внедрения решений (статус внедрения + дата проверки, изначально добавлены `20260608160100`) **дропнуты**: надзор за внедрением снят, решение остаётся пассивной памятью. Колонка `Decision.linkedTaskCount` той же исходной миграции **остаётся** (счётчик связанных задач — ось исполнения). `DROP COLUMN` без потери значимых данных (статусы были производными). `Decision.reversibility`/`reversibilityAt` (гигиена решений, Bezos one-way door) **остаются** атрибутом памяти — на карточке показываются тихим бейджом «необратимое» при `reversibility==='type-1'`.
 
+### ExperimentTaskLink (провенанс «задача из эксперимента»)
+
+```
+ExperimentTaskLink {
+  id, tenantId,
+  experimentId → Experiment (onDelete: Cascade),
+  issueId      → Issue      (onDelete: Cascade),
+  linkType String @default("derived"),
+  createdAt
+  @@unique([experimentId, issueId])
+  @@index([tenantId, issueId])
+}
+```
+
+**Модель `ExperimentTaskLink`** (2026-07-06, миграция `20260706130000_add_experiment_task_link`, ТЗ [`experiment-to-task`](../../plans/tz/2026-07-06-experiment-to-task.md)) — **зеркало `DecisionTaskLink`**: связь задача↔эксперимент с провенансом «задача выросла из эксперимента». `Experiment` (специалист 3-9-experiments) **не менялся** и остаётся фактом памяти; когда эксперимент содержит **конкретное действие**, извлечение вдобавок заводит задачу в трекер — эта таблица держит связь. `linkType='derived'` — связь авто-деривится в `intake-auto-triage.worker.ts` (утилита `linkDerivedExperimentsForIssue`) по пересечению `IntakeIssue.sourceBlockIds` с `Experiment.sourceBlockIds` того же tenant (общий блок-источник ⇒ задача и эксперимент из одной реплики). Аддитивная таблица (`CREATE TABLE` + 2 FK `CASCADE` на `experiments`/`Issue`, без изменения существующих). В отличие от `Decision`, у `Experiment` **нет** `linkedTaskCount` и `deletedAt` — счётчик задач на эксперименте не денормализуется. Прецеденты той же оси «память + исполнение»: решение→задача (`DecisionTaskLink`) и обещание→задача.
+
 ### Entity
 
 ```
@@ -670,6 +686,48 @@ ThemeEntity {
 Поддерживается `theme-clusterer` (создание) и `reframing.reflectOnThemes`
 (перенос при `themeMerges`).
 
+## Живое пространство темы — пользовательские темы + авто-наполнение (2026-07-03)
+
+**Источник:** ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md) (миграция `20260703000000_living_topic_space`). Тему теперь **заводит человек руками** (`origin=user`), а Кора **сама наполняет** её релевантными блоками ≥ порога 0.72. Подробно — [[../01_projects/themes]] §«Пользовательские темы».
+
+**4 новых enum:**
+- `ThemeOrigin { auto  user }` — кто создал тему (кластеризатор vs человек).
+- `ThemeVisibility { personal  team }` — личная (видит только автор) vs командная (видит вся Org).
+- `ThemeLinkOrigin { clustered  autofill  manual }` — как блок попал в тему (кластеризация / авто-наполнение / ручной pin).
+- `ThemeExclusionKind { block  entity }` — что убрал пользователь (блок или сущность).
+
+**Новые колонки `Theme`:**
+```
+origin          ThemeOrigin      @default(auto)
+createdByUserId String?
+visibility      ThemeVisibility  @default(team)
+createdByUser   User?  @relation("ThemeAuthor", ...) onDelete: SetNull
+exclusions      ThemeExclusion[]
+@@index([tenantId, origin, createdByUserId])
+```
+
+**Новые колонки `ThemeIdeaBlock`** (провенанс авто-наполнения — «почему блок в теме»):
+```
+addedVia ThemeLinkOrigin @default(clustered)   // как попал: clustered | autofill | manual
+score    Decimal? @db.Decimal(4, 3)            // близость при autofill (для «почему»)
+reason   String?  @db.Text                     // человекочитаемо: «4 упоминания клиента, участник Смирнов»
+```
+
+**Новая таблица `ThemeExclusion`** — «пользователь убрал, больше не подкладывать»:
+```
+ThemeExclusion {
+  id, tenantId, themeId → Theme (Cascade),
+  kind    ThemeExclusionKind,
+  blockId  String?  → IdeaBlock? (blockId, tenantId) Cascade,   // tenantId-компаньон в составном FK (партиц. IdeaBlock)
+  entityId String?  → Entity?    (entityId, tenantId) Cascade,  // tenantId-компаньон в составном FK (партиц. Entity)
+  createdByUserId String?, createdAt
+  @@unique([themeId, kind, blockId, entityId])
+  @@index([tenantId, themeId])
+}
+```
+
+Записывается на unpin (удаление блока/сущности из темы). `ThemeFillService` исключает эти объекты при авто-наполнении. Обратные relation-поля добавлены в `User`(`ThemeAuthor`), `IdeaBlock`, `Entity`, `Org`. **Дефолты (`origin=auto`/`visibility=team`/`addedVia=clustered`) покрывают существующие темы и привязки — бэкфилл кодом не нужен.**
+
 ### Card расширение (Фаза 4)
 
 ```
@@ -896,6 +954,7 @@ erDiagram
 - Внешний источник: `externalSource?` (email/telegram/checkin/meeting/api/manual), `externalId?`.
 - `entityId?` для графа, `createdById String`, soft-delete `deletedAt?`.
 - **task-dedup Ф4 (knowledge-core MASTER, 2026-06-16, миграция `20260617002427_issue_closure_review`):** `closureReviewState String? @db.VarChar(24)` (null | `superseded_decision`), `closureReviewReason? @db.Text`, `closureReviewAt DateTime?` — задача попадает «под вопрос», когда supersede связанного решения (`specialist-3-3-decisions`) ставит её на пересмотр. Индекс `@@index([tenantId, closureReviewState])`. Поднимается в Action Center провайдером `TaskReviewPendingProvider` («задача под вопросом»).
+- **`ownerHintRaw String?`** (задачи встречи Ф2, 2026-07-06, миграция `20260706120000_add_owner_hint_raw`) — сырое имя владельца-**гостя** (не сотрудника Org), которому по словам гостя адресована задача встречи. Протягивается из `IntakeIssue.ownerHintRaw` при промоуте. Задача остаётся **без исполнителя** (`IssueAssignee` пуст — гость не член Org, skill-routing на постороннего сотрудника не делается), а имя показывается на FE во вкладке «Задачи встречи» пометкой «по словам гостя». Заполняет комбо `SpecialistsCombinedService` (вариант А — назначенец гостя).
 
 ### IssueAssignee (M2M), IssueSubscriber, IssueMention (с commentId? FK), Label (per-project или global), IssueLabel
 - Стандартные M2M структуры, см. schema.prisma.
@@ -945,6 +1004,7 @@ erDiagram
 - `meetingId String?` (миграция `add_intake_issue_meeting_id`, 2026-06-18, ТЗ [`intake-issue-linked-meeting-ids-fix`](../../plans/tz/2026-06-16-intake-issue-linked-meeting-ids-fix.md)) — встреча-источник кандидата в задачу. При accept протягивается в `Issue.linkedMeetingIds`, чтобы задача была видна в карточке встречи (раньше связь терялась). Backfill существующих — `scripts/backfill-meeting-linked-ids.ts` (только `meeting:`-формат `externalId`).
 - **task-dedup Ф1 (knowledge-core MASTER, 2026-06-16, миграция `20260616233329_task_dedup_intake_suggested_duplicate`):** `suggestedDuplicateOfIssueId String?` — кандидат-дубль, найденный дедупом (`TaskDedupService`: embedding-KNN-кандидаты + LLM-арбитр `task-dedup-arbiter` в серой зоне) ещё на входе в трекер.
 - **`checklistJson Json?`** (заход B извлекающего слоя, 2026-06-30, миграция `20260630030000_add_intake_issue_checklist_json`) — AI-подзадачи кандидата **до промоута** (форма `[{title?, items:[{text}]}]`); combo группирует соседние поручения одного автора (шаги одного дела → одна задача + чек-лист, не N карточек). Материализуется в `IssueChecklist`/`IssueChecklistItem` при accept (`intake-checklist-materialize.util.ts`, вызывается из `intake-auto-triage.worker` + `intake.service`). Пишет `TaskDraftMaterializerService` из `subtasks[]` task-черновика combo (канон `TaskItemSchema` в `common.ts` += `subtasks[]`).
+- **`ownerHintRaw String?`** (задачи встречи Ф2, 2026-07-06, миграция `20260706120000_add_owner_hint_raw`) — сырое имя владельца-**гостя**, которому по словам гостя адресована задача (вариант А): исполнитель НЕ резолвится (гость не член Org → нет `suggestedAssigneeId`, skill-routing/owner-fallback не применяются), имя сохраняется как есть и при accept протягивается в `Issue.ownerHintRaw` для FE-пометки «по словам гостя». Пишет `SpecialistsCombinedService` из поля `assignee` комбо-промпта, когда назначенец не сопоставлен сотруднику.
 - **`embedding Unsupported("vector(1536)")?` + `embeddingHash String?`** (Пакет C, F-4 mat-part, 2026-07-02, миграция `intake_issue_embedding`) — зеркало `Issue.embedding`/`embeddingHash`: persist-вектор кандидата (text-embedding-3-small) + хэш от текста (не пересчитывать без изменений) для **семантического дедупа задач при материализации**. `IntakeIssueSimilarService.findSimilarByVector` делает KNN по похожим `status='pending'`-кандидатам того же tenant (порог — крутилка `tracker.intakeDedupThreshold`=0.15, косинусная ДИСТАНЦИЯ). **HNSW-индекс** `IntakeIssue_embedding_hnsw_cosine_idx` (`vector_cosine_ops`, `WHERE embedding IS NOT NULL`) — в `backend/scripts/postgres-init.sql` (Prisma не умеет HNSW). Аддитивно (2 nullable-колонки, backfill не нужен — вектор считается на лету при материализации).
 
 ### TaskClosureCandidate (task-dedup Ф2 — петля разговор→кандидат закрытия)
@@ -1465,6 +1525,13 @@ GIN-индекс `table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_
 - **`Table.entitySync`** (Json) расширен: `{ type: org|person|meeting|document, autoCreate: bool, entityTypes?: EntityType[], primaryProperty? }` — живой синк строк с сущностями графа (Фаза 2). **`TableProperty.config`** расширен `{ readonly?, source?: 'entity', entityAttribute? }` — read-only attribute-колонки.
 - **`TableCellProvenance`** (Фаза 3) — `{ id, tenantId, tableRowId, propertyId, sourceType (meeting|document|manual), sourceId, sourceLabel, sourceLink?, previousValue Json?, appliedValue Json?, confidence Decimal(3,2)?, appliedAt, appliedBy (agent|userId), rolledBackAt? }`. Индексы `[tableRowId, propertyId]`, `[tenantId, sourceType, sourceId]`. Audit-trail правок агента + undo.
 - **`TableCellPendingPatch`** (Фаза 3) — `{ id, tenantId, tableId, tableRowId, propertyId, proposedValue Json, currentValue Json?, confidence Decimal(3,2), sourceType, sourceId, sourceLabel, sourceLink?, status (pending|approved|rejected), reason (low_confidence|overwrite), createdAt, decidedAt?, decidedBy? }`. Индексы `[tenantId, status]`, `[tableId, status]`, `[tableRowId, propertyId]`. Очередь подтверждений спорных правок.
+
+### Умные таблицы graphSync — авто-наполнение из графа (2026-07-03, миграция `20260703120000_smart_tables_graphsync`)
+
+Строки системных таблиц заводятся из графовых объектов (не только Entity, как в entitySync) — Goal / Experiment / IdeaBlock(`signalType='idea'`) / IdeaBlock(`signalType='commitment'`). ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md). Профильная заметка — [[../01_projects/smart-tables]] §«graphSync».
+- **`Table.graphSync Json?`** — конфиг канала graphSync (параллельно `entitySync`): маппинг «тип графового объекта → эта таблица». Проставлен на 4 системных шаблона (`ideas`/`promises`/`okr`/`hypotheses`) в каталоге `system-tables.catalog.ts`.
+- **`TableRow`** += `sourceObjectType String?` + `sourceObjectId String?` (какой графовый объект породил строку) + `status String @default("active")` + `draftExpiresAt DateTime?` + **`@@unique([tableId, sourceObjectType, sourceObjectId])`** — детерминированный дедуп (один графовый объект → максимум одна строка в таблице).
+- Ячейки заполняет `TableGraphSyncService` в режиме **fill-empty** (не перетирает ручные правки) + пишет `TableCellProvenance` на каждую ячейку. Гейт уверенности — крутилка `table.graphsync.min_confidence` (см. [[../01_projects/admin]]).
 
 [[../index|← index]]
 
@@ -2103,5 +2170,20 @@ enum PersonaStatus {
 - **`MessageReport`** (новая) — жалоба на сообщение (UGC report). Поля: `tenantId`, `messageId`, `conversationId`, `reporterUserId`, `reason` (VarChar(500)?). `@@index([tenantId, messageId])`, `@@index([tenantId, conversationId])`. Только запись/лог (модераторский разбор — follow-up).
 
 **Удаление аккаунта (App Review 5.1.1(v)):** `POST /api/v1/account/delete` → `AccountsService.deleteAccount` в транзакции: `User.deletedAt=now()` (идемпотентно — если уже удалён, не перетирается) + `PushToken.deleteMany` + `ChannelBinding.deleteMany` + `ConversationMember.deleteMany` + revoke всех `UserSession`. Полная анонимизация PII (email/name) — осознанный follow-up (см. `04_не-сделано`).
+
+## COS-слой — модели (указатель, 2026-07-05)
+
+Модели проактивного/операционного слоя, существующие в `schema.prisma`, но не расписанные подробно выше (краткие карточки — назначение · писатель → читатель):
+
+- **`PracticeSkill` / `SkillUsage`** — извлечённые выполнимые процедуры («как делать X») и лог их применения. Пишет `practice-skills/` (extractor), читает retrieval/evaluator. Дыра: `SkillUsage.outcome/editDistance` не backfill'ятся → продвижение shadow→active голодает.
+- **`BlockerSynthesis`** — свод блокеров по Org. Пишет `operations/` (`blocker-synthesis-summary`), читает дайджест/дашборд.
+- **`CrossFunctionalFrictionReport`** — отчёт о меж-функциональном трении. Пишет операционный анализатор, читает дашборд руководителя.
+- **`RecurringTopic`** — повторяющиеся темы разговоров. Пишет операционный агрегатор, читает пульс/дайджесты.
+- **`ForecastSnapshot`** — срез прогноза. Пишет `dashboard/agents/forecaster.cron` (`forecast-weekly`), читает дашборд.
+- **`MeetingBehaviorMetrics`** — метрики поведения на встрече. Пишет `behavior-metrics/`, читает KPI/дашборд.
+- **`ValueRecapSnapshot`** — срез ценности (value recap). Пишет `operations/` (`value-recap-narrative`), читает дайджест/бриф.
+- **`ProactiveNotification`** — проактивные нотификации/нуджи. Пишет `proactive/` (watcher + message-craft), читает доставку каналов.
+- **`PromptCandidate` / `PromptRule` / `PromptFeedback`** — инфраструктура эволюции промптов (GEPA/AutoRule). Пишет/читает `prompt-evolution/` — **DORMANT** (`PROMPT_EVOLUTION_ENABLED=false`, `AUTORULE_ENABLED=false`).
+- **`OrchestratorRun`** — прогон multi-agent research. Пишет/читает `orchestrator/` — **DORMANT** (`ORCHESTRATOR_ENABLED=false`).
 
 [[../index|← index]]

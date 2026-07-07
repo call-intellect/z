@@ -6,6 +6,7 @@ describe('ProactiveWatcherService', () => {
   const allRulesEnabled = {
     insightNoMitigation: true,
     experimentRunningTooLong: true,
+    experimentResultWithoutLesson: true,
     processStaleReview: true,
     roleLowCompleteness: true,
     departmentNoDomain: true,
@@ -172,6 +173,7 @@ describe('ProactiveWatcherService', () => {
   const onlyPlanRule = {
     insightNoMitigation: false,
     experimentRunningTooLong: false,
+    experimentResultWithoutLesson: false,
     processStaleReview: false,
     roleLowCompleteness: false,
     departmentNoDomain: false,
@@ -184,6 +186,7 @@ describe('ProactiveWatcherService', () => {
       rules: {
         insightNoMitigation: false,
         experimentRunningTooLong: false,
+        experimentResultWithoutLesson: false,
         processStaleReview: false,
         roleLowCompleteness: false,
         departmentNoDomain: false,
@@ -193,7 +196,7 @@ describe('ProactiveWatcherService', () => {
     });
     const stats = await svc.runOnce(new Date());
     expect(stats.rulesExecuted).toBe(0);
-    expect(stats.rulesSkippedDisabled).toBe(7);
+    expect(stats.rulesSkippedDisabled).toBe(8);
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
@@ -254,5 +257,71 @@ describe('ProactiveWatcherService', () => {
     expect(stats.notificationsSent).toBe(0);
     expect(sendNotification).not.toHaveBeenCalled();
     expect(dailyCheckInMany).not.toHaveBeenCalled();
+  });
+
+  const onlyExperimentResultRule = {
+    insightNoMitigation: false,
+    experimentRunningTooLong: false,
+    experimentResultWithoutLesson: true,
+    processStaleReview: false,
+    roleLowCompleteness: false,
+    departmentNoDomain: false,
+    insightsSiloedInDomain: false,
+    planItemOverdue: false,
+  };
+
+  it('experiment_result_without_lesson: результат есть, урока нет, старше 14 дней → emit со ссылкой', async () => {
+    const now = new Date('2026-06-01T00:00:00Z');
+    const { svc, prisma, sendNotification, craft } = buildSvc({
+      rules: onlyExperimentResultRule,
+    });
+    prisma.experiment.findMany.mockResolvedValue([
+      {
+        id: 'exp1',
+        name: 'Скидка на онбординге',
+        startedAt: new Date('2026-05-01T00:00:00Z'),
+        lessonsJson: [],
+        ownerEntityId: null,
+      },
+    ]);
+    const stats = await svc.runOnce(now);
+    expect(stats.notificationsSent).toBe(1);
+    expect(craft.craft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ruleType: 'experiment_result_without_lesson',
+        facts: expect.objectContaining({ experimentId: 'exp1' }),
+      }),
+    );
+    expect(sendNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ actionUrl: '/experiments/exp1' }),
+      }),
+    );
+  });
+
+  it('experiment_result_without_lesson: урок уже есть → НЕ emit', async () => {
+    const now = new Date('2026-06-01T00:00:00Z');
+    const { svc, prisma, sendNotification } = buildSvc({ rules: onlyExperimentResultRule });
+    prisma.experiment.findMany.mockResolvedValue([
+      {
+        id: 'exp2',
+        name: 'A/B кнопки',
+        startedAt: new Date('2026-05-01T00:00:00Z'),
+        lessonsJson: [{ text: 'Урок усвоен' }],
+        ownerEntityId: null,
+      },
+    ]);
+    const stats = await svc.runOnce(now);
+    expect(stats.notificationsSent).toBe(0);
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it('experiment_result_without_lesson: результата нет (домен другого правила) → НЕ emit', async () => {
+    const now = new Date('2026-06-01T00:00:00Z');
+    const { svc, prisma, sendNotification } = buildSvc({ rules: onlyExperimentResultRule });
+    prisma.experiment.findMany.mockResolvedValue([]);
+    const stats = await svc.runOnce(now);
+    expect(stats.notificationsSent).toBe(0);
+    expect(sendNotification).not.toHaveBeenCalled();
   });
 });

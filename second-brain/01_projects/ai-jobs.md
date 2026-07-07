@@ -331,6 +331,16 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2; с 2026-06-25 �
 
 [[../index|← index]]
 
+## Авто-наполнение тем — pgvector без LLM на блок (живое пространство темы, 2026-07-03)
+
+**Источник:** ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md). Профиль — [[themes]], воркер — [[workers-queues]] §`theme-autofill`.
+
+**Новых LLM-taskType нет.** Авто-наполнение пользовательской темы — **чисто эмбеддинг-близость, без LLM-вызова на каждый блок**: cron `theme-autofill` берёт `Theme.embedding` (embedding из фразы, которой человек завёл тему), ищет `IdeaBlock` через pgvector (cosine ≥ порога `theme.autofill.threshold` 0.72) в окне `theme.autofill.scanWindowDays` (14 дней), дедупит near-дубли (`theme.autofill.dedupeSimilarity` 0.97), исключает уже-привязанные блоки и записи `ThemeExclusion` → вставляет `ThemeIdeaBlock(addedVia=autofill, score, reason)`. **`reason` («почему блок в теме») — детерминированный шаблон** (упоминания клиента/участники/близость), не генерация LLM. Высокий порог + дедуп + исключения = анти-свалка без спама подтверждениями. Крутилки — [[admin]] §«Крутилки авто-наполнения тем».
+
+Embedding темы считается на её создании (`ThemeWriteService.createTheme` → `KnowledgeEmbeddingService.embedQuery(phrase)`) — тем же `text-embedding-3-small`, что и блоки (см. §«Embedding model»), поэтому cosine между темой и блоками сопоставим.
+
+[[../index|← index]]
+
 ## Слой источника + маршрутизатор поиска — `document-summarize` + 2 backfill (2026-06-27)
 
 **Источник:** ТЗ [`plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) (Ф1–Ф10). Полная карта — [[../02_architecture/knowledge-core]] §«Слой источника + многомаршрутный retrieval»; модели — [[../02_architecture/data-model]].
@@ -360,6 +370,16 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2; с 2026-06-25 �
 
 **Ф5 — надёжность пайплайна (не терять RawEvent + JSON-ремонт воркеров).** `StrategicAlignmentWorker`: `parseLlmResponse` через `tryParseJson`(ремонт)+`safeParse` без throw — транзиентный сбой LLM-вызова → throw (BullMQ-ретрай), детерминированный битый ответ → warn+audit+метрика+skip (job НЕ падает); голого `JSON.parse` не осталось. Новый `raw-event-recovery.cron` (см. [[workers-queues]] §«raw-event-recovery») спасает `RawEvent` застрявшие в `processingStatus='received'` после исчерпания ретраев. Метрики `strategic_alignment_parse_skip_total{reason}` / `raw_event_recovery_reenqueued_total` / `raw_event_recovery_dead_lettered_total`. **Ф0** (вне AI): P0-краш создания задач — advisory-lock `$queryRaw`→`$executeRaw` (Prisma 7 не десериализует `void`), см. [[../02_architecture/code-pitfalls]] §8a.
 
+## Эксперимент с конкретным действием → задача (2026-07-06)
+
+**Источник:** ТЗ [`plans/tz/2026-07-06-experiment-to-task.md`](../../plans/tz/2026-07-06-experiment-to-task.md). Профильно — [[tracker]], модели — [[../02_architecture/data-model]] §«ExperimentTaskLink».
+
+Тот же контур «память + исполнение», что решение→задача и обещание→задача, распространён на эксперименты. **`Experiment` (специалист 3-9-experiments) НЕ менялся** — остаётся фактом памяти (гипотеза/проверка/урок). Новое: **эксперимент с КОНКРЕТНЫМ действием теперь порождает и запись эксперимента (память), и задачу в трекер**. Абстрактный призыв «надо больше экспериментировать» / гипотеза без действия → задачи НЕТ (только память).
+
+- **Мост — в двух промптах.** Combined-экстрактор встреч `specialists-combined.prompt.ts` и классификатор входа `block-ingest.prompt.ts` усилены: эксперимент с конкретным действием → И запись эксперимента, И задача. `block-ingest` для блока-эксперимента с действием даёт **дуальную эмиссию** `hypothesis` (память) + `action_item` (трекер) — по образцу «idea + поручение». Оба — code-промпты (prompt registry с code-fallback), едут с деплоем кода.
+- **Провенанс — `ExperimentTaskLink('derived')`** (зеркало `DecisionTaskLink`). Связь авто-деривится в `intake-auto-triage.worker.ts` (утилита `linkDerivedExperimentsForIssue`) по пересечению `IntakeIssue.sourceBlockIds` с `Experiment.sourceBlockIds` того же tenant. В отличие от `Decision`, у `Experiment` нет `linkedTaskCount`/`deletedAt` — линковка короче.
+- **Метрика** `experiment_tasks_extracted_total{tenant_top, surface}` — `surface` = `meeting` (combined-экстрактор) | `ingest` (block-ingest).
+
 ## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
 
 **Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.
@@ -374,6 +394,13 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2; с 2026-06-25 �
 - **entity-graph поднят до уровня block-linker.** `entity-graph-builder` теперь парсит через `tryParseJson` (вместо голого `JSON.parse`) + ретрай ×2 при битом ответе. Метрики `kc_entity_graph_invalid_json_total`, `kc_entity_graph_fallback_none_total`.
 - **router `validate`-callback** — битый ответ primary-провайдера больше **не считается успехом**: `validate` бросает `LlmInvalidOutputError` → router падает на secondary (раньше HTTP 200 с мусором молча принимался). Метрика статуса `invalid_output`.
 - **Forced `tool_choice` для не-thinking deepseek** — за флагом `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED` (дефолт OFF) принудительно вызывает tool (вместо `'auto'`) + guard-откат на `'auto'` если модель не поддержала. Грабли арбитра/router — [[../02_architecture/code-pitfalls]], [[../02_architecture/knowledge-core]] §«Устойчивость арбитра графа».
+
+### Обогащение смысловых рёбер графа (2026-07-04)
+- **Словарь `judgeRelation` расширен 6→12 типов + `direction`.** Промпт вынесен из `entity-graph.service.ts` в `entity-graph-builder.prompt.ts` (admin-редактируемый, по методологии усиления). К works_at/belongs_to/part_of/opposes/depends_on/mentions_with добавлены `responsible_for`/`owned_by`/`manages`/`reports_to`/`collaborates_with`/`measured_by`. Раньше 56% рёбер были слабый `mentions_with` — граф не собирал multi-hop «кто отвечает за то, что блокирует X».
+- **Направление — по-типовой канон FROM** (не «субъект=актор»): owned_by from=метрика→to=владелец, reports_to from=подчинённый, responsible_for from=человек. Крон разворачивает from/to при `b_to_a` (кроме симметричных `mentions_with`/`collaborates_with`/`opposes`) и **архивирует старый `mentions_with`** при обогащении.
+- **Фикс Б30 (двунаправленная свежесть):** `findCoMentionedPairs` теперь исключает пару при свежем ребре в ЛЮБОМ направлении — иначе `b_to_a` рёбра пере-судились ежечасно.
+- **Кап пар** `PAIRS_PER_ORG_LIMIT` → AdminSetting `knowledge.entityGraphPairsPerOrg` (default 50).
+- **Backfill** `backfill-reclassify-entity-links.ts` (--org, default dry-run, --apply) — пере-классификация накопленных пар, idempotent, owner-gated на проде. На «Стреле»: mentions_with 55→37, responsible_for 0→9, owned_by 0→2, collaborates_with 0→5.
 
 ### ТЗ-6 — golden-измеритель качества извлечения (QA-инструмент)
 Golden-харнесс на инфре `combat-harness` (без Nest, prod-guard): `backend/scripts/fixtures/agent-golden/*.json` (4 фикстуры) + `backend/scripts/_lib/agent-scoring.ts` (метрики полноты/точности/дублей) + runner `backend/scripts/agent-quality-harness.ts`. Меряет качество извлечения задач/сущностей против эталона — инструмент для регрессий, не часть прод-пайплайна.
@@ -708,6 +735,7 @@ LLM-judge текстового подтверждения мутаций в ка
 ## Трекер — авто-черновик прогресса + catch-up (ТЗ `tracker-card-redesign-and-progress`, 2026-06-21)
 
 - **`issue-progress-draft`** (новый taskType, DEFAULT-цепочка DeepSeek/OpenAI-proxy): воркер `progress-auto-draft.cron` (07:00 UTC, kill-switch `tracker.progressAutoDraftEnabled`) собирает дельта-сигналы задачи (закрытые чек-пункты + `status_changed` + упоминания в графе через `TaskClosureCandidate`) → формулирует черновик → `IssueProgressUpdate(authorType='ai_agent', draftState='pending')`. **НЕ авто-постинг** (Р2): человек подтверждает (лента в детали / колокольчик). Провенанс-снимок через `ProvenanceService.computePreviewSnapshot`. Промпт cache-friendly (стабильный SYSTEM, сигналы в хвосте user). Дедуп Redis SETNX + проверка существующего pending.
+  - **Фикс триггера (2026-07-06, ТЗ `progress-draft-trigger-fix`):** взаимно-обратные `status_changed` схлопываются в нетто (A→B→A = 0 сигналов, A→B→C = один сводный) через `netStatusSignal`; гейт содержательности (нужен ≥1 закрытый чек-пункт или упоминание в графе — крутилка `tracker.progressAutoDraftRequireSubstantiveSignal`, default true) до вызова LLM; гейт уверенности (`tracker.progressAutoDraftMinConfidence`, default 0.35) после LLM, до записи. Счётчики `RunSummary.{noSubstantive,lowConfidence}`. Повод: на проде черновики рождались из чистого дёрганья статуса (net-zero).
 - **`issue-activity-digest`** (новый taskType): `issue-activity-digest.service` — on-demand сводка «что произошло по задаче» (кнопка в детали, отдельно от IssueChat); агрегаты `IssueActivity`+комментарии+прогресс в хвост user; Redis-кэш; пустая история/OFF → ответ без вызова LLM; kill-switch `tracker.activityDigestEnabled`.
 - Не-AI (для полноты): `automation-engine` (правила «если—то» Ф10) — событийный, не LLM.
 
@@ -732,5 +760,23 @@ LLM-judge текстового подтверждения мутаций в ка
 - **`IntakeIssue.checklistJson Json?`** (миграция `20260630030000_add_intake_issue_checklist_json`) — AI-подзадачи до промоута (`[{title?, items:[{text}]}]`); материализуются в `IssueChecklist` при accept (`intake-checklist-materialize.util.ts` из `intake-auto-triage.worker` + `intake.service`). Канон `TaskItemSchema` (`common.ts`) += `subtasks[]`. Схема — [[../02_architecture/data-model]] §IntakeIssue.
 - **Снесено:** `MeetingExtractActionsService` (combo достаёт задачи встреч сам) + его caller в `analyze.worker` + метрика `ai_meeting_actions_extracted_total` (retired); per-block извлекающий спайн `Specialist315TasksWorker` + роут `action_item→TASKS` (TASKS убран из `RouterService.SPECIALIST`/`PRIORITY`). **Сохранено:** `Specialist315TasksService` (держит `runClarifySweep` для clarify-cron); `action_item`-блоки по-прежнему строит нарезчик и читает граф; `prompts/tasks.ts` (code-fallback) + llm-router taskType `meeting-extract-actions` (пассивные).
 - **Откат задач = рубильник combo** `knowledge.specialistsCombinedEnabled` — отдельного фолбэка задач после сноса НЕТ (принято владельцем, Ship-On). Выкат сноса gated на разовую прод-проверку (build-then-delete).
+
+## Консолидация извлечения — правила промптов + чистый дедуп-вектор (2026-07-03)
+
+**Источник:** ветка `work/2026-07-02`, коммиты `b132d8ab`..`5e0fc5c5`. Три фичи — без новых taskType/очередей, переиспользуют существующие промпты и эмбеддинг.
+
+- **Ф1 — `entity-merge-arbiter`, правило 2 переписано.** Разный вид сущности (`EntityType`) сам по себе больше НЕ повод для `distinct`: если имя совпадает и это ОДИН реальный объект, по-разному классифицированный (пример: «Битрикс» как technology и как product поставщика), — это `merge`. При кросс-типовом merge арбитр возвращает поле `canonicalType` (лучший вид объекта из двух переданных). JSON Schema output += `canonicalType`. Этот же промпт зовёт новый крон `entity-consolidate-same-name` (см. [[workers-queues]]) поверх детерминированной матрицы `resolveCanonicalType` (domain>generic). Snapshot-тест обновлён. Подробности — [[../02_architecture/knowledge-core]] §«Кросс-типовая консолидация одноимённых сущностей».
+- **Ф2 — дедуп-вектор блока без контекст-хедера.** `IdeaBlock.embedding` теперь = `embed(criticalQuestion + trustedAnswer)`; header-building (LLM-таск `chunk-context`) убран из `block-ingest.worker` как мёртвый код, `ChunkContextService` дормантен. Устраняет рассинхрон doc-space ↔ query-space и восстанавливает кросс-канальный дедуп. `contextHeaderVersion='noheader-v1'`. См. [[../02_architecture/knowledge-core]] §«Чистый дедуп-вектор блока», [[../02_architecture/code-pitfalls]].
+- **Ф3 — `block-ingest`, граница pain/blocker.** Добавлено правило: работа продолжается → `pain`; работа встала/заблокирована → `blocker`; критичный клиентский инцидент (клиент-стоп: у клиента не работает / не формируется / упало к дедлайну) → всегда `blocker`, а не `pain` (+ пример 13). Code-промпт, едет с деплоем кода.
+
+[[../index|← index]]
+
+## Умные таблицы graphSync — авто-наполнение таблиц из графа (крон, 2026-07-03)
+
+**Источник:** ветка `work/2026-07-02`. **НЕ LLM-джоб и НЕ новый taskType** — детерминированный реконсилер (только чтение графовых объектов + fill-empty ячеек), поэтому не даёт LLM-нагрузки. Здесь — для полноты реестра фоновых джобов.
+
+- **Крон `table-graphsync-reconcile`** (`TableGraphsyncReconcileCronService`, `@Cron('25 */3 * * *')`, каждые 3 часа, kill-switch `table.graphsync.enabled`) проходит по всем Org (owner/admin) → `TableGraphSyncService.reconcileTenant`.
+- `TableGraphSyncService` заводит строки `TableRow` из графовых объектов: Goal→«Цели и метрики» (okr), Experiment→«Гипотезы и эксперименты» (hypotheses), IdeaBlock `signalType=idea`→«Идеи и бэклог» (ideas), IdeaBlock `signalType=commitment`→«Обещания и обязательства» (promises). Гейт уверенности — крутилка `table.graphsync.min_confidence` (0.5; `null`=доверяем), дедуп по `(tableId, sourceObjectType, sourceObjectId)`, fill-empty (ручные правки не перетираются) + `TableCellProvenance` на каждую ячейку. Методы `syncObject` / `reconcileTenant`.
+- Крутилки/канал/поля — [[smart-tables]] §«graphSync», [[admin]] §«Крутилки graphSync таблиц», [[workers-queues]], [[../02_architecture/data-model]].
 
 [[../index|← index]]

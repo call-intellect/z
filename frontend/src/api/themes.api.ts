@@ -1,11 +1,32 @@
 import { apiClient } from "./api-client";
 import type {
+  ThemeApi,
   ThemeBranch,
   ThemeDetailApi,
   ThemeListApi,
   ThemeSavedAsCardApi,
   ThemeStatus,
+  ThemeVisibility,
 } from "@/domain/theme";
+
+export type CreateThemeRequest = {
+  phrase: string;
+  visibility: ThemeVisibility;
+};
+
+export type RenameThemeRequest = {
+  name: string;
+};
+
+export type PinThemeRequest = {
+  kind: "block" | "entity";
+  id: string;
+};
+
+export type CommitmentToTaskApi = {
+  taskId: string;
+  created: boolean;
+};
 
 export type ListThemesRequest = {
   branch?: ThemeBranch;
@@ -42,5 +63,39 @@ export const themesApi = {
     apiClient.post<ThemeSavedAsCardApi>(
       `/api/v1/knowledge/themes/${encodeURIComponent(id)}/save-as-card`,
       body,
+    ),
+
+  create: (body: CreateThemeRequest) =>
+    apiClient.post<ThemeApi>(`/api/v1/knowledge/themes`, body),
+
+  rename: (id: string, body: RenameThemeRequest) =>
+    apiClient.patch<ThemeApi>(
+      `/api/v1/knowledge/themes/${encodeURIComponent(id)}`,
+      body,
+    ),
+
+  archive: (id: string) =>
+    apiClient.post<{ ok: true }>(
+      `/api/v1/knowledge/themes/${encodeURIComponent(id)}/archive`,
+    ),
+
+  pin: (id: string, body: PinThemeRequest) =>
+    apiClient.post<{ ok: true }>(
+      `/api/v1/knowledge/themes/${encodeURIComponent(id)}/pin`,
+      body,
+    ),
+
+  unpin: (id: string, kind: "block" | "entity", objectId: string) =>
+    apiClient.del<{ ok: true }>(
+      `/api/v1/knowledge/themes/${encodeURIComponent(id)}/pin/${encodeURIComponent(
+        kind,
+      )}/${encodeURIComponent(objectId)}`,
+    ),
+
+  commitmentToTask: (id: string, blockId: string) =>
+    apiClient.post<CommitmentToTaskApi>(
+      `/api/v1/knowledge/themes/${encodeURIComponent(
+        id,
+      )}/commitments/${encodeURIComponent(blockId)}/to-task`,
     ),
 };

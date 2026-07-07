@@ -84,6 +84,10 @@ export class RoleClonePersonaVersioningHandler {
    * Публичная для прямого вызова из тестов / admin force-new-version API.
    * Возвращает id новой персоны или null если skip (идемпотентность / role не найден).
    */
+  private isP2002(err: unknown): boolean {
+    return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+  }
+
   async handle(event: RoleBearerChangedEvent): Promise<string | null> {
     // Проверяем существование Role (защита от устаревших событий).
     const role = await this.prisma.role.findUnique({
@@ -150,63 +154,89 @@ export class RoleClonePersonaVersioningHandler {
       return null;
     }
 
-    // Рассчитываем roleVersion новой версии.
-    const nextRoleVersion = (prevActive?.roleVersion ?? 0) + 1;
-    // Также корректный «глобальный» version (старое поле, NOT NULL).
-    const lastForVersion = await this.prisma.executablePersona.findFirst({
-      where: {
-        tenantId: event.tenantId,
-        scope: 'role',
-        scopeRefId: event.roleId,
-      },
-      orderBy: { version: 'desc' },
-      select: { version: true },
-    });
-    const nextVersion = (lastForVersion?.version ?? 0) + 1;
-
-    const publicName = `Клон ${role.name} v${nextRoleVersion}`;
-
-    const newPersona = await this.prisma.$transaction(async (tx) => {
-      // Архивируем текущую активную (если есть).
-      if (prevActive) {
-        await tx.executablePersona.updateMany({
-          where: { id: prevActive.id, status: 'active' },
-          data: { status: 'superseded' },
-        });
-      }
-
-      // Создаём pending_rebuild. personaPrompt — заглушка минимум 50 символов
-      // (compilePersonaPrompt отбраковывает короткие), rebuild перезапишет
-      // содержимое и проставит status='active'.
-      return tx.executablePersona.create({
-        data: {
+    let newPersona: { id: string } | null = null;
+    let nextRoleVersion = 0;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const raced = await this.prisma.executablePersona.findFirst({
+        where: {
           tenantId: event.tenantId,
-          profileId: null,
           scope: 'role',
           scopeRefId: event.roleId,
-          version: nextVersion,
-          roleVersion: nextRoleVersion,
-          currentBearerPersonId: event.newPersonId,
-          publicName,
-          succeedsPersonaId: prevActive?.id ?? null,
           status: 'pending_rebuild',
-          personaPrompt:
-            'Заглушка pending_rebuild: клон роли создан при смене носителя, ' +
-            'будет пересобран при ближайшем запуске executable-persona-build.',
-          includedTraitIds: [],
-          builtFromTraitsCount: 0,
-          triggerReason: 'on_demand',
-          triggerEventAt: event.changedAt,
-          // Clones=Roles Ф5 — клон роли это shared-знание Org, dataClass='internal'.
-          // Полный audit будет вычислен на следующем rebuild через DataClassPolicyService.
-          dataClassAudit: {
-            rule: 'pending-rebuild-placeholder',
-            result: 'internal',
-            derivedAt: event.changedAt.toISOString(),
-          } as unknown as Prisma.InputJsonValue,
+          currentBearerPersonId: event.newPersonId,
+          succeedsPersonaId: prevActive?.id ?? null,
         },
+        select: { id: true },
       });
-    });
+      if (raced) {
+        this.logger.debug(
+          { roleId: event.roleId, personaId: raced.id },
+          'role.bearer_changed: pending_rebuild создан конкурентом — skip',
+        );
+        return null;
+      }
+
+      nextRoleVersion = (prevActive?.roleVersion ?? 0) + 1;
+      const lastForVersion = await this.prisma.executablePersona.findFirst({
+        where: {
+          tenantId: event.tenantId,
+          scope: 'role',
+          scopeRefId: event.roleId,
+        },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+      const nextVersion = (lastForVersion?.version ?? 0) + 1;
+      const publicName = `Клон ${role.name} v${nextRoleVersion}`;
+
+      try {
+        newPersona = await this.prisma.$transaction(async (tx) => {
+          if (prevActive) {
+            await tx.executablePersona.updateMany({
+              where: { id: prevActive.id, status: 'active' },
+              data: { status: 'superseded' },
+            });
+          }
+          return tx.executablePersona.create({
+            data: {
+              tenantId: event.tenantId,
+              profileId: null,
+              scope: 'role',
+              scopeRefId: event.roleId,
+              version: nextVersion,
+              roleVersion: nextRoleVersion,
+              currentBearerPersonId: event.newPersonId,
+              publicName,
+              succeedsPersonaId: prevActive?.id ?? null,
+              status: 'pending_rebuild',
+              personaPrompt:
+                'Заглушка pending_rebuild: клон роли создан при смене носителя, ' +
+                'будет пересобран при ближайшем запуске executable-persona-build.',
+              includedTraitIds: [],
+              builtFromTraitsCount: 0,
+              triggerReason: 'on_demand',
+              triggerEventAt: event.changedAt,
+              dataClassAudit: {
+                rule: 'pending-rebuild-placeholder',
+                result: 'internal',
+                derivedAt: event.changedAt.toISOString(),
+              } as unknown as Prisma.InputJsonValue,
+            },
+          });
+        });
+        break;
+      } catch (err) {
+        if (this.isP2002(err) && attempt < 2) {
+          this.logger.debug(
+            { roleId: event.roleId, attempt },
+            'role.bearer_changed: P2002 (гонка версий) — повтор с пересчётом',
+          );
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (!newPersona) return null;
 
     // Метрика: создана новая версия клона роли.
     this.metrics?.incCloneRoleVersionCreated({ roleId: event.roleId });

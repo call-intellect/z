@@ -27,9 +27,17 @@ import {
   type ConsentDataType,
   type ConsentRecordDto,
 } from '../onboarding/services/consent.service';
+import {
+  ChronicBlockersQuerySchema,
+  type ChronicBlockersQuery,
+} from '../operations/dto/execution-agents.dto';
+import { BlockerSynthesisService } from '../operations/services/blocker-synthesis.service';
+import { SelfPersonResolverService } from '../operations/services/self-person-resolver.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { IpHashingService } from '../security/ip-hashing.service';
+import { TopIdeasQuerySchema, type TopIdeasQuery } from '../ideas/dto/ideas.dto';
+import { IdeasService } from '../ideas/services/ideas.service';
 
 import {
   MeService,
@@ -77,7 +85,63 @@ export class MeController {
     @Inject(ConsentService) private readonly consents: ConsentService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(IpHashingService) private readonly ipHasher: IpHashingService,
+    @Inject(BlockerSynthesisService)
+    private readonly blockerSynthesis: BlockerSynthesisService,
+    @Inject(SelfPersonResolverService)
+    private readonly selfPerson: SelfPersonResolverService,
+    @Inject(IdeasService) private readonly ideas: IdeasService,
   ) {}
+
+  @Get('company-blockers')
+  @ApiOperation({
+    summary: 'Лента хронических блокеров компании (свои выделены isMine)',
+  })
+  async companyBlockers(
+    @Query(new ZodValidationPipe(ChronicBlockersQuerySchema)) q: ChronicBlockersQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ items: Array<Record<string, unknown> & { isMine: boolean }> }> {
+    const t = this.requireTenant(tenantId);
+    const selfPersonId = await this.resolveSelfPersonId(t, user.id);
+    const items = await this.blockerSynthesis.listChronicForTenant({
+      tenantId: t,
+      status: q.status,
+      limit: q.limit,
+    });
+    return {
+      items: items.map((i) => ({
+        ...i,
+        isMine: selfPersonId !== null && i.responsiblePersonId === selfPersonId,
+      })),
+    };
+  }
+
+  @Get('company-ideas')
+  @ApiOperation({
+    summary: 'Топ идей компании + счётчик моих идей за месяц',
+  })
+  async companyIdeas(
+    @Query(new ZodValidationPipe(TopIdeasQuerySchema)) q: TopIdeasQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ top: Awaited<ReturnType<IdeasService['getTop']>>; myIdeasThisMonth: number }> {
+    const t = this.requireTenant(tenantId);
+    const top = await this.ideas.getTop({ tenantId: t, userId: user.id, query: q });
+    const monthStart = startOfMonthUtc();
+    const myIdeasThisMonth = await this.prisma.idea.count({
+      where: { tenantId: t, createdByUserId: user.id, createdAt: { gte: monthStart } },
+    });
+    return { top, myIdeasThisMonth };
+  }
+
+  private async resolveSelfPersonId(tenantId: string, userId: string): Promise<string | null> {
+    try {
+      const person = await this.selfPerson.resolveSelfPerson({ tenantId, userId });
+      return person.id;
+    } catch {
+      return null;
+    }
+  }
 
   @Get('profile')
   @ApiOperation({ summary: 'Профиль текущего пользователя в текущей Org' })
@@ -379,4 +443,9 @@ export class MeController {
     if (typeof ua !== 'string' || ua.length === 0) return null;
     return ua.slice(0, 1000);
   }
+}
+
+function startOfMonthUtc(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }

@@ -6,6 +6,8 @@ import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/comm
 
 export const CONTEXT_HEADER_VERSION = 'v2';
 
+export const EMBED_NO_HEADER_VERSION = 'noheader-v1';
+
 const CHUNK_CONTEXT_SYSTEM_PROMPT =
   'Ты добавляешь одно короткое предложение контекста к фрагменту встречи для ' +
   'улучшения поиска. Верни ровно одно предложение по-русски, без преамбул.';

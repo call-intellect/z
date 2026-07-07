@@ -120,7 +120,11 @@ KNOWLEDGE_CLONE_MIN_BLOCKS_FOR_PROFILE=10
 
 ## LLM
 
-Два taskType: `knowledge-clone-extract`, `knowledge-clone-merge`. Цепочка primary/secondary/tertiary: DeepSeek V4 flash → OpenAI gpt-5.4-mini → Ollama qwen3:30b. `maxDataClass >= internal`.
+Два taskType: `knowledge-clone-extract`, `knowledge-clone-merge`.
+- `knowledge-clone-extract`: DeepSeek V4 flash → OpenAI gpt-5.4-mini → kie:gemini-3.1-pro.
+- `knowledge-clone-merge`: DeepSeek V4 **pro** → OpenAI gpt-5.4-mini → kie:gemini-3.1-pro (merge переведён на pro патчем `patch-mass-migrate-to-deepseek-pro`).
+
+Нижний уровень нормализован на kie:gemini-3.1-pro (ollama выведён из всех боевых цепочек 2026-06-05). `maxDataClass >= internal`. Единый источник правды по провайдерам/цепочкам — [[llm-providers-verified]] (свериться перед фиксацией любой цепочки в этой заметке).
 
 Seed-script: `bun run seed:llm-task-routes-knowledge-clone` (idempotent, `--update-existing` для force-обновления НЕ помеченных admin'ом записей).
 

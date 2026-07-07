@@ -43,7 +43,6 @@ import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
 import { ACTIVE_LINK_FILTER } from './link-read-filter';
-import { Specialist35ProbeService } from './specialist-3-5-probe.service';
 
 /**
  * SBA β-4 — Specialist35Service.
@@ -62,8 +61,7 @@ import { Specialist35ProbeService } from './specialist-3-5-probe.service';
  *   2. Prisma-модель Insight (β-4).
  *   3. triage перед канонизацией — `insight` НЕ в critical-types default,
  *      но severity='critical' → confidence снижаем до 0.3 (force deep review).
- *   4. probe-events — Specialist35ProbeService (4 trigger'а).
- *   5. metrics — `core_specialist_*{type='insight'}` + `insights_dynamic_label_count`.
+ *   4. metrics — `core_specialist_*{type='insight'}` + `insights_dynamic_label_count`.
  */
 @Injectable()
 export class Specialist35Service {
@@ -95,8 +93,6 @@ export class Specialist35Service {
     @Inject(EntityResolutionService)
     private readonly entities: EntityResolutionService,
     @Inject(CurationService) private readonly curation: CurationService,
-    @Inject(Specialist35ProbeService)
-    private readonly probes: Specialist35ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
@@ -295,21 +291,6 @@ export class Specialist35Service {
         },
         dataClass: block.dataClass,
       });
-
-      // Probe: linked_decision_question (если LLM нашёл связки).
-      if (linkedDecisionIds.length > 0) {
-        await this.probes.emitLinkedDecisionQuestion({
-          insight,
-          candidateDecisionIds: linkedDecisionIds,
-          reasoning: 'LLM insight-link-to-decisions',
-        });
-      }
-
-      // Probe: escalation (на новый — только если severity='critical'/'high').
-      await this.probes.checkAndEmitForInsight({
-        insight,
-        addedToMitigated: false,
-      });
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'insight',
@@ -398,12 +379,6 @@ export class Specialist35Service {
           dynamicLabel,
         },
       });
-
-      // Probe escalation_suggested при spike (cron-trigger).
-      if (dynamicLabel === 'spike' && ins.dynamicLabel !== 'spike') {
-        const fresh = { ...ins, dynamicLabel, frequencyScore: ins.frequencyScore, dynamicScore: ins.dynamicScore };
-        await this.probes.emitEscalationSuggested(fresh as Insight);
-      }
     } catch (err) {
       this.logger.warn(
         {
@@ -563,7 +538,6 @@ export class Specialist35Service {
     existing: Insight;
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] };
   }): Promise<void> {
-    const wasMitigated = args.existing.status === 'mitigated';
     const newSourceBlockIds = Array.from(
       new Set([...args.existing.sourceBlockIds, args.block.id]),
     );
@@ -582,17 +556,7 @@ export class Specialist35Service {
       },
     });
 
-    // Сразу пересчёт метрик после добавления нового блока.
     await this.recalcMetrics({ insightId: updated.id });
-    const recalculated = await this.prisma.insight.findUnique({
-      where: { id: updated.id },
-    });
-    if (!recalculated) return;
-
-    await this.probes.checkAndEmitForInsight({
-      insight: recalculated,
-      addedToMitigated: wasMitigated,
-    });
   }
 
   // ─────────────────────────── LLM extract ───────────────────────────

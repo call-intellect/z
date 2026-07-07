@@ -368,6 +368,7 @@ export type LlmTaskType =
   //   Дешёвая задача → primary deepseek-v4-flash. Один вызов на сотрудника в
   //   день. Без выдуманных фактов/₽.
   | 'personal-brief-hint'
+  | 'personal-day-narrative'
   // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров.
   // 'blocker-synthesis-summary' — ТОЛЬКО финальный абзац-сводка по
   //   синтезированным блокерам Org за день (кластеризация/статусы/импакт —
@@ -427,16 +428,11 @@ export type LlmTaskType =
   // Primary = deepseek; secondary = openai gpt-4o-mini; tertiary = ollama qwen3.5:9b.
   | 'issue-infer-fields'
   | 'issue-goal-suggest'
-  // Wave 3 / Tracker Phase 3 part B — автозадачи из встреч + auto-triage Intake.
-  // 'meeting-extract-actions' — извлекает структурированные задачи из
-  //   транскрипта встречи (title + suggestedAssigneeHint + suggestedDueDate +
-  //   suggestedPriority + confidence + sourceQuote). Capable модель;
-  //   primary = deepseek-chat, secondary = openai gpt-4o-mini, tertiary = qwen3.5:9b.
+  // Wave 3 / Tracker Phase 3 part B — auto-triage Intake.
   // 'intake-auto-triage' — для нового IntakeIssue заполняет suggested*
   //   поля + confidence. При confidence ≥ 0.92 + source='meeting' +
   //   suggestedAssigneeId IS NOT NULL → IntakeAutoTriageWorker создаёт
   //   Issue автоматически. Те же три уровня цепочки.
-  | 'meeting-extract-actions'
   | 'intake-auto-triage'
   // Wave 3 / Tracker Phase 4 РФ part 1 — Telegram-бот для задач.
   // 'telegram-create-task' — парсер «одной фразы»: пользователь пишет боту
@@ -842,6 +838,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'customer-risk-digest',
   // TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день»
   'personal-brief-hint',
+  'personal-day-narrative',
   // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров
   'blocker-synthesis-summary',
   // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap
@@ -865,7 +862,6 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'issue-infer-fields',
   'issue-goal-suggest',
   // Wave 3 / Tracker Phase 3 part B
-  'meeting-extract-actions',
   'intake-auto-triage',
   // Wave 3 / Tracker Phase 4 РФ part 1 — Telegram-бот для задач
   'telegram-create-task',

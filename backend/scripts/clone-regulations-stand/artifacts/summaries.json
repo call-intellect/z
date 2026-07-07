@@ -1,0 +1,262 @@
+[
+  {
+    "id": "cmr50zurz01r3dbbw2gorkgdu",
+    "kind": "regulation",
+    "name": "Правило массовой синхронизации внешних API",
+    "textHash": "2d7fbbcf95c2071a",
+    "summary": "Перед массовой синхронизацией внешнего API необходимо сначала включить backoff и мониторинг, и только затем запускать объёмную передачу данных.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 131,
+    "outputTokens": 101
+  },
+  {
+    "id": "cmr50s8gj017kdbbwzo9po4ep",
+    "kind": "policy",
+    "name": "Обязательный backoff и мониторинг при массовом синке API",
+    "textHash": "48b0b3a84e8c717e",
+    "summary": "При массовом синке внешнего API требуется предварительное включение backoff и мониторинга, иначе возникают незамеченные ошибки 429 и деградация наблюдаемости.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 167,
+    "outputTokens": 683
+  },
+  {
+    "id": "cmr51f3bk02abdbbwrkou1l8q",
+    "kind": "process",
+    "name": "Принятие решения о раскатке на основе когортных метрик",
+    "textHash": "b60ae016b8b42e16",
+    "summary": "Решение о раскатке релиза принимается по объективным когортным метрикам, а не по субъективным ощущениям команды.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 140,
+    "outputTokens": 217
+  },
+  {
+    "id": "cmr51g19w02cndbbwsng6fe0d",
+    "kind": "process",
+    "name": "Приоритизация фич по влиянию на retention когорты",
+    "textHash": "3c07d3a162c6f1d6",
+    "summary": "Приоритизируй фичи по их влиянию на удержание когорты, отдавая предпочтение тем, что повышают retention.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 144,
+    "outputTokens": 447
+  },
+  {
+    "id": "cmr51hp4u02fxdbbw7a1jhors",
+    "kind": "process",
+    "name": "Оценка сроков: пауза и замеры перед фиксацией даты",
+    "textHash": "0fe5af047341ecbd",
+    "summary": "При немедленном запросе срока возьмите паузу, проведите замеры и только после этого фиксируйте дату обязательства.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 143,
+    "outputTokens": 152
+  },
+  {
+    "id": "cmr51rayx030edbbwka4hp6ok",
+    "kind": "instruction",
+    "name": "Порядок выката на прод",
+    "textHash": "7f088339efcfe3ac",
+    "summary": "Выкат на продакшн разрешён только после успешного нагрузочного тестирования на стейдже.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 131,
+    "outputTokens": 120
+  },
+  {
+    "id": "cmr51raz9030gdbbwfo3v8229",
+    "kind": "instruction",
+    "name": "Подход к первичной диагностике",
+    "textHash": "8911899b01782049",
+    "summary": "При первичной диагностике следует начинать с анализа логов и метрик, а не строить гипотезы до получения фактических данных.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 125,
+    "outputTokens": 205
+  },
+  {
+    "id": "cmr51tvd8034fdbbwao4sszfj",
+    "kind": "instruction",
+    "name": "Закрытие фикса с мониторингом",
+    "textHash": "8ea5bfbf5013d927",
+    "summary": "При закрытии любого фикса обязательно добавлять мониторинг: алерт на ошибку и дашборд для обнаружения регресса.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 134,
+    "outputTokens": 134
+  },
+  {
+    "id": "cmr51tvdq034hdbbw37ssdof0",
+    "kind": "instruction",
+    "name": "Обязательный стейдж перед выкатом",
+    "textHash": "e19ca246d2b6bda9",
+    "summary": "Перед выкатом изменений на продакшн обязательно проводить обкатку на стейдже — это обязательное условие, а не рекомендация.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 143,
+    "outputTokens": 185
+  },
+  {
+    "id": "cmr51p5nv02vkdbbwiyqnvjo9",
+    "kind": "process",
+    "name": "Предрелизная обкатка на стейдже",
+    "textHash": "338f3904aa0ad536",
+    "summary": "Перед любым выкатом обязательна обкатка на стейдже. Выкат без проверки на стейдже не допускается.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 139,
+    "outputTokens": 220
+  },
+  {
+    "id": "cmr51v23h036udbbw3e2429wv",
+    "kind": "instruction",
+    "name": "Очистка базы перед email-рассылкой",
+    "textHash": "8f7769ce1b55cb0d",
+    "summary": "Перед запуском email-рассылки удалите дубликаты и проверьте валидность адресов в базе.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 134,
+    "outputTokens": 176
+  },
+  {
+    "id": "cmr51v23o036vdbbwya4bv5k4",
+    "kind": "instruction",
+    "name": "Сегментация базы для email-рассылки",
+    "textHash": "b5c018f39f369240",
+    "summary": "Перед отправкой email-рассылки разделяй подписчиков на группы по их поведению и отправляй каждой группе только релевантный её интересам контент.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 130,
+    "outputTokens": 164
+  },
+  {
+    "id": "cmr51vyyq039edbbwoqeb9f9f",
+    "kind": "instruction",
+    "name": "Расчёт юнит-экономики перед запуском платного канала",
+    "textHash": "ffe48646f0c7283c",
+    "summary": "Перед запуском платного канала необходимо сравнить CAC и LTV; если CAC превышает LTV, канал убыточен и запускать его нельзя.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 170,
+    "outputTokens": 109
+  },
+  {
+    "id": "cmr51vyz2039gdbbw9gm2rup4",
+    "kind": "instruction",
+    "name": "A/B-тестирование офферов на малой доле трафика перед масштабированием",
+    "textHash": "686d92bb4dd1aac0",
+    "summary": "Перед масштабированием новый оффер тестируется на малой доле трафика через A/B-тест, и только победивший по метрикам вариант внедряется на полный объём.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 171,
+    "outputTokens": 192
+  },
+  {
+    "id": "cmr51wwad03addbbwvofzgbwc",
+    "kind": "instruction",
+    "name": "Не масштабировать гипотезу без A/B-теста",
+    "textHash": "cdf37b3a9ac0edcd",
+    "summary": "Перед масштабированием любой гипотезы обязательно провести A/B-тест, чтобы избежать дорогостоящих интуитивных решений.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 145,
+    "outputTokens": 103
+  },
+  {
+    "id": "cmr51wwav03afdbbwivvx3vla",
+    "kind": "instruction",
+    "name": "Сегментировать базу перед отправкой сообщений",
+    "textHash": "c084ec5b8e965fda",
+    "summary": "",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 148,
+    "outputTokens": 700
+  },
+  {
+    "id": "cmr51zjes03eydbbwzta10dvu",
+    "kind": "instruction",
+    "name": "Выделение бюджета на канал после расчёта юнит-экономики",
+    "textHash": "985c3805dbee061a",
+    "summary": "Бюджет на рекламный канал выделяется только после расчёта юнит-экономики, при этом окупаемость оценивается до запуска, а не по факту.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 146,
+    "outputTokens": 301
+  },
+  {
+    "id": "cmr51q5re02ywdbbw8b0qay35",
+    "kind": "process",
+    "name": "Сегментация базы для рассылки по поведению",
+    "textHash": "c994ab7a4a809fff",
+    "summary": "При рассылке базу делят на сегменты по поведению, чтобы отправлять каждой группе релевантный контент вместо общего сообщения.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 136,
+    "outputTokens": 157
+  },
+  {
+    "id": "cmr51v2xj037xdbbwzea0p2ok",
+    "kind": "process",
+    "name": "Расчёт юнит-экономики перед распределением бюджета по каналам",
+    "textHash": "0c97afcf8eb75661",
+    "summary": "Перед распределением бюджета по рекламным каналам обязательно проводится предварительный расчёт окупаемости через юнит-экономику.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 155,
+    "outputTokens": 181
+  },
+  {
+    "id": "cmr515at70014yfbw7ze89yox",
+    "kind": "regulation",
+    "name": "Регламент обработки обращений v2",
+    "textHash": "9cf3c385a091f76d",
+    "summary": "При обработке клиентских обращений первый ответ даётся в течение 4 часов, критичные инциденты эскалируются владельцу в тот же день, а после каждого инцидента проводится пост-мортем с правкой регламента.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 174,
+    "outputTokens": 358
+  },
+  {
+    "id": "cmr524m1903nsdbbwof75ittb",
+    "kind": "regulation",
+    "name": "Пост-мортем после инцидентов",
+    "textHash": "e95018eea968e1a9",
+    "summary": "После каждого инцидента проводится разбор его причин и корректировка регламента на основе выводов.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 128,
+    "outputTokens": 113
+  },
+  {
+    "id": "cmr526n7j03q6dbbwrtszx88j",
+    "kind": "instruction",
+    "name": "Упреждающее управление SLA при росте очереди",
+    "textHash": "8ccffc943cdbbf65",
+    "summary": "При росте очереди обращений добавлять исполнителей заранее, чтобы не допустить срыва сроков SLA.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 127,
+    "outputTokens": 130
+  },
+  {
+    "id": "cmr52802w03rddbbwq1x14m63",
+    "kind": "instruction",
+    "name": "Принцип ранней эскалации при риске нарушения SLA",
+    "textHash": "157d510cd1f6fbce",
+    "summary": "При риске нарушения SLA необходимо немедленно эскалировать проблему, не дожидаясь просрочки. Правило применяется в любой ситуации, когда есть угроза срыва согласованного срока.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 169,
+    "outputTokens": 166
+  },
+  {
+    "id": "cmr524m2403nudbbwsaeyrxce",
+    "kind": "instruction",
+    "name": "Превентивная эскалация при риске просрочки SLA",
+    "textHash": "b06e846cc52149d8",
+    "summary": "При риске просрочки SLA эскалируйте проблему до наступления фактического нарушения.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 130,
+    "outputTokens": 99
+  },
+  {
+    "id": "cmr520f5l03h7dbbwxt1jdutv",
+    "kind": "process",
+    "name": "Превентивная эскалация при риске просрочки",
+    "textHash": "e7c77b0a10fa7d8b",
+    "summary": "Превентивная эскалация требуется при первом признаке риска нарушения SLA, до фактического срыва сроков.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 143,
+    "outputTokens": 202
+  },
+  {
+    "id": "cmr522jk703kjdbbw9lxvyei7",
+    "kind": "process",
+    "name": "Эскалация критических обращений владельцу в тот же день по шкале severity",
+    "textHash": "15a65afbcbbada35",
+    "summary": "Критические обращения по шкале severity передаются владельцу в день их поступления.",
+    "model": "deepseek:deepseek-v4-flash",
+    "inputTokens": 128,
+    "outputTokens": 283
+  }
+]

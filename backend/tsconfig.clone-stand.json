@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["scripts/clone-stand/**/*.ts", "scripts/_lib/**/*.ts", "src/**/*.ts", "prisma/**/*.ts"]
+}

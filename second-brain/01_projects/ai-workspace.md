@@ -25,7 +25,7 @@ updated: 2026-05-09
 - pgvector extension + HNSW-индекс — см. `backend/scripts/postgres-init.sql`.
 
 ### Domain
-- `tasks/` — action items с inline-edit, bulk, send-to-destination
+- ~~`tasks/`~~ — **снят 2026-06-25** (дроп legacy-`Task`). Action items встречи теперь материализуются как `Issue` в трекере (`/issues`), не в отдельном модуле tasks. Историческое описание: action items с inline-edit, bulk, send-to-destination.
 - `chapters/` — smart chapters (CRUD + regenerate)
 - `highlights/` — клипы с MP4-рендером через ffmpeg (`clip-render.worker`)
 - `shares/` — приватный CRUD + публичные `/api/v1/public/share/:token`, `/api/v1/public/share/clip/:token` (без auth, с заголовками `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `Cache-Control: no-store`)
@@ -53,7 +53,7 @@ updated: 2026-05-09
 
 ### Новые
 - `app/(authenticated)/dashboard/` — главная для залогиненного: 4 виджета + cross-meeting AI-чат
-- `app/(authenticated)/tasks/` — My Tasks с фильтрами/группировкой/inline-edit/bulk
+- ~~`app/(authenticated)/tasks/`~~ — снята вместе с legacy-`Task` (2026-06-25); задачи/action items теперь в трекере `/issues`
 - `app/(authenticated)/settings/{tags,integrations,api,webhooks,exports}/` — все разделы settings под `(authenticated)/settings/layout.tsx`
 - `app/(authenticated)/admin/ai-models/` — управление LlmTaskRoute (унифицировано в Z-Admin shell 2026-05-23)
 - `app/share/[token]/`, `app/share/clip/[token]/` — публичный шеринг (без AppShell)
@@ -71,7 +71,7 @@ updated: 2026-05-09
 
 ## DB-модели (новые)
 
-`Task | MeetingChapter | MeetingHighlight | MeetingShare | MeetingShareView | HighlightShare | Tag | MeetingTag | MeetingChatMessage | MeetingTranscriptChunk(pgvector) | ApiKey | WebhookSubscription | WebhookDelivery | IntegrationDestination | Export | UserTemplate | LlmTaskRoute | AuditLog | ApiAccessLog | UserQuotaCounter`
+`~~Task~~ (legacy, дропнут 2026-06-25 → задачи в модели Issue/IntakeIssue трекера) | MeetingChapter | MeetingHighlight | MeetingShare | MeetingShareView | HighlightShare | Tag | MeetingTag | MeetingChatMessage | MeetingTranscriptChunk(pgvector) | ApiKey | WebhookSubscription | WebhookDelivery | IntegrationDestination | Export | UserTemplate | LlmTaskRoute | AuditLog | ApiAccessLog | UserQuotaCounter`
 
 Расширения существующих: `Meeting.{recapVersion, chaptersStatus, tasksStatus, embeddingsStatus, durationMs, deletedAt}`, `User.deletedAt`, `AiResult.updatedAt`, `AiUsageLog.{userId, taskType}`.
 

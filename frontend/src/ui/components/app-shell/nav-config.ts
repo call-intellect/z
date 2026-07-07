@@ -126,10 +126,10 @@ const MY_SECTION: NavConfigSection = {
   roles: ["manager"],
   items: [
     {
-      href: "/me",
-      label: "Сегодня",
+      href: "/me/stand",
+      label: "Мой день",
       icon: UserRound,
-      matchPrefix: "/me",
+      matchPrefix: "/me/stand",
       overviewTarget: "overview.me",
     },
     {
@@ -280,6 +280,12 @@ const REFERENCE_SUBGROUP: NavConfigSubgroup = {
       label: "Документы",
       icon: FileText,
       matchPrefix: "/documents",
+    },
+    {
+      href: "/tables",
+      label: "Таблицы",
+      icon: Table2,
+      matchPrefix: "/tables",
     },
     {
       href: "/roles",
@@ -513,7 +519,7 @@ export const MOBILE_EXEC_TABS: readonly MobileNavTab[] = [
 ] as const;
 
 export const MOBILE_MANAGER_TABS: readonly MobileNavTab[] = [
-  { key: "today", href: "/me", label: "Сегодня", icon: UserRound },
+  { key: "today", href: "/me/stand", label: "Мой день", icon: UserRound },
   {
     key: "checkin",
     href: "/me/check-ins",

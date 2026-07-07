@@ -39,6 +39,7 @@ export interface IssueApi {
   meetingId: string | null;
   linkedMeetingIds: string[];
   sourceBlockIds: string[];
+  ownerHintRaw?: string | null;
   confidence: string | null;
   createdManually: boolean;
   externalSource: string | null;
@@ -202,6 +203,7 @@ export interface Issue {
   meetingId: string | null;
   linkedMeetingIds: string[];
   sourceBlockIds: string[];
+  ownerHintRaw: string | null;
   confidence: number | null;
   createdManually: boolean;
   externalSource: string | null;
@@ -364,6 +366,7 @@ export function issueFromApi(api: IssueApi): Issue {
     meetingId: api.meetingId,
     linkedMeetingIds: api.linkedMeetingIds ?? [],
     sourceBlockIds: api.sourceBlockIds ?? [],
+    ownerHintRaw: api.ownerHintRaw ?? null,
     confidence: parseNumber(api.confidence),
     createdManually: api.createdManually,
     externalSource: api.externalSource,

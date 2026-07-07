@@ -1,0 +1,813 @@
+[
+  {
+    "scenarioId": "A-01",
+    "category": "creation-form",
+    "channel": "meeting",
+    "targets": [
+      "штат"
+    ],
+    "submittedAt": "2026-07-06T21:02:11.266Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9PHENK80092CB7C1B0",
+      "rawEventIds": [
+        "cmr9pheo100023aslzur30cw8"
+      ],
+      "quiescenceSettled": false,
+      "quiescenceWaitedMs": 601200
+    },
+    "observed": {
+      "intakeIssues": [
+        {
+          "id": "cmr9ppuiu00gd3aslzjxupflj",
+          "source": "meeting",
+          "status": "accepted",
+          "extractedTitle": "Подготовить коммерческое предложение для Ромашки по внедрению",
+          "extractedDescription": "Сергей поручил Игорю подготовить коммерческое предложение с расчётом стоимости внедрения для клиента Ромашка. Срок — до пятницы.",
+          "rawContent": "Подготовить коммерческое предложение для Ромашки по внедрению\n\nЦитата: Игорь, до пятницы подготовь коммерческое предложение для Ромашки — они ждут расчёт по внедрению.",
+          "previewQuote": null,
+          "suggestedProjectId": "cmr9pgpcl000s1rslgajx393g",
+          "suggestedAssigneeId": "cmr9pgpc100041rslalf0ageu",
+          "suggestedPriority": "high",
+          "suggestedDueDate": null,
+          "suggestedGoalId": null,
+          "suggestedDuplicateOfIssueId": null,
+          "checklistJson": null,
+          "sourceBlockIds": [
+            "cmr9pmy2200ft18sleg3tu0hi"
+          ],
+          "confidence": 0.75,
+          "meetingId": "CMBTMR9PHENK80092CB7C1B0"
+        }
+      ],
+      "issues": [
+        {
+          "id": "cmr9pq2w500go3asl6eod01ta",
+          "title": "Подготовить коммерческое предложение для Ромашки по внедрению",
+          "descriptionStripped": "Сергей поручил Игорю подготовить коммерческое предложение с расчётом стоимости внедрения для клиента Ромашка. Срок — до пятницы.",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "backlog",
+          "assigneeUserIds": [
+            "cmr9pgpc100041rslalf0ageu"
+          ],
+          "priority": "high",
+          "dueDate": null,
+          "checklistTotalCount": 0,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [
+            "cmr9pmy2200ft18sleg3tu0hi"
+          ],
+          "goalId": null,
+          "linkedMeetingIds": [
+            "CMBTMR9PHENK80092CB7C1B0"
+          ]
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9pmy2200ft18sleg3tu0hi",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    },
+    "t1Isolation": {
+      "combinedProducedIntake": true,
+      "combinedIntakeSource": "meeting",
+      "blockId": "cmr9pmy2200ft18sleg3tu0hi",
+      "legacyProcessBlockOutput": {
+        "returned": "void",
+        "calledOnBlockId": "cmr9pmy2200ft18sleg3tu0hi",
+        "intakeForBlockBefore": 1,
+        "intakeForBlockAfter": 1,
+        "producedIntake": false
+      },
+      "legacyExtractTasksOutput": [
+        {
+          "title": "Подготовить коммерческое предложение для Ромашки",
+          "description": "Подготовить коммерческое предложение, включающее расчёт по внедрению для компании «Ромашка».",
+          "assigneeRaw": "Игорь",
+          "dueDate": "до пятницы",
+          "sourceStartMs": 0,
+          "sourceEndMs": 12000,
+          "sourceQuote": "Игорь, до пятницы подготовь коммерческое предложение для Ромашки — они ждут расчёт по внедрению.",
+          "confidence": 0.85
+        }
+      ]
+    }
+  },
+  {
+    "scenarioId": "D-01",
+    "category": "dedup-task",
+    "channel": "chat",
+    "targets": [
+      "R13"
+    ],
+    "submittedAt": "2026-07-06T21:12:17.737Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "chat",
+      "rawEventIds": [
+        "cmr9puemk00m43aslct6zhg91"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 151510
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [
+        {
+          "id": "cmr9pgqmc000026slxoii0pnz",
+          "title": "Подготовить смету по проекту X",
+          "descriptionStripped": "Свести смету по проекту X: материалы, работы, накладные. Согласовать с финансами.",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "started",
+          "assigneeUserIds": [
+            "cmr9pgpci000p1rslcz23jdga"
+          ],
+          "priority": "medium",
+          "dueDate": null,
+          "checklistTotalCount": 0,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [],
+          "goalId": null,
+          "linkedMeetingIds": []
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9puqhn00oc18sldaxos3wq",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "D-07",
+    "category": "dedup-task",
+    "channel": "chat",
+    "targets": [
+      "R13"
+    ],
+    "submittedAt": "2026-07-06T21:14:49.349Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "chat",
+      "rawEventIds": [
+        "cmr9pxnlh00oc3aslqhis2nzo"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 63246
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [
+        {
+          "id": "cmr9pgqo0000626slcwm11sbb",
+          "title": "Подготовить смету по проекту X (первая версия)",
+          "descriptionStripped": "Смета по проекту X, первая итерация. Сделано в прошлом квартале.",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "completed",
+          "assigneeUserIds": [
+            "cmr9pgpci000p1rslcz23jdga"
+          ],
+          "priority": "medium",
+          "dueDate": null,
+          "checklistTotalCount": 0,
+          "completedAt": "2026-07-06T21:01:40.246Z",
+          "createdManually": true,
+          "sourceBlockIds": [],
+          "goalId": null,
+          "linkedMeetingIds": []
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9py0h400oh3asl2llugv6h",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-01",
+    "category": "text-quality",
+    "channel": "meeting",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T21:15:52.674Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9PZ0G4C22D221A40D5",
+      "rawEventIds": [
+        "cmr9pz0ge00ot3aslapqfl19m"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 279934
+    },
+    "observed": {
+      "intakeIssues": [
+        {
+          "id": "cmr9q2acr00p93asld5gn65pl",
+          "source": "meeting",
+          "status": "accepted",
+          "extractedTitle": "Зафиксировать проверку передачи данных в платформе для демонстрации",
+          "extractedDescription": "Сергею нужно зафиксировать результаты проверки того, как передаются данные в платформе, для последующей демонстрации.",
+          "rawContent": "Зафиксировать проверку передачи данных в платформе для демонстрации\n\nЦитата: Ну, это зафиксирую.",
+          "previewQuote": null,
+          "suggestedProjectId": "cmr9pgpcl000s1rslgajx393g",
+          "suggestedAssigneeId": "cmr9pgpal00001rsl4mr3wgvs",
+          "suggestedPriority": null,
+          "suggestedDueDate": null,
+          "suggestedGoalId": null,
+          "suggestedDuplicateOfIssueId": null,
+          "checklistJson": null,
+          "sourceBlockIds": [
+            "cmr9pzh8v00r218slshi5763s"
+          ],
+          "confidence": 0.55,
+          "meetingId": "CMBTMR9PZ0G4C22D221A40D5"
+        }
+      ],
+      "issues": [
+        {
+          "id": "cmr9q2ex800sc18sl6n2657y0",
+          "title": "Зафиксировать проверку передачи данных в платформе для демонстрации",
+          "descriptionStripped": "Сергею нужно зафиксировать результаты проверки того, как передаются данные в платформе, для последующей демонстрации.",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "backlog",
+          "assigneeUserIds": [
+            "cmr9pgpal00001rsl4mr3wgvs"
+          ],
+          "priority": "none",
+          "dueDate": null,
+          "checklistTotalCount": 0,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [
+            "cmr9pzh8v00r218slshi5763s"
+          ],
+          "goalId": null,
+          "linkedMeetingIds": [
+            "CMBTMR9PZ0G4C22D221A40D5"
+          ]
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9pzh8v00r218slshi5763s",
+          "signalType": "commitment"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    },
+    "t1Isolation": {
+      "combinedProducedIntake": true,
+      "combinedIntakeSource": "meeting",
+      "blockId": "cmr9pzh8v00r218slshi5763s",
+      "legacyProcessBlockOutput": {
+        "returned": "void",
+        "calledOnBlockId": "cmr9pzh8v00r218slshi5763s",
+        "intakeForBlockBefore": 1,
+        "intakeForBlockAfter": 1,
+        "producedIntake": false
+      },
+      "legacyExtractTasksOutput": []
+    }
+  },
+  {
+    "scenarioId": "K-02",
+    "category": "text-quality",
+    "channel": "chat",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T21:20:51.361Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "chat",
+      "rawEventIds": [
+        "cmr9q5ey100pe3aslei9dk95x"
+      ],
+      "quiescenceSettled": false,
+      "quiescenceWaitedMs": 300015
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9q5wno00pi3aslsro7vmxb",
+          "signalType": "idea"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    },
+    "t1Isolation": {
+      "combinedProducedIntake": false,
+      "combinedIntakeSource": null,
+      "blockId": "cmr9q5wno00pi3aslsro7vmxb",
+      "legacyProcessBlockOutput": {
+        "returned": "void",
+        "calledOnBlockId": "cmr9q5wno00pi3aslsro7vmxb",
+        "intakeForBlockBefore": 0,
+        "intakeForBlockAfter": 0,
+        "producedIntake": false
+      },
+      "legacyExtractTasksOutput": []
+    }
+  },
+  {
+    "scenarioId": "K-03",
+    "category": "text-quality",
+    "channel": "meeting",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T21:26:07.659Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9QC6ZH64E3B911F9BE",
+      "rawEventIds": [
+        "cmr9qc6zv00q03aslv778tnzs"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 243840
+    },
+    "observed": {
+      "intakeIssues": [
+        {
+          "id": "cmr9qfjc100r33asl46bj6lml",
+          "source": "meeting",
+          "status": "accepted",
+          "extractedTitle": "Оформить договор с Логистик Плюс",
+          "extractedDescription": "Пете поручено оформить договор с контрагентом Логистик Плюс на сумму 3,5 миллиона рублей. Срок — до 15 июля 2026 года.",
+          "rawContent": "Оформить договор с Логистик Плюс\n\nЦитата: Пете надо, ну, договор с этими, с Логистик Плюс, на три с половиной миллиона, до, короче, до 15-го числа оформить, ага.",
+          "previewQuote": null,
+          "suggestedProjectId": "cmr9pgpcl000s1rslgajx393g",
+          "suggestedAssigneeId": "cmr9pgpc7000a1rslt55p4kze",
+          "suggestedPriority": "medium",
+          "suggestedDueDate": null,
+          "suggestedGoalId": null,
+          "suggestedDuplicateOfIssueId": null,
+          "checklistJson": null,
+          "sourceBlockIds": [
+            "cmr9qcmmu00q53asl5qoeesa5"
+          ],
+          "confidence": 0.7,
+          "meetingId": "CMBTMR9QC6ZH64E3B911F9BE"
+        }
+      ],
+      "issues": [
+        {
+          "id": "cmr9qfrab00r53aslpse8hrvr",
+          "title": "Оформить договор с Логистик Плюс",
+          "descriptionStripped": "Пете поручено оформить договор с контрагентом Логистик Плюс на сумму 3,5 миллиона рублей. Срок — до 15 июля 2026 года.",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "backlog",
+          "assigneeUserIds": [
+            "cmr9pgpc7000a1rslt55p4kze"
+          ],
+          "priority": "medium",
+          "dueDate": null,
+          "checklistTotalCount": 0,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [
+            "cmr9qcmmu00q53asl5qoeesa5"
+          ],
+          "goalId": null,
+          "linkedMeetingIds": [
+            "CMBTMR9QC6ZH64E3B911F9BE"
+          ]
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9qcmmu00q53asl5qoeesa5",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-04",
+    "category": "text-quality",
+    "channel": "meeting",
+    "targets": [
+      "Т11",
+      "Т4"
+    ],
+    "submittedAt": "2026-07-06T21:30:11.601Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9QHF785C3EE682B83D",
+      "rawEventIds": [
+        "cmr9qhf7i00re3aslb55ibut8"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 239836
+    },
+    "observed": {
+      "intakeIssues": [
+        {
+          "id": "cmr9qkth900wn18slyccej5k3",
+          "source": "meeting",
+          "status": "accepted",
+          "extractedTitle": "Подготовить лендинг к запуску",
+          "extractedDescription": "Сергей поручил Оле четыре задачи по подготовке лендинга: написать текст, согласовать макет, купить домен и подключить аналитику. Все шаги выполняет Оля.",
+          "rawContent": "Подготовить лендинг к запуску\n\nЦитата: по лендингу, значит: ну, во-первых, текст этот надо, потом, э-э, макет чтобы согласовать, ну и домен там купить, и аналитику, короче, прикрутить. Всё на Оле.",
+          "previewQuote": null,
+          "suggestedProjectId": "cmr9pgpcl000s1rslgajx393g",
+          "suggestedAssigneeId": "cmr9pgpch000m1rslqrd6daec",
+          "suggestedPriority": "high",
+          "suggestedDueDate": null,
+          "suggestedGoalId": null,
+          "suggestedDuplicateOfIssueId": null,
+          "checklistJson": [
+            {
+              "items": [
+                {
+                  "text": "Написать текст для лендинга"
+                },
+                {
+                  "text": "Согласовать макет лендинга"
+                },
+                {
+                  "text": "Купить домен для лендинга"
+                },
+                {
+                  "text": "Подключить аналитику на лендинг"
+                }
+              ]
+            }
+          ],
+          "sourceBlockIds": [
+            "cmr9qhvph00ri3aslbh03sbvl"
+          ],
+          "confidence": 0.75,
+          "meetingId": "CMBTMR9QHF785C3EE682B83D"
+        }
+      ],
+      "issues": [
+        {
+          "id": "cmr9qkzcg00wq18slu375fs28",
+          "title": "Подготовить лендинг к запуску",
+          "descriptionStripped": "Сергей поручил Оле четыре задачи по подготовке лендинга: написать текст, согласовать макет, купить домен и подключить аналитику. Все шаги выполняет Оля.",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "backlog",
+          "assigneeUserIds": [
+            "cmr9pgpch000m1rslqrd6daec"
+          ],
+          "priority": "high",
+          "dueDate": null,
+          "checklistTotalCount": 4,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [
+            "cmr9qhvph00ri3aslbh03sbvl"
+          ],
+          "goalId": null,
+          "linkedMeetingIds": [
+            "CMBTMR9QHF785C3EE682B83D"
+          ]
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9qhvph00ri3aslbh03sbvl",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-05",
+    "category": "text-quality",
+    "channel": "email",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T21:34:11.512Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "email",
+      "rawEventIds": [
+        "cmr9qmkbn00sl3aslyr04amhg"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 167619
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9qndv100ss3aslqvmym2on",
+          "signalType": "client_request"
+        },
+        {
+          "id": "cmr9qncvm00so3aslw1e7rf38",
+          "signalType": "pain"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-06",
+    "category": "text-quality",
+    "channel": "telegram",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T21:36:59.205Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "telegram",
+      "rawEventIds": [
+        "cmr9qq5pq00vw3asly5sr5zpz"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 83294
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-07",
+    "category": "text-quality",
+    "channel": "chat",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T21:38:22.551Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "chat",
+      "rawEventIds": [
+        "cmr9qry0n00vz3asl4tzeb7r4"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 135432
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9qsb2k00zi18sl9s45n2tb",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-08",
+    "category": "text-quality",
+    "channel": "meeting",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T21:40:38.037Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9QUUK4A7D90AF0A7A6",
+      "rawEventIds": [
+        "cmr9quuki00w13aslhao5q3b5"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 167562
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9qv8h6010r18sl3q2qrl8n",
+          "signalType": "suggestion"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-09",
+    "category": "text-quality",
+    "channel": "chat",
+    "targets": [
+      "Т11",
+      "Т8"
+    ],
+    "submittedAt": "2026-07-06T21:43:25.676Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "chat",
+      "rawEventIds": [
+        "cmr9qyfxk00wb3asl3c0ic79s"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 123389
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9qyshr011z18sly5wwz3op",
+          "signalType": "suggestion"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-10",
+    "category": "text-quality",
+    "channel": "meeting",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T21:45:29.158Z",
+    "headCommit": "6b0ccad2",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9R1373C6BCE307DE70",
+      "rawEventIds": [
+        "cmr9r137d00wi3asl3qbjvd4c"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 368262
+    },
+    "observed": {
+      "intakeIssues": [
+        {
+          "id": "cmr9r545w00xd3aslwarmoqlh",
+          "source": "meeting",
+          "status": "accepted",
+          "extractedTitle": "Провести онбординг клиента Ромашка",
+          "extractedDescription": "Сергей поручил Кате полный онбординг клиента Ромашка — важного клиента, который долго выбирал. Нужно провести установочный звонок, настроить доступы во все системы, обучить менеджера клиента и через неделю после запуска собрать обратную связь.",
+          "rawContent": "Провести онбординг клиента Ромашка\n\nЦитата: Кате: надо провести установочный звонок, настроить им доступы во все системы, обучить их менеджера работе, ну и, э-э, собрать обратную связь через неделю после запуска, чтобы понять, всё ли ок.",
+          "previewQuote": null,
+          "suggestedProjectId": "cmr9pgpcl000s1rslgajx393g",
+          "suggestedAssigneeId": "cmr9pgpc9000d1rsl9z6klseh",
+          "suggestedPriority": "high",
+          "suggestedDueDate": null,
+          "suggestedGoalId": null,
+          "suggestedDuplicateOfIssueId": null,
+          "checklistJson": [
+            {
+              "items": [
+                {
+                  "text": "Провести установочный звонок"
+                },
+                {
+                  "text": "Настроить доступы во все системы"
+                },
+                {
+                  "text": "Обучить менеджера клиента работе"
+                },
+                {
+                  "text": "Собрать обратную связь через неделю после запуска"
+                }
+              ]
+            }
+          ],
+          "sourceBlockIds": [
+            "cmr9r1pcj013418slms1mo5r5"
+          ],
+          "confidence": 0.85,
+          "meetingId": "CMBTMR9R1373C6BCE307DE70"
+        }
+      ],
+      "issues": [
+        {
+          "id": "cmr9r5cqb00xf3aslkmmdeggd",
+          "title": "Провести онбординг клиента Ромашка",
+          "descriptionStripped": "Сергей поручил Кате полный онбординг клиента Ромашка — важного клиента, который долго выбирал. Нужно провести установочный звонок, настроить доступы во все системы, обучить менеджера клиента и через неделю после запуска собрать обратную связь.",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "backlog",
+          "assigneeUserIds": [
+            "cmr9pgpc9000d1rsl9z6klseh"
+          ],
+          "priority": "high",
+          "dueDate": null,
+          "checklistTotalCount": 4,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [
+            "cmr9r1pcj013418slms1mo5r5"
+          ],
+          "goalId": null,
+          "linkedMeetingIds": [
+            "CMBTMR9R1373C6BCE307DE70"
+          ]
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9r1pcj013418slms1mo5r5",
+          "signalType": "action_item"
+        },
+        {
+          "id": "cmr9r1px5013918sl46zprnof",
+          "signalType": "reasoning"
+        },
+        {
+          "id": "cmr9r682t015218slskldn30n",
+          "signalType": "fact"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  }
+]

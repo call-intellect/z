@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolvePeriod } from './period-resolver';
+import { detectPeriodExpr, resolvePeriod } from './period-resolver';
 
 const TODAY = '2026-06-10T09:00:00Z';
 
@@ -95,5 +95,63 @@ describe('resolvePeriod (Europe/Moscow явно, регресс-guard +180)', ()
     const r = resolvePeriod('last_month', TODAY, 'Europe/Moscow');
     expect(r.dateFrom?.toISOString()).toBe('2026-04-30T21:00:00.000Z');
     expect(r.dateTo?.toISOString()).toBe('2026-05-31T20:59:59.999Z');
+  });
+});
+
+describe('detectPeriodExpr — детерминированный детектор периода', () => {
+  it('«покажи встречи за последнюю неделю» → last_week', () => {
+    const r = detectPeriodExpr('покажи встречи за последнюю неделю');
+    expect(r.expr).toBe('last_week');
+    expect(r.periodDays).toBeNull();
+    expect(r.confidence).toBe(0.9);
+  });
+
+  it('«за неделю» → last_week', () => {
+    expect(detectPeriodExpr('покажи все встречи за неделю').expr).toBe('last_week');
+  });
+
+  it('«что было вчера» → yesterday', () => {
+    const r = detectPeriodExpr('что было вчера');
+    expect(r.expr).toBe('yesterday');
+    expect(r.confidence).toBe(0.9);
+  });
+
+  it('«созвоны за последние 10 дней» → last_n_days + 10', () => {
+    const r = detectPeriodExpr('созвоны за последние 10 дней');
+    expect(r.expr).toBe('last_n_days');
+    expect(r.periodDays).toBe(10);
+  });
+
+  it('«за 7 дней» → last_n_days + 7', () => {
+    const r = detectPeriodExpr('что было за 7 дней');
+    expect(r.expr).toBe('last_n_days');
+    expect(r.periodDays).toBe(7);
+  });
+
+  it('«на этой неделе» → this_week', () => {
+    expect(detectPeriodExpr('что решали на этой неделе').expr).toBe('this_week');
+  });
+
+  it('«за прошлый месяц» → last_month', () => {
+    expect(detectPeriodExpr('итоги за прошлый месяц').expr).toBe('last_month');
+  });
+
+  it('«за этот месяц» → this_month', () => {
+    expect(detectPeriodExpr('что было за этот месяц').expr).toBe('this_month');
+  });
+
+  it('«сегодня» → today', () => {
+    expect(detectPeriodExpr('что запланировано на сегодня').expr).toBe('today');
+  });
+
+  it('«что по продажам» → none, confidence 0', () => {
+    const r = detectPeriodExpr('что по продажам');
+    expect(r.expr).toBe('none');
+    expect(r.periodDays).toBeNull();
+    expect(r.confidence).toBe(0);
+  });
+
+  it('нестроковый вход → none', () => {
+    expect(detectPeriodExpr(undefined as never).expr).toBe('none');
   });
 });

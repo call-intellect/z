@@ -36,12 +36,12 @@ const SEEDS: SettingSeed[] = [
   },
   {
     key: 'probe.rateLimitPerDay',
-    value: 20,
+    value: 5,
     category: 'knowledge',
     section: 'probe',
     severity: 'medium',
     description:
-      'Лимит уточняющих вопросов (probe) одному пользователю в сутки. По умолчанию 20.',
+      'Лимит уточняющих вопросов (probe) одному пользователю в сутки. По умолчанию 5.',
   },
   {
     key: 'probe.expiryDays',

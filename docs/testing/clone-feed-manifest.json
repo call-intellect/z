@@ -1,0 +1,251 @@
+{
+  "_meta": {
+    "tenant": "cmr4ztnfj0001hgbwuij7xc3n",
+    "generatedFor": "clone-stand baseline",
+    "note": "Методы = ground truth по построению (посеяны Каналом А). Ожидаемые ЧЕРТЫ выводятся слепой разметкой в Слое 0 (layer0-annotate), НЕ копируются отсюда (правило №1)."
+  },
+  "clones": [
+    {
+      "key": "ceo",
+      "role": "Генеральный директор",
+      "bearers": [
+        {
+          "name": "Сергей",
+          "methods": [
+            {
+              "id": "ceo-data",
+              "gist": "Решения по данным и когортам, не по средним и не по ощущениям",
+              "formulations": 4,
+              "daysAgoSpread": [
+                47,
+                33,
+                19,
+                6
+              ]
+            },
+            {
+              "id": "ceo-nodeadline",
+              "gist": "Не называет срок без замеров и пробного прогона",
+              "formulations": 3,
+              "daysAgoSpread": [
+                45,
+                31,
+                18
+              ]
+            },
+            {
+              "id": "ceo-pilot",
+              "gist": "Перед раскаткой обкатывает на узкой группе",
+              "formulations": 3,
+              "daysAgoSpread": [
+                44,
+                20,
+                7
+              ]
+            },
+            {
+              "id": "ceo-retention",
+              "gist": "Приоритизирует по эффекту на удержание",
+              "formulations": 3,
+              "daysAgoSpread": [
+                46,
+                32,
+                5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "integrator",
+      "role": "Разработчик-интегратор",
+      "bearers": [
+        {
+          "name": "Михаил",
+          "methods": [
+            {
+              "id": "int-logs",
+              "gist": "До фикса диагностирует по логам",
+              "formulations": 3,
+              "daysAgoSpread": [
+                45,
+                28,
+                12
+              ]
+            },
+            {
+              "id": "int-backoff",
+              "gist": "На rate-limit ставит exponential backoff (опыт 429 Битрикс)",
+              "formulations": 3,
+              "daysAgoSpread": [
+                44,
+                27,
+                10
+              ]
+            },
+            {
+              "id": "int-monitor",
+              "gist": "После фикса вешает мониторинг/алерт",
+              "formulations": 3,
+              "daysAgoSpread": [
+                43,
+                25,
+                9
+              ]
+            },
+            {
+              "id": "int-stage",
+              "gist": "Не выкатывает на прод без стейджа",
+              "formulations": 3,
+              "daysAgoSpread": [
+                42,
+                23,
+                5
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "marketer",
+      "role": "Маркетолог",
+      "bearers": [
+        {
+          "name": "Дарья",
+          "methods": [
+            {
+              "id": "mkt-base",
+              "gist": "Перед кампанией чистит и валидирует базу",
+              "formulations": 3,
+              "daysAgoSpread": [
+                44,
+                30,
+                11
+              ]
+            },
+            {
+              "id": "mkt-segment",
+              "gist": "Сегментирует до рассылки, не бьёт по всем",
+              "formulations": 3,
+              "daysAgoSpread": [
+                43,
+                17,
+                8
+              ]
+            },
+            {
+              "id": "mkt-ab",
+              "gist": "Проверяет на A/B до масштабирования",
+              "formulations": 3,
+              "daysAgoSpread": [
+                42,
+                24,
+                6
+              ]
+            },
+            {
+              "id": "mkt-unit",
+              "gist": "Считает юнит-экономику канала до бюджета",
+              "formulations": 3,
+              "daysAgoSpread": [
+                41,
+                22,
+                7
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "support",
+      "role": "Руководитель поддержки",
+      "bearers": [
+        {
+          "name": "Елена",
+          "methods": [
+            {
+              "id": "sup-severity",
+              "gist": "Эскалирует по шкале severity",
+              "formulations": 3,
+              "daysAgoSpread": [
+                48,
+                32,
+                14
+              ]
+            },
+            {
+              "id": "sup-sla4h",
+              "gist": "Первый ответ клиенту в пределах 4 часов",
+              "formulations": 3,
+              "daysAgoSpread": [
+                46,
+                30,
+                12
+              ]
+            },
+            {
+              "id": "sup-postmortem",
+              "gist": "После инцидента проводит пост-мортем",
+              "formulations": 3,
+              "daysAgoSpread": [
+                45,
+                28,
+                13
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Игорь",
+          "methods": [
+            {
+              "id": "sup-postmortem-i",
+              "gist": "Игорь: сохраняет практику пост-мортемов",
+              "formulations": 3,
+              "daysAgoSpread": [
+                20,
+                14,
+                6
+              ]
+            },
+            {
+              "id": "sup-early",
+              "gist": "Игорь: эскалирует раньше — при первом риске SLA",
+              "formulations": 3,
+              "daysAgoSpread": [
+                19,
+                11,
+                4
+              ]
+            },
+            {
+              "id": "sup-strict",
+              "gist": "Игорь: держит SLA жёстче",
+              "formulations": 3,
+              "daysAgoSpread": [
+                18,
+                10,
+                4
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "statusFacts": [
+    "База контактов НЕ актуализирована на текущий момент (чистка не завершена).",
+    "Zoom: вхождение в roadmap Q3 выясняется, решение не принято.",
+    "Контракт с «Логистик Плюс»: НЕ подписан (на стадии КП).",
+    "Онбординг «Ромашки»: НЕ завершён, жалоба открыта."
+  ],
+  "absentFacts": [
+    "Регламента про работу в выходные — НЕТ.",
+    "Регламента согласования КП — НЕТ.",
+    "Регламента про подрядчиков — НЕТ.",
+    "Прецедента выхода на новый рынок — НЕТ."
+  ]
+}

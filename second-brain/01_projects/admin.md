@@ -55,6 +55,15 @@ AdminSetting — [[admin-settings]].
 `deepReviewThreshold` (`knowledge.curationDeepReviewThresholdDefault`) — те же
 крутилки, переключены на `resolveSync` в этой же фазе.
 
+### Роли дословного просмотра конфликтов (`provenance.frictionVerbatimRoles`)
+
+Добавлена 2026-07-03 (universal-entity-drilldown-provenance-parity), секция
+knowledge/provenance реестра, читается в `ProvenanceService.maskFrictionByRole`.
+
+| Ключ | Default | Смысл |
+|---|---|---|
+| `provenance.frictionVerbatimRoles` | `['owner','admin']` | список ролей, видящих **дословные** реплики конфликта person↔person в дровере «Откуда это». Роль вне набора → агрегат (лейбл встречи + тема, без цитаты и точного `?t=`). Маскировка идёт поверх access-групп. |
+
 ### 5 ключей напоминаний (`pendingActions.*`)
 
 Единая точка — `cfg.pendingActions`, читается в
@@ -116,6 +125,27 @@ intake), чтобы окно и пороги не рассинхронились
 ### Крутилки программы «Память субъекта + самообучение» (2026-06-22)
 
 Программа (3 ТЗ, ветка `feature/2026-06-21-subject-memory-program`) добавила 15 крутилок в 3 новых секции реестра `admin-setting-schema-registry.ts` (засижены `seed-admin-settings.ts`, уже в STEPS): `subject-memory` (9 — `subjectMemory.enabled` kill-switch + пороги активации/подавления), `company-profile` (3 — `companyProfile.autoSummaryEnabled` kill-switch + свежесть/cold-start), `task-routing` (3 — `taskRouting.enabled` kill-switch + порог/topK). Редактируются super_admin через generic `GET/POST /api/v1/admin/settings*` (выделенной UI-страницы пока нет — vNext, см. реестр «не-сделано»). Полный перечень с дефолтами/вердиктами — [[config-knobs-catalog]] §«Выученная память уточнений»/§«Авто-профиль компании»/§«Маршрутизация задач по скиллам».
+
+### Крутилки авто-наполнения тем (`theme.autofill.*`) — 2026-07-03
+
+ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md). 5 ключей в секции `theme` реестра `admin-setting-schema-registry.ts`, засижены [`seed-admin-setting-theme-autofill.ts`](../../backend/scripts/seed-admin-setting-theme-autofill.ts) (в STEPS `phase:'seed-base'`, `apply-prod-deploy`). Читаются через `TypedConfigService.themeAutofillOpts()` (`getDynamic`, admin→ENV→code-fallback). UI-поля — секция «theme» на `/admin/ai/knowledge-core` (`KnowledgeCoreSettingsClient.tsx`). Управляют воркером `ThemeAutofillCron` (см. [[workers-queues]]).
+
+| Ключ | Default | Смысл |
+|---|---|---|
+| `theme.autofill.enabled` | `true` | kill-switch авто-наполнения пользовательских тем (Ship-On ON). Выкл → cron no-op. |
+| `theme.autofill.threshold` | `0.72` | порог близости, ниже которого блок в тему **не** кладётся (анти-свалка). |
+| `theme.autofill.scanWindowDays` | `14` | окно сканирования свежих блоков (дней). |
+| `theme.autofill.maxPerScan` | `50` | максимум блоков, добавляемых в тему за один проход. |
+| `theme.autofill.dedupeSimilarity` | `0.97` | порог near-дубля — блоки ближе этого дедупятся, чтобы не подкладывать почти-одинаковое. |
+
+### Крутилки graphSync таблиц (`table.graphsync.*`) — 2026-07-03
+
+ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md). 2 ключа в секции `table` реестра `admin-setting-schema-registry.ts`, засижены [`seed-admin-setting-table-graphsync.ts`](../../backend/scripts/seed-admin-setting-table-graphsync.ts). Управляют `TableGraphSyncService` + кроном `TableGraphsyncReconcileCronService` — авто-наполнение системных таблиц (ideas/promises/okr/hypotheses) из графовых объектов (Goal / Experiment / IdeaBlock). См. [[workers-queues]], [[smart-tables]] §«graphSync».
+
+| Ключ | Default | Смысл |
+|---|---|---|
+| `table.graphsync.enabled` | `true` | kill-switch авто-наполнения таблиц из графа (Ship-On ON). Выкл → cron no-op. |
+| `table.graphsync.min_confidence` | `0.5` | порог уверенности графового объекта, ниже которого строка **не** заводится; `null`=доверяем (без гейта). |
 
 ## Поверхности курации (detail-страницы)
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, Lightbulb, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Lightbulb, Sparkles } from "lucide-react";
 
 import type {
   InsightListItemApi,
@@ -13,9 +13,12 @@ import type {
 } from "@/api/insights.api";
 import type { IdeaClusterApi } from "@/api/ideas.api";
 import type { OperationsTeamFrictionApi } from "@/api/operations-dashboard.api";
+import type { ProvenanceEntityTypeApi } from "@/api/provenance.api";
+import { useAuth } from "@/contexts/auth-context";
 import { CHART, GRAD, glass } from "@/ui/components/dashboard/modern";
 import { CardTitle } from "@/ui/components/dashboard/modern";
 import { Chip } from "@/ui/components/dashboard/registry/_kit";
+import { ProvenanceDrawer } from "@/ui/components/provenance/ProvenanceDrawer";
 import { pluralRu } from "@/domain/weekly-per-person";
 
 const ICON_ON_GRADIENT = "oklch(0.99 0.005 280)";
@@ -108,38 +111,56 @@ function SignalRow({
   title,
   meta,
   badge,
+  onClick,
+  href,
 }: {
   led: string;
   title: string;
   meta?: string;
   badge: { label: string; tone: ChipTone };
+  onClick?: () => void;
+  href?: string;
 }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl px-2 py-2.5">
+  const clickable = Boolean(onClick) || Boolean(href);
+  const base = "flex items-center gap-3 rounded-xl px-2 py-2.5";
+  const inner = (
+    <>
       <span
         className="h-2 w-2 shrink-0 rounded-full"
         style={{ background: led, boxShadow: `0 0 8px ${led}` }}
         aria-hidden
       />
       <span className="min-w-0 flex-1">
-        <span
-          className="block truncate text-[13.5px] font-medium"
-          style={{ color: CHART.text }}
-        >
+        <span className="block truncate text-[13.5px] font-medium" style={{ color: CHART.text }}>
           {title}
         </span>
         {meta ? (
-          <span
-            className="mt-0.5 block truncate text-[11.5px]"
-            style={{ color: CHART.faint }}
-          >
+          <span className="mt-0.5 block truncate text-[11.5px]" style={{ color: CHART.faint }}>
             {meta}
           </span>
         ) : null}
       </span>
       <Chip tone={badge.tone}>{badge.label}</Chip>
-    </div>
+      {clickable ? (
+        <ArrowUpRight size={15} className="shrink-0" style={{ color: CHART.faint, opacity: 0.6 }} aria-hidden />
+      ) : null}
+    </>
   );
+  if (href) {
+    return (
+      <Link href={href} className={`${base} transition-colors hover:bg-[var(--surface-hover)]`}>
+        {inner}
+      </Link>
+    );
+  }
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={`${base} w-full text-left transition-colors hover:bg-[var(--surface-hover)]`}>
+        {inner}
+      </button>
+    );
+  }
+  return <div className={base}>{inner}</div>;
 }
 
 function GroupHeader({
@@ -196,6 +217,12 @@ export function DaySignalsGrid({
   ideasSummary: string | null;
 }) {
   const [showAllClusters, setShowAllClusters] = useState(false);
+  const { currentOrgId } = useAuth();
+  const [activeSignal, setActiveSignal] = useState<{
+    entityType: ProvenanceEntityTypeApi;
+    id: string;
+    title: string;
+  } | null>(null);
 
   const grouped: Record<CauseGroupKey, InsightListItemApi[]> = {
     people: [],
@@ -223,7 +250,8 @@ export function DaySignalsGrid({
     : clusters.slice(0, CLUSTERS_VISIBLE);
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div style={glass()} className="p-6">
         <div className="flex items-center gap-3">
           <CardTitle icon={<AlertTriangle size={17} />} grad={RED_GRADIENT}>
@@ -264,6 +292,16 @@ export function DaySignalsGrid({
                     led={severityLed(it.severity)}
                     title={it.statement}
                     badge={dynamicBadge(it)}
+                    onClick={
+                      it.sourceBlocksCount > 0
+                        ? () =>
+                            setActiveSignal({
+                              entityType: "insight",
+                              id: it.id,
+                              title: it.statement,
+                            })
+                        : undefined
+                    }
                   />
                 ))}
                 {g.frictions.map((fr) => {
@@ -280,6 +318,13 @@ export function DaySignalsGrid({
                         label: `уверенность ${Math.round(fr.confidence * 100)}%`,
                         tone: "warn",
                       }}
+                      onClick={() =>
+                        setActiveSignal({
+                          entityType: "friction",
+                          id: fr.id,
+                          title,
+                        })
+                      }
                     />
                   );
                 })}
@@ -335,6 +380,7 @@ export function DaySignalsGrid({
                     title={cluster.name}
                     meta={meta}
                     badge={badge}
+                    href="/ideas"
                   />
                 );
               })}
@@ -356,6 +402,17 @@ export function DaySignalsGrid({
           </>
         )}
       </div>
-    </div>
+      </div>
+      <ProvenanceDrawer
+        open={Boolean(activeSignal)}
+        onOpenChange={(o) => {
+          if (!o) setActiveSignal(null);
+        }}
+        orgId={currentOrgId}
+        entityType={activeSignal?.entityType ?? "insight"}
+        entityId={activeSignal?.id ?? null}
+        title={activeSignal?.title}
+      />
+    </>
   );
 }

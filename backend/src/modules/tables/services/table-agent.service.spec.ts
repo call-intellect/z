@@ -55,7 +55,7 @@ describe('TableAgentService', () => {
       userPrompt: 'таблица клиентов с телефоном и суммой сделки',
     });
 
-    expect(call).toHaveBeenCalledTimes(3);
+    expect(call).toHaveBeenCalledTimes(2);
     expect(out.name).toBe('Клиенты');
     expect(out.entitySync).toEqual({ type: 'org' });
     expect(out.properties.length).toBeGreaterThanOrEqual(3);
@@ -113,6 +113,8 @@ describe('TableAgentService', () => {
     });
 
     expect(out.entitySync).toBeNull();
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(call.mock.calls.some((c) => c[0]?.taskType === 'table-entity-check')).toBe(false);
   });
 
   it('(d) инвариант: 0 primary в ответе -> ровно одна isPrimary', async () => {
@@ -185,7 +187,7 @@ describe('TableAgentService', () => {
     expect(out.name).toBe('Клиенты');
     const draftCalls = call.mock.calls.filter((c) => c[0]?.taskType === 'table-infer-schema');
     expect(draftCalls).toHaveLength(2);
-    expect(call).toHaveBeenCalledTimes(4);
+    expect(call).toHaveBeenCalledTimes(3);
   });
 });
 

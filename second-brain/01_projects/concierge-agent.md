@@ -66,17 +66,20 @@ RBAC проверяется внутри `ToolRouterService` от `userId` — c
 - `concierge_cache_hit_total` — short-circuit на AnswerCache (ТЗ 2026-05-27).
 - `concierge_pre_retrieval_hits_count` (histogram) — суммарное число hits после dedup, buckets `[0,1,3,5,10,15,25,50]` (ТЗ 2026-05-27).
 
-## ENV
+## Крутилки (AdminSetting `concierge.*`)
 
-- `CONCIERGE_ENABLED` — мастер-флаг (default true). False → REST возвращает 503.
-- `CONCIERGE_DAILY_MESSAGES_LIMIT` — default per-org дневной лимит (default 100).
-- `CONCIERGE_MONTHLY_MESSAGES_LIMIT` — месячный (default 3000).
-- `CONCIERGE_SSE_HEARTBEAT_SECONDS` — keep-alive interval SSE (default 15).
-- `CONCIERGE_DIALOG_LAYER_ENABLED` — фича-флаг pipeline (ТЗ 2026-05-27, default **false**).
-- `CONCIERGE_PRE_RETRIEVAL_TOP_K` — cap items после dedup (default 12).
-- `CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS` — per-query timeout (default 3000).
+Крутилки помощника с 2026-06-20 (config-knobs) мигрированы в **AdminSetting** и редактируются из админки (`/admin/ai/concierge`) без выката; ENV остаётся лишь fallback. Ключи объявлены в `admin-setting-schema-registry.ts`, `TypedConfigService.concierge` читает их через `resolveSync`/`getDynamic` (admin → ENV → code-fallback), а не голым `process.env`.
 
-Все читаются через `process.env` в `TypedConfigService.concierge` (не в `EnvSchema` — `.merge` chain depth, см. комментарий в `typed-config.service.ts`).
+- `concierge.enabled` — мастер-рубильник (default вкл). False → REST возвращает 503.
+- `concierge.dailyMessagesLimit` — per-org дневной лимит (default 100).
+- `concierge.monthlyMessagesLimit` — месячный (default 3000).
+- `concierge.sseHeartbeatSeconds` — keep-alive SSE (default 15).
+- `concierge.dialogLayerEnabled` — слой понимания/синтеза (default вкл).
+- `concierge.nativeToolsEnabled` — нативный function-calling вместо regex (default вкл).
+- `concierge.preRetrievalTopK` — cap items после dedup (default 12).
+- `concierge.preRetrievalTimeoutMs` — per-query timeout (default 3000).
+
+Полный список порогов помощника — [[config-knobs-catalog]] §Помощник (Concierge); механика реестра — [[admin-settings]].
 
 ## Связанные модули
 

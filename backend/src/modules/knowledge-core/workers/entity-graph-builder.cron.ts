@@ -4,13 +4,13 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
+import { SYMMETRIC_ENTITY_LINK_TYPES } from '../prompts/entity-graph-builder.prompt';
 import { EntityGraphService } from '../services/entity-graph.service';
 import { EntityLinkService } from '../services/entity-link.service';
 
 @Injectable()
 export class EntityGraphBuilderCron {
   private readonly logger = new Logger(EntityGraphBuilderCron.name);
-  private static readonly PAIRS_PER_ORG_LIMIT = 50;
   private static readonly RECENT_BLOCKS_FOR_CONTEXT = 5;
   // Б17 [K2]: имя воркера для Org-Admin тумблера (Org.workersEnabled).
   // Совпадает с taskType / именем файла (канон реестра gate).
@@ -46,6 +46,7 @@ export class EntityGraphBuilderCron {
   }> {
     const minComentions = this.cfg.knowledgeCore.entityGraphMinComentions;
     const minConfidence = this.cfg.knowledgeCore.linkMinConfidence;
+    const pairsPerOrg = this.cfg.knowledgeCore.entityGraphPairsPerOrg;
 
     const orgs = await this.prisma.org.findMany({
       where: {
@@ -75,7 +76,7 @@ export class EntityGraphBuilderCron {
       const pairs = await this.graph.findCoMentionedPairs({
         tenantId: org.id,
         minComentions,
-        limit: EntityGraphBuilderCron.PAIRS_PER_ORG_LIMIT,
+        limit: pairsPerOrg,
       });
       for (const pair of pairs) {
         try {
@@ -93,11 +94,17 @@ export class EntityGraphBuilderCron {
           if (verdict.relationType === null) continue;
           if (verdict.confidence < minConfidence) continue;
 
+          const swapDirection =
+            verdict.direction === 'b_to_a' &&
+            !SYMMETRIC_ENTITY_LINK_TYPES.has(verdict.relationType);
+          const fromEntityId = swapDirection ? pair.entityB.id : pair.entityA.id;
+          const toEntityId = swapDirection ? pair.entityA.id : pair.entityB.id;
+
           await this.entityLinks.upsertRichEdge({
             tenantId: org.id,
-            fromEntityId: pair.entityA.id,
+            fromEntityId,
             fromType: 'entity',
-            toEntityId: pair.entityB.id,
+            toEntityId,
             toType: 'entity',
             relationType: verdict.relationType,
             confidence: verdict.confidence,
@@ -108,6 +115,20 @@ export class EntityGraphBuilderCron {
             validFrom: parseHintToDate(verdict.validFromHint),
             validUntil: parseHintToDate(verdict.validUntilHint),
           });
+          if (verdict.relationType !== 'mentions_with') {
+            await this.prisma.entityLink.updateMany({
+              where: {
+                tenantId: org.id,
+                relationType: 'mentions_with',
+                deletedAt: null,
+                OR: [
+                  { fromEntityId: pair.entityA.id, toEntityId: pair.entityB.id },
+                  { fromEntityId: pair.entityB.id, toEntityId: pair.entityA.id },
+                ],
+              },
+              data: { status: 'archived', deletedAt: new Date() },
+            });
+          }
           upsertedLinks += 1;
         } catch (err) {
           this.logger.warn(

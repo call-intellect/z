@@ -846,6 +846,27 @@ enum ThemeBranch {
   legal
 }
 
+enum ThemeOrigin {
+  auto
+  user
+}
+
+enum ThemeVisibility {
+  personal
+  team
+}
+
+enum ThemeLinkOrigin {
+  clustered
+  autofill
+  manual
+}
+
+enum ThemeExclusionKind {
+  block
+  entity
+}
+
 // ──────────────────────────── knowledge-core: goals (Фаза 9) ────────────────────────────
 
 /// Состояние цели:
@@ -1243,7 +1264,8 @@ model User {
   // ── ТЗ 2026-05-27 — Billing/Referral/Dadata/Tochka ──
   /// Реферальный профиль пользователя (один user → один Referral).
   /// См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9.
-  referral Referral?
+  referral       Referral?
+  themesAuthored Theme[]   @relation("ThemeAuthor")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -2547,6 +2569,7 @@ model Org {
   ideaBlockEntities      IdeaBlockEntity[]
   themeIdeaBlocks        ThemeIdeaBlock[]
   themeEntities          ThemeEntity[]
+  themeExclusions        ThemeExclusion[]
   sourceEpisodes         SourceEpisode[]
   sourceParticipants     SourceParticipant[]
   sourceEntities         SourceEntity[]
@@ -2605,7 +2628,8 @@ model Org {
   customerRiskSnapshots CustomerRiskSnapshot[]
 
   // ── TZ-1 Фаза 2 (daily-value-engine) — персональные дневные брифы ──
-  personalDailyBriefs PersonalDailyBrief[]
+  personalDailyBriefs   PersonalDailyBrief[]
+  personalDayNarratives PersonalDayNarrative[]
 
   // ── TZ-1 Фаза 5 (daily-value-engine) — месячные снимки value-recap ──
   valueRecapSnapshots ValueRecapSnapshot[]
@@ -2816,6 +2840,7 @@ model Org {
   chatboxChats          ChatboxChat[]
   chatboxChatSessions   ChatboxChatSession[]
   chatboxMessages       ChatboxMessage[]
+  ruleSummaries         RuleSummary[]
 
   // ── Bitrix24-интеграция (plans/tz/2026-06-09-bitrix24-integration-install.md) ──
   bitrixIntegrations   BitrixIntegration[]
@@ -3500,6 +3525,7 @@ model IdeaBlock {
   linksFrom           IdeaBlockLink[]      @relation("BlockLinkFrom")
   linksTo             IdeaBlockLink[]      @relation("BlockLinkTo")
   themes              ThemeIdeaBlock[]
+  themeExclusions     ThemeExclusion[]
   /// Decision-сущности, созданные параллельно этому блоку (idempotent по
   /// sourceIdeaBlockId; Фаза 0b §I.66 зонтичного ТЗ).
   decisions           Decision[]
@@ -3602,44 +3628,45 @@ model IdeaBlockEvidence {
 /// `@@unique` не поддерживает WHERE-условия, а делать full-unique нельзя —
 /// большинство сущностей не имеют этих идентификаторов).
 model Entity {
-  id             String                       @default(cuid())
-  tenantId       String
+  id                 String                       @default(cuid())
+  tenantId           String
   /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
   /// null для боевых. Фильтр в `resetDemoWorkspace`.
-  externalSource String?
-  type           EntityType
-  canonicalName  String
-  aliases        String[]                     @default([])
-  mergedIntoId   String?
+  externalSource     String?
+  type               EntityType
+  canonicalName      String
+  aliases            String[]                     @default([])
+  mergedIntoId       String?
   /// Ф1 партиционирование — nullable-компаньон tenantId для составного
   /// SetNull-FK self-merge (mergedInto). Совпадает с tenantId родителя.
   mergedIntoTenantId String?
-  mentionsCount  Int                          @default(0)
-  embedding      Unsupported("vector(1536)")?
-  metadata       Json?
+  mentionsCount      Int                          @default(0)
+  embedding          Unsupported("vector(1536)")?
+  metadata           Json?
   /// KC-Temporal W3.4 — strong-IDs (ИНН/ОГРН/email/phone/domain).
   /// Все nullable; partial unique через postgres-init.sql.
-  inn            String?                      @db.VarChar(20)
-  ogrn           String?                      @db.VarChar(20)
-  email          String?                      @db.VarChar(320)
-  phone          String?                      @db.VarChar(40)
-  domain         String?                      @db.VarChar(253)
-  createdAt      DateTime                     @default(now())
-  updatedAt      DateTime                     @updatedAt
+  inn                String?                      @db.VarChar(20)
+  ogrn               String?                      @db.VarChar(20)
+  email              String?                      @db.VarChar(320)
+  phone              String?                      @db.VarChar(40)
+  domain             String?                      @db.VarChar(253)
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
 
-  org           Org               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  mergedInto    Entity?           @relation("EntityMerges", fields: [mergedIntoId, mergedIntoTenantId], references: [id, tenantId])
-  mergedFrom    Entity[]          @relation("EntityMerges")
-  blockMentions IdeaBlockEntity[]
+  org             Org               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mergedInto      Entity?           @relation("EntityMerges", fields: [mergedIntoId, mergedIntoTenantId], references: [id, tenantId])
+  mergedFrom      Entity[]          @relation("EntityMerges")
+  blockMentions   IdeaBlockEntity[]
   // ↓ С Фазы 0 EntityLink — полиморфная модель без FK на Entity. Обратные
   //   relations убраны; для поиска связей используется
   //   EntityLink.findMany({ where: { fromEntityId, fromType: 'entity' } })
   //   или GraphService.getNeighbors. См. EntityLink выше.
-  themes        ThemeEntity[]
-  cards         Card[]            @relation("CardEntity")
+  themes          ThemeEntity[]
+  themeExclusions ThemeExclusion[]
+  cards           Card[]            @relation("CardEntity")
   /// Линковка Person → Entity (Фаза 0b §8.3): Entity{type=person} может быть
   /// связана с Prisma-моделью Person через EntityResolutionService.
-  persons       Person[]
+  persons         Person[]
 
   /// SBA α-3 — обратные связи новых моделей категории A.
   vendor                Vendor?                @relation("VendorEntity")
@@ -4391,42 +4418,48 @@ model EntityAlias {
 /// embedding(1536) — эмбеддинг от `name + ' ' + description`, для поиска
 /// связанных тем и для UI-фильтров.
 model Theme {
-  id             String                       @id @default(cuid())
-  tenantId       String
+  id               String                       @id @default(cuid())
+  tenantId         String
   /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
   /// null для боевых. Фильтр в `resetDemoWorkspace`.
-  externalSource String?
-  name           String
-  description    String                       @db.Text
-  weight         Decimal                      @default(0.5) @db.Decimal(4, 3)
-  dynamic        ThemeDynamic                 @default(stable)
-  confidence     Decimal                      @default(0.5) @db.Decimal(4, 3)
-  status         ThemeStatus                  @default(active)
-  mergedIntoId   String?
-  branch         ThemeBranch?
-  embedding      Unsupported("vector(1536)")?
-  lastSignalAt   DateTime?
+  externalSource   String?
+  name             String
+  description      String                       @db.Text
+  weight           Decimal                      @default(0.5) @db.Decimal(4, 3)
+  dynamic          ThemeDynamic                 @default(stable)
+  confidence       Decimal                      @default(0.5) @db.Decimal(4, 3)
+  status           ThemeStatus                  @default(active)
+  mergedIntoId     String?
+  branch           ThemeBranch?
+  origin           ThemeOrigin                  @default(auto)
+  createdByUserId  String?
+  visibility       ThemeVisibility              @default(team)
+  embedding        Unsupported("vector(1536)")?
+  lastSignalAt     DateTime?
   /// Ф8 (граф-ингест 2026-06-23) — retrievable «суть темы/кластера»,
   /// обновляется инкрементально воркером theme-summarize (map-reduce
   /// member-блоков, без полного rebuild). null — резюме ещё не построено.
   summary          String?                      @db.Text
   summaryUpdatedAt DateTime?
-  createdAt      DateTime                     @default(now())
-  updatedAt      DateTime                     @updatedAt
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
 
-  org        Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  mergedInto Theme?           @relation("ThemeMerges", fields: [mergedIntoId], references: [id])
-  mergedFrom Theme[]          @relation("ThemeMerges")
-  blocks     ThemeIdeaBlock[]
-  entities   ThemeEntity[]
-  cards      Card[]           @relation("CardBornFromTheme")
-  goalLinks  GoalTheme[]
+  org           Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mergedInto    Theme?           @relation("ThemeMerges", fields: [mergedIntoId], references: [id])
+  mergedFrom    Theme[]          @relation("ThemeMerges")
+  blocks        ThemeIdeaBlock[]
+  entities      ThemeEntity[]
+  cards         Card[]           @relation("CardBornFromTheme")
+  goalLinks     GoalTheme[]
   /// ТЗ-4 Ф1 — документы, привязанные к этой теме (Document.attachedThemeId).
-  documents  Document[]       @relation("DocumentTheme")
+  documents     Document[]       @relation("DocumentTheme")
+  createdByUser User?            @relation("ThemeAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  exclusions    ThemeExclusion[]
 
   @@index([tenantId, status])
   @@index([tenantId, branch])
   @@index([tenantId, mergedIntoId])
+  @@index([tenantId, origin, createdByUserId])
 }
 
 /// ThemeIdeaBlock — M:M связь Theme ↔ IdeaBlock.
@@ -4438,8 +4471,11 @@ model ThemeIdeaBlock {
   /// Ф1 партиционирование — tenantId-компаньон для составного Cascade-FK на
   /// партиционированный IdeaBlock. Совпадает с tenantId блока/темы.
   tenantId  String
-  weight    Decimal  @default(1.0) @db.Decimal(4, 3)
-  createdAt DateTime @default(now())
+  weight    Decimal         @default(1.0) @db.Decimal(4, 3)
+  addedVia  ThemeLinkOrigin @default(clustered)
+  score     Decimal?        @db.Decimal(4, 3)
+  reason    String?         @db.Text
+  createdAt DateTime        @default(now())
 
   theme Theme     @relation(fields: [themeId], references: [id], onDelete: Cascade)
   block IdeaBlock @relation(fields: [blockId, tenantId], references: [id, tenantId], onDelete: Cascade)
@@ -4469,6 +4505,25 @@ model ThemeEntity {
   @@id([themeId, entityId, tenantId])
   @@index([entityId])
   @@index([tenantId])
+}
+
+model ThemeExclusion {
+  id              String             @id @default(cuid())
+  tenantId        String
+  themeId         String
+  kind            ThemeExclusionKind
+  blockId         String?
+  entityId        String?
+  createdByUserId String?
+  createdAt       DateTime           @default(now())
+
+  theme  Theme      @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  block  IdeaBlock? @relation(fields: [blockId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  entity Entity?    @relation(fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  org    Org        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([themeId, kind, blockId, entityId])
+  @@index([tenantId, themeId])
 }
 
 // ──────────────────────────── Z-Admin: SuperAdminAccessLog (Фаза 7) ────────────────────────────
@@ -4561,11 +4616,11 @@ model Goal {
 
   /// SBA α-3 — линковка с Entity{type=goal} для графа знаний. Заполняется
   /// patch-backfill-entity-id-goal.ts и поддерживается knowledge-core.
-  entityId String? @unique
+  entityId       String? @unique
   /// Ф1 партиционирование — nullable-компаньон tenantId для составного
   /// SetNull-FK на партиционированную Entity. Совпадает с tenantId сущности.
   entityTenantId String?
-  entity   Entity? @relation("GoalEntity", fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
+  entity         Entity? @relation("GoalEntity", fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
 
   themes    GoalTheme[]
   snapshots GoalAlignmentSnapshot[]
@@ -4607,6 +4662,7 @@ model Goal {
   linkedIdeas  Idea[]          @relation("IdeaGoal")
   linkedCycles Cycle[]         @relation("CyclePrimaryGoal")
 
+  @@unique([entityId, entityTenantId])
   @@index([tenantId, status])
   @@index([tenantId, archivedAt])
   @@index([tenantId, horizon])
@@ -4616,7 +4672,6 @@ model Goal {
   @@index([tenantId, ownerPersonId])
   /// ТЗ-B (2026-06-05) — дешёвый findFirst(where isPrimary) для «севера» компаса.
   @@index([tenantId, isPrimary])
-  @@unique([entityId, entityTenantId])
 }
 
 /// ТЗ-2 Ф6.A (daily-value-dashboards) — недельный снимок здоровья портфеля
@@ -5145,6 +5200,7 @@ model Person {
   responsibleCustomers        Customer[]                         @relation("CustomerResponsible")
   /// TZ-1 Фаза 2 (daily-value-engine) — персональные дневные брифы «Твой день».
   personalDailyBriefs         PersonalDailyBrief[]               @relation("PersonalDailyBriefPerson")
+  personalDayNarratives       PersonalDayNarrative[]             @relation("PersonalDayNarrativePerson")
   /// TZ-1 Фаза 3.A (daily-value-engine) — кластеры блокеров, где этот Person
   /// ответственный (BlockerSynthesis.responsiblePersonId).
   blockerSyntheses            BlockerSynthesis[]                 @relation("BlockerSynthesisResponsible")
@@ -5353,11 +5409,11 @@ model Document {
 
   /// SBA α-3 — линковка с Entity{type=document} для графа знаний. Заполняется
   /// patch-backfill-entity-id-document.ts.
-  entityId String? @unique
+  entityId       String? @unique
   /// Ф1 партиционирование — nullable-компаньон tenantId для составного
   /// SetNull-FK на партиционированную Entity. Совпадает с tenantId сущности.
   entityTenantId String?
-  entity   Entity? @relation("DocumentEntity", fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
+  entity         Entity? @relation("DocumentEntity", fields: [entityId, entityTenantId], references: [id, tenantId], onDelete: SetNull)
 
   /// SBA β-7 — multi-faceted назначение документа. Один документ может одновременно
   /// быть «опорным материалом процесса» (use_in_process), «генерационным
@@ -5373,6 +5429,7 @@ model Document {
   attachedRole    Role?            @relation("DocumentAttachedRole", fields: [attachedRoleId], references: [id], onDelete: SetNull)
   jobDescriptions JobDescription[]
 
+  @@unique([entityId, entityTenantId])
   @@index([tenantId, status])
   @@index([tenantId, uploaderId])
   @@index([tenantId, attachedRoleId])
@@ -5380,7 +5437,6 @@ model Document {
   @@index([tenantId, contentHash])
   @@index([tenantId, attachedThemeId])
   @@index([importBatchId])
-  @@unique([entityId, entityTenantId])
   @@map("documents")
 }
 
@@ -6299,6 +6355,24 @@ model Policy {
   @@map("policies")
 }
 
+model RuleSummary {
+  id          String   @id @default(cuid())
+  tenantId    String
+  kind        String   @db.VarChar(20)
+  ruleId      String
+  summary     String   @db.Text
+  sourceHash  String   @db.VarChar(40)
+  model       String?  @db.VarChar(120)
+  generatedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kind, ruleId])
+  @@index([tenantId, kind])
+  @@map("rule_summaries")
+}
+
 /// Tool — инструмент / система / шаблон (Фаза 0a, группа Б).
 model Tool {
   id          String   @id @default(cuid())
@@ -6386,13 +6460,13 @@ model Decision {
   // ── legacy Фазы 0a (оставлены для совместимости; в β-3 необязательны) ──
   /// @deprecated SBA β-3: используй `statement`. Заполняется автоматически
   /// для обратной совместимости (первые 1000 символов из `statement`).
-  text              String? @db.Text
+  text                    String? @db.Text
   /// Legacy: один decidedByPerson. В β-3 — `decidedByPersonIds[]` (массив).
-  decidedByPersonId String?
+  decidedByPersonId       String?
   /// Legacy: один источник встречи. В β-3 — берём из sourceBlockIds + RawEvent.
-  sourceMeetingId   String?
+  sourceMeetingId         String?
   /// Legacy: один блок-источник. В β-3 — `sourceBlockIds[]` (массив).
-  sourceIdeaBlockId String? @unique
+  sourceIdeaBlockId       String? @unique
   /// Ф1 партиционирование — nullable-компаньон tenantId для составного
   /// SetNull-FK на партиционированный IdeaBlock. Совпадает с tenantId блока.
   sourceIdeaBlockTenantId String?
@@ -6472,7 +6546,7 @@ model Decision {
   /// `reversibility`.
   reversibilityAt DateTime?
 
-  linkedTaskCount         Int       @default(0)
+  linkedTaskCount Int @default(0)
 
   impliesAction     Boolean   @default(false)
   actionExtractedAt DateTime?
@@ -6494,6 +6568,7 @@ model Decision {
   /// ТЗ idea-vs-decision (2026-06-20) — идеи, повышенные в это решение (realized_as).
   realizedFromIdeas Idea[]             @relation("IdeaRealizedAsDecision")
 
+  @@unique([sourceIdeaBlockId, sourceIdeaBlockTenantId])
   @@index([tenantId, status])
   @@index([tenantId, decidedAt])
   @@index([tenantId, decidedByPersonId])
@@ -6504,7 +6579,6 @@ model Decision {
   // SBA β-3 — для currentVersionId.
   @@index([currentVersionId])
   @@index([tenantId, deletedAt])
-  @@unique([sourceIdeaBlockId, sourceIdeaBlockTenantId])
   @@map("decisions")
 }
 
@@ -7329,40 +7403,40 @@ enum DailyCheckInSource {
 /// raw текст ответа уезжает в `rawResponseText`. >= 0.6 → данные считаются
 /// канонизированными.
 model DailyCheckIn {
-  id              String    @id @default(cuid())
-  tenantId        String
-  personId        String
+  id                 String    @id @default(cuid())
+  tenantId           String
+  personId           String
   /// 'morning' | 'evening' — литералы строкой, чтобы не плодить enum
   /// под две конкретные строки (см. style schema для simple enums-as-string).
-  kind            String    @db.VarChar(16)
+  kind               String    @db.VarChar(16)
   /// YYYY-MM-DD по локальной TZ Person'а.
-  dateLocal       String    @db.VarChar(10)
+  dateLocal          String    @db.VarChar(10)
   /// Массив plans: Array<{ text, sourceBlockId?, priority? }>. NULL до ответа.
-  plansJson       Json?
+  plansJson          Json?
   /// Массив сделанного: Array<{ text, sourceBlockId?, evidenceLink? }>.
-  donesJson       Json?
+  donesJson          Json?
   /// Массив блокеров: Array<{ text, severity? ∈ {low|medium|high}, ownerHint? }>.
-  blockersJson    Json?
+  blockersJson       Json?
   /// Не сделано за день: Array<{ text, sourcePlanText?, verdictConfidence? }>. Заполняет сборщик (ТЗ Ф3). NULL до сборки.
-  notDoneJson  Json?
+  notDoneJson        Json?
   /// Идеи за день: Array<{ text, sourceBlockId? }> из signalType idea/suggestion/hypothesis. NULL до сборки.
-  ideasJson    Json?
+  ideasJson          Json?
   /// Полнота отчёта: 'draft' | 'full' (ТЗ Ф5). NULL до расчёта.
-  reportCompleteness String? @db.VarChar(8)
+  reportCompleteness String?   @db.VarChar(8)
   /// id исходной нотификации (cron probe). NULL для manual create.
-  notificationId  String?
+  notificationId     String?
   /// Сырой текст ответа пользователя (если есть). Для аудита и curator review.
-  rawResponseText String?   @db.Text
+  rawResponseText    String?   @db.Text
   /// 0..1 — уверенность LLM-парсера `checkin-parse`. NULL если нет ответа.
-  parseConfidence Decimal?  @db.Decimal(4, 3)
+  parseConfidence    Decimal?  @db.Decimal(4, 3)
   /// True если LLM-парсер не уверен (parseConfidence < 0.6) — нужен curator
   /// review. Соответствующие чек-ины поднимаются в `CurationItem` (будущая
   /// интеграция; пока только флаг, чтобы UI мог показать «требует проверки»).
-  curatorReview   Boolean   @default(false)
+  curatorReview      Boolean   @default(false)
   /// Заполнен в момент, когда пользователь прислал ответ или manual create
   /// прошёл успешно. NULL = чек-ин «пустой» (cron поставил, но человек не
   /// ответил до конца суток).
-  completedAt     DateTime?
+  completedAt        DateTime?
 
   /// ТЗ 2026-05-29 — источник чек-ина: cron / самоинициировано / manual.
   source DailyCheckInSource @default(cron_prompted)
@@ -7513,6 +7587,30 @@ model PersonalDailyBrief {
   @@map("personal_daily_brief")
 }
 
+model PersonalDayNarrative {
+  id             String    @id @default(cuid())
+  tenantId       String
+  personId       String
+  dateLocal      String    @db.VarChar(10)
+  bodyMarkdown   String?   @db.Text
+  metricsJson    Json
+  sourcesJson    Json
+  llmTaskRouteId String?
+  shortSummary   String?   @db.Text
+  verdictJson    Json?
+  letterJson     Json?
+  deliveredAt    DateTime?
+  openedAt       DateTime?
+  createdAt      DateTime  @default(now())
+
+  org    Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  person Person @relation("PersonalDayNarrativePerson", fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, personId, dateLocal])
+  @@index([tenantId, personId, dateLocal])
+  @@map("personal_day_narrative")
+}
+
 /// TZ-1 Фаза 5 (daily-value-engine) — месячный снимок «что Кора сделала за
 /// месяц» (value-recap). Витрина владельцу (инструмент продления) на ТВЁРДЫХ
 /// данных: ведущая ось «снятая рутина» (счётчики из БД) + второй слой «команда
@@ -7651,6 +7749,21 @@ model DecisionTaskLink {
   @@unique([decisionId, issueId])
   @@index([issueId])
   @@map("decision_task_link")
+}
+
+model ExperimentTaskLink {
+  id           String   @id @default(cuid())
+  experimentId String
+  issueId      String
+  linkType     String   @default("derived") @db.VarChar(24)
+  createdAt    DateTime @default(now())
+
+  experiment Experiment @relation("ExperimentTaskLinkExperiment", fields: [experimentId], references: [id], onDelete: Cascade)
+  issue      Issue      @relation("ExperimentTaskLinkIssue", fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([experimentId, issueId])
+  @@index([issueId])
+  @@map("experiment_task_link")
 }
 
 /// Pulse Wave 3 §3.3 — историческая лента engagement-score сотрудника.
@@ -7874,24 +7987,24 @@ model KnowledgeVelocitySnapshot {
 /// Идемпотентность — `@@unique([tenantId, weekStart])`. Если за неделю
 /// дайджест уже сгенерирован — повторный запуск cron'а не создаёт второй.
 model WeeklyOperationsDigest {
-  id             String   @id @default(cuid())
-  tenantId       String
+  id                    String   @id @default(cuid())
+  tenantId              String
   /// YYYY-MM-DD, понедельник недели в локальной TZ Org'а.
-  weekStart      String   @db.VarChar(10)
+  weekStart             String   @db.VarChar(10)
   /// YYYY-MM-DD, воскресенье недели (weekStart + 6).
-  weekEnd        String   @db.VarChar(10)
+  weekEnd               String   @db.VarChar(10)
   /// Связный текст комментария от LLM. Markdown (5-7 коротких разделов).
   /// При неудаче LLM сохраняется «сухой» вариант со структурой без связного текста.
-  bodyMarkdown   String   @db.Text
+  bodyMarkdown          String   @db.Text
   /// Структурированные показатели для виджетов. Свободный JSON
   /// (greenShare/yellowShare/redShare/totalCheckIns/topBlockers/...).
-  metricsJson    Json
+  metricsJson           Json
   /// Провенанс: id блокеров, инсайтов, целей, решений, использованных
   /// в дайджесте. Для drill-down из UI.
-  sourcesJson    Json
+  sourcesJson           Json
   /// Идентификатор маршрута/модели LLM (или `prompt-v1+<model>`), который
   /// реально отработал. NULL если LLM упал и сохранён «сухой» вариант.
-  llmTaskRouteId String?
+  llmTaskRouteId        String?
   /// Вердикт недели: { overall:{state,emoji,title,oneLiner}, axes:[{key,state,label,why}] }.
   /// state ∈ 'ok'|'warn'|'risk'; key ∈ 'team'|'clients'|'execution'|'overall'. NULL для legacy/сухого fallback.
   verdictJson           Json?
@@ -7901,7 +8014,7 @@ model WeeklyOperationsDigest {
   goalAlignmentWeekJson Json?
   /// Тренд осей по дням пн–пт: [{ key:'team'|'clients'|'execution'|'overall', days:[{dateLocal, state}] }] (детерминированно из 5 дневных вердиктов).
   dayTrendJson          Json?
-  createdAt      DateTime @default(now())
+  createdAt             DateTime @default(now())
 
   tenant         Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
@@ -7933,24 +8046,24 @@ model WeeklyOperationsDigest {
 /// `deliveredAt` — отметка успешной Telegram-рассылки. NULL — ещё не доставлено
 /// (или тумблер `operations.daily_digest.deliver_to_telegram` выключен).
 model DailyOperationsDigest {
-  id             String    @id @default(cuid())
-  tenantId       String
+  id                   String    @id @default(cuid())
+  tenantId             String
   /// YYYY-MM-DD — дата отчёта в МСК (день, ЗА который сделан отчёт).
-  dateLocal      String    @db.VarChar(10)
+  dateLocal            String    @db.VarChar(10)
   /// Связный текст комментария от LLM. Markdown (4-6 коротких разделов).
   /// При неудаче LLM — «сухой» вариант со структурой без связного текста.
-  bodyMarkdown   String    @db.Text
+  bodyMarkdown         String    @db.Text
   /// Структурированные показатели для виджетов: greenShare/yellowShare/redShare,
   /// topBlockers, openCommitments, completedGoals, missedGoals, ...
-  metricsJson    Json
+  metricsJson          Json
   /// Провенанс: id блокеров, чек-инов, обещаний, целей, инсайтов, решений.
-  sourcesJson    Json
+  sourcesJson          Json
   /// Идентификатор маршрута/модели LLM (`prompt-v1+<model>`). NULL при сухом fallback.
-  llmTaskRouteId String?
+  llmTaskRouteId       String?
   /// Кратко (1 короткий параграф) — для Telegram-рассылки и блока на главной.
-  shortSummary   String?   @db.Text
+  shortSummary         String?   @db.Text
   /// Telegram-доставка прошла. NULL — ещё не доставлено или выключено.
-  deliveredAt    DateTime?
+  deliveredAt          DateTime?
   /// Вердикт дня: { overall:{state,emoji,title,oneLiner}, axes:[{key,state,label,why}] }.
   /// state ∈ 'ok'|'warn'|'risk'; key ∈ 'team'|'clients'|'execution'|'overall'. NULL для legacy/сухого fallback.
   verdictJson          Json?
@@ -7959,7 +8072,7 @@ model DailyOperationsDigest {
   letterJson           Json?
   /// Дневной компас к цели: { direction:'to_goal'|'drift'|'against', score, todayDelta, why, pro:[], contra:[], goalId, goalName }.
   goalAlignmentDayJson Json?
-  createdAt      DateTime  @default(now())
+  createdAt            DateTime  @default(now())
 
   tenant         Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
@@ -7977,34 +8090,34 @@ model DailyOperationsDigest {
 /// сводит 4 недельных WeeklyOperationsDigest месяца одним LLM-вызовом operations-monthly-digest.
 /// Идемпотентность — @@unique([tenantId, periodYm]).
 model MonthlyOperationsDigest {
-  id             String   @id @default(cuid())
-  tenantId       String
+  id                     String    @id @default(cuid())
+  tenantId               String
   /// YYYY-MM — месяц отчёта (например 2026-05).
-  periodYm       String   @db.VarChar(7)
+  periodYm               String    @db.VarChar(7)
   /// Связный текст от LLM (markdown). «Сухой» вариант при падении LLM.
-  bodyMarkdown   String   @db.Text
+  bodyMarkdown           String    @db.Text
   /// Структурированные показатели месяца для виджетов. Свободный JSON.
-  metricsJson    Json
+  metricsJson            Json
   /// Провенанс: id недельных снапшотов/целей/решений, использованных в дайджесте.
-  sourcesJson    Json
+  sourcesJson            Json
   /// Маршрут/модель LLM (`<promptVersion>+<model>`). NULL при сухом fallback.
-  llmTaskRouteId String?
+  llmTaskRouteId         String?
   /// Вердикт месяца: { overall:{state,emoji,title,oneLiner}, axes:[{key,state,label,why}] }.
   /// state ∈ 'ok'|'warn'|'risk'; key ∈ 'team'|'clients'|'execution'|'overall'. NULL для сухого fallback.
-  verdictJson           Json?
+  verdictJson            Json?
   /// Письмо «как прошёл месяц»: [{ key, title, prose, cites:[{label,ref}] }] (TTS-friendly).
-  letterJson            Json?
+  letterJson             Json?
   /// Месячный компас к цели: { direction:'to_goal'|'drift'|'against', score, monthDelta, pace:{factToGoal,planToGoal,etaIso,leadingSignal}, why, pro:[], contra:[], goalId, goalName }.
   goalAlignmentMonthJson Json?
   /// Тренд осей по неделям: [{ key:'team'|'clients'|'execution'|'overall', weeks:[{weekStart, state}] }] (детерминированно из 4 недельных вердиктов).
-  weekTrendJson         Json?
+  weekTrendJson          Json?
   /// Короткое резюме для рассылки/блока (как DailyOperationsDigest.shortSummary).
-  shortSummary          String?  @db.Text
+  shortSummary           String?   @db.Text
   /// Момент успешной доставки уведомления. NULL — не доставлено.
-  deliveredAt           DateTime?
-  createdAt      DateTime @default(now())
+  deliveredAt            DateTime?
+  createdAt              DateTime  @default(now())
   /// audit — источник записи. 'demo' для seed демо-кабинета; null для боевых.
-  externalSource String?
+  externalSource         String?
 
   tenant Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -8948,8 +9061,9 @@ model Experiment {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  tenant   Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  versions ExperimentVersion[]
+  tenant    Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions  ExperimentVersion[]
+  taskLinks ExperimentTaskLink[] @relation("ExperimentTaskLinkExperiment")
 
   // Частые фильтры master-detail UI + status-resolver cron.
   @@index([tenantId, status])
@@ -9513,9 +9627,10 @@ model Issue {
   checklistTotalCount Int @default(0)
   checklistDoneCount  Int @default(0)
 
-  startDate   DateTime?
-  dueDate     DateTime?
-  completedAt DateTime?
+  startDate        DateTime?
+  dueDate          DateTime?
+  completedAt      DateTime?
+  methodCapturedAt DateTime?
 
   /// Sprint 3 B1-3.1 — момент последнего обнаружения просрочки
   /// `IssueOverdueDetectorCron`. Используется для дедупликации: не
@@ -9536,6 +9651,7 @@ model Issue {
   goalId           String? // связь с Goal! (FK opt.)
   meetingId        String? // legacy compatibility
   linkedMeetingIds String[] // видеовстречи из задачи
+  ownerHintRaw     String?
 
   // AI metadata
   sourceBlockIds   String[] // если задача создана AI — откуда вытащил
@@ -9624,6 +9740,8 @@ model Issue {
 
   /// TZ-1 Фаза 3.B (daily-value-engine) — связи задача↔решение (join).
   decisionLinks DecisionTaskLink[] @relation("DecisionTaskLinkIssue")
+
+  experimentLinks ExperimentTaskLink[] @relation("ExperimentTaskLinkIssue")
 
   taskSources TaskSource[]
 
@@ -10179,6 +10297,8 @@ model IntakeIssue {
   // При авто-приёме (IntakeAutoTriageWorker) прокидывается в Issue.linkedMeetingIds.
   meetingId String?
 
+  ownerHintRaw String?
+
   rawContent           String  @db.Text // исходный текст
   extractedTitle       String?
   extractedDescription String? @db.Text
@@ -10699,11 +10819,11 @@ model PushToken {
 }
 
 model UserBlock {
-  id             String   @id @default(cuid())
-  tenantId       String
-  blockerUserId  String
-  blockedUserId  String
-  createdAt      DateTime @default(now())
+  id            String   @id @default(cuid())
+  tenantId      String
+  blockerUserId String
+  blockedUserId String
+  createdAt     DateTime @default(now())
 
   blocker User @relation("UserBlockBlocker", fields: [blockerUserId], references: [id], onDelete: Cascade)
   blocked User @relation("UserBlockBlocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
@@ -10713,13 +10833,13 @@ model UserBlock {
 }
 
 model MessageReport {
-  id              String   @id @default(cuid())
-  tenantId        String
-  messageId       String
-  conversationId  String
-  reporterUserId  String
-  reason          String?  @db.VarChar(500)
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  tenantId       String
+  messageId      String
+  conversationId String
+  reporterUserId String
+  reason         String?  @db.VarChar(500)
+  createdAt      DateTime @default(now())
 
   @@index([tenantId, messageId])
   @@index([tenantId, conversationId])
@@ -11709,6 +11829,7 @@ model Table {
   /// Если строки таблицы автоматически создают/линкуются с Entity графа,
   /// формат: `{ type: 'org'|'person'|..., autoCreate: bool, primaryProperty: string }`.
   entitySync       Json?
+  graphSync        Json?
   /// id дефолтного TableView (открывается, если в URL не передан viewId).
   defaultViewId    String?
   /// Soft-delete: archivedAt = когда пользователь нажал «архивировать»;
@@ -11801,29 +11922,34 @@ enum TablePropType {
 }
 
 model TableRow {
-  id          String    @id @default(cuid())
-  tableId     String
-  tenantId    String
+  id               String    @id @default(cuid())
+  tableId          String
+  tenantId         String
   /// `{ [propertyId]: value }`. Value — JSON-serializable: string/number/array/etc.
   /// GIN-индекс по cells создаётся в backend/scripts/postgres-init.sql
   /// (`table_row_cells_gin`, jsonb_path_ops).
-  cells       Json
+  cells            Json
   /// Если у таблицы включён entitySync — авто-линка с Entity графа.
   /// FK на Entity не вешаем (см. комментарий к Table.parentDocumentId).
-  entityId    String?
+  entityId         String?
   /// Фракционная сортировка строк (drag&drop без перенумерации).
-  order       Decimal   @db.Decimal(20, 10)
-  archivedAt  DateTime?
-  createdBy   String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  order            Decimal   @db.Decimal(20, 10)
+  archivedAt       DateTime?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
   /// Embedded mini-document внутри карточки строки (ProseMirror doc JSON).
   /// Опционально — заполняется в Фазе 2 (карточка строки как документ).
-  pageContent Json?
+  pageContent      Json?
+  sourceObjectType String?
+  sourceObjectId   String?
+  status           String    @default("active")
+  draftExpiresAt   DateTime?
 
   table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
 
+  @@unique([tableId, sourceObjectType, sourceObjectId])
   @@index([tableId, order])
   @@index([tableId, archivedAt])
   @@index([entityId])

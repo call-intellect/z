@@ -1,0 +1,1260 @@
+{
+  "orgId": "cmr4ztnfj0001hgbwuij7xc3n",
+  "rows": [
+    {
+      "id": "g01",
+      "category": "rule_hit",
+      "clone": "ceo",
+      "gold": [
+        "cmr51f3bk02abdbbwrkou1l8q"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51f3bk02abdbbwrkou1l8q"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 416,
+          "outputTokens": 253,
+          "latencyMs": 3726,
+          "costUsd": 0.000129
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51f3bk02abdbbwrkou1l8q"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 602,
+          "outputTokens": 140,
+          "latencyMs": 2801,
+          "costUsd": 0.000123
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51f3bk02abdbbwrkou1l8q"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 613,
+          "outputTokens": 159,
+          "latencyMs": 3303,
+          "costUsd": 0.00013
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51f3bk02abdbbwrkou1l8q"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 1,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr51f3bk02abdbbwrkou1l8q"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 2516,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g02",
+      "category": "rule_hit",
+      "clone": "ceo",
+      "gold": [
+        "cmr51hp4u02fxdbbw7a1jhors"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51hp4u02fxdbbw7a1jhors"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 406,
+          "outputTokens": 194,
+          "latencyMs": 2983,
+          "costUsd": 0.000111
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51hp4u02fxdbbw7a1jhors"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 592,
+          "outputTokens": 180,
+          "latencyMs": 3202,
+          "costUsd": 0.000133
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51hp4u02fxdbbw7a1jhors"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 603,
+          "outputTokens": 178,
+          "latencyMs": 2353,
+          "costUsd": 0.000134
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51hp4u02fxdbbw7a1jhors"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr51hp4u02fxdbbw7a1jhors"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 370,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g03",
+      "category": "rule_hit",
+      "clone": "ceo",
+      "gold": [
+        "cmr50zurz01r3dbbw2gorkgdu",
+        "cmr50s8gj017kdbbwzo9po4ep"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr50zurz01r3dbbw2gorkgdu",
+            "cmr50s8gj017kdbbwzo9po4ep"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 401,
+          "outputTokens": 134,
+          "latencyMs": 2540,
+          "costUsd": 0.000094
+        },
+        "B_summary": {
+          "selected": [
+            "cmr50zurz01r3dbbw2gorkgdu",
+            "cmr50s8gj017kdbbwzo9po4ep"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 587,
+          "outputTokens": 296,
+          "latencyMs": 3998,
+          "costUsd": 0.000165
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr50zurz01r3dbbw2gorkgdu",
+            "cmr50s8gj017kdbbwzo9po4ep"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 598,
+          "outputTokens": 161,
+          "latencyMs": 3006,
+          "costUsd": 0.000129
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr50zurz01r3dbbw2gorkgdu"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr50zurz01r3dbbw2gorkgdu"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 342,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g04",
+      "category": "rule_paraphrase",
+      "clone": "ceo",
+      "gold": [
+        "cmr51hp4u02fxdbbw7a1jhors"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51hp4u02fxdbbw7a1jhors"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 410,
+          "outputTokens": 214,
+          "latencyMs": 3325,
+          "costUsd": 0.000117
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51hp4u02fxdbbw7a1jhors"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 596,
+          "outputTokens": 152,
+          "latencyMs": 3029,
+          "costUsd": 0.000126
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51hp4u02fxdbbw7a1jhors"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 607,
+          "outputTokens": 175,
+          "latencyMs": 3400,
+          "costUsd": 0.000134
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51hp4u02fxdbbw7a1jhors"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [],
+          "hit": false,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 316,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g05",
+      "category": "rule_hit",
+      "clone": "integrator",
+      "gold": [
+        "cmr51raz9030gdbbwfo3v8229"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51raz9030gdbbwfo3v8229"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 370,
+          "outputTokens": 175,
+          "latencyMs": 3021,
+          "costUsd": 0.000101
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51raz9030gdbbwfo3v8229"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 533,
+          "outputTokens": 343,
+          "latencyMs": 4617,
+          "costUsd": 0.000171
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51raz9030gdbbwfo3v8229"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 541,
+          "outputTokens": 136,
+          "latencyMs": 2266,
+          "costUsd": 0.000114
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51raz9030gdbbwfo3v8229"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [],
+          "hit": false,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 1596,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g06",
+      "category": "rule_hit",
+      "clone": "integrator",
+      "gold": [
+        "cmr51tvd8034fdbbwao4sszfj"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51tvd8034fdbbwao4sszfj",
+            "cmr51tvdq034hdbbw37ssdof0",
+            "cmr51p5nv02vkdbbwiyqnvjo9"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 378,
+          "outputTokens": 755,
+          "latencyMs": 8506,
+          "costUsd": 0.000264
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51tvd8034fdbbwao4sszfj"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 541,
+          "outputTokens": 169,
+          "latencyMs": 2696,
+          "costUsd": 0.000123
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51tvd8034fdbbwao4sszfj"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 549,
+          "outputTokens": 219,
+          "latencyMs": 3535,
+          "costUsd": 0.000138
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51tvd8034fdbbwao4sszfj"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr51tvd8034fdbbwao4sszfj"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 424,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g07",
+      "category": "rule_hit",
+      "clone": "integrator",
+      "gold": [
+        "cmr51tvdq034hdbbw37ssdof0",
+        "cmr51rayx030edbbwka4hp6ok",
+        "cmr51p5nv02vkdbbwiyqnvjo9"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51rayx030edbbwka4hp6ok",
+            "cmr51tvdq034hdbbw37ssdof0",
+            "cmr51p5nv02vkdbbwiyqnvjo9"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 375,
+          "outputTokens": 399,
+          "latencyMs": 4789,
+          "costUsd": 0.000164
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51rayx030edbbwka4hp6ok",
+            "cmr51tvdq034hdbbw37ssdof0",
+            "cmr51p5nv02vkdbbwiyqnvjo9"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 538,
+          "outputTokens": 520,
+          "latencyMs": 5760,
+          "costUsd": 0.000221
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51rayx030edbbwka4hp6ok",
+            "cmr51tvdq034hdbbw37ssdof0",
+            "cmr51p5nv02vkdbbwiyqnvjo9"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 546,
+          "outputTokens": 603,
+          "latencyMs": 6429,
+          "costUsd": 0.000245
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51rayx030edbbwka4hp6ok",
+            "cmr51tvdq034hdbbw37ssdof0"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [],
+          "hit": false,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 351,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g08",
+      "category": "rule_hit",
+      "clone": "marketer",
+      "gold": [
+        "cmr51v23h036udbbw3e2429wv"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51v23h036udbbw3e2429wv"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 553,
+          "outputTokens": 315,
+          "latencyMs": 4020,
+          "costUsd": 0.000166
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51v23h036udbbw3e2429wv"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 899,
+          "outputTokens": 157,
+          "latencyMs": 2336,
+          "costUsd": 0.00017
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51v23h036udbbw3e2429wv"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 947,
+          "outputTokens": 231,
+          "latencyMs": 3016,
+          "costUsd": 0.000197
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51v23h036udbbw3e2429wv"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr51v23h036udbbw3e2429wv"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 2489,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g09",
+      "category": "rule_hit",
+      "clone": "marketer",
+      "gold": [
+        "cmr51vyyq039edbbwoqeb9f9f",
+        "cmr51zjes03eydbbwzta10dvu",
+        "cmr51v2xj037xdbbwzea0p2ok"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51vyyq039edbbwoqeb9f9f",
+            "cmr51vyz2039gdbbw9gm2rup4"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 543,
+          "outputTokens": 637,
+          "latencyMs": 6512,
+          "costUsd": 0.000254
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51vyyq039edbbwoqeb9f9f"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 889,
+          "outputTokens": 367,
+          "latencyMs": 4462,
+          "costUsd": 0.000227
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51vyyq039edbbwoqeb9f9f",
+            "cmr51zjes03eydbbwzta10dvu"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 937,
+          "outputTokens": 488,
+          "latencyMs": 5372,
+          "costUsd": 0.000268
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51vyyq039edbbwoqeb9f9f",
+            "cmr51vyz2039gdbbw9gm2rup4"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr51vyyq039edbbwoqeb9f9f"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 363,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g10",
+      "category": "rule_paraphrase",
+      "clone": "marketer",
+      "gold": [
+        "cmr51vyz2039gdbbw9gm2rup4",
+        "cmr51wwad03addbbwvofzgbwc"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51vyz2039gdbbw9gm2rup4",
+            "cmr51wwad03addbbwvofzgbwc"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 551,
+          "outputTokens": 213,
+          "latencyMs": 2616,
+          "costUsd": 0.000137
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51vyz2039gdbbw9gm2rup4",
+            "cmr51wwad03addbbwvofzgbwc"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 897,
+          "outputTokens": 253,
+          "latencyMs": 3257,
+          "costUsd": 0.000196
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51vyz2039gdbbw9gm2rup4",
+            "cmr51wwad03addbbwvofzgbwc"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 945,
+          "outputTokens": 342,
+          "latencyMs": 4255,
+          "costUsd": 0.000228
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51vyz2039gdbbw9gm2rup4"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr51wwav03afdbbwivvx3vla"
+          ],
+          "hit": false,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 398,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g11",
+      "category": "rule_hit",
+      "clone": "marketer",
+      "gold": [
+        "cmr51v23o036vdbbwya4bv5k4",
+        "cmr51wwav03afdbbwivvx3vla",
+        "cmr51q5re02ywdbbw8b0qay35"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr51v23o036vdbbwya4bv5k4",
+            "cmr51wwav03afdbbwivvx3vla",
+            "cmr51q5re02ywdbbw8b0qay35"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 546,
+          "outputTokens": 326,
+          "latencyMs": 4039,
+          "costUsd": 0.000168
+        },
+        "B_summary": {
+          "selected": [
+            "cmr51v23o036vdbbwya4bv5k4",
+            "cmr51wwav03afdbbwivvx3vla",
+            "cmr51q5re02ywdbbw8b0qay35"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 892,
+          "outputTokens": 398,
+          "latencyMs": 5096,
+          "costUsd": 0.000236
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr51v23o036vdbbwya4bv5k4",
+            "cmr51wwav03afdbbwivvx3vla",
+            "cmr51q5re02ywdbbw8b0qay35"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 940,
+          "outputTokens": 717,
+          "latencyMs": 7527,
+          "costUsd": 0.000332
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51wwav03afdbbwivvx3vla"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 1,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr51wwav03afdbbwivvx3vla",
+            "cmr51q5re02ywdbbw8b0qay35"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 357,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g12",
+      "category": "rule_hit",
+      "clone": "support",
+      "gold": [
+        "cmr515at70014yfbw7ze89yox"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 455,
+          "outputTokens": 150,
+          "latencyMs": 2295,
+          "costUsd": 0.000106
+        },
+        "B_summary": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 677,
+          "outputTokens": 139,
+          "latencyMs": 2146,
+          "costUsd": 0.000134
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 732,
+          "outputTokens": 107,
+          "latencyMs": 2048,
+          "costUsd": 0.000132
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 1,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 2437,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g13",
+      "category": "rule_hit",
+      "clone": "support",
+      "gold": [
+        "cmr522jk703kjdbbw9lxvyei7"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr522jk703kjdbbw9lxvyei7"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 458,
+          "outputTokens": 211,
+          "latencyMs": 2802,
+          "costUsd": 0.000123
+        },
+        "B_summary": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox",
+            "cmr522jk703kjdbbw9lxvyei7"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 680,
+          "outputTokens": 604,
+          "latencyMs": 5528,
+          "costUsd": 0.000264
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox",
+            "cmr522jk703kjdbbw9lxvyei7"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 735,
+          "outputTokens": 538,
+          "latencyMs": 5499,
+          "costUsd": 0.000254
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox"
+          ],
+          "hit": false,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox"
+          ],
+          "hit": false,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 379,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g14",
+      "category": "rule_paraphrase",
+      "clone": "support",
+      "gold": [
+        "cmr526n7j03q6dbbwrtszx88j",
+        "cmr52802w03rddbbwq1x14m63",
+        "cmr524m2403nudbbwsaeyrxce",
+        "cmr520f5l03h7dbbwxt1jdutv"
+      ],
+      "cells": {
+        "A_names": {
+          "selected": [
+            "cmr526n7j03q6dbbwrtszx88j",
+            "cmr52802w03rddbbwq1x14m63",
+            "cmr524m2403nudbbwsaeyrxce"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 462,
+          "outputTokens": 345,
+          "latencyMs": 4194,
+          "costUsd": 0.000161
+        },
+        "B_summary": {
+          "selected": [
+            "cmr526n7j03q6dbbwrtszx88j",
+            "cmr52802w03rddbbwq1x14m63"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 684,
+          "outputTokens": 702,
+          "latencyMs": 7737,
+          "costUsd": 0.000292
+        },
+        "C_fulltext": {
+          "selected": [
+            "cmr526n7j03q6dbbwrtszx88j",
+            "cmr52802w03rddbbwq1x14m63",
+            "cmr524m2403nudbbwsaeyrxce"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 739,
+          "outputTokens": 562,
+          "latencyMs": 6101,
+          "costUsd": 0.000261
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr526n7j03q6dbbwrtszx88j"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [
+            "cmr526n7j03q6dbbwrtszx88j",
+            "cmr524m2403nudbbwsaeyrxce"
+          ],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 383,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g15",
+      "category": "rule_absent",
+      "clone": "ceo",
+      "gold": [],
+      "cells": {
+        "A_names": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 401,
+          "outputTokens": 67,
+          "latencyMs": 1855,
+          "costUsd": 0.000075
+        },
+        "B_summary": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 587,
+          "outputTokens": 92,
+          "latencyMs": 2425,
+          "costUsd": 0.000108
+        },
+        "C_fulltext": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 598,
+          "outputTokens": 93,
+          "latencyMs": 2525,
+          "costUsd": 0.00011
+        },
+        "kw_bm25": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 386,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g16",
+      "category": "rule_absent",
+      "clone": "support",
+      "gold": [],
+      "cells": {
+        "A_names": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 455,
+          "outputTokens": 59,
+          "latencyMs": 1540,
+          "costUsd": 0.00008
+        },
+        "B_summary": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 677,
+          "outputTokens": 64,
+          "latencyMs": 1406,
+          "costUsd": 0.000113
+        },
+        "C_fulltext": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 732,
+          "outputTokens": 95,
+          "latencyMs": 1788,
+          "costUsd": 0.000129
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr515at70014yfbw7ze89yox",
+            "cmr524m1903nsdbbwof75ittb"
+          ],
+          "hit": false,
+          "falseInvoke": true,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 1,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 318,
+          "costUsd": 0
+        }
+      }
+    },
+    {
+      "id": "g17",
+      "category": "rule_absent",
+      "clone": "marketer",
+      "gold": [],
+      "cells": {
+        "A_names": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 546,
+          "outputTokens": 68,
+          "latencyMs": 1788,
+          "costUsd": 0.000095
+        },
+        "B_summary": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 892,
+          "outputTokens": 108,
+          "latencyMs": 2006,
+          "costUsd": 0.000155
+        },
+        "C_fulltext": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 940,
+          "outputTokens": 77,
+          "latencyMs": 2057,
+          "costUsd": 0.000153
+        },
+        "kw_bm25": {
+          "selected": [
+            "cmr51zjes03eydbbwzta10dvu",
+            "cmr51v2xj037xdbbwzea0p2ok"
+          ],
+          "hit": false,
+          "falseInvoke": true,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 0,
+          "costUsd": 0
+        },
+        "semantic": {
+          "selected": [],
+          "hit": true,
+          "falseInvoke": false,
+          "fabricated": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "latencyMs": 344,
+          "costUsd": 0
+        }
+      }
+    }
+  ],
+  "summaryRows": [
+    {
+      "s": "A_names",
+      "hitRate": 1,
+      "fi": 0,
+      "fab": 0,
+      "inTok": 454.47058823529414,
+      "outTok": 265.5882352941176,
+      "lat": 3561.823529411765,
+      "costEach": 0.00013794117647058824,
+      "costTotal": 0.002345
+    },
+    {
+      "s": "B_summary",
+      "hitRate": 1,
+      "fi": 0,
+      "fab": 0,
+      "inTok": 691.9411764705883,
+      "outTok": 275.52941176470586,
+      "lat": 3676.5882352941176,
+      "costEach": 0.00017394117647058827,
+      "costTotal": 0.0029570000000000004
+    },
+    {
+      "s": "C_fulltext",
+      "hitRate": 1,
+      "fi": 0,
+      "fab": 0,
+      "inTok": 723.6470588235294,
+      "outTok": 287.11764705882354,
+      "lat": 3792.9411764705883,
+      "costEach": 0.0001816470588235294,
+      "costTotal": 0.003088
+    },
+    {
+      "s": "kw_bm25",
+      "hitRate": 0.9285714285714286,
+      "fi": 2,
+      "fab": 0,
+      "inTok": 0,
+      "outTok": 0,
+      "lat": 0.23529411764705882,
+      "costEach": 0,
+      "costTotal": 0
+    },
+    {
+      "s": "semantic",
+      "hitRate": 0.6428571428571429,
+      "fi": 0,
+      "fab": 0,
+      "inTok": 0,
+      "outTok": 0,
+      "lat": 809.9411764705883,
+      "costEach": 0,
+      "costTotal": 0
+    }
+  ]
+}

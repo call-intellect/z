@@ -22,6 +22,7 @@ import {
 interface IssueSignals {
   signals: IssueProgressDraftSignal[];
   sourceBlockIds: string[];
+  substantiveCount: number;
 }
 
 interface RunSummary {
@@ -31,6 +32,8 @@ interface RunSummary {
   belowThreshold: number;
   dedupSkipped: number;
   existingPendingSkipped: number;
+  noSubstantive: number;
+  lowConfidence: number;
 }
 
 @Injectable()
@@ -38,6 +41,7 @@ export class ProgressAutoDraftCron {
   private readonly logger = new Logger(ProgressAutoDraftCron.name);
 
   private static readonly DEFAULT_MIN_SIGNALS = 2;
+  private static readonly DEFAULT_MIN_CONFIDENCE = 0.35;
   private static readonly DEFAULT_DEDUP_TTL_SECONDS = 86_400;
   private static readonly DEFAULT_LOOKBACK_DAYS = 7;
   private static readonly ISSUES_PER_ORG_LIMIT = 200;
@@ -149,6 +153,8 @@ export class ProgressAutoDraftCron {
       belowThreshold: 0,
       dedupSkipped: 0,
       existingPendingSkipped: 0,
+      noSubstantive: 0,
+      lowConfidence: 0,
     };
 
     for (const org of orgs) {
@@ -196,6 +202,8 @@ export class ProgressAutoDraftCron {
           else if (handled === 'dedup') summary.dedupSkipped += 1;
           else if (handled === 'existing_pending')
             summary.existingPendingSkipped += 1;
+          else if (handled === 'no_substantive') summary.noSubstantive += 1;
+          else if (handled === 'low_confidence') summary.lowConfidence += 1;
         } catch (err) {
           this.logger.warn(
             {
@@ -222,7 +230,12 @@ export class ProgressAutoDraftCron {
     minSignals: number;
     todayKey: string;
   }): Promise<
-    'drafted' | 'below_threshold' | 'dedup' | 'existing_pending'
+    | 'drafted'
+    | 'below_threshold'
+    | 'dedup'
+    | 'existing_pending'
+    | 'no_substantive'
+    | 'low_confidence'
   > {
     return this.draftForIssue({
       issue: args.issue,
@@ -241,17 +254,26 @@ export class ProgressAutoDraftCron {
     minSignals: number;
     dedupKey: string;
   }): Promise<
-    'drafted' | 'below_threshold' | 'dedup' | 'existing_pending'
+    | 'drafted'
+    | 'below_threshold'
+    | 'dedup'
+    | 'existing_pending'
+    | 'no_substantive'
+    | 'low_confidence'
   > {
     const { issue } = args;
 
     const since = await this.lastProgressAt(issue.id, issue.tenantId);
-    const { signals, sourceBlockIds } = await this.collectSignals({
-      issueId: issue.id,
-      tenantId: issue.tenantId,
-      since,
-    });
+    const { signals, sourceBlockIds, substantiveCount } =
+      await this.collectSignals({
+        issueId: issue.id,
+        tenantId: issue.tenantId,
+        since,
+      });
     if (signals.length < args.minSignals) return 'below_threshold';
+
+    const requireSubstantive = await this.requireSubstantiveSignal();
+    if (requireSubstantive && substantiveCount === 0) return 'no_substantive';
 
     if (await this.hasPendingDraft(issue.id, issue.tenantId)) {
       return 'existing_pending';
@@ -267,6 +289,20 @@ export class ProgressAutoDraftCron {
       signals,
     });
     if (!draft) return 'below_threshold';
+
+    const minConfidence = await this.minConfidence();
+    if (draft.confidence < minConfidence) {
+      this.logger.debug(
+        {
+          tenantId: issue.tenantId,
+          issueId: issue.id,
+          confidence: draft.confidence,
+          minConfidence,
+        },
+        'progress-auto-draft: черновик заглушён по низкой уверенности',
+      );
+      return 'low_confidence';
+    }
 
     const snapshot = await this.computeSnapshot(issue.tenantId, sourceBlockIds);
 
@@ -367,12 +403,8 @@ export class ProgressAutoDraftCron {
         detail: item.text.slice(0, 300),
       });
     }
-    for (const change of statusChanges) {
-      signals.push({
-        label: 'сменился статус задачи',
-        detail: this.describeStatusChange(change.oldValue, change.newValue),
-      });
-    }
+    const netStatus = this.netStatusSignal(statusChanges);
+    if (netStatus) signals.push(netStatus);
     const sourceBlockIds: string[] = [];
     for (const c of candidates) {
       sourceBlockIds.push(c.sourceBlockId);
@@ -385,6 +417,25 @@ export class ProgressAutoDraftCron {
     return {
       signals,
       sourceBlockIds: [...new Set(sourceBlockIds)],
+      substantiveCount: checklistItems.length + candidates.length,
+    };
+  }
+
+  private netStatusSignal(
+    statusChanges: Array<{ oldValue: unknown; newValue: unknown }>,
+  ): IssueProgressDraftSignal | null {
+    if (statusChanges.length === 0) return null;
+    const firstOld = this.stringifyValue(statusChanges[0]!.oldValue);
+    const lastNew = this.stringifyValue(
+      statusChanges[statusChanges.length - 1]!.newValue,
+    );
+    if (firstOld && lastNew && firstOld === lastNew) return null;
+    return {
+      label: 'сменился статус задачи',
+      detail: this.describeStatusChange(
+        statusChanges[0]!.oldValue,
+        statusChanges[statusChanges.length - 1]!.newValue,
+      ),
     };
   }
 
@@ -545,6 +596,30 @@ export class ProgressAutoDraftCron {
     return typeof v === 'number' && Number.isFinite(v) && v >= 1
       ? Math.floor(v)
       : ProgressAutoDraftCron.DEFAULT_MIN_SIGNALS;
+  }
+
+  private async minConfidence(): Promise<number> {
+    const v = await this.cfg
+      .getDynamic<number>(
+        'tracker.progressAutoDraftMinConfidence',
+        undefined,
+        ProgressAutoDraftCron.DEFAULT_MIN_CONFIDENCE,
+      )
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1
+      ? v
+      : ProgressAutoDraftCron.DEFAULT_MIN_CONFIDENCE;
+  }
+
+  private async requireSubstantiveSignal(): Promise<boolean> {
+    const v = await this.cfg
+      .getDynamic<boolean>(
+        'tracker.progressAutoDraftRequireSubstantiveSignal',
+        undefined,
+        true,
+      )
+      .catch(() => undefined);
+    return typeof v === 'boolean' ? v : true;
   }
 
   private todayKey(): string {

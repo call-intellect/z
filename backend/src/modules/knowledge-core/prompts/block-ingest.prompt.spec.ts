@@ -43,6 +43,10 @@ describe('block-ingest prompt — signalType recall (Ф1)', () => {
     expect(system).toContain('Запрос фичи (feature_request) — просьба сделать конкретную функцию');
   });
 
+  it('дуальная эмиссия эксперимент+действие → hypothesis И action_item', () => {
+    expect(system).toContain('ЭКСПЕРИМЕНТ + ДЕЙСТВИЕ');
+  });
+
   // Маркеры методологии (acceptance Ф1) — блок различий, self-check, запрет кодов.
   it('содержит блок различий классов, самопроверку и запрет кодов', () => {
     expect(system).toContain('Главные различия классов');
@@ -62,6 +66,25 @@ describe('block-ingest prompt — signalType recall (Ф1)', () => {
   it('содержит правило анти-галлюцинации имён (C6)', () => {
     expect(system).toContain(
       'бери ТОЛЬКО из реплик и из имён спикеров',
+    );
+  });
+
+  // Ф3 extraction-consolidation-fixes (2026-07-03) — граница pain/blocker (Д3).
+  // Критичный клиентский инцидент (у клиента встало к дедлайну) → blocker, не pain.
+  it('содержит границу боль/блокер и правило клиент-стоп → blocker (Ф3)', () => {
+    expect(system).toContain('Граница «боль ↔ блокер»');
+    expect(system).toContain('работа встала/заблокирована → blocker');
+    expect(system).toContain('Клиент-стоп');
+    expect(system).toContain(
+      'критичный клиентский инцидент, из-за которого у клиента что-то НЕ РАБОТАЕТ или встало',
+    );
+  });
+
+  it('содержит golden-пример D3 (инцидент Ромашки → blocker)', () => {
+    expect(system).toContain('ПРИМЕР 13');
+    expect(system).toContain('signalType=blocker');
+    expect(system).toContain(
+      'Блокер: у клиента Ромашка не формируется отчёт перед советом директоров',
     );
   });
 });

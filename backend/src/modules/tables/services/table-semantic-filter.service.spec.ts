@@ -445,7 +445,13 @@ describe('TableSemanticFilterService.applyFilterToRows (server-side)', () => {
       limit: 20,
     });
     expect(out.map((r) => r.id)).toEqual(['r1', 'r3']);
-    expect(out[0]).toEqual({ id: 'r1', entityId: 'e1', cells: { city: 'Москва', amount: 150000 } });
+    expect(out[0]).toEqual({
+      id: 'r1',
+      entityId: 'e1',
+      cells: { city: 'Москва', amount: 150000 },
+      sourceObjectType: null,
+      sourceObjectId: null,
+    });
     const where = (findMany.mock.calls[0]?.[0] as { where: unknown }).where;
     expect(where).toMatchObject({
       tableId: TABLE,

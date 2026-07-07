@@ -66,7 +66,7 @@ model MeetingRoomMessage {
 
 ## AI-pipeline
 
-ENV `INCLUDE_ROOM_CHAT_IN_AI=true` (default true) → [merger.ts](backend/src/modules/ai/services/merger.ts) дописывает в merged-объект ключ `roomChat: [{ sentAt, authorName, content }]`. [prompts/common.ts](backend/src/modules/ai/services/prompts/common.ts) объясняет Claude как использовать чат: цитировать решения, ловить ссылки/ID/имена которые упоминались только в чате.
+ENV `INCLUDE_ROOM_CHAT_IN_AI=true` (default true) → [merger.ts](backend/src/modules/ai/services/merger.ts) дописывает в merged-объект ключ `roomChat: [{ sentAt, authorName, content }]`. [prompts/common.ts](backend/src/modules/ai/services/prompts/common.ts) объясняет LLM (отчёт встречи идёт через `meeting-report-fast` на DeepSeek-Pro, deepseek→openai→kie; Claude/Anthropic в Z не используется) как использовать чат: цитировать решения, ловить ссылки/ID/имена которые упоминались только в чате.
 
 Метрика стоимости: ~5–10% к input-tokens на разговорной встрече. Если станет дорого — флаг в `false`.
 

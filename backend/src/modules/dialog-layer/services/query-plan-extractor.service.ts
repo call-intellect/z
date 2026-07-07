@@ -19,7 +19,7 @@ import {
   buildUnderstandUserPrompt,
 } from '../prompts/understand.prompt';
 
-import { type PeriodExpr, resolvePeriod } from './period-resolver';
+import { detectPeriodExpr, type PeriodExpr, resolvePeriod } from './period-resolver';
 import { classifyQueryClass, isQueryClass, type QueryClass } from './query-classifier.service';
 
 export interface QueryPlanFilters {
@@ -168,12 +168,17 @@ export class QueryPlanExtractorService {
           this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
         }
       }
+      const knownNames = await this.resolveGroundingHints(
+        input.tenantId,
+        input.question,
+      );
       const rawUser = buildUnderstandUserPrompt({
         summary: input.summary,
         history: input.history,
         question: input.question,
         todayIso: input.todayIso,
         orgTimezone,
+        knownNames,
       });
       const systemPrompt = guardOn
         ? withInjectionGuard(DIALOG_UNDERSTAND_SYSTEM_PROMPT)
@@ -223,6 +228,11 @@ export class QueryPlanExtractorService {
       };
     }
 
+    const deterministicPeriod =
+      (await this.cfg
+        .getDynamic<boolean>('knowledge.chatV2DeterministicPeriod', undefined, true)
+        .catch(() => true)) ?? true;
+
     const queries = this.buildQueries(input.question, parsed.queries);
     const queryPlan = this.buildPlanFromRaw(
       parsed.plan,
@@ -231,6 +241,7 @@ export class QueryPlanExtractorService {
       orgTimezone,
       startedAt,
       input.question,
+      deterministicPeriod,
     );
     return { queries, queryPlan };
   }
@@ -281,6 +292,11 @@ export class QueryPlanExtractorService {
       return this.failOpen(startedAt, input.questions.join(' '));
     }
 
+    const deterministicPeriod =
+      (await this.cfg
+        .getDynamic<boolean>('knowledge.chatV2DeterministicPeriod', undefined, true)
+        .catch(() => true)) ?? true;
+
     return this.buildPlanFromRaw(
       parsed,
       this.coerceConfidence(parsed.confidence),
@@ -288,6 +304,7 @@ export class QueryPlanExtractorService {
       orgTimezone,
       startedAt,
       input.questions.join(' '),
+      deterministicPeriod,
     );
   }
 
@@ -318,9 +335,23 @@ export class QueryPlanExtractorService {
     orgTimezone: string,
     startedAt: number,
     question: string,
+    deterministicPeriod: boolean,
   ): QueryPlanResult {
-    const periodExpr = this.coercePeriodExpr(raw.periodExpr);
-    const periodDays = this.coercePeriodDays(raw.periodDays);
+    let periodExpr = this.coercePeriodExpr(raw.periodExpr);
+    let periodDays = this.coercePeriodDays(raw.periodDays);
+    let effectiveConfidence = confidence;
+
+    if (deterministicPeriod) {
+      const det = detectPeriodExpr(question);
+      if (det.expr !== 'none') {
+        periodExpr = det.expr;
+        if (det.expr === 'last_n_days' && det.periodDays != null) {
+          periodDays = det.periodDays;
+        }
+        effectiveConfidence = Math.max(effectiveConfidence, QUERY_PLAN_MIN_CONFIDENCE);
+      }
+    }
+
     const signalTypes = this.sanitizeEnumArray(raw.signalTypes, this.validSignalTypes);
     const themeBranches = this.sanitizeEnumArray(raw.themeBranches, this.validThemeBranches);
     const entityHints = this.sanitizeEntityHints(raw.entityHints);
@@ -343,7 +374,7 @@ export class QueryPlanExtractorService {
       personScope ||
       activeNow;
 
-    const applied = hasAnyFilter && confidence >= QUERY_PLAN_MIN_CONFIDENCE;
+    const applied = hasAnyFilter && effectiveConfidence >= QUERY_PLAN_MIN_CONFIDENCE;
     const durationSeconds = (Date.now() - startedAt) / 1000;
 
     if (!applied) {
@@ -351,7 +382,7 @@ export class QueryPlanExtractorService {
         filters: this.emptyFilters(),
         queryClass,
         queryClassConfidence,
-        confidence,
+        confidence: effectiveConfidence,
         applied: false,
         durationSeconds,
       };
@@ -372,7 +403,7 @@ export class QueryPlanExtractorService {
       },
       queryClass,
       queryClassConfidence,
-      confidence,
+      confidence: effectiveConfidence,
       applied: true,
       durationSeconds,
     };
@@ -640,6 +671,136 @@ export class QueryPlanExtractorService {
     }
 
     return { personIds: out, clarification: null };
+  }
+
+  private async resolveGroundingHints(
+    tenantId: string,
+    question: string,
+  ): Promise<string[]> {
+    try {
+      const enabled = await this.cfg.getDynamic<boolean>(
+        'knowledge.chatV2UnderstandGrounding',
+        undefined,
+        true,
+      );
+      if (!enabled) return [];
+      const topK = await this.cfg.getDynamic<number>(
+        'knowledge.chatV2GroundingTopK',
+        undefined,
+        15,
+      );
+      const embeddingEnabled = await this.cfg.getDynamic<boolean>(
+        'knowledge.chatV2GroundingEmbedding',
+        undefined,
+        true,
+      );
+      const embeddingTopK = await this.cfg.getDynamic<number>(
+        'knowledge.chatV2GroundingEmbeddingTopK',
+        undefined,
+        10,
+      );
+      const embeddingMinSim = await this.cfg.getDynamic<number>(
+        'knowledge.chatV2GroundingEmbeddingMinSim',
+        undefined,
+        0.35,
+      );
+      const tokens = [
+        ...new Set(
+          question
+            .toLowerCase()
+            .split(/[^\p{L}\p{N}]+/u)
+            .map((t) => t.trim())
+            .filter((t) => t.length >= 4),
+        ),
+      ].slice(0, 12);
+
+      const [entities, themes] =
+        tokens.length === 0
+          ? [[], []]
+          : await Promise.all([
+              this.prisma.entity.findMany({
+                where: {
+                  tenantId,
+                  mergedIntoId: null,
+                  OR: [
+                    ...tokens.map((t) => ({
+                      canonicalName: { contains: t, mode: 'insensitive' as const },
+                    })),
+                    { aliases: { hasSome: tokens } },
+                  ],
+                },
+                select: { canonicalName: true },
+                take: topK * 2,
+              }),
+              this.prisma.theme.findMany({
+                where: {
+                  tenantId,
+                  status: 'active',
+                  OR: tokens.map((t) => ({
+                    name: { contains: t, mode: 'insensitive' as const },
+                  })),
+                },
+                select: { name: true },
+                take: topK,
+              }),
+            ]);
+
+      const out: string[] = [];
+      const seen = new Set<string>();
+      for (const name of [
+        ...entities.map((e) => e.canonicalName),
+        ...themes.map((t) => t.name),
+      ]) {
+        const trimmed = name?.trim();
+        if (!trimmed) continue;
+        const key = trimmed.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(trimmed);
+      }
+
+      let embeddingHints: string[] = [];
+      if (embeddingEnabled && this.entityResolution) {
+        try {
+          embeddingHints = await this.entityResolution.resolveEntityHintsByEmbedding(
+            tenantId,
+            question,
+            embeddingTopK,
+            embeddingMinSim,
+          );
+        } catch {
+          embeddingHints = [];
+        }
+      }
+
+      const embeddingKeys = new Set<string>();
+      for (const name of embeddingHints) {
+        const trimmed = name?.trim();
+        if (!trimmed) continue;
+        const key = trimmed.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        embeddingKeys.add(key);
+        out.push(trimmed);
+      }
+
+      const capped = out.slice(0, topK);
+      let survived = 0;
+      for (const name of capped) {
+        if (embeddingKeys.has(name.toLowerCase())) survived += 1;
+      }
+      if (survived > 0) {
+        this.metrics.incChatV2GroundingEmbeddingHits(survived);
+      }
+
+      return capped;
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'resolveGroundingHints упал — fail-open (справочник пуст)',
+      );
+      return [];
+    }
   }
 
   private async resolveEntityHints(tenantId: string, hints: string[]): Promise<string[]> {

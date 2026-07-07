@@ -31,7 +31,7 @@ PostgreSQL + Redis  ←─────────────────  ре
 | **Redis** | сессии, временные ключи, очереди задач |
 | **S3** | видеофайлы, аудиодорожки |
 | **AI Processing** | транскрибация, разделение по спикерам, шаблоны по типу |
-| **Tables (smart-tables)** | модуль `backend/src/modules/tables/` — Notion-database-style таблицы (5 моделей в БД, 19 CRUD-эндпоинтов, RBAC ресурс `table`). MVP-старт 2026-05-31. См. [[../01_projects/smart-tables]]. |
+| **Tables (smart-tables)** | модуль `backend/src/modules/tables/` — Notion-database-style таблицы (5 моделей в БД, 19 CRUD-эндпоинтов, RBAC ресурс `table`). MVP-старт 2026-05-31. **graphSync (2026-07-03):** `TableGraphSyncService` (`services/table-graph-sync.service.ts`) — заводит строки `TableRow` из графовых объектов (Goal→okr, Experiment→hypotheses, IdeaBlock `idea`→ideas, IdeaBlock `commitment`→promises); методы `syncObject` (по объекту) + `reconcileTenant` (весь тенант, offset-пагинация); гейт `table.graphsync.min_confidence`, дедуп по `(tableId, sourceObjectType, sourceObjectId)`, fill-empty + `TableCellProvenance`. Крон `TableGraphsyncReconcileCronService` (`workers/table-graphsync-reconcile.cron.ts`, `@Cron('25 */3 * * *')`, kill-switch `table.graphsync.enabled`, зарегистрирован в `ai/workers.module.ts`). См. [[../01_projects/smart-tables]] §«graphSync». |
 
 ## Потоки данных
 
@@ -55,7 +55,7 @@ PostgreSQL + Redis  ←─────────────────  ре
 транскрипт готов (merge.worker) ──┤                                    → пользователь видит отчёт
                                   │
                                   └── [A] ai.analyze → block-ingest ──→ IdeaBlock + Entity + Theme
-                                      (5 LLM-вызовов, ~7 мин)           → специалисты 3-1...3-9
+                                      (5 LLM-вызовов, ~7 мин)           → специалисты 3.1–3.7, 3.9, 3.14, 3.15
                                                                         → граф знаний компании
                                                                         + legacy summaryV2/chapters-v2/tasks-v2
                                                                           (живёт до свёртки в Фазе 6)
@@ -194,6 +194,14 @@ LiveKit чистит атрибуты автоматически при disconne
     concurrency=1.
   - `workers/entity-resolver.cron.ts` — `@Cron('*/5 * * * *')`,
     сканирует пары Entity и enqueue'ит, лимит 50 пар на тик.
+  - `workers/entity-consolidate-same-name.cron.ts` (`EntityConsolidateSameNameCronService`,
+    `@Cron('40 * * * *')`, Ф1 консолидации извлечения, 2026-07-03) — кросс-типовая
+    консолидация одноимённых Entity (кроме `person`): SQL-группировка по
+    `LOWER(canonicalName)` → negative-cache `isEntityPairDistinct` → тот же LLM-арбитр
+    `entity-merge-arbiter` (разный тип НЕ повод для distinct) → `mergeEntities(canonicalType)`
+    с каноном из `resolveCanonicalType` (services/entity-type-priority.ts, domain>generic).
+    Kill-switch `knowledge.entityConsolidateSameNameEnabled`, батч
+    `knowledge.entityConsolidateSameNameBatchSize`. Регистрируется в `ai/workers.module.ts`.
   - `api/search.controller.ts` — `POST /api/v1/knowledge/search`.
   - `api/search.service.ts` — гибридный SQL (cosine + bm25, веса из ENV).
   - `api/blocks.controller.ts` — `GET /api/v1/knowledge/blocks/:id`.
@@ -2238,6 +2246,39 @@ Pipeline: `LogService.write → in-memory буфер → bulk createMany → Sys
 
 [[../index|← index]]
 
+## Живое пространство темы + карта «Второй мозг» (2026-07-03)
+
+**Источник:** ТЗ [`2026-07-02-living-topic-space`](../../plans/tz/2026-07-02-living-topic-space.md) + [`2026-07-02-second-brain-by-branches`](../../plans/tz/2026-07-02-second-brain-by-branches.md). Пользовательские темы (человек заводит → Кора авто-наполняет) поверх существующего движка `Theme` + read-only карта 12 областей компании (деривация из связей, без миграции). Модель — [[data-model]] §«Живое пространство темы», профиль — [[../01_projects/themes]], эндпоинты — [[../01_projects/api-layer]] §Knowledge-core.
+
+### `backend/src/modules/knowledge-core/services/`
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `ThemeWriteService` | `knowledge-core/services/theme-write.service.ts` | Запись пользовательских тем: `createTheme` (`embedQuery(phrase)`→embedding, `origin=user`, personal/team), `rename`, `archive`, `pin`/`unpin` (unpin пишет `ThemeExclusion`, чтобы объект не подкладывался снова). |
+| `ThemeFillService` | `knowledge-core/services/theme-fill.service.ts` | `fillTheme`: pgvector-поиск блоков ≥ порога в окне сканирования, дедуп near-дублей, исключение уже-привязанных и `ThemeExclusion` → вставка `ThemeIdeaBlock(addedVia=autofill, score, reason)`. Чистые функции `selectAutofillCandidates`/`cosineSim`. |
+| `BranchDerivationService` | `knowledge-core/services/branch-derivation.service.ts` | Карта 12 областей (read-only, без миграции): `deriveBranchForEntityIds`/`deriveBranchForThemeIds` (сущность/тема→ветка, visibility-aware, max weight), `computeBranchSignal` (чистая: пусто/all-growing→green, declining→red, иначе yellow), `aggregateBranchMap` (счётчики тем/регламентов/процессов/документов/решений per branch + `'unassigned'`). Деривация из существующих связей (Р1). |
+| `RbacService.canCreateTeamTheme` (расширен) | `rbac/rbac.service.ts` | Гейт создания **командной** темы: owner/admin/manager/coo/super. Личную тему заводит любой сотрудник. |
+
+### `backend/src/modules/knowledge-core/workers/`
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `ThemeAutofillCron` | `knowledge-core/workers/theme-autofill.cron.ts` | `@Cron('35 * * * *')` (зарегистрирован в `ai/workers.module.ts`): по каждой Org → user-темы (`origin=user, status=active`) → `ThemeFillService.fillTheme`. kill-switch `theme.autofill.enabled`, per-Org gate `'theme-autofill'` (`WorkerOrgGate`). Метрика `z_theme_autofill_added_total`. |
+
+### `backend/src/modules/knowledge-core/api/`
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `KnowledgeThemesController` (расширен) | `knowledge-core/api/themes.controller.ts` | + `POST /` (создать personal/team-тему, team→manager+, авто-наполнение сразу), `PATCH /:id` (rename), `POST /:id/archive`, `POST /:id/pin`, `DELETE /:id/pin/:kind/:objectId` (unpin→исключение), `POST /:id/commitments/:blockId/to-task` (мост в трекер, идемпотентно). `GET /` скрывает чужие personal-темы; `GET /:id` — живой вид (блоки с addedVia/score/reason + секции decisions/tasks/documents/regulations). `TrackerModule` подключён в `knowledge-core-api.module.ts` (мост через `IssuesService` + `ProjectsService.ensureInboxProjectId`). |
+| `KnowledgeBranchesController` | `knowledge-core/api/branches.controller.ts` | `GET /api/v1/knowledge/branches` (карта: плитки label+counts+signal), `GET /:branch` (деталь области: темы + деривированные регламенты/процессы/документы/решения + summary; `unknown_branch`→400). Guards как у тем. Метрики `z_branches_map_requests_total`, `z_branches_map_ms`. |
+
+### Frontend
+
+- Темы: `src/api/themes.api.ts` (+create/rename/archive/pin/unpin/commitmentToTask), `src/domain/theme.ts` (+origin/visibility/isMine, addedVia/score/reason, секции detail), `app/(authenticated)/themes/CreateThemeDialog.tsx` (создание темы фразой), `ThemesClient.tsx` (кнопка «+ Новая тема», бейдж «моя тема»), `themes/[id]/ThemeDetailClient.tsx` (живая страница: суть/лента/кто в теме/решения+«завести задачу»/задачи/документы/регламенты, поповер «почему», unpin).
+- Карта: `src/api/branches.api.ts`, `src/domain/branch.ts`, `app/(authenticated)/memory/page.tsx` → табы [Карта | Все реестры] + `BranchMapClient.tsx` (карта 12 областей — главный вид «Памяти»), `memory/[branch]/BranchDetailClient.tsx` (экран области со ссылками в существующие разделы).
+
+[[../index|← index]]
+
 ## Команда + персональные доступы сотрудников (Фазы 0–5, 2026-06-04)
 
 **Источник:** [`plans/tz/2026-06-03-team-section-and-employee-access.md`](../../plans/tz/2026-06-03-team-section-and-employee-access.md). Модули `orgs` / `persons` / `users` (backend) + `structure` / `settings` (frontend). Управление участниками и приглашениями переехало из Настроек в раздел «Команда». Эндпоинты — [[../01_projects/api-layer]], страницы — [[../01_projects/frontend-pages]], модель — [[data-model]] §EmployeeCapabilityOverride.
@@ -2582,6 +2623,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Провенанс «Откуда это» + умный probe (2026-06-20)
 - **`knowledge-core/services/provenance.service.ts`** (`ProvenanceService`) — единый резолвер первоисточника: `resolveByRawEventIds` (батч rawEvent→source+deepLink, multi-type), `buildProvenanceDeepLink` (мс→`?t=<sec>`), `resolve(entityType, entityId, viewer)` (полная цепочка с deny-by-default фильтром через `KnowledgeAccessResolver.partitionProjectionsByAccess` — у закрытого блока маскируются и quote, и label/refId/deepLink), `computePreviewSnapshot` (денорм). Контроллер `api/provenance.controller.ts` — `GET /api/v1/provenance/:entityType/:entityId`. Frontend — `ui/components/provenance/` (Drawer/Popover/Chip), domain `ProvenanceRef`, hook `useProvenance`.
+  - **Обобщение `resolve` (2026-07-03, universal-entity-drilldown-provenance-parity):** `ProvenanceEntityType` расширен `goal|insight|friction` (`collectSourceBlockIds` читает `Goal/Insight/EntityLink.sourceBlockIds`) — drill + «Откуда это» стали свойством ДАННЫХ (наличие непустого резолвимого `sourceBlockIds`), а не типа сущности. Инвариант: элемент кликабелен ⇔ за ним есть источник, доступный зрителю (нет источника/закрыт правами → аффорданса нет). Конфликт person↔person (`friction`, id=`EntityLink.id`) отдаётся **двухуровнево** поверх access-фильтра: `maskFrictionByRole` — роль вне `provenance.frictionVerbatimRoles` → агрегат (лейбл встречи, deepLink без `?t=`, quote=тема), owner/admin → дословная цитата + `?t=`; роль зрителя резолвит контроллер через `RbacService.getMembershipRole` (из guard, не из тела). `classify` теперь резолвит RawEvent `meeting_report` → встреча (снимает префикс `report_`, type=`meeting`) — задачи/решения/идеи отчётной ветки ведут на `/meetings/:id/result?t=<sec>` вместо сломанного `/chats/report_<id>`.
 - **`probe/probe-formulation.service.ts`** (`ProbeFormulationService`) — единая точка формулировки probe для push И дайджеста: `gate()` (ценностный гейт `probe-value-gate`), `formulate()` (proven B), `judgeQuality()` (судья видит объект). Чистые хелперы — `probe/probe-text.util.ts`.
 
 ### Продолжение провенанса + крутилки в AdminSetting (2026-06-20)
@@ -2664,5 +2706,20 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **WS** — расширен `tracker/gateways/tracker.gateway.ts` (`conversation.*` + staff-под-room для access-изоляции); `common/ws/redis-io.adapter.ts` (`@socket.io/redis-adapter`, свои pub/sub из cfg).
 - **Пересажено на ядро:** support (`support/*` → Conversation/Message+SupportTicket, 0 Issue-пути), чат задачи (`tracker` comments → Message под work_chat).
 - **Push:** `push/` расширен транспорт-агностичным `PushService` (PushToken apns/fcm/rustore/webpush). **Mobile:** `kora-mobile/` (Expo RN scaffold).
+
+## COS-слой — проактивные модули (указатель, 2026-07-05)
+
+Карта выше не описывала подробно операционный слой «Кора = AI операционный директор». Боевые модули (код-истина — `backend/src/modules/`):
+
+- **`operations/`** — дайджесты день/неделя/месяц, `personal-daily-brief` (+`personal-brief-hint`), `exec-morning-push.cron`, `blocker-synthesis-summary`, `value-recap-narrative`, `checkin-parse`, `decision-hygiene`.
+- **`proactive/`** — `proactive-watcher.cron` (правила контроля по всем Org) + `proactive-message-craft` + dedup. Тумблер `PROACTIVE_WATCHER_ENABLED`.
+- **`pending-actions/`** — агрегатор очереди решений из нескольких источников.
+- **`decisions`** — реестр решений (специалист 3.3). Профиль — [[../01_projects/decisions]].
+- **`goals/`** — цели + стратегическое выравнивание, `goals-pulse-summarize`. Профиль — [[../01_projects/goals-and-strategic-alignment]].
+- **`practice-skills/`** — extractor/retrieval/evaluator + `PracticeSkill`/`SkillUsage` (флаг `PRACTICE_SKILLS_ENABLED=true`). Известная дыра: `SkillUsage.outcome/editDistance` не backfill'ятся → продвижение shadow→active голодает.
+- **`kpi/`**, **`behavior-metrics/`** — KPI-агрегаты и метрики поведения на встречах (`MeetingBehaviorMetrics`).
+- **DORMANT (флаг OFF):** `orchestrator/` (`ORCHESTRATOR_ENABLED=false`, multi-agent research), `prompt-evolution/` (GEPA + AutoRule + `PromptCandidate`/`PromptRule`/`PromptFeedback` — `PROMPT_EVOLUTION_ENABLED=false`, `AUTORULE_ENABLED=false`).
+
+Карта агентов по способу запуска — [[ai-agents-map]]; функциональные модули — [[agent-modules]].
 
 [[../index|← index]]

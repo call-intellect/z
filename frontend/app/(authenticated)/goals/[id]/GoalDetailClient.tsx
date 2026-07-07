@@ -10,6 +10,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   ChevronLeft,
+  FileSearch,
   GitBranch,
   History,
   Loader2,
@@ -66,6 +67,10 @@ import {
 } from "@/domain/goal";
 import { themeFromApi } from "@/domain/theme";
 import { pluralRu } from "@/domain/contribution";
+import { useProvenance } from "@/hooks/useProvenance";
+import { provenanceCoverageLabel } from "@/domain/provenance";
+import { ProvenancePreviewSnippet } from "@/ui/components/provenance/ProvenancePreviewSnippet";
+import { ProvenanceDrawer } from "@/ui/components/provenance/ProvenanceDrawer";
 import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
@@ -96,6 +101,14 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
   const { currentOrgId, currentOrgRole, isSuperAdmin } = useAuth();
   const isOwner = currentOrgRole === "owner";
   const canRecompute = isOwner || currentOrgRole === "admin" || isSuperAdmin;
+
+  const { provenance: goalProvenance } = useProvenance(
+    currentOrgId,
+    "goal",
+    goalId,
+    true,
+  );
+  const [goalProvOpen, setGoalProvOpen] = useState(false);
 
   const swrKey = currentOrgId
     ? (["goal", currentOrgId, goalId] as const)
@@ -323,6 +336,26 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
             <p className="mt-2 whitespace-pre-wrap text-sm text-fg-secondary">
               {goal.description}
             </p>
+          )}
+          {goalProvenance && goalProvenance.nodes.length > 0 && (
+            <div className="mt-3 space-y-1">
+              <div className="flex items-start gap-1.5 text-xs text-fg-tertiary">
+                <span className="shrink-0 pt-px">Откуда:</span>
+                <ProvenancePreviewSnippet
+                  preview={
+                    goalProvenance.nodes.find((n) => !n.accessFiltered) ?? null
+                  }
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setGoalProvOpen(true)}
+                className="inline-flex items-center gap-1 text-xs text-fg-tertiary transition-colors hover:text-accent"
+              >
+                <FileSearch size={12} strokeWidth={1.75} aria-hidden />
+                Все источники · {provenanceCoverageLabel(goalProvenance.coverage)}
+              </button>
+            </div>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -678,6 +711,14 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
           }}
         />
       )}
+      <ProvenanceDrawer
+        open={goalProvOpen}
+        onOpenChange={setGoalProvOpen}
+        orgId={currentOrgId}
+        entityType="goal"
+        entityId={goalId}
+        title={goal.name}
+      />
       {confirmDialog}
     </div>
   );

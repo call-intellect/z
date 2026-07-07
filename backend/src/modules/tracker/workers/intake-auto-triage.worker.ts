@@ -26,6 +26,7 @@ import { type IntakeAutoTriageJobData, TRACKER_QUEUE_NAMES } from '../queues';
 import { AssigneeResolverService } from '../services/assignee-resolver.service';
 import { ChecklistsService } from '../services/checklists.service';
 import { linkDerivedDecisionsForIssue } from '../services/decision-task-link.util';
+import { linkDerivedExperimentsForIssue } from '../services/experiment-task-link.util';
 import { materializeIntakeChecklist } from '../services/intake-checklist-materialize.util';
 import { IssuesService } from '../services/issues.service';
 import { ProjectsService } from '../services/projects.service';
@@ -270,7 +271,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
       intake.suggestedProjectId,
     );
     let suggestedAssigneeId: string | null;
-    if (intake.source === 'meeting') {
+    if (intake.source === 'meeting' || intake.source === 'meeting_report') {
       suggestedAssigneeId = intake.suggestedAssigneeId;
     } else {
       const hint = (parsed.suggestedAssigneeHint ?? '').trim();
@@ -292,7 +293,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     const confidence = clampConfidence(parsed.confidence ?? 0);
 
     const confidentEnough = confidence >= this.cfg.tracker.autoAcceptConfidenceThreshold;
-    const isMeeting = intake.source === 'meeting';
+    const isMeeting = intake.source === 'meeting' || intake.source === 'meeting_report';
     const meetingAlwaysPromote = this.cfg.tracker.meetingTasksAlwaysPromote;
     const meetingPromote = isMeeting && meetingAlwaysPromote;
 
@@ -301,6 +302,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     if (
       effectiveAssigneeId === null &&
       intake.source !== 'meeting' &&
+      intake.source !== 'meeting_report' &&
       this.skillRouting &&
       this.cfg.taskRouting.enabled
     ) {
@@ -326,13 +328,29 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
         /* fail-soft */
       }
     }
-    if (confidentEnough && effectiveAssigneeId === null && intake.source !== 'meeting') {
+    if (
+      confidentEnough &&
+      effectiveAssigneeId === null &&
+      intake.source !== 'meeting' &&
+      intake.source !== 'meeting_report'
+    ) {
       const orgOwnerId = await this.resolveOrgOwnerId(tenantId);
       if (orgOwnerId) {
         effectiveAssigneeId = orgOwnerId;
         assigneeUnresolved = true;
       }
     }
+
+    this.logger.log(
+      {
+        action: 'promote_assignee',
+        source: intake.source,
+        finalAssigneeId: effectiveAssigneeId,
+        assigneeUnresolved,
+        ownerHintRaw: intake.ownerHintRaw ?? null,
+      },
+      'intake-auto-triage: promote assignee',
+    );
 
     let effectiveProjectId = suggestedProjectId;
     let viaDefaultProject = false;
@@ -518,6 +536,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
         externalId: intake.externalId,
         sourceBlockIds: intake.sourceBlockIds,
         linkedMeetingIds: intake.meetingId ? [intake.meetingId] : [],
+        ownerHintRaw: intake.ownerHintRaw ?? null,
         // TZ task-dedup (2026-06-16) — дедуп уже отработал на уровне A
         // (intake create); двойной suggest не нужен.
         skipDedup: true,
@@ -557,6 +576,32 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
           err: e instanceof Error ? e.message : String(e),
         },
         'intake-auto-triage: линковка derived-решений упала (best-effort)',
+      );
+    }
+    try {
+      const expLinks = await linkDerivedExperimentsForIssue(this.prisma, {
+        tenantId,
+        issueId: created.id,
+        sourceBlockIds: intake.sourceBlockIds,
+      });
+      if (expLinks > 0) {
+        this.logger.debug(
+          { intakeIssueId: intake.id, issueId: created.id, links: expLinks },
+          'intake-auto-triage: создано ExperimentTaskLink(derived)',
+        );
+        this.metrics?.incExperimentTaskExtracted({
+          tenantTop: tenantTopOf(tenantId),
+          surface:
+            intake.source === 'meeting' || intake.source === 'meeting_report'
+              ? 'meeting'
+              : 'ingest',
+          count: 1,
+        });
+      }
+    } catch (e) {
+      this.logger.warn(
+        { intakeIssueId: intake.id, err: e instanceof Error ? e.message : String(e) },
+        'intake-auto-triage: линковка эксперимент→задача упала (best-effort)',
       );
     }
     try {

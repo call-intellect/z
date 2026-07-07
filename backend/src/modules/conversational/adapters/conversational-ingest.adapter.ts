@@ -23,6 +23,7 @@ export class ConversationalIngestAdapter {
     occurredAt?: Date;
     metadata?: ConversationalJson;
     dataClass?: DataClass;
+    sourceExternalId?: string | null;
   }): Promise<RawEvent> {
     const source = await this.ensureSource(args.tenantId);
     const occurredAt = args.occurredAt ?? new Date();
@@ -37,7 +38,7 @@ export class ConversationalIngestAdapter {
     const result = await this.ingest.ingest({
       tenantId: args.tenantId,
       sourceId: source.id,
-      sourceExternalId: null,
+      sourceExternalId: args.sourceExternalId ?? null,
       occurredAt,
       payload,
       dataClass: args.dataClass ?? 'internal',

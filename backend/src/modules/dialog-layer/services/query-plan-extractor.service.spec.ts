@@ -10,9 +10,14 @@ import {
   QueryPlanExtractorService,
 } from './query-plan-extractor.service';
 
-function makeCfg(): TypedConfigService {
+function makeCfg(
+  getDynamic: (key: string, u: unknown, fallback: unknown) => unknown = (_k, _u, f) => f,
+): TypedConfigService {
   return {
     aiFeatures: { promptInjectionGuardEnabled: true },
+    getDynamic: vi.fn(async (key: string, u: unknown, fallback: unknown) =>
+      getDynamic(key, u, fallback),
+    ),
   } as unknown as TypedConfigService;
 }
 
@@ -130,7 +135,9 @@ describe('QueryPlanExtractorService', () => {
     });
     const { service } = makeService(() => Promise.resolve(llmResult(json)));
 
-    const res = await service.extract(makeInput());
+    const res = await service.extract(
+      makeInput({ questions: ['Что решал отдел маркетинга по каналам продвижения?'] }),
+    );
 
     expect(res.applied).toBe(false);
     expect(res.confidence).toBeCloseTo(0.4);
@@ -452,5 +459,60 @@ describe('QueryPlanExtractorService — ось personIds + queryClass (Ф3)', ()
     });
 
     expect(filters?.personIds).toEqual([]);
+  });
+});
+
+describe('QueryPlanExtractorService — детерминизм периода (Ф3)', () => {
+  function makeServiceWithPeriodFlag(deterministicPeriod: boolean) {
+    const json = JSON.stringify({
+      periodExpr: 'none',
+      periodDays: null,
+      signalTypes: [],
+      themeBranches: [],
+      entityHints: [],
+      personScope: false,
+      aggregation: false,
+      needsAction: false,
+      activeNow: false,
+      confidence: 0.4,
+    });
+    const llm = {
+      call: vi.fn(() => Promise.resolve(llmResult(json))),
+    } as unknown as LlmRouterService;
+    const prisma = {
+      person: { findFirst: vi.fn().mockResolvedValue(null) },
+      entity: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const cfg = makeCfg((key: string, _u: unknown, fallback: unknown) =>
+      key === 'knowledge.chatV2DeterministicPeriod' ? deterministicPeriod : fallback,
+    );
+    const service = new QueryPlanExtractorService(llm, prisma, cfg, makeMetrics());
+    return { service };
+  }
+
+  it('флаг ON: LLM дал periodExpr=none + низкая уверенность, но «встречи за неделю» → dateFrom/dateTo непусты И applied=true', async () => {
+    const { service } = makeServiceWithPeriodFlag(true);
+
+    const res = await service.extract(
+      makeInput({ questions: ['покажи все встречи за неделю'] }),
+    );
+
+    expect(res.applied).toBe(true);
+    expect(res.filters.dateFrom).toBeInstanceOf(Date);
+    expect(res.filters.dateTo).toBeInstanceOf(Date);
+    expect(res.filters.dateFrom?.toISOString()).toBe('2026-05-31T21:00:00.000Z');
+    expect(res.filters.dateTo?.toISOString()).toBe('2026-06-07T20:59:59.999Z');
+  });
+
+  it('флаг OFF: тот же вход → период только от LLM (none), override не срабатывает', async () => {
+    const { service } = makeServiceWithPeriodFlag(false);
+
+    const res = await service.extract(
+      makeInput({ questions: ['покажи все встречи за неделю'] }),
+    );
+
+    expect(res.applied).toBe(false);
+    expect(res.filters.dateFrom).toBeNull();
+    expect(res.filters.dateTo).toBeNull();
   });
 });

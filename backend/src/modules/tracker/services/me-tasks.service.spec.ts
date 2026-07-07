@@ -62,6 +62,7 @@ function makeIssueResponse(overrides: Partial<IssueResponseDto>): IssueResponseD
     meetingId: null,
     linkedMeetingIds: [],
     sourceBlockIds: [],
+    ownerHintRaw: null,
     previewQuote: null,
     previewSourceRef: null,
     confidence: null,

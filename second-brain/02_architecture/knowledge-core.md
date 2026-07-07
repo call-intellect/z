@@ -3,7 +3,7 @@ type: architecture
 feature: knowledge-core
 status: active
 created: 2026-05-10
-updated: 2026-05-10
+updated: 2026-07-05
 phase: 4
 ---
 
@@ -25,7 +25,7 @@ RawEvent (Фаза 1)
 block-ingest.worker
    ├─ SegmentBuilder      — разбивает payload на скользящие окна (≤2000 токенов)
    ├─ BlockExtraction     — LLM вызов с JSON Schema strict, taskType='block-ingest'
-   ├─ KnowledgeEmbedding  — батч-эмбеддинг (text-embedding-3-small, 1536-dim)
+   ├─ KnowledgeEmbedding  — батч-эмбеддинг embed(criticalQuestion + trustedAnswer), header-less (text-embedding-3-small, 1536-dim)
    └─ persist             — Prisma transaction: IdeaBlock(draft) + Evidence + Entity (findOrCreate)
    ↓ enqueueBlockDistill (debounce 30s)
 block-distill.worker
@@ -39,6 +39,12 @@ entity-resolver.cron     (раз в 5 мин — ищет пары и enqueue'и
    ├─ EntityMerge.findCandidates — KNN cosine top-5 entities того же type, > 0.88
    └─ EntityMerge.judgeMerge     — LLM 'entity-merge-arbiter', metadata + контекст 5 блоков
                                    → перенос IdeaBlockEntity на canonical (skip P2002)
+   ↓
+entity-consolidate-same-name.cron (@Cron('40 * * * *'), kill-switch knowledge.entityConsolidateSameNameEnabled)
+   ├─ SQL group by LOWER(canonicalName), type <> 'person', HAVING COUNT>1 → одноимённые Entity любых типов
+   ├─ resolution.isEntityPairDistinct (negative-cache) → skip уже-разведённых
+   ├─ EntityMerge.judgeMerge — тот же 'entity-merge-arbiter' (кросс-типовой: разный тип сам по себе НЕ distinct)
+   └─ resolveCanonicalType(from,into) (domain>generic; спорное → арбитр canonicalType) → mergeEntities(canonicalType)
    ↓
 Search API (POST /api/v1/knowledge/search)
    └─ гибрид cosine (0.7) + BM25 (0.3) → top-10
@@ -293,6 +299,8 @@ specialist-3-6-ideas.worker (consumer core.specialist-routing, jobName='3-6-idea
    │    7. tryWriteEmbedding + CurationService.triage.
    │    8. EventEmitter 'idea.created' + enqueueIdeaClusterer.
 
+> **Полный набор специалистов на 2026-07 (10, `core.specialist-routing`):** выше расписаны 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.15; ещё три — **3.7 Skill** (клоны ролей, см. [[../01_projects/skill-and-clone]]), **3.9 Experiments** (`specialist-3-9-experiments.service.ts`), **3.14 Goals** (см. [[../01_projects/goals-and-strategic-alignment]]). Роутинг `signalType`→специалист — таблица ниже. 3.8 Helpfulness — отдельный модуль вне этой очереди; 3.10–3.13 не существуют.
+
 idea-clusterer.cron (`30 *‎/4 * * *` — IdeaClustererCron.sweep) — SBA β-5
    ├─ Для каждой Org → Idea без clusterId (batch 100).
    ├─ KNN cosine attach к существующему IdeaCluster (threshold 0.80) — recompute clusterWeight.
@@ -348,9 +356,33 @@ ideas-closing-loop (IdeasClosingLoopHandler — @OnEvent 'idea.status_changed') 
 - **F-1.** `resolvePersonByEmbedding` чинён: `FROM "Person"` → `persons` (@@map); тихий `catch→[]` теперь логирует warn.
 - **Прод-лечение (idempotent):** `backfill-entity-tenant-companions` (заполнить NULL-компаньоны) + `backfill-reconcile-merged-entity-refs` (перепривязать осиротевшие ссылки на уже-слитые к канону через тот же `migrateEntityRefs`). ТЗ [`plans/tz/2026-07-01-package-a-person-entity-integrity.md`](../../plans/tz/2026-07-01-package-a-person-entity-integrity.md).
 
+### Кросс-типовая консолидация одноимённых сущностей (Ф1 консолидации извлечения, 2026-07-03)
+
+Инвариант: *«`EntityType` — атрибут объекта, а НЕ ключ его идентичности; один реальный объект под одним именем — одна Entity, даже если разные слои классифицировали его разными типами; мерж мигрирует ВСЕ FK-ссылки на сущность, включая типизированные 1:1-сабрекорды, — без сирот»*.
+
+- **Тип перестал расщеплять идентичность.** До этого тип входил в ключ резолва/мёржа на нескольких уровнях (`findOrCreateEntity` по `(tenantId, type, lower(name))`, `findCandidates` KNN «того же type», hard-guard разных типов в `mergeEntities`, правило арбитра «разный вид → distinct»), из-за чего один и тот же клиент/продукт под одним именем жил как 2+ Entity разных типов и никогда не схлопывался. Теперь: правило 2 промпта `entity-merge-arbiter` переписано — **разный вид сущности сам по себе НЕ повод для distinct**; при кросс-типовом merge арбитр возвращает `canonicalType` (лучший вид объекта).
+- **Матрица приоритета типов** `resolveCanonicalType(a,b)` ([entity-type-priority.ts](../../backend/src/modules/knowledge-core/services/entity-type-priority.ts)): `normalizeEntityType` детерминированно сводит `client→customer`; domain-типы (person/customer/vendor/project/product/document/goal/event/market/org_unit/technology/location) приоритетнее generic (metric/topic/custom по порядку); одинаковые/один-domain — решаемо детерминированно; спорное (оба domain, разные) → `{disputed:true}` → канон берётся от арбитра (`verdict.canonicalType`).
+- **Крон-консолидатор** `EntityConsolidateSameNameCronService` ([workers/entity-consolidate-same-name.cron.ts](../../backend/src/modules/knowledge-core/workers/entity-consolidate-same-name.cron.ts), `@Cron('40 * * * *')`, kill-switch `knowledge.entityConsolidateSameNameEnabled`, батч `knowledge.entityConsolidateSameNameBatchSize`=200, до 50 членов на группу): SQL-группировка по `LOWER(canonicalName)` (кроме `type='person'` — люди вне авто-мержа) → `isEntityPairDistinct` (negative-cache пропускает уже-разведённых) → тот же `judgeMerge` арбитр → `mergeEntities(canonicalType)`. Идёт по всем Org, per-org gate; race с параллельным merge — `debug`-skip.
+- **`mergeEntities` принимает `canonicalType`** и обновляет `into.type`, если он отличается; **hard-guard разных типов снят**. `migrateEntityRefs` расширен со всех предыдущих таблиц до **17 Entity-FK**: к `IdeaBlockEntity`/`EntityLink`/`SourceEntity`/`ThemeEntity`/`Card`/`Person` добавлены типизированные 1:1-сабрекорды `Vendor`/`Customer`/`Event`/`Goal`/`Document`/`Market`/`OrgUnit`/`Role`/`Department` (find-or-delete-on-conflict, companion где есть) + `CustomerRiskSnapshot` (по `customerEntityId`) + `ThemeExclusion` — сабрекорды теперь переезжают/схлопываются, а не остаются сиротами. `countTypedSubrecords>0` после миграции → `error` (BUG-сигнал).
+- **Детерминированный `client→customer`** в `findOrCreateEntity` (`normalizeEntityType`) + прод-backfill.
+- **Прод-лечение:** `backfill-client-to-customer.ts` (свести legacy `client`→`customer`), `backfill-entity-consolidate-same-name.ts` (прогон крона по Org / всем, `--dry-run`).
+
 ### Диагностика сбоя: AGE vs LLM-extract (F7, 2026-06-22)
 
 `block-ingest.worker` теперь разводит throw-текст по реальному источнику отказа: провал LLM-извлечения → `llm_extraction`, недоступность графовой базы Apache AGE → `age_unavailable`. Раньше текст «системный отказ графа AGE» кидался и при провале LLM — диагностика ложно винила AGE; метрика `age_unavailable` теперь растёт только при реальном сбое AGE. ТЗ [`meeting-to-tracker-and-models-unified-fix`](../../plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md) F7.
+
+### Стабилизация AGE-графа + подключение к recall (recall-to-99, 2026-07-03)
+
+ТЗ [`plans/tz/2026-07-03-recall-master-to-99.md`](../../plans/tz/2026-07-03-recall-master-to-99.md). Граф `z_graph` (Apache AGE) дрейфовал от реляционки (write-side sync — post-commit best-effort, тихо падал): узлы типизированных сущностей были, а рёбер `EntityLink` — 0. Введено:
+- **Фоновая реконсиляция** `GraphReconcileCronService` ([`workers/graph-reconcile.cron.ts`](../../backend/src/modules/knowledge-core/workers/graph-reconcile.cron.ts), `@Cron('25 * * * *')`, kill-switch `knowledge.graphReconcileEnabled`): активные `EntityLink` → идемпотентный `MERGE` рёбер (+узлов-эндпоинтов `entity`) в `z_graph` через graph-only `GraphService.mergeEdgeGraphOnly`; архивные → `deleteEdgeGraphOnly`; merged-away `Entity` → `deleteNodeGraphOnly`. Курсор-пагинация батчами `graphReconcileBatchSize` (500); неизвестные типы (напр. `conflicted_with` вне whitelist `CypherBuilder`) — skip с логом. Метрики `graph_reconcile_{merged,deleted}_total`.
+- **search_path fix:** скриптовый `createPrismaClient` ([`scripts/_lib/prisma.ts`](../../backend/scripts/_lib/prisma.ts)) получил `options: '-c search_path=ag_catalog,"$user",public'` — `cypher()` резолвится из всех скриптов без 42883 (рантайм `PrismaService` это уже имел).
+- **Анти-инъекция:** `CypherBuilder.dollarQuote` — collision-safe SQL dollar-quote (тег расширяется, если данные содержат `$cypher$`); `escapeString` экранирует `\n`/`\r`.
+- **Подключение к recall** (kill-switch `knowledge.chatV2GraphCypherRecall`): на многошаговых (`graphHops>=2`) recall делает deep-hop обход AGE (`GraphService.getNeighbors` от резолвнутых `entityIds`, глубина до `chatV2GraphCypherMaxDepth`=3) → связанные `entity`-узлы → их блоки через `IdeaBlockEntity` (`chat-v2-retrieval.service.ts::expandViaGraphCypher`, `viaSource:'age-cypher'`, score −2). Fail-open к реляционному. Метрика `chat_v2_graph_cypher_recall_total`.
+- **Не покрыто (follow-up):** `IdeaBlockLink` → AGE (block-граф) требует расширения whitelist `CypherBuilder` под `IdeaBlockLinkType` + узлы `idea-block`; реляционный `IdeaBlockLink` уже обслуживает retrieval, зеркалирование в AGE отложено (реестр не-сделанного).
+
+### Ассертивный, но заземлённый синтез «Мастера» (recall-to-99, 2026-07-03)
+
+Гейт заземления `ChatV2OrchestrationService.applyGroundednessGate` (`modules/chat-v2/chat-v2.service.ts`) получил режим `lenient` (новый ключ `knowledge.chatV2GroundednessMode`, дефолт `lenient`; глобальный `rag.groundedness_mode` не тронут): судья возвращает структурное поле `fabricated`, абстин применяется ТОЛЬКО при реальной выдумке конкретного факта, а не при неполноте/осторожности (`RAG_GROUNDEDNESS_LENIENT_SYSTEM_PROMPT`). `on` = прежний строгий откат. Промпт-правило 4 `BASE_SYSTEM_PROMPT` — ассертивное «отвечай при основании» за флагом `knowledge.chatV2AssertiveSynthesis` (`resolveBaseSystemPrompt`); правило 7 «Структура и полнота» + строка самопроверки — безусловно. Резолв понималщика (`resolveGroundingHints`) дополнен эмбеддинг-KNN по `Entity.embedding` (`EntityResolutionService.resolveEntityHintsByEmbedding`, флаг `knowledge.chatV2GroundingEmbedding`) поверх лексики. Период вопроса детерминирован регэкспом (`period-resolver.ts::detectPeriodExpr` override LLM, флаг `knowledge.chatV2DeterministicPeriod`). Инвариант «не выдумываем на реально пустом» сохранён (empty-context guard нетронут).
 
 ## Хранение
 
@@ -517,7 +549,7 @@ chat-v2 retrieval теперь умеет применять **recall-safe ст�
 - **Эпизод-узел (`sourceTitle`).** `RawEvent` получил человекочитаемый заголовок эпизода (например «Созвон с клиентом, 2026-06-20») — заполняется meeting/report-адаптерами через `ingest/adapters/episode-title.util.ts`. Нужен, чтобы поиск группировал результаты по эпизоду и показывал понятный источник.
 - **Провенанс-инвариант (machine-guard).** Блок без непустой evidence-цитаты **НЕ пишется** — `persistBlock` в `block-ingest.worker` режет блоки-«призраки» без подтверждения цитатой; метрика `kc_block_without_evidence_total`. Усиливает правило «нет цитаты — нет факта».
 - **Контекст чанка перед извлечением.** В промпт `block-ingest` теперь подаются дата / тип / участники встречи (в USER, prompt-cache сохранён — стабильный SYSTEM не тронут); инвариант **R13** — многосторонний факт (автор + адресат + срок) не схлопывать в один обезличенный блок. Нарезка под-чанков: размер `knowledge.segment_max_tokens` (600) + overlap `knowledge.segment_overlap_ratio` (0.2).
-- **`ChunkContextService`** (`services/chunk-context.service.ts`) — контекст-заголовок перед эмбеддингом блока (поднимает recall на узких запросах): детерминированная метастрока добавляется **всегда** + LLM-предложение заголовка за kill-switch `knowledge.contextual_header_enabled` (taskType `chunk-context`). Метод `embedBlocks(blocks, contextHeader)`.
+- **Чистый дедуп-вектор блока (Ф2 консолидации извлечения, 2026-07-03).** `IdeaBlock.embedding` = `embed(criticalQuestion + " " + trustedAnswer)` **БЕЗ** контекст-хедера (`KnowledgeEmbeddingService.embedBlocks` — сигнатура без `contextHeader`). До этого в вектор печатался хедер (источник/участники/тип/дата), поэтому один и тот же факт из разных каналов или дней давал РАЗНЫЕ векторы → block-distill не схлопывал дубли, а поисковый рекол проседал: запросы (`embedQuery`) эмбеддятся без хедера, а корпус — с хедером (рассинхрон query-space ↔ doc-space). Header-less вектор выравнивает обе стороны и восстанавливает кросс-канальный дедуп. Header-building (LLM-таск `chunk-context`) убран из `block-ingest.worker` как мёртвый код; `contextHeaderVersion='noheader-v1'` (`EMBED_NO_HEADER_VERSION` в `chunk-context.service.ts`) — гейт идемпотентности ре-эмбеддинга. **`ChunkContextService`** (`services/chunk-context.service.ts`) теперь **дормантен** (не вызывается из ingest; сохранён как заготовка). Прод-backfill `backfill-reembed-blocks-no-header.ts` — пере-эмбеддинг header-ful блоков + `REINDEX` HNSW.
 - **«Суть встречи» как retrievable holistic-блок.** Для отчёта создаётся отдельный блок `signalType=fact` из `reportSummaryMarkdown`, освобождённый от report-confidence-cap (флаг `isMeetingSummary`) — служит parent-document'ом для поиска (запрос «о чём была встреча» находит сводку, а не осколок).
 - **Cross-source идентичность (`EntityAlias`).** Новая таблица — per-Org кэш «псевдоним → Person/Entity». Каскад `resolvePersonByHint`: exact → alias-cache → fuzzy → эмбеддинг-склейка (порог `knowledge.entity_name_resolve_threshold` 0.9) → LLM-арбитр (taskType `entity-name-resolve`) → **fail-closed null** (инвариант **R-2**: разных людей не склеиваем — при сомнении не сливаем).
 - **Гибрид рёбер графа.** Структурные рёбра без LLM: `shares_entity` (на ingest, `createdBy=system`) и `shares_topic` (при кластеризации тем). Смысловые рёбра `block-linker` с риск-тирингом (`knowledge.edge_confidence_high` 0.85 / `edge_confidence_low` 0.6, `linker_min_canonical`, `linker_candidate_topk`) и **композитным судьёй-скептиком** для опасных типов `contradicts` / `supersedes` / `causes` (taskType `block-link-confirm`, **fail-closed** — при сомнении ребро отвергаем; метрика `kc_risk_edge_total`). Fact-supersede тоже под скептиком (инвариант **R-1**: ложное «устарело» не должно прятать живой факт). enum `LinkCreatedBy` получил значение `system`.
@@ -555,6 +587,8 @@ chat-v2 retrieval теперь умеет применять **recall-safe ст�
 3. **Переранжировщик** (`rag-rerank`, DeepSeek flash) — ОЖИВЛЁН: `topK` разнесён на `rag.k_retrieve` (30) / `rag.k_context` (18), реранк работает всегда когда пул > `rag.rerank_min_pool` (12), сужает 30→18; кормится summary+история+вопрос+3 формулировки (раньше видел голый вопрос, был мёртв при срезе 12).
 4. **Синтез** (`chat-v2`, DeepSeek pro) — ответ из 18 блоков; переспрос-при-вариантах помечает первую строку токеном `[[CLARIFY]]` → `needsClarification` течёт `ChatV2Output→SynthesisResult→ChatAnswer→контроллер/SSE`.
 5. **Контролёр заземления** (`rag-groundedness`, DeepSeek flash, режим `rag.groundedness_mode`) — анти-выдумка; при `needsClarification` **пропускается**, и оркестратор НЕ кэширует переспрос (`applyGroundednessGate` / `answerCache.set` обходятся).
+
+**Base-recall-floor (recall-to-99, 2026-07-04)** — kill-switch `knowledge.chatV2BaseRecallFloor` (default ON). Пул retrieval недетерминированно обваливался (30→1-4) из-за LLM-стадий upstream (multi-query дробит бюджет на `ceil(30/3)+2`, структурный фильтр планировщика ограничивает) → факты не доходили до LLM. `runRetrieval` теперь ВСЕГДА фьюзит в пул (RRF, ∥ параллельно с semantic/structural) детерминированный base-подъём СЫРОГО вопроса (`fetchCandidates` limit=`kRetrieve`, **без** структурного фильтра, `graphHops=0`) — recall-floor. Реранк+kContext сужают до 18 (точность держится). Temporal-guard: при `dateFrom/dateTo/bitemporalActiveOnly` base ПРОПУСКАЕТСЯ (не реинъектит superseded факты в обход фильтра). Fail-open. A/B на «Стреле»: CORRECT 74.8%→80.0% (+5.2 п.п.), 0 галлюц; атрибуция ПОСЛЕ — RETRIEVAL-доля схлопнулась, остаток — синтез-полнота. ⚠️ Retrieval-cache `dlg:ret` кэширует `usedBlockIds` и на кэш-хите МИНУЕТ base-floor (реестр не-сделанного).
 
 Модели по агентам — через `LlmTaskRoute` (сид `seed-llm-task-routes-edinyy-pomoshnik.ts`, diag `diag-llm-routes.ts`), не код. Промпты — `knowledge-core/prompts/rag-pipeline.prompts.ts`.
 
@@ -1013,6 +1047,8 @@ ReportIngestListener (@OnEvent, в ingest/knowledge-core)
 
 ### Contextual-header v2 (Ф7)
 
+> **Отменено Ф2 консолидации извлечения (2026-07-03).** Контекст-хедер больше НЕ встраивается в дедуп-вектор блока — он рассинхронил doc-space с query-space (запросы эмбеддятся без хедера) и ломал кросс-канальный дедуп. Актуальное поведение — header-less вектор `embed(criticalQuestion + trustedAnswer)`, см. «Чистый дедуп-вектор блока» выше. Ниже — историческое описание.
+
 `buildMetaLine` обогащён упомянутыми компаниями (`SourceEntity`), полным составом участников (`SourceParticipant`), `RawEvent.sourceTitle` — встроено в эмбеддинг блока для recall класса К2. Header — стабильный префикс (prompt-cache). Поле `IdeaBlock.contextHeaderVersion` — гейт идемпотентности ре-эмбеддинга. Backfill `scripts/backfill-context-header-reembed.ts` (ре-эмбеддинг старых блоков + REINDEX HNSW-партиций).
 
 ### Документы как первоклассный объект (Ф8)
@@ -1030,6 +1066,20 @@ ReportIngestListener (@OnEvent, в ingest/knowledge-core)
 ### Партиционирование + HNSW (Ф1)
 
 `IdeaBlock`/`Entity` HASH-партиционированы по `tenantId` (64 партиции, составной PK) — снят scale-killer «глобальный HNSW + `WHERE tenantId`». HNSW-параметры `m=16, ef_construction=128` на IdeaBlock/Entity + новые HNSW на `Theme.embedding` и `SourceEpisode.embedding`, `ef_search` — крутилка `knowledge.hnsw_ef_search` (100). Все в `postgres-init.sql` (Prisma 7 их не умеет). Детали схемы/FK-рефактора — [[data-model]] §«Партиционирование IdeaBlock/Entity по tenantId».
+
+### Контур recall Мастера (переработка 2026-07-03)
+
+**Источник:** ТЗ [`2026-07-02-recall-master-retrieval-redesign.md`](../../plans/tz/2026-07-02-recall-master-retrieval-redesign.md) (Ф1–Ф7), приёмка — after-report [`2026-07-02-recall-master-after-redesign.md`](../../plans/analysis/2026-07-02-recall-master-after-redesign.md). Диагноз, из которого выросла переработка: поиск гасил сам себя структурным фильтром — граф-обход был выключен в 86% случаев, буквальный фильтр по узлу давал пул 0 (точный вопрос отвечал хуже описательного), broad-вопросы уверенно отрицали существующее.
+
+Новый контур поиска «Мастера» человеческим языком:
+- **Широкий сбор всегда.** Пул наполняется семантикой + BM25 + **граф блоков** (`IdeaBlockLink`, `expandViaGraph` — больше НЕ выключается активным структурным фильтром) + **граф вещей** (`EntityLink`, `expandViaEntityLinks` — обход вещь↔вещь от резолвнутых сущностей к блокам связанной вещи, напр. «429»→«Битрикс»).
+- **Структурный фильтр — как boost, не как забор.** Совпадение с распознанной структурой (дата/`signalType`/entity/тема) даёт **прибавку к score** (`rankByStructuralBoost`), несовпавшее остаётся в пуле ниже — фильтр перестаёт быть AND-cutoff. `runStructuralRoute` при нераспознанной сущности откатывается на семантику, а не в пустоту.
+- **Пустой/бедный пул → каскад расширения** (`applyCascade`): снять фильтр → углубить граф → в пределе честное «вот близкое, точного нет», а не отказ (расширение помечается «возможно не всё» — честность держится).
+- **Широкий вопрос → режим сводки без ложного отрицания** (`broadCoverage`): overview/list не отбрасывают перефразы; список эпизодов за период — полный (`listEpisodesByDateRange`), без «других не зафиксировано».
+- **Адаптивная глубина обхода 1-2** (`detectMultiHop`): многошаговый вопрос («кто отвечает за то, что блокирует X») → `graphHops=2` (и block-link, и entity-link), простой — 1 hop (латентность не растёт).
+- **Понималщик со справочником названий тенанта** (grounding): перед `understand` подаются канонические имена Entity/Theme, похожие на слова вопроса (ILIKE/pg_trgm, cap `chatV2GroundingTopK`) — разговорное «медиа-движок» резолвится в «LiveKit» ещё на входе.
+
+Всё за 10 kill-switch-крутилок (ON по умолчанию, через `getDynamic` + `admin-setting-schema-registry` + сид `seed-admin-setting-chat-v2-recall.ts`): `knowledge.chatV2GraphAlwaysExpand` · `chatV2FilterMode` (boost\|hard) · `chatV2FilterBoostWeight` · `chatV2EntityLinkHops` · `chatV2CascadeEnabled` · `chatV2CascadeMinPool` · `chatV2AggregationMode` · `chatV2UnderstandGrounding` · `chatV2GroundingTopK` · `chatV2AdaptiveHops`. Трейс `RetrievalTraceSink` помечает источник соседа (`viaSource` block-link/entity-link). **Замер перепрогоном 111 вопросов:** верно 59.5→79.3%, обход по связям 14→100%, провал recall 33→8%, **0 галлюцинаций** (детали — after-report).
 
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

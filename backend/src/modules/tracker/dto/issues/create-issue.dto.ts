@@ -24,6 +24,7 @@ export const CreateIssueSchema = z
     externalId: z.string().max(200).nullable().optional(),
     sourceBlockIds: z.array(z.string().min(1).max(64)).max(64).optional(),
     linkedMeetingIds: z.array(z.string().min(1).max(64)).max(32).optional(),
+    ownerHintRaw: z.string().max(200).nullable().optional(),
     inferSuggestions: z.boolean().optional(),
     respectHolidays: z.boolean().optional(),
     /**

@@ -23,6 +23,7 @@ export interface TaskDraftInput {
   suggestedPriority?: 'urgent' | 'high' | 'medium' | 'low' | null;
   confidence?: number | null;
   sourceQuote?: string | null;
+  description?: string | null;
   subtasks?: Array<{ title: string }> | null;
   sourceBlockId?: string | null;
 }
@@ -72,6 +73,7 @@ export class TaskDraftMaterializerService {
 
   async materialize(args: MaterializeArgs): Promise<MaterializedTask[]> {
     const { tenantId, channel } = args;
+    const isMeetingDerived = channel === 'meeting' || channel === 'meeting_report';
     const created: MaterializedTask[] = [];
     let skipped = 0;
 
@@ -79,6 +81,7 @@ export class TaskDraftMaterializerService {
       const title = draft.title.trim();
       if (!title) continue;
       const sourceQuote = (draft.sourceQuote ?? '').trim();
+      const resolvedDescription = (draft.description?.trim() || sourceQuote) || null;
       const externalId = this.makeExternalId(channel, args.sourceId, sourceQuote || title);
 
       const existing = await this.prisma.intakeIssue.findFirst({
@@ -93,6 +96,7 @@ export class TaskDraftMaterializerService {
 
       const hint = (draft.suggestedAssigneeHint ?? draft.assignee ?? '').trim();
       let suggestedAssigneeId: string | null = null;
+      let resolverResolved = false;
       if (hint && this.orgAssigneeResolver) {
         try {
           const r = await this.orgAssigneeResolver.resolve(tenantId, hint);
@@ -100,8 +104,17 @@ export class TaskDraftMaterializerService {
         } catch {
           suggestedAssigneeId = null;
         }
+        resolverResolved = suggestedAssigneeId != null;
       }
-      if (suggestedAssigneeId == null && this.skillRouting && this.cfg.taskRouting.enabled) {
+      let skillRoutingApplied = false;
+      let skillRoutingAssigned = false;
+      if (
+        !isMeetingDerived &&
+        suggestedAssigneeId == null &&
+        this.skillRouting &&
+        this.cfg.taskRouting.enabled
+      ) {
+        skillRoutingApplied = true;
         try {
           const taskText = [title, draft.suggestedAssigneeHint, sourceQuote]
             .filter(Boolean)
@@ -113,6 +126,7 @@ export class TaskDraftMaterializerService {
             const minConf = this.cfg.taskRouting.autoAssignMinConfidence;
             if (top && top.userId && top.confidence >= minConf) {
               suggestedAssigneeId = top.userId;
+              skillRoutingAssigned = true;
               this.metrics?.incTaskSkillRoutingAssigned({ path: 'conversation' });
             }
           }
@@ -120,6 +134,33 @@ export class TaskDraftMaterializerService {
           suggestedAssigneeId = null;
         }
       }
+
+      const ownerHintRaw = suggestedAssigneeId == null && hint ? hint : null;
+
+      const resolverResult = !hint
+        ? 'no_hint'
+        : resolverResolved
+          ? 'resolved'
+          : 'not_found';
+      const assigneeReason = resolverResolved
+        ? 'name_hint'
+        : skillRoutingAssigned
+          ? 'skill_routing'
+          : isMeetingDerived && hint
+            ? 'guest_unassigned'
+            : 'none';
+      this.logger.log(
+        {
+          action: 'assignee_resolve',
+          channel,
+          hint: hint || null,
+          resolverResult,
+          skillRoutingApplied,
+          finalAssigneeId: suggestedAssigneeId,
+          reason: assigneeReason,
+        },
+        'task-draft-materializer: assignee resolve',
+      );
 
       const suggestedProjectId = await this.resolveProjectIdByTitle(
         tenantId,
@@ -152,7 +193,7 @@ export class TaskDraftMaterializerService {
         const v = await this.taskDedup.evaluate({
           tenantId,
           title,
-          description: sourceQuote || null,
+          description: resolvedDescription,
         });
         if (v.verdict === 'same') suggestedDuplicateOfIssueId = v.matchedIssueId;
       } catch {
@@ -172,6 +213,20 @@ export class TaskDraftMaterializerService {
       const rawContent =
         sourceQuote.length > 0 ? `${title}\n\nЦитата: ${sourceQuote}` : title;
 
+      const linkedMeetingId = this.resolveLinkedMeetingId(channel, args.sourceId);
+      if (isMeetingDerived) {
+        this.logger.log(
+          {
+            action: 'meeting_linkage',
+            channel,
+            sourceId: args.sourceId,
+            meetingId: linkedMeetingId,
+            linked: linkedMeetingId !== null,
+          },
+          'task-draft-materializer: meeting linkage',
+        );
+      }
+
       const issue = await this.prisma.intakeIssue.create({
         data: {
           tenantId,
@@ -182,7 +237,7 @@ export class TaskDraftMaterializerService {
           externalId,
           rawContent,
           extractedTitle: title,
-          extractedDescription: sourceQuote || null,
+          extractedDescription: resolvedDescription,
           suggestedProjectId,
           suggestedAssigneeId,
           suggestedGoalId: null,
@@ -191,7 +246,8 @@ export class TaskDraftMaterializerService {
           suggestedLabels: [],
           suggestedDuplicateOfIssueId,
           sourceBlockIds: draft.sourceBlockId ? [draft.sourceBlockId] : [],
-          meetingId: channel === 'meeting' ? args.sourceId : null,
+          meetingId: linkedMeetingId,
+          ownerHintRaw,
           confidence: confidenceDecimal,
           checklistJson: checklistJson ?? Prisma.JsonNull,
           expiresAt: computeExpiresAt(this.cfg.pendingActions.intakeTtlDays),
@@ -241,6 +297,15 @@ export class TaskDraftMaterializerService {
       'task-draft-materializer: готово',
     );
     return created;
+  }
+
+  private resolveLinkedMeetingId(channel: string, sourceId: string): string | null {
+    if (channel === 'meeting') return sourceId;
+    if (channel === 'meeting_report') {
+      const bare = sourceId.startsWith('report_') ? sourceId.slice('report_'.length) : sourceId;
+      return /^[0-9A-HJKMNP-TV-Z]{26}$/i.test(bare) ? bare : null;
+    }
+    return null;
   }
 
   private makeExternalId(channel: string, sourceId: string, key: string): string {

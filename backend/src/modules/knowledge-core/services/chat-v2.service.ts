@@ -28,14 +28,21 @@ import {
   RagRerankSchema,
   buildRagRerankUser,
 } from '../prompts/rag-pipeline.prompts';
-import { fuseRankedLists } from '../utils/rank-fusion.util';
+import { fuseRankedLists, reciprocalRankFusion } from '../utils/rank-fusion.util';
 
+import {
+  RetrievalTraceSink,
+  type RetrievalTrace,
+} from './chat-v2-retrieval-trace';
 import {
   ChatV2RetrievalService,
   type ChatV2Scope,
   type RankedBlockId,
 } from './chat-v2-retrieval.service';
-import { ChatV2TableContextService } from './chat-v2-table-context.service';
+import {
+  ChatV2TableContextService,
+  type TableContextRow,
+} from './chat-v2-table-context.service';
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { ACTIVE_LINK_FILTER } from './link-read-filter';
 import { ProvenanceService } from './provenance.service';
@@ -55,6 +62,10 @@ import { ReasoningChainService } from './reasoning-chain.service';
  * Не делает stream/SSE — это vNext (см. decisions-log Фаза 6).
  */
 export type { ChatV2Scope } from './chat-v2-retrieval.service';
+export {
+  RetrievalTraceSink,
+  type RetrievalTrace,
+} from './chat-v2-retrieval-trace';
 
 /**
  * §4 Ф1 (2026-06-11) — стадии прогресса AI-чата для SSE-стриминга. Эмитятся
@@ -482,6 +493,32 @@ function dedupe(items: string[]): string[] {
   return [...new Set(items)];
 }
 
+export function detectMultiHop(question: string): boolean {
+  const q = question.toLowerCase();
+  const phraseMarkers = [
+    'то, что',
+    'то что',
+    'того, что',
+    'того что',
+    'тем, что',
+    'тем что',
+    'из-за чего',
+    'из-за того',
+    'из-за котор',
+    'кто стоит за',
+    'что стоит за',
+    'кто за этим',
+    'что за этим',
+    'по цепочке',
+  ];
+  if (phraseMarkers.some((m) => q.includes(m))) return true;
+  const hasRelative = q.includes('котор');
+  const hasChainVerb = ['блокир', 'мешает', 'тормоз', 'влияет на', 'отвечает за'].some(
+    (w) => q.includes(w),
+  );
+  return hasRelative && hasChainVerb;
+}
+
 const BLOCK_REF_REGEX = /\[BLOCK:([a-z0-9]+)\]/gi;
 
 const CLARIFY_MARKER_REGEX = /^\s*\[\[CLARIFY\]\]/;
@@ -563,17 +600,18 @@ interface RenderedContradictingBlock {
   contradictsBlockId: string;
 }
 
-/**
- * Chat-v2 единый промпт-ответчик (ТЗ 2026-06-15, Приложение A, SYSTEM часть 1).
- *
- * Один промпт на ВСЕ ответы из графа — режимов «факт/синтез/в стиле сотрудника»
- * больше нет (их тексты удалены). Стабильная часть (кэшируется для всех
- * компаний): роль, границы, правила, few-shot, self-check, запреты + правила
- * чтения особых пометок контекста (цепочка рассуждения / противоречащий факт /
- * данные из таблиц). Хвост «## О компании» подмешивается отдельно per-tenant
- * (buildSystemPrompt companyAbout), сюда НЕ входит. Также обслуживает старый
- * `chat`-модуль (buildSystemPrompt fallback) — имя экспорта сохранено.
- */
+export const ASSERTIVE_RULE_4_TEXT = `4. Отвечай при основании — но не додумывай итог. Если в контексте ЕСТЬ основание
+   (даже неполное) — уверенно назови НАЙДЕННОЕ: человека, факт, решение. Молчи
+   («В памяти компании я этого не нашёл») ТОЛЬКО когда по вопросу реально ничего нет.
+   ЗАПРЕЩЕНО превращать частичные сигналы в вывод о СТАТУСЕ: не пиши «завершено»,
+   «готово», «решено», «актуализировано», «закрыто», «не блокирует», «клиент доволен»,
+   если это прямо не сказано в контексте — если статус неизвестен или в процессе, так
+   и скажи («идёт», «в работе», «статус не зафиксирован»). Не придумывай провенанс —
+   КТО предложил, на КАКОЙ встрече, КАК клиент узнал, — если этого нет в контексте.`;
+
+export const LEGACY_RULE_4_TEXT = `4. Честно про пустоту. Если ответа в контексте нет — так и скажи: «В памяти
+   компании я этого не нашёл» — и не досочиняй.`;
+
 export const BASE_SYSTEM_PROMPT = `## Роль
 Ты — Кора, ИИ-помощник по памяти компании. Отвечаешь сотрудникам компании
 на их вопросы, опираясь ТОЛЬКО на то, что компания уже зафиксировала: встречи,
@@ -626,8 +664,7 @@ export const BASE_SYSTEM_PROMPT = `## Роль
    рядом с фактом — из него получится кликабельная ссылка на источник. Можно
    несколько маркеров на одно утверждение. Не придумывай номера, которых нет
    в контексте.
-4. Честно про пустоту. Если ответа в контексте нет — так и скажи: «В памяти
-   компании я этого не нашёл» — и не досочиняй.
+${ASSERTIVE_RULE_4_TEXT}
 5. Честно про надёжность. Где это важно, помечай словами, насколько факт
    надёжен: «по нескольким источникам» (подтверждён 2+ блоками), «однажды
    упоминалось» (единичный источник), «возможно устарело» (явно старее
@@ -636,9 +673,11 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 6. Конфликт не заглаживай. Если факты спорят — назови оба
    ([BLOCK:<id1>] vs [BLOCK:<id2>]) и предложи человеку уточнить, какой
    актуальный. Никогда не выбирай «правильный» сам.
-7. Структура по содержанию. Простой факт — 1-2 предложения. Составной ответ
-   (несколько частей, пунктов, сущностей) — короткая вводная фраза, затем
-   список или разделы. Структурируй ради ясности, а не ради объёма.
+7. Структура и полнота. Ответ — связный разбор, а не набор цитат и не сырой
+   пересказ блоков: короткое резюме → суть по пунктам или подзаголовкам →
+   кто/что/когда → при необходимости «что дальше». Простой факт — 1-2
+   предложения. Полно: включи ВСЕ существенные факты из контекста по вопросу,
+   не выбирай подмножество.
 
 ## Переспрос при нескольких РАЗНЫХ объектах
 Это не про конфликт фактов (правило 6 — когда факты спорят об ОДНОМ объекте).
@@ -714,6 +753,9 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 - Каждый факт подкреплён [BLOCK:<id>] из контекста? Нет выдуманных номеров?
 - Если данных не было — сказал честно, не досочинил?
 - Конфликт назван, а не заглажен?
+- Ответ структурен и включает все существенные факты из контекста по вопросу?
+- Не приписал ли я статус «готово/завершено/решено/не блокирует/доволен» или
+  детали (кто предложил, на какой встрече, как узнали), которых нет в контексте?
 - Если это вопрос-список — ответ перечислением источников с маркерами
   [ИСТОЧНИК:<id>], а не абзацем?
 - В тексте нет ни одного английского/служебного слова, кроме маркеров
@@ -727,6 +769,12 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 - Не выдумывай факты, даты, имена, решения, которых нет в контексте.
 - Не выбирай «победителя» при споре двух фактов.`;
 
+export function resolveBaseSystemPrompt(assertiveSynthesis: boolean): string {
+  return assertiveSynthesis
+    ? BASE_SYSTEM_PROMPT
+    : BASE_SYSTEM_PROMPT.replace(ASSERTIVE_RULE_4_TEXT, LEGACY_RULE_4_TEXT);
+}
+
 interface RetrievalCtx {
   tenantId: string;
   scope: ChatV2Scope;
@@ -735,7 +783,19 @@ interface RetrievalCtx {
   kRetrieve: number;
   kContext: number;
   graphHops: number;
+  graphAlwaysExpand: boolean;
+  filterMode: 'boost' | 'hard';
+  filterBoostWeight: number;
+  entityLinkHops: number;
+  graphCypherRecall: boolean;
+  graphCypherMaxDepth: number;
+  aggregationMode: boolean;
   accessWhere: Record<string, unknown> | undefined;
+}
+
+interface RetrievalResult {
+  blockIds: string[];
+  approximate: boolean;
 }
 
 @Injectable()
@@ -793,10 +853,58 @@ export class ChatV2Service {
    * на уровне chat.service.ts (через ChatRepository) — этот сервис чистый,
    * без побочных эффектов на историю.
    */
-  async ask(input: ChatV2Input): Promise<ChatV2Output> {
+  async ask(input: ChatV2Input, trace?: RetrievalTraceSink): Promise<ChatV2Output> {
     const { tenantId, scope, scopeId, query } = input;
     const { kRetrieve, kContext } = await this.resolveKSplit();
-    const graphHops = this.cfg.knowledgeCore.chatV2GraphHops;
+    const adaptiveHops = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2AdaptiveHops',
+      undefined,
+      true,
+    );
+    const baseGraphHops = this.cfg.knowledgeCore.chatV2GraphHops;
+    const graphHops =
+      adaptiveHops && detectMultiHop(query)
+        ? Math.max(baseGraphHops, 2)
+        : baseGraphHops;
+    trace?.setGraphHops(graphHops);
+    const graphAlwaysExpand = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2GraphAlwaysExpand',
+      undefined,
+      true,
+    );
+    const filterMode = await this.cfg.getDynamic<'boost' | 'hard'>(
+      'knowledge.chatV2FilterMode',
+      undefined,
+      'boost',
+    );
+    const filterBoostWeight = await this.cfg.getDynamic<number>(
+      'knowledge.chatV2FilterBoostWeight',
+      undefined,
+      0.3,
+    );
+    const entityLinkHops = await this.cfg.getDynamic<number>(
+      'knowledge.chatV2EntityLinkHops',
+      undefined,
+      1,
+    );
+    const graphCypherRecall = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2GraphCypherRecall',
+      undefined,
+      true,
+    );
+    const graphCypherMaxDepth = await this.cfg.getDynamic<number>(
+      'knowledge.chatV2GraphCypherMaxDepth',
+      undefined,
+      3,
+    );
+    const aggregationMode = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2AggregationMode',
+      undefined,
+      true,
+    );
+    const broadCoverage =
+      aggregationMode &&
+      (input.queryClass === 'overview' || input.queryClass === 'list');
 
     // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
     const kaEnforcement = this.cfg.knowledgeAccess.enforcement;
@@ -840,24 +948,39 @@ export class ChatV2Service {
       overviewSettled,
       episodesSettled,
     ] = await Promise.allSettled([
-      this.runRetrieval(input, {
-        tenantId,
-        scope,
-        scopeId: scopeId ?? null,
-        query,
-        kRetrieve,
-        kContext,
-        graphHops,
-        accessWhere,
-      }),
+      this.runRetrieval(
+        input,
+        {
+          tenantId,
+          scope,
+          scopeId: scopeId ?? null,
+          query,
+          kRetrieve,
+          kContext,
+          graphHops,
+          graphAlwaysExpand,
+          filterMode,
+          filterBoostWeight,
+          entityLinkHops,
+          graphCypherRecall,
+          graphCypherMaxDepth,
+          aggregationMode,
+          accessWhere,
+        },
+        trace,
+      ),
       this.runTableBranch(input, tenantId),
       this.runTemporalBranch(input, tenantId),
       this.runOverviewBranch(input, tenantId),
       this.runEpisodesBranch(input, tenantId),
     ]);
 
-    const rankedBlockIds: string[] =
-      retrievalSettled.status === 'fulfilled' ? retrievalSettled.value : [];
+    const retrievalResult: RetrievalResult =
+      retrievalSettled.status === 'fulfilled'
+        ? retrievalSettled.value
+        : { blockIds: [], approximate: false };
+    const rankedBlockIds: string[] = retrievalResult.blockIds;
+    const answerApproximate = retrievalResult.approximate;
     if (retrievalSettled.status === 'rejected') {
       // Графовый retrieval упал — это критично для chat-v2, но не роняем процесс:
       // дальше contextBlocks будет пустым → честный «недостаточно данных».
@@ -872,7 +995,7 @@ export class ChatV2Service {
       );
     }
     // tableRows — fail-safe: ветка таблиц никогда не должна валить ответ.
-    const tableRows: Array<{ tableName: string; cells: string }> =
+    const tableRowsRaw: TableContextRow[] =
       tableSettled.status === 'fulfilled' ? tableSettled.value : [];
     // Ф5 мост К3 — temporal-свёртки (ValueRecapSnapshot/WeeklyOperationsDigest).
     // Best-effort: rejected/нет свёртки → []. Не валит ответ — both-ways семантика
@@ -899,6 +1022,25 @@ export class ChatV2Service {
       kaEnforcement,
       'chat',
     );
+
+    // ЧАСТЬ B — дедуп по source-block: строку таблицы, чей исходный IdeaBlock уже
+    // пришёл в графовый контекст, второй раз НЕ подаём (убираем двойной счёт;
+    // таблица докрывает ПРОБЕЛЫ графа, а не дублирует его факты — см. ТЗ Ф1.3).
+    const contextBlockIds = new Set(contextBlocks.map((b) => b.id));
+    const tableRows = tableRowsRaw.filter(
+      (r) =>
+        !(
+          r.sourceObjectType === 'idea_block' &&
+          r.sourceObjectId != null &&
+          contextBlockIds.has(r.sourceObjectId)
+        ),
+    );
+    if (tableRowsRaw.length !== tableRows.length) {
+      this.logger.debug(
+        { tenantId, deduped: tableRowsRaw.length - tableRows.length },
+        'chat-v2 ask: табличные строки дедуплицированы по source-block (граф уже покрыл)',
+      );
+    }
 
     // 3) Если контекст пуст — отвечаем без LLM.
     //    Ф4 (R10): если применялся структурный фильтр — отвечаем честно,
@@ -977,10 +1119,16 @@ export class ChatV2Service {
     // (префикс-кэш в рамках тенанта цел). Пустой профиль → секция опускается.
     const companyAbout = await this.buildCompanyAbout(tenantId);
     const scopeAddon = await this.buildScopeAddon(scope, scopeId, tenantId);
+    const assertiveSynthesis = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2AssertiveSynthesis',
+      undefined,
+      true,
+    );
     const systemPrompt = this.buildSystemPrompt(
       scopeAddon,
       input.systemPromptOverride ?? null,
       companyAbout,
+      assertiveSynthesis,
     );
     // ТЗ 2026-06-15 §6 — summary/history переехали из SYSTEM в конец USER
     // (cache-friendly: всё переменное — в USER).
@@ -1001,6 +1149,8 @@ export class ChatV2Service {
         themeMap,
         // Ф10 мост К1 — список эпизодов-источников. Пусто → секция «Источники» не выводится.
         episodes,
+        approximate: answerApproximate,
+        broadCoverage,
       },
     );
 
@@ -1093,6 +1243,7 @@ export class ChatV2Service {
       contextBlocks,
     );
     const usedBlockIds = this.parseUsedBlockIds(clarifyStripped, contextBlocks);
+    trace?.setUsedBlockIds(usedBlockIds);
 
     return {
       message: stripBlockMarkers(clarifyStripped),
@@ -1107,6 +1258,29 @@ export class ChatV2Service {
       answerKind,
       episodes: episodes.length > 0 ? episodes : undefined,
     };
+  }
+
+  async finalizeTrace(
+    tenantId: string,
+    trace: RetrievalTraceSink,
+  ): Promise<RetrievalTrace> {
+    const ids = trace.collectBlockIds();
+    const names = new Map<string, string>();
+    if (ids.length > 0) {
+      try {
+        const rows = await this.prisma.ideaBlock.findMany({
+          where: { id: { in: ids }, tenantId },
+          select: { id: true, name: true },
+        });
+        for (const r of rows) names.set(r.id, r.name);
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'chat-v2 finalizeTrace: загрузка имён блоков упала — трейс с id вместо имён',
+        );
+      }
+    }
+    return trace.build(names);
   }
 
   // ─────────────────────────── private ───────────────────────────
@@ -1136,15 +1310,23 @@ export class ChatV2Service {
   private async runRetrieval(
     input: ChatV2Input,
     ctx: RetrievalCtx,
-  ): Promise<string[]> {
+    trace?: RetrievalTraceSink,
+  ): Promise<RetrievalResult> {
     const { tenantId, query, kRetrieve, kContext } = ctx;
 
     if (input.precomputedBlockIds && input.precomputedBlockIds.length > 0) {
-      return [...input.precomputedBlockIds].slice(0, kContext);
+      const precomputed = [...input.precomputedBlockIds].slice(0, kContext);
+      trace?.setQueries(input.queries && input.queries.length > 0 ? [...input.queries] : [query]);
+      trace?.setRoute('semantic-only');
+      trace?.markGraphSkipped('precomputed-block-ids');
+      trace?.setPool(precomputed.map((id) => ({ blockId: id, score: 0 })));
+      trace?.setRerank(precomputed.map((id) => ({ blockId: id, score: 0 })));
+      return { blockIds: precomputed, approximate: false };
     }
 
     const queries: string[] =
       input.queries && input.queries.length > 0 ? [...input.queries] : [query];
+    trace?.setQueries(queries);
 
     const routerEnabled = await this.cfg.getDynamic<boolean>(
       'knowledge.router_v2_enabled',
@@ -1172,30 +1354,88 @@ export class ChatV2Service {
         forceStructuralFallback);
 
     this.metrics.incRouterBothWays({ triggered: bothWays ? 'yes' : 'no' });
+    trace?.setRoute(bothWays ? 'both' : 'semantic-only');
 
-    const useSingleSemanticQuery = routerEnabled && isStructuralClass;
+    const useSingleSemanticQuery =
+      routerEnabled &&
+      isStructuralClass &&
+      !(
+        ctx.aggregationMode &&
+        (queryClass === 'overview' || queryClass === 'list')
+      );
     const semanticQueries = useSingleSemanticQuery ? [query] : queries;
 
     const rrfK = await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60);
 
+    const baseFloorEnabled = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2BaseRecallFloor',
+      undefined,
+      true,
+    );
+    const hasTemporalFilter = !!(
+      input.structuralFilters?.dateFrom ||
+      input.structuralFilters?.dateTo ||
+      input.structuralFilters?.bitemporalActiveOnly
+    );
+    const basePromise: Promise<string[]> =
+      baseFloorEnabled && !hasTemporalFilter
+        ? this.retrieval
+            .fetchCandidates({
+              tenantId,
+              scope: ctx.scope,
+              scopeId: ctx.scopeId,
+              query,
+              limit: kRetrieve,
+              graphHops: 0,
+              graphAlwaysExpand: false,
+              filterMode: 'boost',
+              entityLinkHops: 0,
+              graphCypherRecall: false,
+              validAt: input.validAt ?? null,
+              accessWhere: ctx.accessWhere,
+            })
+            .then((ranked) => ranked.map((r) => r.blockId))
+            .catch((err) => {
+              this.logger.warn(
+                { err: err instanceof Error ? err.message : String(err) },
+                'chat-v2 runRetrieval: base-recall-floor упал — fail-open (пул без base)',
+              );
+              return [];
+            })
+        : Promise.resolve([]);
+
     if (!bothWays) {
-      const semantic = await this.runSemanticRoute(input, ctx, semanticQueries, rrfK);
-      if (semantic.length === 0) return [];
+      const [semantic, baseIds] = await Promise.all([
+        this.runSemanticRoute(input, ctx, semanticQueries, rrfK, trace),
+        basePromise,
+      ]);
+      const pool =
+        baseIds.length > 0
+          ? fuseRankedLists(
+              [semantic.map((id) => ({ id })), baseIds.map((id) => ({ id }))],
+              rrfK,
+            ).slice(0, kRetrieve)
+          : semantic;
+      trace?.setPool(pool.map((id) => ({ blockId: id, score: 0 })));
       const reranked = await this.conditionalRerank({
         tenantId,
         question: query,
-        blockIds: semantic,
+        blockIds: pool,
         conversationSummary: input.conversationSummary ?? null,
         history: input.history,
         reformulations: queries,
       });
-      return reranked.slice(0, kContext);
+      trace?.setRerank(reranked.slice(0, kContext).map((id) => ({ blockId: id, score: 0 })));
+      return this.applyCascade(input, ctx, reranked.slice(0, kContext), rrfK, trace);
     }
 
-    const [semanticSettled, structuralSettled] = await Promise.allSettled([
-      this.runSemanticRoute(input, ctx, semanticQueries, rrfK),
-      this.runStructuralRoute(input, ctx),
+    const [semanticSettled, structuralSettled, baseSettled] = await Promise.allSettled([
+      this.runSemanticRoute(input, ctx, semanticQueries, rrfK, trace),
+      this.runStructuralRoute(input, ctx, trace),
+      basePromise,
     ]);
+    const baseIds =
+      baseSettled.status === 'fulfilled' ? baseSettled.value : [];
 
     const semantic =
       semanticSettled.status === 'fulfilled' ? semanticSettled.value : [];
@@ -1214,18 +1454,22 @@ export class ChatV2Service {
       );
     }
 
-    if (semantic.length === 0 && structural.length === 0) return [];
-
+    const fusionLists: Array<Array<{ id: string }>> = [];
+    if (structural.length > 0) fusionLists.push(structural.map((id) => ({ id })));
+    fusionLists.push(semantic.map((id) => ({ id })));
+    if (baseIds.length > 0) fusionLists.push(baseIds.map((id) => ({ id })));
     const merged =
-      structural.length > 0
-        ? fuseRankedLists(
-            [
-              structural.map((id) => ({ id })),
-              semantic.map((id) => ({ id })),
-            ],
-            rrfK,
-          ).slice(0, kRetrieve)
+      fusionLists.length > 1
+        ? fuseRankedLists(fusionLists, rrfK).slice(0, kRetrieve)
         : semantic.slice(0, kRetrieve);
+
+    if (trace) {
+      const fusionScores =
+        fusionLists.length > 1 ? reciprocalRankFusion(fusionLists, rrfK) : null;
+      trace.setPool(
+        merged.map((id) => ({ blockId: id, score: fusionScores?.get(id) ?? 0 })),
+      );
+    }
 
     const reranked = await this.conditionalRerank({
       tenantId,
@@ -1235,7 +1479,81 @@ export class ChatV2Service {
       history: input.history,
       reformulations: queries,
     });
-    return reranked.slice(0, kContext);
+    trace?.setRerank(reranked.slice(0, kContext).map((id) => ({ blockId: id, score: 0 })));
+    return this.applyCascade(input, ctx, reranked.slice(0, kContext), rrfK, trace);
+  }
+
+  private async applyCascade(
+    input: ChatV2Input,
+    ctx: RetrievalCtx,
+    blockIds: string[],
+    rrfK: number,
+    trace?: RetrievalTraceSink,
+  ): Promise<RetrievalResult> {
+    const cascadeEnabled = await this.cfg.getDynamic<boolean>(
+      'knowledge.chatV2CascadeEnabled',
+      undefined,
+      true,
+    );
+    if (!cascadeEnabled) return { blockIds, approximate: false };
+    const minPool = await this.cfg.getDynamic<number>(
+      'knowledge.chatV2CascadeMinPool',
+      undefined,
+      5,
+    );
+    if (blockIds.length >= minPool) return { blockIds, approximate: false };
+
+    const sf = input.structuralFilters;
+    const hadFilters =
+      !!sf &&
+      ((sf.entityIds?.length ?? 0) > 0 ||
+        (sf.personIds?.length ?? 0) > 0 ||
+        (sf.signalTypes?.length ?? 0) > 0 ||
+        (sf.themeBranches?.length ?? 0) > 0 ||
+        !!sf.dateFrom ||
+        !!sf.dateTo ||
+        !!sf.bitemporalActiveOnly);
+
+    let current = blockIds;
+    let approximate = false;
+
+    if (hadFilters) {
+      const widened = await this.runSemanticRoute(
+        { ...input, structuralFilters: null },
+        ctx,
+        [ctx.query],
+        rrfK,
+        trace,
+      );
+      const merged = dedupe([...current, ...widened]);
+      if (merged.length > current.length) {
+        current = merged.slice(0, ctx.kContext);
+        approximate = true;
+      }
+    }
+
+    if (current.length < minPool && ctx.graphHops < 2) {
+      const deeper = await this.runSemanticRoute(
+        { ...input, structuralFilters: null },
+        { ...ctx, graphHops: ctx.graphHops + 1 },
+        [ctx.query],
+        rrfK,
+        trace,
+      );
+      const merged = dedupe([...current, ...deeper]);
+      if (merged.length > current.length) {
+        current = merged.slice(0, ctx.kContext);
+        approximate = true;
+      }
+    }
+
+    if (approximate) {
+      this.logger.log(
+        { tenantId: ctx.tenantId, before: blockIds.length, after: current.length },
+        'chat-v2 retrieval: каскад расширения применён (близкое, точного совпадения нет)',
+      );
+    }
+    return { blockIds: current, approximate };
   }
 
   private async runSemanticRoute(
@@ -1243,8 +1561,9 @@ export class ChatV2Service {
     ctx: RetrievalCtx,
     queries: ReadonlyArray<string>,
     rrfK: number,
+    trace?: RetrievalTraceSink,
   ): Promise<string[]> {
-    const { tenantId, scope, scopeId, kRetrieve, graphHops, accessWhere } = ctx;
+    const { tenantId, scope, scopeId, kRetrieve, graphHops, graphAlwaysExpand, filterMode, filterBoostWeight, entityLinkHops, graphCypherRecall, graphCypherMaxDepth, accessWhere } = ctx;
 
     const perQueryLimit =
       queries.length > 1
@@ -1255,23 +1574,32 @@ export class ChatV2Service {
     for (const q of queries) {
       if (!q || q.length === 0) continue;
       perQuery.push(
-        await this.retrieval.fetchCandidates({
-          tenantId,
-          scope,
-          scopeId: scopeId ?? null,
-          query: q,
-          limit: perQueryLimit,
-          graphHops,
-          validAt: input.validAt ?? null,
-          accessWhere,
-          dateFrom: input.structuralFilters?.dateFrom ?? null,
-          dateTo: input.structuralFilters?.dateTo ?? null,
-          signalTypes: input.structuralFilters?.signalTypes,
-          entityIds: input.structuralFilters?.entityIds,
-          themeBranches: input.structuralFilters?.themeBranches,
-          bitemporalActiveOnly:
-            input.structuralFilters?.bitemporalActiveOnly ?? false,
-        }),
+        await this.retrieval.fetchCandidates(
+          {
+            tenantId,
+            scope,
+            scopeId: scopeId ?? null,
+            query: q,
+            limit: perQueryLimit,
+            graphHops,
+            graphAlwaysExpand,
+            filterMode,
+            filterBoostWeight,
+            entityLinkHops,
+            graphCypherRecall,
+            graphCypherMaxDepth,
+            validAt: input.validAt ?? null,
+            accessWhere,
+            dateFrom: input.structuralFilters?.dateFrom ?? null,
+            dateTo: input.structuralFilters?.dateTo ?? null,
+            signalTypes: input.structuralFilters?.signalTypes,
+            entityIds: input.structuralFilters?.entityIds,
+            themeBranches: input.structuralFilters?.themeBranches,
+            bitemporalActiveOnly:
+              input.structuralFilters?.bitemporalActiveOnly ?? false,
+          },
+          trace,
+        ),
       );
     }
 
@@ -1288,9 +1616,15 @@ export class ChatV2Service {
   private async runStructuralRoute(
     input: ChatV2Input,
     ctx: RetrievalCtx,
+    trace?: RetrievalTraceSink,
   ): Promise<string[]> {
     if (input.queryClass === 'overview') {
-      return this.runOverviewStructuralRoute(input, ctx);
+      const ids = await this.runOverviewStructuralRoute(input, ctx);
+      trace?.setStructuralAggregateHits(
+        'overview:themes',
+        ids.map((id) => ({ blockId: id, score: 0 })),
+      );
+      return ids;
     }
     const queryClass = input.queryClass;
     if (queryClass !== 'list' && queryClass !== 'fact' && queryClass !== 'topic') {
@@ -1304,12 +1638,17 @@ export class ChatV2Service {
       this.metrics.incStructuralFallbackUsed({ queryClass });
     }
 
-    return this.retrieval.runStructuralAggregate({
+    const ids = await this.retrieval.runStructuralAggregate({
       tenantId: ctx.tenantId,
       personIds,
       entityIds,
       limit: ctx.kRetrieve,
     });
+    trace?.setStructuralAggregateHits(
+      'aggregate:persons+entities',
+      ids.map((id) => ({ blockId: id, score: 0 })),
+    );
+    return ids;
   }
 
   private async describePersonAndEntityFilters(
@@ -1457,18 +1796,26 @@ export class ChatV2Service {
    *    значит вызов идёт из старого chat-модуля без dialog-layer'а.
    * Никогда не бросает — fail-safe внутри сервиса; здесь дополнительный try.
    */
-  private async runTableBranch(
-    input: ChatV2Input,
-    tenantId: string,
-  ): Promise<Array<{ tableName: string; cells: string }>> {
+  private async runTableBranch(input: ChatV2Input, tenantId: string): Promise<TableContextRow[]> {
     if (!this.tableContext) return [];
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'chat_v2.table_context_enabled',
+      undefined,
+      true,
+    );
+    if (enabled === false) return [];
+
     const entityIds = input.tableEntityIds ?? [];
     const entityHints = input.tableEntityHints ?? [];
     const queries = input.queries && input.queries.length > 0 ? input.queries : [];
-    // Нет обогащённого понимания — ветку не запускаем (см. ТЗ §7).
-    if (entityIds.length === 0 && entityHints.length === 0 && queries.length === 0) {
-      return [];
-    }
+    const structuralIntent = await this.isStructuralTableIntent(input);
+
+    // Fail-closed gating: подаём таблицы ТОЛЬКО когда есть точная сущность
+    // (entity-bridge) ИЛИ структурный интент вопроса. Иначе (fact/broad/prose
+    // без сущности) — ветку не запускаем: keyword-путь тут только вредит.
+    if (entityIds.length === 0 && !structuralIntent) return [];
+    if (entityIds.length === 0 && entityHints.length === 0 && queries.length === 0) return [];
+
     try {
       return await this.tableContext.fetchTableContext({
         tenantId,
@@ -1476,6 +1823,7 @@ export class ChatV2Service {
         entityIds: [...entityIds],
         entityHints: [...entityHints],
         aggregation: input.tableAggregation ?? false,
+        structuralIntent,
       });
     } catch (err) {
       this.logger.warn(
@@ -1484,6 +1832,17 @@ export class ChatV2Service {
       );
       return [];
     }
+  }
+
+  private async isStructuralTableIntent(input: ChatV2Input): Promise<boolean> {
+    if (input.tableAggregation === true) return true;
+    const raw = await this.cfg.getDynamic<string[]>(
+      'chat_v2.table_structural_query_classes',
+      undefined,
+      ['list', 'overview', 'temporal'],
+    );
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : ['list', 'overview', 'temporal'];
+    return input.queryClass != null && list.includes(input.queryClass);
   }
 
   private async runTemporalBranch(
@@ -1549,12 +1908,37 @@ export class ChatV2Service {
     if (input.queryClass !== 'list') return [];
     const personIds = input.structuralFilters?.personIds ?? [];
     const entityIds = input.structuralFilters?.entityIds ?? [];
-    if (personIds.length === 0 && entityIds.length === 0) return [];
     const limit = await this.cfg.getDynamic<number>(
       'knowledge.list_episodes_limit',
       undefined,
       30,
     );
+    if (personIds.length === 0 && entityIds.length === 0) {
+      const dateFrom = input.structuralFilters?.dateFrom ?? null;
+      const dateTo = input.structuralFilters?.dateTo ?? null;
+      const aggregationMode = await this.cfg.getDynamic<boolean>(
+        'knowledge.chatV2AggregationMode',
+        undefined,
+        true,
+      );
+      if (aggregationMode && dateFrom && dateTo) {
+        try {
+          return await this.retrieval.listEpisodesByDateRange({
+            tenantId,
+            dateFrom,
+            dateTo,
+            limit,
+          });
+        } catch (err) {
+          this.logger.warn(
+            { tenantId, err: err instanceof Error ? err.message : String(err) },
+            'chat-v2 runEpisodesBranch: перечень за период упал — возвращаем []',
+          );
+          return [];
+        }
+      }
+      return [];
+    }
     try {
       return await this.retrieval.listEpisodesByActors({
         tenantId,
@@ -1924,25 +2308,16 @@ export class ChatV2Service {
     }
   }
 
-  /**
-   * Собирает system prompt: единый промпт (или override для старого chat-
-   * модуля) + scope-addon + «О компании» (стабильный per-tenant хвост).
-   *
-   * ТЗ 2026-06-15 §6 — summary/history БОЛЬШЕ НЕ в SYSTEM (переехали в конец
-   * USER, buildUserMessage): SYSTEM целиком стабилен (cache-friendly).
-   *  - `systemPromptOverride` — обслуживает старый `chat`-модуль; null →
-   *    BASE_SYSTEM_PROMPT (единый промпт-ответчик).
-   *  - `companyAbout` — стабильное описание компании; '' → секция опускается.
-   */
   private buildSystemPrompt(
     scopeAddon: string,
     systemPromptOverride?: string | null,
     companyAbout?: string,
+    assertiveSynthesis = true,
   ): string {
     const base =
       systemPromptOverride && systemPromptOverride.length > 0
         ? systemPromptOverride
-        : BASE_SYSTEM_PROMPT;
+        : resolveBaseSystemPrompt(assertiveSynthesis);
     const parts: string[] = [base, '', scopeAddon];
     if (companyAbout && companyAbout.length > 0) {
       parts.push('', companyAbout);
@@ -1978,9 +2353,25 @@ export class ChatV2Service {
       temporalRollups?: ReadonlyArray<{ label: string; markdown: string }>;
       themeMap?: ReadonlyArray<{ label: string; markdown: string }>;
       episodes?: ReadonlyArray<ChatV2Episode>;
+      approximate?: boolean;
+      broadCoverage?: boolean;
     },
   ): string {
     const parts: string[] = [];
+
+    if (extra?.approximate) {
+      parts.push(
+        'Важно: ниже — БЛИЗКИЕ по смыслу материалы; точного совпадения по запросу могло не найтись. Ответь по тому, что есть, и если это лишь близкое — прямо обозначь, что точного совпадения нет. Не утверждай отсутствие того, чего ты не искал.',
+        '',
+      );
+    }
+
+    if (extra?.broadCoverage) {
+      parts.push(
+        'Это обзорный или списочный вопрос: перечисли ВСЁ найденное по теме из контекста ниже. НЕ утверждай, что чего-то нет или «не зафиксировано», если ты этого не искал — просто не упоминай отсутствующее.',
+        '',
+      );
+    }
 
     // ТЗ 2026-06-15 §6 — Память диалога в НАЧАЛЕ USER (переехала из SYSTEM).
     const summary = extra?.conversationSummary;

@@ -24,7 +24,7 @@ type: architecture
 - **Основной провайдер:** `deepseek` (прямой, `https://api.deepseek.com/v1`).
 - **Модели:** `deepseek-v4-flash` (по умолчанию, `DEEPSEEK_DEFAULT_MODEL`) и `deepseek-v4-pro` (reasoning, напр. GEPA). Основной отчёт встречи (`LLM_MAIN_REPORT_PRIMARY`) — `deepseek`.
 - **Возможности:** prompt caching (см. [llm-cache-status.md](llm-cache-status.md) — DeepSeek кэширует на ~99% от 64 токенов).
-- **Claude / Anthropic — НЕ закупаем** (решение владельца). Канал `anthropic` в роутере не используется. См. [llm-cache-status.md](llm-cache-status.md) (строка 11) и [llm-providers-verified.md](../01_projects/llm-providers-verified.md).
+- **Claude / Anthropic — НЕ закупаем** (решение владельца; Opus/Claude не закупается, DeepSeek-v4 — primary). Канал `anthropic` в роутере **реализован** (`case 'anthropic'` → `AnthropicService`, capability=`sensitive`), но по стандарту маршрутизации не назначается primary для COS-задач и отфильтровывается на private-данных (`sensitive < private`). См. [llm-cache-status.md](llm-cache-status.md) (строка 11) и [llm-providers-verified.md](../01_projects/llm-providers-verified.md).
 - **Прочие каналы роутера:** `openai-via-proxy` (gpt-5* через `proxy.agent-lia.ru/v1/responses`), `minimax` (Anthropic-совместимый, прямой). Полная verified-карта — [llm-providers-verified.md](../01_projects/llm-providers-verified.md).
 
 ### Embeddings — OpenAI через прокси (`OpenAiProxyEmbeddingService`)

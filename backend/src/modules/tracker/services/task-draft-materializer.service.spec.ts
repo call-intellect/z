@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -50,8 +51,9 @@ function makeDeps() {
     incTaskSkillRoutingAssigned,
   } as unknown as BusinessMetricsService;
 
+  const suggestAssignee = vi.fn().mockResolvedValue([]);
   const skillRouting = {
-    suggestAssignee: vi.fn().mockResolvedValue([]),
+    suggestAssignee,
   } as unknown as SkillRoutingService;
 
   const service = new TaskDraftMaterializerService(
@@ -73,6 +75,7 @@ function makeDeps() {
     resolve,
     enqueue,
     incTaskDraftMaterialized,
+    suggestAssignee,
   };
 }
 
@@ -113,6 +116,104 @@ describe('TaskDraftMaterializerService', () => {
     expect(result).toEqual([
       { id: 'new-1', title: 'Сделать лендинг', confidence: null },
     ]);
+  });
+
+  it('description из черновика → extractedDescription (структурная суть, не дословная речь)', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize(
+      args([
+        {
+          title: 'Сделать лендинг',
+          sourceQuote: 'ну это, короче, надо лендинг прикрутить, э-э, к пятнице',
+          description: 'Собрать лендинг к пятнице.',
+        },
+      ]),
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          extractedDescription: 'Собрать лендинг к пятнице.',
+        }),
+      }),
+    );
+  });
+
+  it('description отсутствует → extractedDescription фолбэчит на sourceQuote', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize(
+      args([
+        {
+          title: 'Сделать лендинг',
+          sourceQuote: 'я докручу лендинг к пятнице',
+        },
+      ]),
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          extractedDescription: 'я докручу лендинг к пятнице',
+        }),
+      }),
+    );
+  });
+
+  it('дедуп сравнивает по тому же resolvedDescription, что ложится в extractedDescription', async () => {
+    const { service, evaluate } = makeDeps();
+
+    await service.materialize(
+      args([
+        {
+          title: 'Сделать лендинг',
+          sourceQuote: 'ну короче лендинг к пятнице',
+          description: 'Собрать лендинг к пятнице.',
+        },
+      ]),
+    );
+
+    expect(evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Сделать лендинг',
+        description: 'Собрать лендинг к пятнице.',
+      }),
+    );
+  });
+
+  it('description пустой/пробелы → фолбэк на sourceQuote', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize(
+      args([
+        {
+          title: 'Сделать лендинг',
+          sourceQuote: 'я докручу лендинг',
+          description: '   ',
+        },
+      ]),
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          extractedDescription: 'я докручу лендинг',
+        }),
+      }),
+    );
+  });
+
+  it('нет ни description, ни sourceQuote → extractedDescription = null', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize(args([{ title: 'Голая задача' }]));
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ extractedDescription: null }),
+      }),
+    );
   });
 
   it('идемпотентность: при существующем IntakeIssue не создаёт дубль', async () => {
@@ -163,5 +264,202 @@ describe('TaskDraftMaterializerService', () => {
         data: expect.objectContaining({ checklistJson: Prisma.JsonNull }),
       }),
     );
+  });
+
+  it('meeting_report + report_<ulid> → meetingId = голый ulid', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача из отчёта' }],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ meetingId: '01ARZ3NDEKTSV4RRFFQ69G5FAV' }),
+      }),
+    );
+  });
+
+  it('meeting + ulid → meetingId = sourceId (регресс)', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting',
+      sourceId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача из транскрипта' }],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ meetingId: '01ARZ3NDEKTSV4RRFFQ69G5FAV' }),
+      }),
+    );
+  });
+
+  it('meeting_report + невалидный ulid → meetingId = null (не падать)', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_notulid',
+      drafts: [{ title: 'Задача с плохим id' }],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ meetingId: null }),
+      }),
+    );
+  });
+
+  it('Ф2: meeting_report + hint-гость (не резолвится) → assignee=null, ownerHintRaw=hint, skill-routing НЕ зван', async () => {
+    const { service, create, suggestAssignee } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача Романа', suggestedAssigneeHint: 'Роман' }],
+    });
+
+    expect(suggestAssignee).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          suggestedAssigneeId: null,
+          ownerHintRaw: 'Роман',
+        }),
+      }),
+    );
+  });
+
+  it('Ф2: meeting_report + hint-сотрудник (резолвится) → assignee=userId, ownerHintRaw=null', async () => {
+    const { service, create, resolve, suggestAssignee } = makeDeps();
+    resolve.mockResolvedValueOnce({ kind: 'resolved', userId: 'user-sergey' });
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача Сергея', suggestedAssigneeHint: 'Сергей' }],
+    });
+
+    expect(suggestAssignee).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          suggestedAssigneeId: 'user-sergey',
+          ownerHintRaw: null,
+        }),
+      }),
+    );
+  });
+
+  it('Ф2: не-встречный канал (chatbox) → skill-routing ВЫЗВАН (регресс не-meeting поведения)', async () => {
+    const { service, suggestAssignee } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'chatbox',
+      sourceId: 'conv-1',
+      drafts: [{ title: 'Задача из чата', suggestedAssigneeHint: 'кто-нибудь' }],
+    });
+
+    expect(suggestAssignee).toHaveBeenCalledTimes(1);
+  });
+
+  it('chatbox → meetingId = null (регресс)', async () => {
+    const { service, create } = makeDeps();
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'chatbox',
+      sourceId: 'conv-1',
+      drafts: [{ title: 'Задача из чата' }],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ meetingId: null }),
+      }),
+    );
+  });
+
+  it('Ф4-лог: meeting_report + hint-гость → assignee_resolve reason=guest_unassigned', async () => {
+    const { service } = makeDeps();
+    const logSpy = vi.spyOn(Logger.prototype, 'log');
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача Романа', suggestedAssigneeHint: 'Роман' }],
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'assignee_resolve',
+        hint: 'Роман',
+        resolverResult: 'not_found',
+        skillRoutingApplied: false,
+        finalAssigneeId: null,
+        reason: 'guest_unassigned',
+      }),
+      expect.anything(),
+    );
+    logSpy.mockRestore();
+  });
+
+  it('Ф4-лог: meeting_report + hint-сотрудник → assignee_resolve reason=name_hint', async () => {
+    const { service, resolve } = makeDeps();
+    resolve.mockResolvedValueOnce({ kind: 'resolved', userId: 'user-sergey' });
+    const logSpy = vi.spyOn(Logger.prototype, 'log');
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача Сергея', suggestedAssigneeHint: 'Сергей' }],
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'assignee_resolve',
+        hint: 'Сергей',
+        resolverResult: 'resolved',
+        finalAssigneeId: 'user-sergey',
+        reason: 'name_hint',
+      }),
+      expect.anything(),
+    );
+    logSpy.mockRestore();
+  });
+
+  it('Ф4-лог: meeting_report → meeting_linkage с голым meetingId и linked=true', async () => {
+    const { service } = makeDeps();
+    const logSpy = vi.spyOn(Logger.prototype, 'log');
+
+    await service.materialize({
+      tenantId: TENANT,
+      channel: 'meeting_report',
+      sourceId: 'report_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      drafts: [{ title: 'Задача из отчёта' }],
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'meeting_linkage',
+        channel: 'meeting_report',
+        meetingId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        linked: true,
+      }),
+      expect.anything(),
+    );
+    logSpy.mockRestore();
   });
 });

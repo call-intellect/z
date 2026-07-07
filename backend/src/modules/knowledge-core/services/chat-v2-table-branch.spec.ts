@@ -111,6 +111,7 @@ const baseInput: ChatV2Input = {
   query: 'Сколько клиентов из Москвы?',
   precomputedBlockIds: ['b-1'],
   queries: ['Сколько клиентов из Москвы?'],
+  queryClass: 'list',
 };
 
 describe('ChatV2Service — табличная ветка (ЧАСТЬ B §7)', () => {
@@ -168,6 +169,48 @@ describe('ChatV2Service — табличная ветка (ЧАСТЬ B §7)', (
     });
 
     expect(fetchTableContext).not.toHaveBeenCalled();
+  });
+
+  it('gating: fact-вопрос без сущности и без структурного интента → ветка не запускается', async () => {
+    const fetchTableContext = vi.fn().mockResolvedValue([]);
+    const tableContext = { fetchTableContext } as unknown as ChatV2TableContextService;
+    const { svc } = makeService(tableContext);
+
+    await svc.ask({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      scope: 'org',
+      scopeId: null,
+      query: 'кто отвечает за интеграцию',
+      precomputedBlockIds: ['b-1'],
+      queries: ['кто отвечает за интеграцию'],
+      queryClass: 'fact',
+    });
+
+    expect(fetchTableContext).not.toHaveBeenCalled();
+  });
+
+  it('gating: entity-путь запускает ветку даже на нефактовом queryClass', async () => {
+    const fetchTableContext = vi.fn().mockResolvedValue([]);
+    const tableContext = { fetchTableContext } as unknown as ChatV2TableContextService;
+    const { svc } = makeService(tableContext);
+
+    await svc.ask({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      scope: 'org',
+      scopeId: null,
+      query: 'что по Бете',
+      precomputedBlockIds: ['b-1'],
+      queries: ['что по Бете'],
+      queryClass: 'fact',
+      tableEntityIds: ['e-beta'],
+    });
+
+    expect(fetchTableContext).toHaveBeenCalledTimes(1);
+    expect(fetchTableContext).toHaveBeenCalledWith(
+      expect.objectContaining({ entityIds: ['e-beta'], structuralIntent: false }),
+    );
   });
 
   it('табличная ветка запускается с обогащённым пониманием (queries/entityIds/aggregation)', async () => {

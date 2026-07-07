@@ -10,19 +10,20 @@ phase: 5
 
 ## 1. Типы встреч (`/admin/content/meeting-types`)
 
-Раньше — enum `MeetingType` хардкод в коде. Теперь — БД-таблица `MeetingType` с FK на `PromptTemplate` (через `reportPromptKey`).
+Раньше — enum `MeetingType` хардкод в коде. Теперь — БД-таблица `MeetingTypeConfig` с FK на `PromptTemplate` (через `reportPromptKey`). Enum `MeetingType` (для type-safety) остаётся отдельно.
 
 ```prisma
-model MeetingType {
-  id              String   @id        // "interview", "discovery", "1to1", ...
-  displayName     String
-  description     String?
-  icon            String?
-  reportPromptKey String?             // FK на PromptTemplate (источник промпта AI-отчёта)
-  isActive        Boolean  @default(true)
-  sortOrder       Int      @default(0)
-  updatedBy       String?
-  updatedAt       DateTime @updatedAt
+model MeetingTypeConfig {
+  id                     String   @id
+  displayName            String
+  description            String?
+  icon                   String?
+  reportPromptKey        String?
+  isActive               Boolean  @default(true)
+  sortOrder              Int      @default(0)
+  defaultClosedGroupKind String?  @db.VarChar(20)
+  updatedBy              String?
+  updatedAt              DateTime @updatedAt
 }
 ```
 

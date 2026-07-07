@@ -20,7 +20,6 @@ import {
   EXPERIMENT_EXTRACT_USER_TEMPLATE,
 } from '../prompts/experiment-extract.prompt';
 
-import { Specialist39ExperimentProbeService } from './specialist-3-9-experiment-probe.service';
 import { resolveAxisTenantTop } from './tenant-top';
 
 @Injectable()
@@ -35,8 +34,6 @@ export class Specialist39ExperimentsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(CurationService) private readonly curation: CurationService,
-    @Inject(Specialist39ExperimentProbeService)
-    private readonly probes: Specialist39ExperimentProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Optional()
@@ -145,8 +142,6 @@ export class Specialist39ExperimentsService {
         },
         dataClass: this.elevateDataClass(block.dataClass, 'internal'),
       });
-
-      await this.probes.emitResultWithoutLesson(experiment);
 
       this.logger.log(
         {

@@ -20,7 +20,7 @@ related_projects:
 
 ## 1. О чём это (бытовой рассказ)
 
-Каждую ночь в 01:00 по Москве платформа «прочитывает» весь прошедший день и сама пишет владельцу и операционному директору короткий **отчёт о пульсе компании** — не сухой дамп цифр, а связный текст в стиле «как прошёл день». Что было в чек-инах команды (зелёные/жёлтые/красные настроения), какие новые блокеры появились, какие обещания просрочены, какие цели сдвинулись, какие инсайты-проблемы всплыли впервые, какие решения приняли.
+Каждое утро в 07:00 по Москве платформа «прочитывает» весь прошедший день и сама пишет владельцу и операционному директору короткий **отчёт о пульсе компании** — не сухой дамп цифр, а связный текст в стиле «как прошёл день». Это утренний свод: руководитель начинает день с готовой картины, а не читает отчёт глубокой ночью. Что было в чек-инах команды (зелёные/жёлтые/красные настроения), какие новые блокеры появились, какие обещания просрочены, какие цели сдвинулись, какие инсайты-проблемы всплыли впервые, какие решения приняли.
 
 Этот отчёт — первая ласточка AI-операционного директора. Он не управляет вместо человека, но **позволяет владельцу за минуту понять «что происходит в компании»**, не открывая десяток дашбордов и не дёргая людей. Отчёт приходит в Telegram (если включена доставка) и параллельно лежит на странице `/dashboard/operations/daily` для тех, кто хочет посмотреть детали — графики причин проблем, оценку зрелости компании по доменам.
 
@@ -29,12 +29,12 @@ related_projects:
 ## 2. Что запускает (триггер)
 
 - **Тип:** cron-расписание.
-- **Что инициирует:** наступление 22:00 UTC (= 01:00 МСК) — каждый день.
-- **Технический источник:** `@Cron('0 22 * * *')` в `OperationsDailyDigestCron`, плюс ручной endpoint `POST /api/v1/dashboard/operations/daily-digest/generate?date=YYYY-MM-DD` для отладки/перегенерации.
+- **Что инициирует:** наступление 07:00 МСК (Europe/Moscow) — каждое утро.
+- **Технический источник:** `@Cron('0 7 * * *', { timeZone: 'Europe/Moscow' })` в `OperationsDailyDigestCron`, плюс ручной endpoint `POST /api/v1/dashboard/operations/daily-digest/generate?date=YYYY-MM-DD` для отладки/перегенерации.
 
 ## 3. Шаги процесса (общий список)
 
-1. **Сработал cron в 22:00 UTC**, платформа решает: фича включена глобально или нет (через тумблер `AdminSetting`).
+1. **Сработал cron в 07:00 МСК**, платформа решает: фича включена глобально или нет (через тумблер `AdminSetting`).
 2. **Для каждой компании по очереди** платформа собирает данные за прошедший день — чек-ины, новые блокеры, просроченные обещания, сдвинутые цели, новые сигналы-проблемы, принятые решения.
 3. **Считаются базовые показатели** — доли зелёных/жёлтых/красных настроений, топ-3 самых тревожных чек-инов, разрезы инсайтов по причинам (8 категорий).
 4. **LLM пишет связный текст отчёта** — markdown на 200-450 слов плюс отдельное короткое саммари в 3-4 предложения.
@@ -54,10 +54,10 @@ related_projects:
 
 | # | Шаг | Что делает технически | Где живёт код | Очередь / cron / эндпоинт | Записывает в БД | Статус |
 |---|---|---|---|---|---|---|
-| 1 | Cron-триггер | `@Cron('0 22 * * *')`, перед запуском проверяет `AdminSetting('operations.daily_digest.enabled')` (fallback ENV `COO_DAILY_DIGEST_ENABLED`, default `true`) через `TypedConfigService.getDynamic()` | `backend/src/modules/operations/workers/operations-daily-digest.cron.ts:57` | cron `0 22 * * *` UTC + ручной `POST /api/v1/dashboard/operations/daily-digest/generate` | — | ✅ |
+| 1 | Cron-триггер | `@Cron('0 7 * * *', { timeZone: 'Europe/Moscow' })`, перед запуском проверяет `AdminSetting('operations.daily_digest.enabled')` (fallback ENV `COO_DAILY_DIGEST_ENABLED`, default `true`) через `TypedConfigService.getDynamic()` | `backend/src/modules/operations/workers/operations-daily-digest.cron.ts:26` | cron `0 7 * * *` МСК (Europe/Moscow) + ручной `POST /api/v1/dashboard/operations/daily-digest/generate` | — | ✅ |
 | 2 | Сбор данных по Org | Цикл по Org с фичей; вычисление окна `[dayStart, dayEnd]` в UTC для МСК-даты; параллельно 6 SQL: `DailyCheckIn` (топ-3 красных), `IdeaBlock` (новые блокеры), `IdeaBlock` (просроченные commitment), `Goal` (со сменой статуса), `Insight` (severity='high'), `Decision` | `backend/src/modules/operations/services/daily-digest.service.ts:259..443` (`aggregate`), `operations-daily-digest.cron.ts:120` | inline в cron | (читает) | ✅ |
 | 3 | Базовые показатели | Доли green/yellow/red, топ-3 красных чек-инов, агрегация по `causeCategory` (8 категорий: process_gap, tooling, role_skill, communication, priority, resource_constraint, external, unknown); зрелость считается отдельным cron'ом | `daily-digest.service.ts (computeMetrics)`, `backend/src/modules/company-foundation/workers/maturity-scorer.cron.ts` (отдельный cron `0 5 * * *` для `coo_company_maturity_score`) | inline + параллельный cron | — | ✅ |
-| 4 | LLM-вызов | taskType `operations-daily-digest` с цепочкой DeepSeek-chat → OpenAI gpt-5.4-nano → Ollama qwen3.5:9b; промпт версии `prompt-v1`; вход — `DailyDigestAggregates`; выход — markdown 200-450 слов + `---SHORT_SUMMARY---` + 3-4 предложения; `maxTokens=4000`; при отказе LLM — `buildFallbackDigestMarkdown()` с `llmTaskRouteId=null` | `daily-digest.service.ts:168..198`, промпт `backend/src/modules/operations/prompts/daily-digest.prompt.ts:1..215` | LLM-router | — (готовит payload для шага 5) | ✅ |
+| 4 | LLM-вызов | taskType `operations-daily-digest` с цепочкой deepseek-v4-pro → gpt-5.4-mini → kie/gemini-3.1-pro (маршрут «День компании v2 Ф5», `patch-daily-digest-route-deepseek-pro-gpt-kie.ts`); промпт версии `prompt-v1`; вход — `DailyDigestAggregates`; выход — markdown 200-450 слов + `---SHORT_SUMMARY---` + 3-4 предложения; `maxTokens=4000`; при отказе LLM — `buildFallbackDigestMarkdown()` с `llmTaskRouteId=null` | `daily-digest.service.ts:168..198`, промпт `backend/src/modules/operations/prompts/daily-digest.prompt.ts:1..215` | LLM-router | — (готовит payload для шага 5) | ✅ |
 | 5 | Сохранение в БД | `upsert` по `[tenantId, dateLocal]`: `bodyMarkdown`, `metricsJson`, `sourcesJson`, `llmTaskRouteId`, `shortSummary`; **deliveredAt не обнуляется** при повторной генерации | `daily-digest.service.ts:201` | — | `DailyOperationsDigest` (`backend/prisma/schema.prisma:5954..5980`) | ✅ |
 | 6 | Доставка в Telegram + in-app | Через `ConversationalService.sendNotification(eventType='operations.daily_digest')`; получатели — все Membership роли `owner`+`coo` (НЕ `admin`); тумблер `operations.daily_digest.deliver_to_telegram` (default false); shortSummary обрезается до 1999 символов; in-app уведомление параллельно | `operations-daily-digest.cron.ts:214..275` (`notifyRecipients`), `conversational.service.ts` | `conversational.send` | `Notification`, `DailyOperationsDigest.deliveredAt` | ✅ |
 | 7 | Просмотр пользователем | 3 REST + страница: `GET /api/v1/dashboard/operations/daily-digest?date=YYYY-MM-DD` (контроллер, RBAC `coo|owner|admin|super_admin`), `GET .../latest`, `POST .../generate` (только admin/super_admin) | `backend/src/modules/operations/controllers/daily-digest.controller.ts:54,81,103`, `frontend/app/(authenticated)/dashboard/operations/daily/page.tsx`, `DailyDigestClient.tsx:1..408` | REST | — | ✅ |
@@ -65,7 +65,7 @@ related_projects:
 ### 5.1 Структура данных
 
 ```
-Cron 22:00 UTC
+Cron 07:00 МСК (Europe/Moscow)
   ↓
 for each Org (где включена фича):
   ↓
@@ -89,7 +89,19 @@ DailyOperationsDigest.deliveredAt
 
 | Шаг | taskType | Primary | Fallback | Где промпт | Версия |
 |---|---|---|---|---|---|
-| 4 | `operations-daily-digest` | DeepSeek-chat | OpenAI gpt-5.4-nano → Ollama qwen3.5:9b | `backend/src/modules/operations/prompts/daily-digest.prompt.ts` | `prompt-v1` |
+| 4 | `operations-daily-digest` | deepseek-v4-pro | gpt-5.4-mini → kie/gemini-3.1-pro | `backend/src/modules/operations/prompts/daily-digest.prompt.ts` | `prompt-v1` |
+
+### 5.3 Обогащённые секции дайджеста (v2)
+
+Помимо базового набора (green/yellow/red, топ-3 красных, `causeCategory`) `DailyOperationsDigestDto` отдаёт дополнительные секции (`backend/src/modules/operations/dto/daily-digest.dto.ts`):
+- **Вердикт по осям** — `verdict.axes` (team / clients / execution): краткая оценка по каждому направлению.
+- **Кто выделился / кому тяжело** — `whoShined[]` / `whoStruggled[]` (по чек-инам и активности людей).
+- **Клиенты под риском** — `customersAtRisk[]`.
+- **Хронические блокеры** — `chronicBlockers[]`, мост из процесса детекции блокеров (`blocker-synthesis`).
+- **Недельный тренд** — `trend[]` (динамика day-over-day) + `letter[]` (нарративное «письмо руководителю», `letterJson`).
+- **Очередь действий** — `pending-actions` (через `PendingActionsModule`), решения, требующие внимания.
+
+Секции покрыты спеками `daily-digest.who-shined.spec.ts`, `daily-digest.chronic-blockers.spec.ts`, `daily-digest.trend.spec.ts`.
 
 ## 6. Точки отказа и наблюдаемость
 
@@ -124,7 +136,8 @@ DailyOperationsDigest.deliveredAt
 - [[specialist-3-5-insights]] — источник `Insight.severity='high'` и `causeCategory`.
 - [[specialist-3-3-decisions]] — источник `Decision.decidedAt`.
 - [[notification-dispatch]] — Шаг 6 здесь использует общий dispatcher.
-- [[coo-weekly-digest]] (если будет) — родственный процесс с другим окном.
+- [[operations-weekly-monthly-digest]] — родственные своды за неделю/месяц (кластер «Пульс и дайджесты»); daily — не единственный дайджест-процесс.
+- [[personal-daily-brief]] — утренний персональный бриф C1/C2 (тот же кластер проактивных сводок).
 
 ## 8. Расхождения «задумано vs реализовано»
 

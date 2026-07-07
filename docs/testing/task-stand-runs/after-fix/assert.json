@@ -1,0 +1,262 @@
+[
+  {
+    "scenarioId": "A-01",
+    "outcomeType": "issue",
+    "count": 1,
+    "fieldChecks": {
+      "outcomePrimary": "issue",
+      "presentTypes": "issue+intake_auto",
+      "count": 1,
+      "countMatch": true,
+      "title~": "PENDING_JUDGE",
+      "assignee": true,
+      "dueDate": false,
+      "priority": false,
+      "sourceBlockIds": true
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "PENDING_JUDGE"
+  },
+  {
+    "scenarioId": "D-01",
+    "outcomeType": "nothing",
+    "count": 0,
+    "fieldChecks": {
+      "outcomePrimary": "nothing",
+      "presentTypes": "nothing",
+      "count": 0,
+      "countMatch": false,
+      "dedupVerdict": false
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "WRONG_OUTCOME"
+  },
+  {
+    "scenarioId": "D-07",
+    "outcomeType": "nothing",
+    "count": 0,
+    "fieldChecks": {
+      "outcomePrimary": "nothing",
+      "presentTypes": "nothing",
+      "count": 0,
+      "countMatch": false
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "WRONG_OUTCOME"
+  },
+  {
+    "scenarioId": "K-01",
+    "outcomeType": "issue",
+    "count": 1,
+    "fieldChecks": {
+      "outcomePrimary": "issue",
+      "presentTypes": "issue+intake_auto",
+      "count": 1,
+      "countMatch": true,
+      "titleClean": true,
+      "title~": "PENDING_JUDGE",
+      "descriptionClean": true,
+      "descriptionNotVerbatim": true,
+      "provenanceKept": true
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "PENDING_JUDGE"
+  },
+  {
+    "scenarioId": "K-02",
+    "outcomeType": "nothing",
+    "count": 0,
+    "fieldChecks": {
+      "outcomePrimary": "nothing",
+      "presentTypes": "nothing",
+      "count": 0,
+      "countMatch": false,
+      "title~": "PENDING_JUDGE",
+      "descriptionClean": true,
+      "descriptionNotVerbatim": true
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "WRONG_OUTCOME"
+  },
+  {
+    "scenarioId": "K-03",
+    "outcomeType": "issue",
+    "count": 1,
+    "fieldChecks": {
+      "outcomePrimary": "issue",
+      "presentTypes": "issue+intake_auto",
+      "count": 1,
+      "countMatch": true,
+      "assignee": true,
+      "dueDate": false,
+      "descriptionClean": true,
+      "keepsFacts": "PENDING_JUDGE"
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "PENDING_JUDGE"
+  },
+  {
+    "scenarioId": "K-04",
+    "outcomeType": "issue",
+    "count": 1,
+    "fieldChecks": {
+      "outcomePrimary": "issue",
+      "presentTypes": "issue+intake_auto",
+      "count": 1,
+      "countMatch": true,
+      "assignee": true,
+      "checklistTotalCount": true,
+      "checklistItemsClean": "PENDING_JUDGE"
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "PENDING_JUDGE"
+  },
+  {
+    "scenarioId": "K-05",
+    "outcomeType": "nothing",
+    "count": 0,
+    "fieldChecks": {
+      "outcomePrimary": "nothing",
+      "presentTypes": "nothing",
+      "count": 0,
+      "countMatch": false,
+      "title~": "PENDING_JUDGE",
+      "descriptionClean": true,
+      "descriptionNotVerbatim": true
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "WRONG_OUTCOME"
+  },
+  {
+    "scenarioId": "K-06",
+    "outcomeType": "nothing",
+    "count": 0,
+    "fieldChecks": {
+      "outcomePrimary": "nothing",
+      "presentTypes": "nothing",
+      "count": 0,
+      "countMatch": false,
+      "assignee": false,
+      "priority": false,
+      "title~": "PENDING_JUDGE",
+      "descriptionClean": true
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "WRONG_OUTCOME"
+  },
+  {
+    "scenarioId": "K-07",
+    "outcomeType": "nothing",
+    "count": 0,
+    "fieldChecks": {
+      "outcomePrimary": "nothing",
+      "presentTypes": "nothing",
+      "count": 0,
+      "countMatch": false,
+      "assignee": false,
+      "dueDate": false,
+      "title~": "PENDING_JUDGE",
+      "descriptionClean": true
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "WRONG_OUTCOME"
+  },
+  {
+    "scenarioId": "K-08",
+    "outcomeType": "nothing",
+    "count": 0,
+    "fieldChecks": {
+      "outcomePrimary": "nothing",
+      "presentTypes": "nothing",
+      "count": 0,
+      "countMatch": false,
+      "descriptionClean": true,
+      "provenanceKept": false
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "WRONG_OUTCOME"
+  },
+  {
+    "scenarioId": "K-09",
+    "outcomeType": "nothing",
+    "count": 0,
+    "fieldChecks": {
+      "outcomePrimary": "nothing",
+      "presentTypes": "nothing",
+      "count": 0,
+      "countMatch": false,
+      "descriptionClean": true,
+      "noHallucination": "PENDING_JUDGE"
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "WRONG_OUTCOME"
+  },
+  {
+    "scenarioId": "K-10",
+    "outcomeType": "issue",
+    "count": 1,
+    "fieldChecks": {
+      "outcomePrimary": "issue",
+      "presentTypes": "issue+intake_auto",
+      "count": 1,
+      "countMatch": true,
+      "assignee": true,
+      "descriptionClean": true,
+      "checklistTotalCount": true
+    },
+    "invariants": {
+      "inv1": true,
+      "inv2": true,
+      "inv4": true
+    },
+    "verdict": "PASS"
+  }
+]

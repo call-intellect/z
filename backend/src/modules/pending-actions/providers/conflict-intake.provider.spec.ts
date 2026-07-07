@@ -194,24 +194,36 @@ describe('IntakePendingProvider (B0)', () => {
     provider = new IntakePendingProvider(prisma, makeCfg());
   });
 
-  it('member: count=0, list=[] без обращения к БД', async () => {
+  it('member: видит только СВОИ suggested intake (suggestedAssigneeId=self), не всю оргу', async () => {
+    countMock.mockResolvedValue(1);
+    findManyMock.mockResolvedValue([]);
     const n = await provider.countForUser({
       tenantId: 't-1',
       userId: 'u-1',
       role: 'member',
       snoozedResourceIds: new Set(),
     });
-    const items = await provider.listForUser({
+    await provider.listForUser({
       tenantId: 't-1',
       userId: 'u-1',
       role: 'member',
       limit: 50,
       snoozedResourceIds: new Set(),
     });
-    expect(n).toBe(0);
-    expect(items).toEqual([]);
-    expect(countMock).not.toHaveBeenCalled();
-    expect(findManyMock).not.toHaveBeenCalled();
+    expect(n).toBe(1);
+    expect(countMock.mock.calls[0]![0].where.suggestedAssigneeId).toBe('u-1');
+    expect(findManyMock.mock.calls[0]![0].where.suggestedAssigneeId).toBe('u-1');
+  });
+
+  it('owner/admin: self-фильтр НЕ применяется — видит всю оргу', async () => {
+    countMock.mockResolvedValue(4);
+    await provider.countForUser({
+      tenantId: 't-1',
+      userId: 'u-owner',
+      role: 'owner',
+      snoozedResourceIds: new Set(),
+    });
+    expect(countMock.mock.calls[0]![0].where.suggestedAssigneeId).toBeUndefined();
   });
 
   it('owner: count по status=pending', async () => {

@@ -1,12 +1,14 @@
 ---
 type: project
-status: in_progress
+status: done
 phase: 8
 ---
 
 # BullMQ-инспектор (`/admin/platform/workers`)
 
 > UI и API для инспекции / управления BullMQ-очередями Z без `redis-cli` и без редеплоя. Часть редизайна админки (Фаза 8). См. [admin-z-global.md](admin-z-global.md).
+>
+> Реализовано: `backend/src/modules/admin/platform/workers/workers-admin.controller.ts` + `workers-admin.service.ts`.
 
 ## Зачем
 

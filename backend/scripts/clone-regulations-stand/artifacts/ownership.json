@@ -1,0 +1,341 @@
+{
+  "orgId": "cmr4ztnfj0001hgbwuij7xc3n",
+  "generatedAt": "2026-07-05T14:27:36.591Z",
+  "targets": [
+    {
+      "key": "ceo",
+      "roleName": "Генеральный директор",
+      "bearerName": "Сергей",
+      "roleId": "cmr515aq90008yfbwv8srv7fk",
+      "personId": "cmr4ztnfu0003hgbwb6vcs58a",
+      "departmentId": null
+    },
+    {
+      "key": "integrator",
+      "roleName": "Разработчик-интегратор",
+      "bearerName": "Михаил",
+      "roleId": "cmr515arq000gyfbw2qjh59ja",
+      "personId": "cmr4ztng40005hgbwvqiyaru8",
+      "departmentId": null
+    },
+    {
+      "key": "marketer",
+      "roleName": "Маркетолог",
+      "bearerName": "Дарья",
+      "roleId": "cmr515as5000oyfbwgempbxuo",
+      "personId": "cmr4ztng50006hgbw1uiuj2js",
+      "departmentId": null
+    },
+    {
+      "key": "support",
+      "roleName": "Руководитель поддержки",
+      "bearerName": "Игорь",
+      "roleId": "cmr515asm000wyfbwkp7cfe0n",
+      "personId": "cmr4ztng60007hgbwa2rzohtn",
+      "departmentId": null
+    }
+  ],
+  "ownedByRole": {
+    "ceo": [
+      {
+        "kind": "regulation",
+        "id": "cmr50zurz01r3dbbw2gorkgdu",
+        "name": "Правило массовой синхронизации внешних API",
+        "text": "Перед массовым синком любого внешнего API обязательно сначала включать backoff и мониторинг, и только потом давать объём",
+        "scope": "org",
+        "ownerPersonId": "cmr4ztnfu0003hgbwb6vcs58a",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      },
+      {
+        "kind": "policy",
+        "id": "cmr50s8gj017kdbbwzo9po4ep",
+        "name": "Обязательный backoff и мониторинг при массовом синке API",
+        "text": "Запрещено запускать массовый синк любого внешнего API без предварительно включённых механизмов backoff и мониторинга. Нарушение этого правила приводит к риску незамеченных ошибок 429 и деградации наблюдаемости.",
+        "scope": null,
+        "ownerPersonId": "cmr4ztnfu0003hgbwb6vcs58a",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      },
+      {
+        "kind": "process",
+        "id": "cmr51f3bk02abdbbwrkou1l8q",
+        "name": "Принятие решения о раскатке на основе когортных метрик",
+        "text": "Решение о раскатке релиза принимается по объективным цифрам когорт, а не по субъективным ощущениям команды.",
+        "scope": null,
+        "ownerPersonId": "cmr4ztnfu0003hgbwb6vcs58a",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      },
+      {
+        "kind": "process",
+        "id": "cmr51g19w02cndbbwsng6fe0d",
+        "name": "Приоритизация фич по влиянию на retention когорты",
+        "text": "Оценка и ранжирование фич по их влиянию на удержание внутри когорты; фичи, не улучшающие retention, получают низкий приоритет",
+        "scope": null,
+        "ownerPersonId": "cmr4ztnfu0003hgbwb6vcs58a",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      },
+      {
+        "kind": "process",
+        "id": "cmr51hp4u02fxdbbw7a1jhors",
+        "name": "Оценка сроков: пауза и замеры перед фиксацией даты",
+        "text": "Когда запрашивают срок немедленно, взять паузу, провести замеры и только после этого фиксировать дату обязательства.",
+        "scope": null,
+        "ownerPersonId": "cmr4ztnfu0003hgbwb6vcs58a",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      }
+    ],
+    "integrator": [
+      {
+        "kind": "instruction",
+        "id": "cmr51rayx030edbbwka4hp6ok",
+        "name": "Порядок выката на прод",
+        "text": "Выкат на продакшн выполняется только после прогона на стейдже под нагрузкой. Сначала стейдж, потом прод.",
+        "scope": "role:cmr515arq000gyfbw2qjh59ja",
+        "ownerPersonId": "cmr4ztng40005hgbwvqiyaru8",
+        "ownerRoleId": null,
+        "forRole": "разработчик",
+        "ownedBy": "scope:role-id"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr51raz9030gdbbwfo3v8229",
+        "name": "Подход к первичной диагностике",
+        "text": "Диагностику начинать с анализа логов и метрик, не строить гипотезы до получения фактических данных.",
+        "scope": "role:инженер",
+        "ownerPersonId": "cmr4ztng40005hgbwvqiyaru8",
+        "ownerRoleId": null,
+        "forRole": "инженер",
+        "ownedBy": "ownerPersonId"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr51tvd8034fdbbwao4sszfj",
+        "name": "Закрытие фикса с мониторингом",
+        "text": "При закрытии любого фикса обязательно добавлять мониторинг: алерт на ошибку и дашборд для обнаружения регресса",
+        "scope": "role:Михаил",
+        "ownerPersonId": "cmr4ztng40005hgbwvqiyaru8",
+        "ownerRoleId": null,
+        "forRole": "Михаил",
+        "ownedBy": "scope:bearer-name"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr51tvdq034hdbbw37ssdof0",
+        "name": "Обязательный стейдж перед выкатом",
+        "text": "Перед выкатом изменений обязательно проводить обкатку на стейдже. Выкат без предварительной обкатки не допускается — это неоправданный риск.",
+        "scope": "role:Михаил",
+        "ownerPersonId": "cmr4ztng40005hgbwvqiyaru8",
+        "ownerRoleId": null,
+        "forRole": "Михаил",
+        "ownedBy": "scope:bearer-name"
+      },
+      {
+        "kind": "process",
+        "id": "cmr51p5nv02vkdbbwiyqnvjo9",
+        "name": "Предрелизная обкатка на стейдже",
+        "text": "Любой выкат должен пройти обязательную обкатку на стейдже. Выкат без проверки на стейдже не допускается.",
+        "scope": null,
+        "ownerPersonId": "cmr4ztng40005hgbwvqiyaru8",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      }
+    ],
+    "marketer": [
+      {
+        "kind": "instruction",
+        "id": "cmr51v23h036udbbw3e2429wv",
+        "name": "Очистка базы перед email-рассылкой",
+        "text": "Перед запуском email-рассылки необходимо очистить базу: удалить дубликаты и провести валидацию адресов",
+        "scope": "role:cmr515as5000oyfbwgempbxuo",
+        "ownerPersonId": null,
+        "ownerRoleId": null,
+        "forRole": "email-маркетолог",
+        "ownedBy": "scope:role-id"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr51v23o036vdbbwya4bv5k4",
+        "name": "Сегментация базы для email-рассылки",
+        "text": "Сегментировать базу получателей по поведению и отправлять релевантный контент каждому сегменту",
+        "scope": "role:cmr515as5000oyfbwgempbxuo",
+        "ownerPersonId": "cmr4ztng50006hgbw1uiuj2js",
+        "ownerRoleId": null,
+        "forRole": "email-маркетолог",
+        "ownedBy": "scope:role-id"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr51vyyq039edbbwoqeb9f9f",
+        "name": "Расчёт юнит-экономики перед запуском платного канала",
+        "text": "Перед тем как заливать бюджет в новый платный канал, необходимо посчитать юнит-экономику: сравнить стоимость привлечения клиента (CAC) с пожизненной ценностью (LTV). Если CAC превышает LTV — канал убыточен и запускать его нельзя.",
+        "scope": "role:cmr515as5000oyfbwgempbxuo",
+        "ownerPersonId": "cmr4ztng50006hgbw1uiuj2js",
+        "ownerRoleId": null,
+        "forRole": "маркетолог",
+        "ownedBy": "scope:role-id"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr51vyz2039gdbbw9gm2rup4",
+        "name": "A/B-тестирование офферов на малой доле трафика перед масштабированием",
+        "text": "Новый оффер сначала тестируется через A/B-тест на маленькой доле трафика. Только победивший по метрикам вариант масштабируется на весь объём. Это позволяет проверять гипотезы без риска для общего бюджета.",
+        "scope": "role:cmr515as5000oyfbwgempbxuo",
+        "ownerPersonId": "cmr4ztng50006hgbw1uiuj2js",
+        "ownerRoleId": null,
+        "forRole": "маркетолог",
+        "ownedBy": "scope:role-id"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr51wwad03addbbwvofzgbwc",
+        "name": "Не масштабировать гипотезу без A/B-теста",
+        "text": "Перед масштабированием любой гипотезы обязательно провести A/B-тест: интуитивные решения без проверки часто обходятся дороже самого тестирования.",
+        "scope": "role:cmr515as5000oyfbwgempbxuo",
+        "ownerPersonId": "cmr4ztng50006hgbw1uiuj2js",
+        "ownerRoleId": null,
+        "forRole": "маркетолог",
+        "ownedBy": "scope:role-id"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr51wwav03afdbbwivvx3vla",
+        "name": "Сегментировать базу перед отправкой сообщений",
+        "text": "Перед отправкой сообщений по базе контактов необходимо сегментировать аудиторию: у разных групп разные триггеры, и общий текст проигрывает таргетированному.",
+        "scope": "role:cmr515as5000oyfbwgempbxuo",
+        "ownerPersonId": "cmr4ztng50006hgbw1uiuj2js",
+        "ownerRoleId": null,
+        "forRole": "маркетолог",
+        "ownedBy": "scope:role-id"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr51zjes03eydbbwzta10dvu",
+        "name": "Выделение бюджета на канал после расчёта юнит-экономики",
+        "text": "Бюджет на рекламный канал выделяется только после расчёта юнит-экономики; окупаемость считается до запуска, а не по факту",
+        "scope": "role:Дарья",
+        "ownerPersonId": "cmr4ztng50006hgbw1uiuj2js",
+        "ownerRoleId": null,
+        "forRole": "Дарья",
+        "ownedBy": "scope:bearer-name"
+      },
+      {
+        "kind": "process",
+        "id": "cmr51q5re02ywdbbw8b0qay35",
+        "name": "Сегментация базы для рассылки по поведению",
+        "text": "База сегментируется по поведению, каждому сегменту отправляется релевантный контент вместо единого сообщения на всех",
+        "scope": null,
+        "ownerPersonId": "cmr4ztng50006hgbw1uiuj2js",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      },
+      {
+        "kind": "process",
+        "id": "cmr51v2xj037xdbbwzea0p2ok",
+        "name": "Расчёт юнит-экономики перед распределением бюджета по каналам",
+        "text": "Бюджет на рекламный канал выделяется только после предварительного расчёта окупаемости через юнит-экономику; окупаемость считается до запуска, а не по факту.",
+        "scope": null,
+        "ownerPersonId": "cmr4ztng50006hgbw1uiuj2js",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      }
+    ],
+    "support": [
+      {
+        "kind": "regulation",
+        "id": "cmr515at70014yfbw7ze89yox",
+        "name": "Регламент обработки обращений v2",
+        "text": "Регламент обработки клиентских обращений v2. Первый ответ клиенту — в пределах 4 часов. Классификация по severity: критичные (блокирует работу клиента) эскалируются владельцу в тот же день. После инцидента — обязательный пост-мортем с правкой регламента.",
+        "scope": "role:cmr515asm000wyfbwkp7cfe0n",
+        "ownerPersonId": null,
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "scope:role-id"
+      },
+      {
+        "kind": "regulation",
+        "id": "cmr524m1903nsdbbwof75ittb",
+        "name": "Пост-мортем после инцидентов",
+        "text": "После каждого инцидента проводится пост-мортем: разбирается причина и на основе выводов корректируется регламент.",
+        "scope": null,
+        "ownerPersonId": "cmr4ztng60007hgbwa2rzohtn",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr526n7j03q6dbbwrtszx88j",
+        "name": "Упреждающее управление SLA при росте очереди",
+        "text": "При росте очереди обращений добавлять исполнителей заранее, не дожидаясь срыва сроков SLA",
+        "scope": "role:cmr515asm000wyfbwkp7cfe0n",
+        "ownerPersonId": "cmr4ztng60007hgbwa2rzohtn",
+        "ownerRoleId": null,
+        "forRole": "руководитель поддержки",
+        "ownedBy": "scope:role-id"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr52802w03rddbbwq1x14m63",
+        "name": "Принцип ранней эскалации при риске нарушения SLA",
+        "text": "При риске нарушения SLA следует немедленно эскалировать проблему, не допуская тишины до просрочки. SLA рассматривается как твёрдая граница, а не ориентир; лучше перестраховаться с ресурсами, чем объяснять клиенту срыв сроков.",
+        "scope": "role:Игорь",
+        "ownerPersonId": "cmr4ztng60007hgbwa2rzohtn",
+        "ownerRoleId": null,
+        "forRole": "Игорь",
+        "ownedBy": "scope:bearer-name"
+      },
+      {
+        "kind": "instruction",
+        "id": "cmr524m2403nudbbwsaeyrxce",
+        "name": "Превентивная эскалация при риске просрочки SLA",
+        "text": "При первом риске просрочки SLA поднимать тревогу, не дожидаясь фактического нарушения.",
+        "scope": "role:специалист поддержки",
+        "ownerPersonId": "cmr4ztng60007hgbwa2rzohtn",
+        "ownerRoleId": null,
+        "forRole": "специалист поддержки",
+        "ownedBy": "ownerPersonId"
+      },
+      {
+        "kind": "process",
+        "id": "cmr520f5l03h7dbbwxt1jdutv",
+        "name": "Превентивная эскалация при риске просрочки",
+        "text": "Эскалация проблемы при первом признаке риска нарушения SLA, не дожидаясь фактического нарушения. Подход Игоря — раньше, чем у Елены.",
+        "scope": null,
+        "ownerPersonId": "cmr4ztng60007hgbwa2rzohtn",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      },
+      {
+        "kind": "process",
+        "id": "cmr522jk703kjdbbw9lxvyei7",
+        "name": "Эскалация критических обращений владельцу в тот же день по шкале severity",
+        "text": "Критические обращения по шкале severity передаются владельцу в день поступления",
+        "scope": null,
+        "ownerPersonId": "cmr4ztng60007hgbwa2rzohtn",
+        "ownerRoleId": null,
+        "forRole": null,
+        "ownedBy": "ownerPersonId"
+      }
+    ]
+  },
+  "orphanCount": 169,
+  "counts": {
+    "regulation": 53,
+    "instruction": 16,
+    "policy": 9,
+    "process": 126
+  }
+}

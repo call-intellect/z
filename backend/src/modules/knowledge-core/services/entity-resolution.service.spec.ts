@@ -946,3 +946,51 @@ describe('EntityResolutionService.resolvePersonByEmbedding — Ф1 FROM persons 
       .catch(() => undefined);
   });
 });
+
+describe('findOrCreateEntity — детерминированный client→customer (unit, mock Prisma)', () => {
+  it('вызов с type:client создаёт Entity с type=customer', async () => {
+    const createSpy = vi.fn(async ({ data }: { data: { type: string; canonicalName: string } }) => ({
+      id: 'new-1',
+      tenantId: 't1',
+      type: data.type,
+      canonicalName: data.canonicalName,
+      aliases: [],
+      mentionsCount: 1,
+      mergedIntoId: null,
+      mergedIntoTenantId: null,
+      metadata: null,
+      inn: null,
+      ogrn: null,
+      email: null,
+      phone: null,
+      domain: null,
+      embedding: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    }));
+    const prisma = {
+      $queryRawUnsafe: vi.fn(async () => []),
+      $executeRawUnsafe: vi.fn(async () => 0),
+      entity: { create: createSpy },
+    } as unknown as PrismaService;
+
+    const embed = {
+      embedEntityNames: vi.fn(async () => [] as number[][]),
+      embedQuery: vi.fn(async () => [] as number[]),
+    } as unknown as KnowledgeEmbeddingService;
+
+    const svc = new EntityResolutionService(prisma, embed);
+
+    const { entity, created } = await svc.findOrCreateEntity({
+      tenantId: 't1',
+      type: 'client',
+      name: 'Логистик Плюс',
+    });
+
+    expect(created).toBe(true);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const passed = createSpy.mock.calls[0]![0] as { data: { type: string } };
+    expect(passed.data.type).toBe('customer');
+    expect(entity.type).toBe('customer');
+  });
+});

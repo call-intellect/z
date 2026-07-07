@@ -388,6 +388,17 @@ Embedding темы считается на её создании (`ThemeWriteSer
 - **Провенанс — `ExperimentTaskLink('derived')`** (зеркало `DecisionTaskLink`). Связь авто-деривится в `intake-auto-triage.worker.ts` (утилита `linkDerivedExperimentsForIssue`) по пересечению `IntakeIssue.sourceBlockIds` с `Experiment.sourceBlockIds` того же tenant. В отличие от `Decision`, у `Experiment` нет `linkedTaskCount`/`deletedAt` — линковка короче.
 - **Метрика** `experiment_tasks_extracted_total{tenant_top, surface}` — `surface` = `meeting` (combined-экстрактор) | `ingest` (block-ingest).
 
+## «Решение задачи» — суточная сборка TaskSolution (2026-07-07)
+
+**Источник:** ТЗ [`task-solution-entity`](../../plans/tz/2026-07-07-task-solution-entity.md). Модель — [[../02_architecture/data-model]] §«TaskSolution»; крон — [[workers-queues]] §«task-solution-build».
+
+Материализует **опыт решения конкретной задачи** отдельной сущностью `TaskSolution` (название · описание · как решалась · исполнитель-владелец · ссылка на задачу). **Двойное назначение (Q2):** те же блоки `reasoning`/`methodology_step` продолжают кормить клон (SkillProfile через специалист 3.7) — `TaskSolution` дополнительный потребитель, а не замена.
+
+- **Суточный свод — `TaskSolutionBuildService` + `TaskSolutionBuildCron`** (`@Cron('0 * * * *', Europe/Moscow)`, действует в час `taskSolution.buildHourMsk`=3). Детекция задач с новыми how-solved-сигналами за окно `taskSolution.lookbackHours` (48) через `RawEvent.payload.contextCardId=issue.id` (привязка блок↔задача НЕ прямая — через `IdeaBlockEvidence→RawEvent`). Гейт содержательности `taskSolution.minSignalChars` (40): нет содержательного «как решалось» → не плодим. Владелец — **исполнитель** (assignee→Person, ось A4, не упомянувший).
+- **Компиляция тела** — `solutionMd` через `structured-document-compiler` (**новый вид `task_solution`**, переиспользуем сервис). Upsert по `@@unique([tenantId, sourceIssueId])` (одна задача → одно решение, апдейт не плодит) + `CardVersion` + embedding. Идемпотентно (нет новых блоков → Δ=0).
+- **Повтор→кандидат (Q3):** после embedding `title+solution` — cosine-KNN по `task_solutions`; группа ≥ `taskSolution.repeatThreshold` (3) при cosine ≥ `taskSolution.repeatSimilarity` (0.85) → общий `repeatGroupKey` + `candidateInstruction=true` (флаг+ссылка), **БЕЗ авто-создания Инструкции** (см. [[../04_не-сделано/README]]).
+- **Флаг/крутилки:** kill-switch `aiFeatures.taskSolutionEnabled` (ON, тип A), крутилки `taskSolution.{buildHourMsk,lookbackHours,minSignalChars,repeatThreshold,repeatSimilarity}` в AdminSetting (сид `seed-admin-setting-task-solution.ts`). Витрина — [[api-layer]] §«Task Solutions», [[frontend-pages]] §«Решения задач».
+
 ## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
 
 **Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.

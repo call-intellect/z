@@ -2,7 +2,7 @@
 type: tz
 feature: task-solution-entity
 title: "ТЗ — сущность «Решение задачи» (TaskSolution): агент-материализатор + суточная сборка + UI-вкладка"
-status: ready-to-implement
+status: implemented
 date: 2026-07-07
 owner: владелец (sergrv80@gmail.com)
 architecture: plans/architecture/2026-07-07-task-solution-entity.md
@@ -135,13 +135,13 @@ model TaskSolution {
 
 ## 8. Фазы
 
-- **Ф1 Данные:** модель + миграция + CardVersion resourceType + postgres-init индекс. typecheck/prisma:generate зелёные.
-- **Ф2 Сборка:** `TaskSolutionService` + `task-solution-build.cron` (суточный) + компилятор-режим «решение задачи» + владение + гейт содержательности. Юнит + integration (prefixed).
-- **Ф3 Повтор→кандидат:** кластеризация по embedding + `repeatGroupKey` + флаг кандидата в инструкцию (без авто-создания).
-- **Ф4 API:** контроллер+DTO+Swagger (образец regulations).
-- **Ф5 Frontend:** api/domain/ui-слои + вкладка/страница + карточка + бейдж повтора.
-- **Ф6 Крутилки/флаг/деплой:** AdminSetting + kill-switch + сид + STEPS + prod-deploy-log + feature-flags.
-- **Ф7 Стенд:** ось A5 в корпус/эталон (см. стенд-ТЗ) — параллельно.
+- [x] **Ф1 Данные:** модель + миграция + CardVersion resourceType + postgres-init индекс. typecheck/prisma:generate зелёные.
+- [x] **Ф2 Сборка:** `TaskSolutionService` + `task-solution-build.cron` (суточный) + компилятор-режим «решение задачи» + владение + гейт содержательности. Юнит + integration (prefixed).
+- [x] **Ф3 Повтор→кандидат:** кластеризация по embedding + `repeatGroupKey` + флаг кандидата в инструкцию (без авто-создания).
+- [x] **Ф4 API:** контроллер+DTO+Swagger (образец regulations).
+- [x] **Ф5 Frontend:** api/domain/ui-слои + вкладка/страница + карточка + бейдж повтора.
+- [x] **Ф6 Крутилки/флаг/деплой:** AdminSetting + kill-switch + сид + STEPS + prod-deploy-log + feature-flags.
+- [ ] **Ф7 Стенд:** ось A5 в корпус/эталон (см. стенд-ТЗ) — параллельно, в процессе.
 
 ## 9. Acceptance
 
@@ -154,4 +154,4 @@ model TaskSolution {
 - [ ] `typecheck/lint/build` (backend+frontend) зелёные; second-brain обновлён; ось A5 в стенде.
 
 ## Итог
-Реализовано: —/— (по фазам). Стенд A5 — в [стенд-ТЗ](2026-07-03-regulation-instruction-stand.md).
+Реализовано: Ф1–Ф7 (коммиты 82d01f8a…e39a2c2d). Ф7 (стенд, ось A5) — в процессе, см. [стенд-ТЗ](2026-07-03-regulation-instruction-stand.md).

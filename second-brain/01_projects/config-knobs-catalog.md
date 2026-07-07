@@ -4,7 +4,7 @@
 >
 > **Известный долг (Ф3):** часть `limits.*` сейчас засеяна в двух наборах с разными значениями (старый `MAX_*` и новый `limits.*camelCase`) — консолидируется по `plans/tz/2026-06-21-config-knobs-remaining-waves.md`. Ниже приведён **новый** набор как канонический. Ещё ~240 ENV-крутилок и хардкодов пока НЕ в админке (тот же ТЗ, волны W1-W6).
 >
-> Дата среза: 2026-06-21. Источник — сиды `backend/scripts/seed-admin-setting*.ts`.
+> Дата среза: 2026-06-21 (клон-пороги обновлены по рекалибровке 2026-07-03, см. [[clone-how-it-works]]). Источник — сиды `backend/scripts/seed-admin-setting*.ts`.
 
 ## Лимиты и квоты
 | Ключ | Что делает | Дефолт |
@@ -91,11 +91,12 @@
 | ideas.feed.freshness_days | Окно свежести идеи | 30 дн |
 | knowledge.skillMinObservations | Мин. наблюдений для навыка | 3 |
 | knowledge.skillTraitSimilarityThreshold | Порог слияния активных навыков | 0.85 |
+| knowledge.skillClusterSimilarityThreshold | Порог группировки блоков метода (гейт сборки черты) | 0.72 (с 2026-07-03; был хардкод 0.78) |
 | knowledge.skillLookbackMonths | Окно сбора данных по навыкам | 6 мес |
 | knowledge.skillDecayMonths | Через сколько навык устаревает | 3 мес |
 | knowledge.skillArchiveMonths | Через сколько навык в архив | 12 мес |
-| knowledge.personaMinTraits | Мин. навыков для сборки портрета роли | 5 |
-| knowledge.personaRoleAggMinPersons | Мин. людей для усреднения роли | 2 |
+| knowledge.personaMinTraits | Мин. черт (по всем 4 слоям метода) для сборки клона | 3 (с 2026-07-03; было 5) |
+| knowledge.personaRoleAggMinPersons | Мин. людей для усреднения роли | 1 (с 2026-07-03; было 2) |
 | knowledge.executablePersonaThresholdTraitsCount | Порог навыков для пересборки клона роли | 10 |
 | knowledge.subjectAttributionEnabled | Проставлять автора блока знания | вкл |
 | knowledge.subjectAttributionAllTypes | Автора — на все типы знания | вкл |

@@ -1,7 +1,7 @@
 ---
 title: LlmRouter — маршрутизация LLM-вызовов
 status: actual
-updated: 2026-05-10
+updated: 2026-07-05
 ---
 
 # LlmRouter
@@ -9,6 +9,17 @@ updated: 2026-05-10
 `backend/src/modules/ai/services/llm-router.service.ts` — центральный диспетчер LLM-вызовов в Z. Через него проходят ВСЕ AI-задачи.
 
 > Этот файл — про **реализацию роутера** (контракт `call()`, схемы, кэш). Какие провайдеры/модели реально работают и какие закладывать в дефолты — единственный источник правды [llm-providers-verified.md](llm-providers-verified.md).
+
+> ⚠ **Ниже — снимок Фазы 0 (2026-05-10).** Перечисление taskType и часть механики устарели: реальный список `ALL_LLM_TASK_TYPES` — ≈170+ значений (см. `llm-router.service.ts` / админку), а не ~30 из раздела «taskType (Фаза 0)».
+
+## Что появилось после Фазы 0
+
+- **Budget-guard (pre-dispatch).** `BudgetGuardService` проверяет бюджет ДО вызова провайдера; enforce за флагом `llm.budget.enforce_enabled` (`getDynamic`, default off) — без флага только наблюдение.
+- **Per-attempt hard-timeout.** Каждая попытка провайдера ограничена `dispatchTimeoutMs` (ENV `LLM_ROUTER_DISPATCH_TIMEOUT_MS`, default **300000 мс = 300 с**); можно переопределить на вызов через `params.timeoutMs`.
+- **Retention `AiUsageLog`.** `AiUsageLogCleanupService` (two-tier) чистит старые логи использования.
+- **Метрика `llm_cost_unpriced_total`** — счётчик вызовов, для которых не нашлась цена модели (пропуск в прайс-карте `LlmModelPrice`/`MODEL_PRICES`).
+- **dataClass-фильтр провайдеров** — `PROVIDER_CAPS[*].maxDataClass` отсекает провайдеры по классу данных вызова (все текущие боевые провайдеры — `maxDataClass='private'`).
+- Полный актуальный список taskType — в коде (`ALL_LLM_TASK_TYPES`) и админке, а не в этой заметке.
 
 ## Зачем нужен
 

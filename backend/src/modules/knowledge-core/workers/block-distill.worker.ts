@@ -23,6 +23,8 @@ import { FactSupersedeService } from '../services/fact-supersede.service';
 import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
 import { RouterService } from '../services/router.service';
 
+const SPECIALISTS_COMBINED_EXCLUDED_SOURCE_TYPES = new Set<string>(['tracker_event']);
+
 /**
  * Block-distill worker (`core.block-distill` consumer).
  *
@@ -210,7 +212,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         block.id,
         block.tenantId,
       );
-      if (source) {
+      if (source && !SPECIALISTS_COMBINED_EXCLUDED_SOURCE_TYPES.has(source.sourceType)) {
         await this.coreQueue
           .enqueueSpecialistsCombined(
             {

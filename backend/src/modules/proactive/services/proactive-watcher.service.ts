@@ -130,6 +130,11 @@ export class ProactiveWatcherService {
         runner: (a) => this.ruleExperimentRunningTooLong(a),
       },
       {
+        code: 'experiment_result_without_lesson',
+        enabled: flags.experimentResultWithoutLesson,
+        runner: (a) => this.ruleExperimentResultWithoutLesson(a),
+      },
+      {
         code: 'process_stale_review',
         enabled: flags.processStaleReview,
         runner: (a) => this.ruleProcessStaleReview(a),
@@ -244,6 +249,57 @@ export class ProactiveWatcherService {
         userId: recipient,
         ruleType: 'experiment_running_too_long',
         severity: ageDays > 60 ? 'high' : 'medium',
+        now: args.now,
+        facts: { name: e.name.slice(0, 80), experimentId: e.id, ageDays },
+        actionUrl: `/experiments/${e.id}`,
+      });
+      if (result === 'sent') sent++;
+      else if (result === 'dedup_skipped') dedupSkipped++;
+    }
+    return { sent, dedupSkipped };
+  }
+
+  private async ruleExperimentResultWithoutLesson(args: {
+    tenantId: string;
+    now: Date;
+  }): Promise<{ sent: number; dedupSkipped: number }> {
+    const threshold = new Date(args.now.getTime() - 14 * 24 * 3600 * 1000);
+    const candidates = await this.prisma.experiment.findMany({
+      where: {
+        tenantId: args.tenantId,
+        status: 'running',
+        currentResult: { not: null },
+        startedAt: { lt: threshold },
+      },
+      select: {
+        id: true,
+        name: true,
+        startedAt: true,
+        lessonsJson: true,
+        ownerEntityId: true,
+      },
+      take: ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG,
+      orderBy: { startedAt: 'asc' },
+    });
+    const stuck = candidates.filter(
+      (e) => !Array.isArray(e.lessonsJson) || (e.lessonsJson as unknown[]).length === 0,
+    );
+    if (stuck.length === 0) return { sent: 0, dedupSkipped: 0 };
+
+    const recipient = await this.firstAdminUserId(args.tenantId);
+    if (!recipient) return { sent: 0, dedupSkipped: 0 };
+
+    let sent = 0;
+    let dedupSkipped = 0;
+    for (const e of stuck) {
+      const ageDays = Math.floor(
+        (args.now.getTime() - (e.startedAt?.getTime() ?? args.now.getTime())) / (24 * 3600 * 1000),
+      );
+      const result = await this.emit({
+        tenantId: args.tenantId,
+        userId: recipient,
+        ruleType: 'experiment_result_without_lesson',
+        severity: ageDays > 45 ? 'high' : 'medium',
         now: args.now,
         facts: { name: e.name.slice(0, 80), experimentId: e.id, ageDays },
         actionUrl: `/experiments/${e.id}`,

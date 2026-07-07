@@ -1,0 +1,602 @@
+[
+  {
+    "scenarioId": "A-01",
+    "category": "creation-form",
+    "channel": "meeting",
+    "targets": [
+      "штат"
+    ],
+    "submittedAt": "2026-07-06T20:04:02.248Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9NEMI87DA705FB072E",
+      "rawEventIds": [
+        "cmr9nemij00023vslv6gw4ojk"
+      ],
+      "quiescenceSettled": false,
+      "quiescenceWaitedMs": 601082
+    },
+    "observed": {
+      "intakeIssues": [
+        {
+          "id": "cmr9nmsde00gd3vslnt5s82gp",
+          "source": "meeting",
+          "status": "accepted",
+          "extractedTitle": "Подготовить коммерческое предложение для Ромашки",
+          "extractedDescription": "Игорь, до пятницы подготовь коммерческое предложение для Ромашки — они ждут расчёт по внедрению.",
+          "rawContent": "Подготовить коммерческое предложение для Ромашки\n\nЦитата: Игорь, до пятницы подготовь коммерческое предложение для Ромашки — они ждут расчёт по внедрению.",
+          "previewQuote": null,
+          "suggestedProjectId": "cmr9ndwpa000s2gsltcz0kumh",
+          "suggestedAssigneeId": "cmr9ndwoo00042gsl8r3cyec2",
+          "suggestedPriority": "high",
+          "suggestedDueDate": null,
+          "suggestedGoalId": null,
+          "suggestedDuplicateOfIssueId": null,
+          "checklistJson": null,
+          "sourceBlockIds": [
+            "cmr9njv9h02oklosl1rmrq5vm"
+          ],
+          "confidence": 0.7,
+          "meetingId": "CMBTMR9NEMI87DA705FB072E"
+        }
+      ],
+      "issues": [
+        {
+          "id": "cmr9nn17102rrlosljg7o7bk1",
+          "title": "Подготовить коммерческое предложение для Ромашки",
+          "descriptionStripped": "Игорь, до пятницы подготовь коммерческое предложение для Ромашки — они ждут расчёт по внедрению.",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "backlog",
+          "assigneeUserIds": [
+            "cmr9ndwoo00042gsl8r3cyec2"
+          ],
+          "priority": "high",
+          "dueDate": null,
+          "checklistTotalCount": 0,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [
+            "cmr9njv9h02oklosl1rmrq5vm"
+          ],
+          "goalId": null,
+          "linkedMeetingIds": [
+            "CMBTMR9NEMI87DA705FB072E"
+          ]
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9njv9h02oklosl1rmrq5vm",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    },
+    "t1Isolation": {
+      "combinedProducedIntake": true,
+      "combinedIntakeSource": "meeting",
+      "blockId": "cmr9njv9h02oklosl1rmrq5vm",
+      "legacyProcessBlockOutput": {
+        "returned": "void",
+        "calledOnBlockId": "cmr9njv9h02oklosl1rmrq5vm",
+        "intakeForBlockBefore": 1,
+        "intakeForBlockAfter": 1,
+        "producedIntake": false
+      },
+      "legacyExtractTasksOutput": [
+        {
+          "title": "Подготовить коммерческое предложение для Ромашки с расчётом по внедрению",
+          "description": "Подготовить КП для компании «Ромашка», включая расчёт стоимости внедрения",
+          "assigneeRaw": "Игорь",
+          "dueDate": "до пятницы",
+          "sourceStartMs": 0,
+          "sourceEndMs": 12000,
+          "sourceQuote": "Игорь, до пятницы подготовь коммерческое предложение для Ромашки — они ждут расчёт по внедрению.",
+          "confidence": 0.85
+        }
+      ]
+    }
+  },
+  {
+    "scenarioId": "A-04",
+    "category": "creation-form",
+    "channel": "chat",
+    "targets": [
+      "Т2"
+    ],
+    "submittedAt": "2026-07-06T20:14:09.259Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "chat",
+      "rawEventIds": [
+        "cmr9nrmvu00kx3vsl2sgps2nl"
+      ],
+      "quiescenceSettled": false,
+      "quiescenceWaitedMs": 300428
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9nt63h00mg3vslh03qkxp8",
+          "signalType": "commitment"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    },
+    "t1Isolation": {
+      "combinedProducedIntake": false,
+      "combinedIntakeSource": null,
+      "blockId": "cmr9nt63h00mg3vslh03qkxp8",
+      "legacyProcessBlockOutput": {
+        "returned": "void",
+        "calledOnBlockId": "cmr9nt63h00mg3vslh03qkxp8",
+        "intakeForBlockBefore": 0,
+        "intakeForBlockAfter": 1,
+        "producedIntake": true
+      },
+      "legacyExtractTasksOutput": [
+        {
+          "title": "Докрутить лендинг: адаптивность и формы",
+          "description": "Доработать адаптивность и формы на лендинге",
+          "assigneeRaw": "Игорь",
+          "dueDate": "к пятнице",
+          "sourceStartMs": 0,
+          "sourceEndMs": 12000,
+          "sourceQuote": "Я к пятнице докручу лендинг — там осталась адаптивность и формы.",
+          "confidence": 0.6
+        }
+      ]
+    }
+  },
+  {
+    "scenarioId": "D-01",
+    "category": "dedup-task",
+    "channel": "chat",
+    "targets": [
+      "R13"
+    ],
+    "submittedAt": "2026-07-06T20:19:44.090Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "chat",
+      "rawEventIds": [
+        "cmr9nyt9d00rs3vsldyvvwt10"
+      ],
+      "quiescenceSettled": false,
+      "quiescenceWaitedMs": 300079
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9nz4nm0060losly1xewv76",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "D-07",
+    "category": "dedup-task",
+    "channel": "chat",
+    "targets": [
+      "R13"
+    ],
+    "submittedAt": "2026-07-06T20:24:44.302Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "chat",
+      "rawEventIds": [
+        "cmr9o58wh00y23vsl71eyiv32"
+      ],
+      "quiescenceSettled": false,
+      "quiescenceWaitedMs": 300058
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9o5jjf00crloslpt4ejjzt",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "F-01",
+    "category": "subtask",
+    "channel": "manual",
+    "targets": [
+      "Т4"
+    ],
+    "submittedAt": "2026-07-06T20:29:44.457Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "manual",
+      "directIssueId": "cmr9obopr014p3vslbsrfzd82"
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [
+        {
+          "id": "cmr9obopr014p3vslbsrfzd82",
+          "title": "Проверить макет",
+          "descriptionStripped": null,
+          "previewQuote": null,
+          "parentId": "cmr9ne4li002p2zslywvbvnq3",
+          "stateCategory": "backlog",
+          "assigneeUserIds": [],
+          "priority": "none",
+          "dueDate": null,
+          "checklistTotalCount": 0,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [],
+          "goalId": null,
+          "linkedMeetingIds": []
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "H-01",
+    "category": "closure",
+    "channel": "meeting",
+    "targets": [
+      "R13"
+    ],
+    "submittedAt": "2026-07-06T20:29:44.837Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9OBORK206B20C17688",
+      "rawEventIds": [
+        "cmr9obors014t3vslozlu1xup"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 155538
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9obzzq01563vslvm1yljkf",
+          "signalType": "done_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-01",
+    "category": "text-quality",
+    "channel": "meeting",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T20:32:20.437Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9OF0TYBFA5D7778E9C",
+      "rawEventIds": [
+        "cmr9of0uk01633vslb21jmjrg"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 47161
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [],
+      "goals": [],
+      "errors": []
+    },
+    "t1Isolation": {
+      "combinedProducedIntake": false,
+      "combinedIntakeSource": null,
+      "legacyProcessBlockOutput": {
+        "skipped": true,
+        "reason": "no_block"
+      },
+      "legacyExtractTasksOutput": []
+    }
+  },
+  {
+    "scenarioId": "K-02",
+    "category": "text-quality",
+    "channel": "chat",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T20:33:13.559Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "chat",
+      "rawEventIds": [
+        "cmr9og5ts016a3vsl3jcozwlu"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 119369
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9ogov2016e3vslpeizrrt3",
+          "signalType": "suggestion"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-03",
+    "category": "text-quality",
+    "channel": "meeting",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T20:35:12.994Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9OIPZ1593132859CA3",
+      "rawEventIds": [
+        "cmr9oipzf017m3vslj9g1nb3y"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 231722
+    },
+    "observed": {
+      "intakeIssues": [
+        {
+          "id": "cmr9om1uh004nlosla0q4brm0",
+          "source": "meeting",
+          "status": "accepted",
+          "extractedTitle": "Оформить договор с Логистик Плюс на 3,5 млн рублей",
+          "extractedDescription": "Пете надо договор с этими, с Логистик Плюс, на три с половиной миллиона, до 15-го числа оформить",
+          "rawContent": "Оформить договор с Логистик Плюс на 3,5 млн рублей\n\nЦитата: Пете надо договор с этими, с Логистик Плюс, на три с половиной миллиона, до 15-го числа оформить",
+          "previewQuote": null,
+          "suggestedProjectId": "cmr9ndwpa000s2gsltcz0kumh",
+          "suggestedAssigneeId": "cmr9ndwow000a2gsl44c91763",
+          "suggestedPriority": "high",
+          "suggestedDueDate": null,
+          "suggestedGoalId": null,
+          "suggestedDuplicateOfIssueId": null,
+          "checklistJson": null,
+          "sourceBlockIds": [
+            "cmr9oj4nw0026losl3osdkk4c"
+          ],
+          "confidence": 0.7,
+          "meetingId": "CMBTMR9OIPZ1593132859CA3"
+        }
+      ],
+      "issues": [
+        {
+          "id": "cmr9om9ps004qloslfqmre645",
+          "title": "Оформить договор с Логистик Плюс на 3,5 млн рублей",
+          "descriptionStripped": "Пете надо договор с этими, с Логистик Плюс, на три с половиной миллиона, до 15-го числа оформить",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "backlog",
+          "assigneeUserIds": [
+            "cmr9ndwow000a2gsl44c91763"
+          ],
+          "priority": "high",
+          "dueDate": null,
+          "checklistTotalCount": 0,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [
+            "cmr9oj4nw0026losl3osdkk4c"
+          ],
+          "goalId": null,
+          "linkedMeetingIds": [
+            "CMBTMR9OIPZ1593132859CA3"
+          ]
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9oj4nw0026losl3osdkk4c",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-04",
+    "category": "text-quality",
+    "channel": "meeting",
+    "targets": [
+      "Т11",
+      "Т4"
+    ],
+    "submittedAt": "2026-07-06T20:39:04.787Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "meeting",
+      "meetingId": "CMBTMR9ONOTT9DF9E1DA92A4",
+      "rawEventIds": [
+        "cmr9onou2019r3vsl4ovzg1ak"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 299961
+    },
+    "observed": {
+      "intakeIssues": [
+        {
+          "id": "cmr9or28x01ar3vslckd9fem9",
+          "source": "meeting",
+          "status": "accepted",
+          "extractedTitle": "Подготовить лендинг",
+          "extractedDescription": "по лендингу, значит: ну, во-первых, текст этот надо, потом, э-э, макет чтобы согласовать, ну и домен там купить, и аналитику, короче, прикрутить. Всё на Оле.",
+          "rawContent": "Подготовить лендинг\n\nЦитата: по лендингу, значит: ну, во-первых, текст этот надо, потом, э-э, макет чтобы согласовать, ну и домен там купить, и аналитику, короче, прикрутить. Всё на Оле.",
+          "previewQuote": null,
+          "suggestedProjectId": "cmr9ndwpa000s2gsltcz0kumh",
+          "suggestedAssigneeId": "cmr9ndwp5000m2gsl0ivhvg3b",
+          "suggestedPriority": "null",
+          "suggestedDueDate": null,
+          "suggestedGoalId": null,
+          "suggestedDuplicateOfIssueId": null,
+          "checklistJson": [
+            {
+              "items": [
+                {
+                  "text": "Подготовить текст для лендинга"
+                },
+                {
+                  "text": "Согласовать макет"
+                },
+                {
+                  "text": "Купить домен"
+                },
+                {
+                  "text": "Прикрутить аналитику"
+                }
+              ]
+            }
+          ],
+          "sourceBlockIds": [
+            "cmr9oo4v2004ylosl19s92u44"
+          ],
+          "confidence": 0.65,
+          "meetingId": "CMBTMR9ONOTT9DF9E1DA92A4"
+        }
+      ],
+      "issues": [
+        {
+          "id": "cmr9or6hq005nlosl1vczmyyd",
+          "title": "Подготовить лендинг",
+          "descriptionStripped": "по лендингу, значит: ну, во-первых, текст этот надо, потом, э-э, макет чтобы согласовать, ну и домен там купить, и аналитику, короче, прикрутить. Всё на Оле.",
+          "previewQuote": null,
+          "parentId": null,
+          "stateCategory": "backlog",
+          "assigneeUserIds": [
+            "cmr9ndwp5000m2gsl0ivhvg3b"
+          ],
+          "priority": "null",
+          "dueDate": null,
+          "checklistTotalCount": 4,
+          "completedAt": null,
+          "createdManually": true,
+          "sourceBlockIds": [
+            "cmr9oo4v2004ylosl19s92u44"
+          ],
+          "goalId": null,
+          "linkedMeetingIds": [
+            "CMBTMR9ONOTT9DF9E1DA92A4"
+          ]
+        }
+      ],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9oo4v2004ylosl19s92u44",
+          "signalType": "action_item"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  },
+  {
+    "scenarioId": "K-05",
+    "category": "text-quality",
+    "channel": "email",
+    "targets": [
+      "Т11"
+    ],
+    "submittedAt": "2026-07-06T20:44:04.831Z",
+    "headCommit": "69c7873d",
+    "injected": {
+      "method": "email",
+      "rawEventIds": [
+        "cmr9ou4d001ba3vslsevhw4sf"
+      ],
+      "quiescenceSettled": true,
+      "quiescenceWaitedMs": 127390
+    },
+    "observed": {
+      "intakeIssues": [],
+      "issues": [],
+      "closureCandidates": [],
+      "progressUpdates": [],
+      "relations": [],
+      "probeEvents": [],
+      "ideaBlocks": [
+        {
+          "id": "cmr9ounz9006xloslg7uciexy",
+          "signalType": "client_request"
+        },
+        {
+          "id": "cmr9oup1d0072losl7346i06b",
+          "signalType": "pain"
+        }
+      ],
+      "goals": [],
+      "errors": []
+    }
+  }
+]

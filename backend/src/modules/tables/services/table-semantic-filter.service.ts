@@ -92,7 +92,15 @@ export class TableSemanticFilterService {
     tableId: string;
     conditions: ReadonlyArray<TableFilterCondition>;
     limit: number;
-  }): Promise<Array<{ id: string; entityId: string | null; cells: Record<string, unknown> }>> {
+  }): Promise<
+    Array<{
+      id: string;
+      entityId: string | null;
+      cells: Record<string, unknown>;
+      sourceObjectType: string | null;
+      sourceObjectId: string | null;
+    }>
+  > {
     const cap = Math.max(0, Math.floor(args.limit));
     if (cap === 0) return [];
     try {
@@ -101,10 +109,17 @@ export class TableSemanticFilterService {
         where: {
           tableId: args.tableId,
           tenantId: args.tenantId,
+          status: 'active',
           archivedAt: null,
           deletedAt: null,
         },
-        select: { id: true, entityId: true, cells: true },
+        select: {
+          id: true,
+          entityId: true,
+          cells: true,
+          sourceObjectType: true,
+          sourceObjectId: true,
+        },
         orderBy: { order: 'asc' },
         take: fetchCap,
       });
@@ -113,11 +128,19 @@ export class TableSemanticFilterService {
         id: string;
         entityId: string | null;
         cells: Record<string, unknown>;
+        sourceObjectType: string | null;
+        sourceObjectId: string | null;
       }> = [];
       for (const row of rows) {
         const cells = this.asCells(row.cells);
         if (!rowMatchesConditions(cells, args.conditions)) continue;
-        out.push({ id: row.id, entityId: row.entityId ?? null, cells });
+        out.push({
+          id: row.id,
+          entityId: row.entityId ?? null,
+          cells,
+          sourceObjectType: row.sourceObjectType ?? null,
+          sourceObjectId: row.sourceObjectId ?? null,
+        });
         if (out.length >= cap) break;
       }
       return out;

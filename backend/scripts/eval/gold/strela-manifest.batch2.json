@@ -1,0 +1,48 @@
+{
+  "_meta": {
+    "tenant": "Стрела (синтетика)",
+    "batch": 2,
+    "source": "T2 — переговоры Логистик Плюс (seed-synthetic-company.ts)",
+    "anchors": 10,
+    "method": "2 непересекающихся агента-разметчика (blind) → сверка → сверялка с базой read-only",
+    "compareResult": "found=7 (B1,B2,B4,B5,B6,B7,B9) · partial=2 (B8,B10) · wrong_type=1 (B3) · missing=0 — знание не потеряно (10/10 присутствуют)",
+    "findings": [
+      "Обязательства с дедлайнами извлечены образцово: commitmentDueDate точен (Zoom→пятница, договор→сегодня, техописание→четверг)",
+      "Zoom-блокер извлечён уверенно (даже 2 blocker-блока + process_step обхода)",
+      "Типология на границах: B3 risk→base 'objection'; B8 task→base 'commitment'; B9 fact→base 'client_request' (база иногда ТОЧНЕЕ словаря разметчика)",
+      "ШУМ РЕЗОЛВИНГА СУЩНОСТЕЙ (под-мёрж синонимов): Битрикс×5, retention×4, Логистик Плюс как client+vendor+customer, Zoom×2 — кандидат в fix-ТЗ",
+      "B10: агрегирующая summary-реплика не собирается в один узел — раскладывается на decision + commitment-трекеры (граф-эквивалент есть, единого блока нет)"
+    ]
+  },
+  "blocks": [
+    { "anchorId": "B1", "signalType": "decision", "gist": "Совет директоров Логистик Плюс: пилот 3 мес на отделе логистики (15 чел); при −30% потерянных задач → годовой контракт, иначе расходятся", "verdict": "found" },
+    { "anchorId": "B2", "signalType": "blocker", "gist": "Прямой интеграции с Zoom нет — блокер для части клиентов (альтернатива: движок Коры или ручная загрузка)", "verdict": "found" },
+    { "anchorId": "B3", "signalType": "risk", "gist": "Клиент отвергает ручную загрузку записей — люди забудут; нужна автоматическая интеграция", "verdict": "wrong_type", "baseType": "objection" },
+    { "anchorId": "B4", "signalType": "commitment", "gist": "Александр: выяснить, входит ли нативная Zoom-интеграция в roadmap Q3, ответ до пятницы", "verdict": "found" },
+    { "anchorId": "B5", "signalType": "commitment", "gist": "Telegram-интеграция работает; Александр настроит её в первую неделю пилота", "verdict": "found" },
+    { "anchorId": "B6", "signalType": "fact", "gist": "Все данные хранятся только на российских серверах — отдельным пунктом договора", "verdict": "found" },
+    { "anchorId": "B7", "signalType": "commitment", "gist": "Александр вышлет договор на пилот сегодня до конца дня", "verdict": "found" },
+    { "anchorId": "B8", "signalType": "task", "gist": "Дарья подготовит техническое описание интеграции (для безопасников) до четверга", "verdict": "partial", "baseType": "commitment" },
+    { "anchorId": "B9", "signalType": "fact", "gist": "Клиенту нужны три вещи: договор на пилот, техописание для безопасников, контакт техспециалиста", "verdict": "found", "baseType": "client_request" },
+    { "anchorId": "B10", "signalType": "decision", "gist": "Виктор резюмирует: готовы на пилот; договор сегодня, техописание к четвергу, ответ по Zoom к пятнице", "verdict": "partial", "note": "база раскладывает резюме на decision+commitment-трекеры, без единого summary-узла" }
+  ],
+  "entities": [
+    { "name": "Логистик Плюс", "type": "client" },
+    { "name": "Виктор", "type": "person" },
+    { "name": "Наталья", "type": "person" },
+    { "name": "Александр", "type": "person" },
+    { "name": "Дарья", "type": "person" },
+    { "name": "Zoom", "type": "tool" },
+    { "name": "Telegram", "type": "tool" },
+    { "name": "отдел логистики", "type": "project" },
+    { "name": "потерянные задачи", "type": "metric" },
+    { "name": "договор на пилот", "type": "document" },
+    { "name": "техническое описание интеграции", "type": "document" }
+  ],
+  "blockEdges": [
+    { "from": "B4", "to": "B2", "relation": "commitment_resolves_blocker" },
+    { "from": "B7", "to": "B9", "relation": "fulfills_client_request" },
+    { "from": "B8", "to": "B9", "relation": "fulfills_client_request" },
+    { "from": "B1", "to": "B10", "relation": "summarized_in" }
+  ]
+}

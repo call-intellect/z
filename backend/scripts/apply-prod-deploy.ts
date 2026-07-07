@@ -75,6 +75,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-llm-core',
+    script: 'scripts/seed-llm-task-routes-personal-day-narrative.ts',
+    hint: 'маршрут personal-day-narrative → deepseek-v4-pro (стабильная json_schema для письма «Твой день»)',
+  },
+  {
+    phase: 'seed-llm-core',
     script: 'scripts/patch-daily-digest-route-deepseek-pro-gpt-kie.ts',
     hint: 'маршрут operations-daily-digest → deepseek-v4-pro → gpt-5.4-mini → kie/gemini-3.1-pro (День компании v2 Ф5); уважает админ-правки, идемпотентно',
   },
@@ -120,6 +125,11 @@ const STEPS: Step[] = [
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-goals-knobs.ts',
     hint: 'goals.* + tracker.goalAlignmentLow* пороги/лимиты (Ф9 крутилки goals-engine)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-theme-autofill.ts',
+    hint: 'theme.autofill.* — крутилки авто-наполнения пользовательских тем (living-topic-space Ф3)',
   },
   {
     phase: 'seed-base',
@@ -213,6 +223,16 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-chat-v2-recall.ts',
+    hint: 'knowledge.chatV2{GraphAlwaysExpand,FilterMode,FilterBoostWeight,EntityLinkHops,CascadeEnabled,CascadeMinPool,AggregationMode,UnderstandGrounding,GroundingTopK,AdaptiveHops} — 6 рубильников + 4 порога переработки recall «Мастера» (ТЗ 2026-07-02-recall-master-retrieval-redesign)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-recall-to-99.ts',
+    hint: 'knowledge.chatV2{AssertiveSynthesis,GroundednessMode,GroundingEmbedding,GroundingEmbeddingTopK,GroundingEmbeddingMinSim,DeterministicPeriod,GraphCypherRecall,GraphCypherMaxDepth} + knowledge.graphReconcile{Enabled,BatchSize} — 10 крутилок ТЗ recall-master-to-99 (ассертивный синтез, эмбеддинг-резолв, детерминизм периода, AGE-в-recall, reconcile)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-personal-brief.ts',
     hint: 'operations.personal_daily_brief.{enabled,morning_hour} + operations.knows_who.enabled + knows_who.min_confidence (TZ-1 Ф2 движок рядового)',
   },
@@ -258,6 +278,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-provenance-friction.ts',
+    hint: 'provenance.frictionVerbatimRoles=[owner,admin] — роли, видящие дословные реплики конфликта (friction) в дровере «Откуда это»; прочие видят тему+встречу без реплик (drilldown-provenance-parity Ф1)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-document-attribution.ts',
     hint: 'documents.ai_attribution.enabled kill-switch (ТЗ-4 Ф10 LLM-подсказка атрибуции документа: docType + тема)',
   },
@@ -295,6 +320,11 @@ const STEPS: Step[] = [
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-clone-coverage.ts',
     hint: 'knowledgeClone.profileMinConfidence (0.55) — мягкий порог материализации профиля-клона (F-7): provisional/light ≥ порога сохраняются, deep остаётся на ручной курации',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-clone-construction.ts',
+    hint: 'knowledge.skillClusterSimilarityThreshold (0.72) + knowledge.personaRoleAggMinPersons (1) — фикс построения клонов: порог склейки блоков вынесен из захардкоженного 0.78, одиночная должность получает клон роли (clone-construction-fixes)',
   },
   {
     phase: 'seed-base',
@@ -337,6 +367,21 @@ const STEPS: Step[] = [
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-support.ts',
     hint: 'support_critic_min_groundedness=0.6 (R-INV-5) + support_promote_min_csat=4 (TZ support-desk Ф3 гейт промоута R-INV-2)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-entity-consolidate.ts',
+    hint: 'knowledge.entityConsolidateSameName{Enabled,BatchSize} — kill-switch + батч крон-консолидатора одноимённых сущностей (Ф1b кросс-типовая консолидация)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-table-graphsync.ts',
+    hint: 'table.graphsync.{enabled,min_confidence} — kill-switch + порог авто-создания строк умных таблиц из графа (smart-tables Ф4)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-employee-stand.ts',
+    hint: 'me.tasks.doneWindowDays + operations.personal_day_narrative.{enabled,evening_hour} + operations.self_signals.plan_not_closing_streak_days + knowledge.expertise.self_{max_blocks_scanned,top_k} (стенд сотрудника)',
   },
 
   ...[
@@ -437,6 +482,7 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-backfill-entity-id-person.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-person-relationship.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-backfill-card-versions.ts', skipBootstrap: true },
+  { phase: 'patch', script: 'scripts/backfill-rule-summaries.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-document-use-cases-default.ts', skipBootstrap: true },
   {
     phase: 'patch',
@@ -873,8 +919,8 @@ const STEPS: Step[] = [
   },
   {
     phase: 'backfill',
-    script: 'scripts/backfill-context-header-reembed.ts',
-    hint: 'ре-эмбеддинг IdeaBlock с contextual-header v2 (компании/состав/заголовок источника) + REINDEX HNSW; идемпотентно по contextHeaderVersion (Ф7). Запускать ПОСЛЕ backfill-source-layer',
+    script: 'scripts/backfill-reembed-blocks-no-header.ts',
+    hint: 'ре-эмбеддинг IdeaBlock БЕЗ контекст-хедера (block-space=query-space, Ф2 консолидации) + REINDEX HNSW; идемпотентно по contextHeaderVersion=noheader-v1. ОБЯЗАТЕЛЬНО вместе с выкатом кода (иначе смешанное header-ful/header-less пространство → KNN хуже). Без --org=ALL orgs',
     skipBootstrap: true,
   },
   {
@@ -921,6 +967,24 @@ const STEPS: Step[] = [
     skipBootstrap: true,
     args: ['--apply'],
     hint: 'Пакет A: перепривязать осиротевшие ссылки на уже-слитые сущности к канону (idempotent)',
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-client-to-customer.ts',
+    skipBootstrap: true,
+    hint: 'Ф1b: детерминированный client→customer для активных Entity (idempotent); ДО консолидации одноимённых',
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-entity-consolidate-same-name.ts',
+    skipBootstrap: true,
+    hint: 'Ф1b: кросс-типовая консолидация одноимённых сущностей (после client→customer); LLM-арбитр + матрица приоритета типов',
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-table-graphsync.ts',
+    skipBootstrap: true,
+    hint: 'smart-tables Ф4: проставить Table.graphSync системным таблицам из каталога + reconcile строк из графа (Goal/Experiment/IdeaBlock) по всем Org; идемпотентно',
   },
 ];
 

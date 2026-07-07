@@ -20,6 +20,7 @@ import {
   narrowToChatIntent,
 } from '../dialog-layer/services/query-classifier.service';
 import {
+  RAG_GROUNDEDNESS_LENIENT_SYSTEM_PROMPT,
   RAG_GROUNDEDNESS_SYSTEM_PROMPT,
   RagGroundednessSchema,
   buildRagGroundednessUser,
@@ -28,6 +29,7 @@ import type {
   ChatV2AnswerKind,
   ChatV2Episode,
   ChatV2Stage,
+  RetrievalTrace,
 } from '../knowledge-core/services/chat-v2.service';
 
 import { ChatV2ConversationsService } from './services/conversations.service';
@@ -71,6 +73,7 @@ export interface EphemeralAnswer {
   mode: ChatV2Mode;
   answerKind: ChatV2AnswerKind;
   episodes?: ChatV2Episode[];
+  retrievalTrace?: RetrievalTrace;
 }
 
 interface ResolveAnswerArgs {
@@ -86,6 +89,7 @@ interface ResolveAnswerArgs {
   history: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
   conversationSummary: string | null;
   onStage?: (stage: ChatV2Stage) => void;
+  collectTrace?: boolean;
 }
 
 interface ResolvedAnswer {
@@ -99,6 +103,7 @@ interface ResolvedAnswer {
   cacheHit: boolean;
   answerKind: ChatV2AnswerKind;
   episodes?: ChatV2Episode[];
+  retrievalTrace?: RetrievalTrace;
 }
 
 @Injectable()
@@ -261,6 +266,7 @@ export class ChatV2OrchestrationService {
     intent?: DialogIntent;
     asOf?: string;
     onStage?: (stage: ChatV2Stage) => void;
+    collectTrace?: boolean;
   }): Promise<EphemeralAnswer> {
     const mode: ChatV2Mode = input.mode ?? this.cfg.chatV2.defaultMode;
     const scope: ChatV2Scope = input.scope ?? 'org';
@@ -289,6 +295,7 @@ export class ChatV2OrchestrationService {
       history: input.history,
       conversationSummary: input.conversationSummary ?? null,
       onStage: input.onStage,
+      collectTrace: input.collectTrace,
     });
 
     return {
@@ -301,6 +308,7 @@ export class ChatV2OrchestrationService {
       mode,
       answerKind: resolved.answerKind,
       episodes: resolved.episodes,
+      retrievalTrace: resolved.retrievalTrace,
     };
   }
 
@@ -382,6 +390,7 @@ export class ChatV2OrchestrationService {
       queryClass: dialogResult.queryClass,
       queryClassConfidence: dialogResult.queryClassConfidence,
       onStage: args.onStage,
+      collectTrace: args.collectTrace,
     });
 
     const usedBlockIds = (result.retrievalMeta?.usedBlockIds as string[] | undefined) ?? [];
@@ -439,6 +448,7 @@ export class ChatV2OrchestrationService {
       cacheHit: false,
       answerKind: result.answerKind,
       episodes: result.episodes,
+      retrievalTrace: result.retrievalTrace,
       llmMeta: result.llmMeta,
       retrievalMeta: result.retrievalMeta,
     };
@@ -454,7 +464,11 @@ export class ChatV2OrchestrationService {
   }): Promise<{ text: string; citations: unknown[] }> {
     const unchanged = { text: args.text, citations: args.citations };
 
-    const mode = await this.cfg.getDynamic<string>('rag.groundedness_mode', undefined, 'on');
+    const mode = await this.cfg.getDynamic<string>(
+      'knowledge.chatV2GroundednessMode',
+      undefined,
+      'lenient',
+    );
     if (mode === 'off') {
       return unchanged;
     }
@@ -479,13 +493,19 @@ export class ChatV2OrchestrationService {
       }
     }
 
+    const judgeSystem =
+      mode === 'lenient'
+        ? RAG_GROUNDEDNESS_LENIENT_SYSTEM_PROMPT
+        : RAG_GROUNDEDNESS_SYSTEM_PROMPT;
+
     let grounded: boolean;
+    let fabricated: boolean | undefined;
     try {
       const out = await this.llm.call({
         taskType: 'rag-groundedness',
         tenantId: args.tenantId,
         userId: args.userId,
-        systemPrompt: withInjectionGuard(RAG_GROUNDEDNESS_SYSTEM_PROMPT),
+        systemPrompt: withInjectionGuard(judgeSystem),
         userMessage: wrapUserData(
           buildRagGroundednessUser(args.question, args.text, blocksStr),
         ),
@@ -498,6 +518,7 @@ export class ChatV2OrchestrationService {
         return unchanged;
       }
       grounded = parsed.data.grounded;
+      fabricated = parsed.data.fabricated;
     } catch (err) {
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -509,12 +530,17 @@ export class ChatV2OrchestrationService {
     if (grounded) {
       return unchanged;
     }
-
     if (mode === 'shadow') {
       this.metrics.incRagAbstain({ mode: 'shadow' });
       return unchanged;
     }
-
+    if (mode === 'lenient') {
+      if (fabricated === true) {
+        this.metrics.incRagAbstain({ mode: 'lenient' });
+        return { text: GROUNDEDNESS_HONEST_ABSTAIN, citations: [] };
+      }
+      return unchanged;
+    }
     this.metrics.incRagAbstain({ mode: 'on' });
     return { text: GROUNDEDNESS_HONEST_ABSTAIN, citations: [] };
   }

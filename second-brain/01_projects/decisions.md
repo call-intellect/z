@@ -28,7 +28,7 @@ Decision — центральная сущность для β-4 Insights («к�
 Воркер передаёт блок в `Specialist33Service.processBlock`, который:
 
 1. Подгружает блок + evidence + контекст ±2 минуты той же RawEvent (соседние блоки в окне — для извлечения rationale из reasoning-блоков рядом).
-2. LLM-вызов `decision-extract` (DeepSeek-flash → OpenAI gpt-5.4-mini → Ollama qwen3:30b) → черновик `{statement, rationale, alternatives, decidedByPersonHints, affectsEntityHints, decidedAt?, deadline?, status?, confidence}`.
+2. LLM-вызов `decision-extract` (DeepSeek `deepseek-v4-pro` → OpenAI gpt-5.4-mini → Ollama qwen3:30b; переведён на Pro патчем `patch-task-extractor-route-pro.ts`, E 2026-06-22) → черновик `{statement, rationale, alternatives, decidedByPersonHints, affectsEntityHints, decidedAt?, deadline?, status?, confidence}`.
 3. Резолв `decidedByPersonIds`: name-match по `Person.name` (предпочтительно `relationship='employee'`); если ничего не нашли — берём subject-Person'ы блока через `IdeaBlockEntity → Entity{type=person} → Person`.
 4. Резолв `affectsEntityIds`: для hint'ов с типами {customer, project, product, vendor} — `EntityResolutionService.findOrCreate`. `process` пока не поддерживается (Process — отдельная таблица, не Entity).
 5. KNN top-5 похожих Decision того же Org через cosine на embedding (fallback — ILIKE).
@@ -39,9 +39,11 @@ Decision — центральная сущность для β-4 Insights («к�
    - **supersedes** → создаётся новый Decision с `supersedesId=existing.id` и `validFrom`; старый помечается `status='superseded'` + `validUntil`. Эмитим `ConflictItem(resourceType='decision', relationType='supersedes')` с suggested resolution='evolving'.
 8. Embedding (best-effort, raw SQL update).
 9. `CurationService.triage` — `decision` в `CURATION_CRITICAL_TYPES_DEFAULT` → **всегда deep review** (CurationItem).
-10. `Specialist33ProbeService.checkAndEmitForDecision` — 2 синхронных trigger'а (missing_decider, no_deadline_critical).
+10. **(НЕ РЕАЛИЗОВАНО)** Проактивный эмиттер решений отсутствует в коде: файла `specialist-3-3-probe.service.ts` / класса `Specialist33ProbeService` нет, `checkAndEmitForDecision` не вызывается. Реестр решений **pull-only** — очередь решений владельцу никто не пушит.
 
-## Probe-events
+## Probe-events (ДЕКЛАРИРОВАНЫ, НЕ ЭМИТЯТСЯ)
+
+> ⚠️ **Статус: не реализовано в runtime.** Ниже — задуманная спецификация probe/cron по решениям. Backend-эмиттера НЕТ (`Specialist33ProbeService` в коде отсутствует). Причины/reason'ы `decision.missing_decider/no_deadline_critical/overdue/outcome_unknown` и сигнал `decision_no_owner` объявлены только декларативно (комментарии в `schema.prisma` + `frontend/src/domain/assistant-signals.ts`); proactive-watcher их НЕ генерит. Оставлено как контракт на будущее.
 
 | Reason | Trigger | Получатели |
 |---|---|---|
@@ -51,9 +53,7 @@ Decision — центральная сущность для β-4 Insights («к�
 | `decision.competing_versions` | KNN нашёл близкое решение, supersede-detect неуверен. На β-3 — не вызывается автоматически, оставлено для будущей админ-страницы | admin'ы Org |
 | `decision.outcome_unknown` (cron) | status='implemented' AND actualOutcomes=null AND decidedAt < now − 3 мес | owner решения или admin'ы |
 
-Cron-trigger'ы (overdue, outcome_unknown) — `@Cron('0 5 * * *')` в `Specialist33ProbeService.runDailyChecks`. Идёт по всем Org'ам, по 100 кандидатов на проход (защита от взрывного fan-out'а).
-
-Отправка — `ConversationalService.sendNotification({eventType:'specialist.probe', dataClass:'sensitive', ...})`.
+Задумывалось: cron-trigger'ы (overdue, outcome_unknown) в `Specialist33ProbeService.runDailyChecks`, отправка через `ConversationalService.sendNotification({eventType:'specialist.probe', dataClass:'sensitive', ...})`. В коде ни того, ни другого нет.
 
 ## Идемпотентность combined-пути + решения встречи в UI (F1/F3 + D5, 2026-06-22)
 
@@ -161,7 +161,8 @@ Master-detail (`frontend/app/(authenticated)/decisions/`):
 - `decision-supersede-detect` — арбитр {new/merge/supersedes}. JSON Schema strict.
 
 Default chain (см. `scripts/seed-llm-task-routes-decisions.ts`):
-- primary: `deepseek-v4-flash`
+- `decision-extract` primary: `deepseek-v4-pro` (E 2026-06-22, `patch-task-extractor-route-pro.ts`);
+- `decision-supersede-detect` primary: `deepseek-v4-flash` (остаётся на flash);
 - secondary: `openai-via-proxy gpt-5.4-mini`
 - tertiary: `ollama qwen3:30b` (sensitive-capable)
 
@@ -169,10 +170,7 @@ Default chain (см. `scripts/seed-llm-task-routes-decisions.ts`):
 
 ## Cron'ы
 
-- `@Cron('0 5 * * *')` в `Specialist33ProbeService.runDailyChecks` — обходит все Org и проверяет:
-  - decision.overdue (deadline < now + status не финальный)
-  - decision.outcome_unknown (implemented + null outcomes + >3 мес)
-- Лимит — 100 decisions на Org за проход.
+> ⚠️ **Не реализовано.** Планировался `@Cron('0 5 * * *')` в `Specialist33ProbeService.runDailyChecks` (обход всех Org, проверка decision.overdue / decision.outcome_unknown, лимит 100 decisions на Org). Этого cron'а в коде нет — по решениям не бежит ни один периодический надзор.
 
 ## Что отложено в γ+
 
@@ -216,7 +214,6 @@ Backend:
 - `backend/scripts/postgres-init.sql` — HNSW + tsvector + GIN на массивах для `decisions`.
 - `backend/src/modules/knowledge-core/workers/specialist-3-3-decisions.worker.ts`
 - `backend/src/modules/knowledge-core/services/specialist-3-3-decisions.service.ts`
-- `backend/src/modules/knowledge-core/services/specialist-3-3-probe.service.ts`
 - `backend/src/modules/knowledge-core/services/specialist-3-3-card-handler.service.ts`
 - `backend/src/modules/knowledge-core/specialist-3-3.module.ts`
 - `backend/src/modules/knowledge-core/prompts/decision-extract.prompt.ts`

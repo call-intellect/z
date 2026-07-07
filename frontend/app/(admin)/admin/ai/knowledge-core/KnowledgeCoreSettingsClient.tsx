@@ -95,6 +95,14 @@ const GROUPS: SettingGroup[] = [
         schema: ratio01(0.86),
         defaultValue: 0.86,
       },
+      {
+        key: "knowledge.entityGraphPairsPerOrg",
+        label: "Кап пар на Org (графостроитель)",
+        description:
+          "Сколько топ-пар со-упоминаний обрабатывать за один прогон построителя графа сущностей.",
+        schema: positiveInt(50),
+        defaultValue: 50,
+      },
     ],
   },
   {
@@ -123,6 +131,44 @@ const GROUPS: SettingGroup[] = [
         description: "Если в Org меньше блоков — кластеризация пропускается.",
         schema: positiveInt(20),
         defaultValue: 20,
+      },
+      {
+        key: "theme.autofill.enabled",
+        label: "Авто-наполнение тем (kill-switch)",
+        description:
+          "Пользовательские темы сами наполняются блоками ≥ порога. Выключение останавливает воркер.",
+        schema: z.boolean().default(true),
+        defaultValue: true,
+      },
+      {
+        key: "theme.autofill.threshold",
+        label: "Порог авто-добавления в тему",
+        description:
+          "Минимальная близость блока к теме для авто-привязки. По умолчанию 0.72.",
+        schema: ratio01(0.72),
+        defaultValue: 0.72,
+      },
+      {
+        key: "theme.autofill.scanWindowDays",
+        label: "Окно свежих блоков (дней)",
+        description: "Сколько дней назад сканировать блоки для авто-наполнения.",
+        schema: positiveInt(14),
+        defaultValue: 14,
+      },
+      {
+        key: "theme.autofill.maxPerScan",
+        label: "Макс. авто-добавлений за проход",
+        description: "Потолок авто-привязок на тему за один проход воркера.",
+        schema: positiveInt(50),
+        defaultValue: 50,
+      },
+      {
+        key: "theme.autofill.dedupeSimilarity",
+        label: "Порог near-дубля (не добавлять)",
+        description:
+          "Кандидат-дубль не добавляется, если косинус к уже выбранному ≥ этого.",
+        schema: ratio01(0.97),
+        defaultValue: 0.97,
       },
     ],
   },
@@ -192,6 +238,14 @@ const GROUPS: SettingGroup[] = [
         defaultValue: 0.8,
       },
       {
+        key: "knowledge.skillClusterSimilarityThreshold",
+        label: "Порог склейки блоков в трейт",
+        description:
+          "Cosine-порог, при котором похожие reasoning-блоки склеиваются в один навык/принцип клона. Ниже — трейты собираются легче из перефразировок.",
+        schema: ratio01(0.72),
+        defaultValue: 0.72,
+      },
+      {
         key: "knowledge.skillLookbackMonths",
         label: "Глубина просмотра (мес.)",
         schema: positiveInt(6),
@@ -220,15 +274,18 @@ const GROUPS: SettingGroup[] = [
       {
         key: "knowledge.personaMinTraits",
         label: "Мин. трейтов для персоны",
-        schema: positiveInt(5),
-        defaultValue: 5,
+        description:
+          "Минимум черт метода (skill+value+motivation+process_marker), при котором собирается клон. Совпадает с код-дефолтом (3).",
+        schema: positiveInt(3),
+        defaultValue: 3,
       },
       {
         key: "knowledge.personaRoleAggMinPersons",
         label: "Мин. персон для роли",
-        description: "Сколько людей нужно для агрегата роли.",
-        schema: positiveInt(3),
-        defaultValue: 3,
+        description:
+          "Сколько носителей нужно для сборки клона роли. 1 — одиночная должность (типовой SMB) тоже получает клон.",
+        schema: positiveInt(1),
+        defaultValue: 1,
       },
       {
         key: "knowledge.executablePersonaThresholdTraitsCount",

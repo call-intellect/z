@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { GraphService } from '../../../common/graph/graph.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 
+import { RetrievalTraceSink } from './chat-v2-retrieval-trace';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { ACTIVE_LINK_FILTER } from './link-read-filter';
 
@@ -23,6 +25,8 @@ import { ACTIVE_LINK_FILTER } from './link-read-filter';
  * search.service.ts.
  */
 export type ChatV2Scope = 'org' | 'meeting' | 'card' | 'theme' | 'entity';
+
+const GRAPH_CYPHER_MAX_SEEDS = 10;
 
 export interface RetrievalInput {
   tenantId: string;
@@ -58,6 +62,12 @@ export interface RetrievalInput {
   entityIds?: string[];
   themeBranches?: string[];
   bitemporalActiveOnly?: boolean;
+  graphAlwaysExpand?: boolean;
+  filterMode?: 'boost' | 'hard';
+  filterBoostWeight?: number;
+  entityLinkHops?: number;
+  graphCypherRecall?: boolean;
+  graphCypherMaxDepth?: number;
 }
 
 export interface RankedBlockId {
@@ -189,6 +199,9 @@ export class ChatV2RetrievalService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(GraphService)
+    private readonly graph?: GraphService,
   ) {}
 
   /**
@@ -237,7 +250,10 @@ export class ChatV2RetrievalService {
   /**
    * Главный entry-point. Возвращает blockId'ы в порядке убывания релевантности.
    */
-  async fetchCandidates(input: RetrievalInput): Promise<RankedBlockId[]> {
+  async fetchCandidates(
+    input: RetrievalInput,
+    trace?: RetrievalTraceSink,
+  ): Promise<RankedBlockId[]> {
     let qvec: number[] | null = null;
     try {
       qvec = await this.embeddings.embedQuery(input.query);
@@ -287,12 +303,9 @@ export class ChatV2RetrievalService {
 
     // 2) Ранжируем.
     const structural = hasStructuralFilter(input);
+    const boostMode = structural && input.filterMode === 'boost';
     let ranked: RankedBlockId[];
-    if (structural) {
-      // Query Understanding Волна 1 (Ф3) — recall-safe фильтрованный ретрив:
-      // точный полный скан по WHERE-фильтрованному множеству, combined-score
-      // ORDER BY (НЕ HNSW `ORDER BY embedding <=> qvec LIMIT`). Жёсткий
-      // pre-filter на HNSW роняет recall — полный скан нет.
+    if (structural && !boostMode) {
       ranked = await this.rankByStructuralFilter({
         tenantId: input.tenantId,
         blockIds: poolBlockIds,
@@ -307,6 +320,22 @@ export class ChatV2RetrievalService {
         },
         limit: input.limit,
       });
+    } else if (boostMode) {
+      ranked = await this.rankByStructuralBoost({
+        tenantId: input.tenantId,
+        blockIds: poolBlockIds,
+        qvec,
+        filters: {
+          dateFrom: input.dateFrom,
+          dateTo: input.dateTo,
+          signalTypes: input.signalTypes,
+          entityIds: input.entityIds,
+          themeBranches: input.themeBranches,
+          bitemporalActiveOnly: input.bitemporalActiveOnly,
+        },
+        limit: input.limit,
+        boostWeight: input.filterBoostWeight ?? 0.3,
+      });
     } else {
       ranked = await this.rankByCosineOrRecency({
         tenantId: input.tenantId,
@@ -316,15 +345,30 @@ export class ChatV2RetrievalService {
         limit: input.limit,
       });
     }
-    if (ranked.length === 0) return [];
+    trace?.addDoorHits(
+      input.query,
+      structural ? 'structural' : 'semantic',
+      ranked.map((r) => ({ blockId: r.blockId, score: r.score })),
+    );
+    if (ranked.length === 0) {
+      if (structural) trace?.markGraphSkipped('structural-filter-active');
+      else if (input.graphHops <= 0) trace?.markGraphSkipped('graphHops<=0');
+      else trace?.markGraphSkipped('no-seed-blocks');
+      return [];
+    }
 
     // 3) 1-hop graph expansion (по IdeaBlockLink, status='active').
-    // При структурном фильтре граф ПРОПУСКАЕМ: фильтр задаёт точное множество
-    // ответа, а 1-hop-соседи вне фильтра вернули бы тихие типовые/временные
-    // ошибки (совпавшие соседи и так уже в pool).
-    const graphAdded =
-      !structural && input.graphHops > 0
-        ? await this.expandViaGraph({
+    const graphAlwaysExpand = input.graphAlwaysExpand === true;
+    const graphEligible =
+      input.graphHops > 0 && (!structural || graphAlwaysExpand);
+    if (input.graphHops <= 0) {
+      trace?.markGraphSkipped('graphHops<=0');
+    } else if (structural && !graphAlwaysExpand) {
+      trace?.markGraphSkipped('structural-filter-active');
+    }
+    const graphAdded = graphEligible
+      ? await this.expandViaGraph(
+          {
             tenantId: input.tenantId,
             seedBlockIds: ranked.map((r) => r.blockId),
             knownIds: new Set(ranked.map((r) => r.blockId)),
@@ -332,10 +376,83 @@ export class ChatV2RetrievalService {
             validAt: input.validAt ?? null,
             accessWhere: input.accessWhere,
             contourGroupId: input.contourGroupId,
-          })
+          },
+          trace,
+        )
+      : [];
+
+    const graphAdded2 =
+      graphEligible && input.graphHops >= 2 && graphAdded.length > 0
+        ? await this.expandViaGraph(
+            {
+              tenantId: input.tenantId,
+              seedBlockIds: graphAdded.map((r) => r.blockId),
+              knownIds: new Set([
+                ...ranked.map((r) => r.blockId),
+                ...graphAdded.map((r) => r.blockId),
+              ]),
+              extraLimit: input.graphHops * 5,
+              validAt: input.validAt ?? null,
+              accessWhere: input.accessWhere,
+              contourGroupId: input.contourGroupId,
+            },
+            trace,
+          )
         : [];
 
-    return [...ranked, ...graphAdded];
+    const entityLinkHops = input.entityLinkHops ?? 0;
+    const entityLinkAdded =
+      entityLinkHops > 0 && input.entityIds && input.entityIds.length > 0
+        ? await this.expandViaEntityLinks(
+            {
+              tenantId: input.tenantId,
+              entityIds: input.entityIds,
+              knownIds: new Set([
+                ...ranked.map((r) => r.blockId),
+                ...graphAdded.map((r) => r.blockId),
+                ...graphAdded2.map((r) => r.blockId),
+              ]),
+              extraLimit: input.limit,
+              validAt: input.validAt ?? null,
+              accessWhere: input.accessWhere,
+              contourGroupId: input.contourGroupId,
+            },
+            trace,
+          )
+        : [];
+
+    const graphCypherAdded =
+      input.graphCypherRecall === true &&
+      input.graphHops >= 2 &&
+      input.entityIds !== undefined &&
+      input.entityIds.length > 0
+        ? await this.expandViaGraphCypher(
+            {
+              tenantId: input.tenantId,
+              entityIds: input.entityIds,
+              knownIds: new Set([
+                ...ranked.map((r) => r.blockId),
+                ...graphAdded.map((r) => r.blockId),
+                ...graphAdded2.map((r) => r.blockId),
+                ...entityLinkAdded.map((r) => r.blockId),
+              ]),
+              extraLimit: input.limit,
+              maxDepth: input.graphCypherMaxDepth ?? 3,
+              validAt: input.validAt ?? null,
+              accessWhere: input.accessWhere,
+              contourGroupId: input.contourGroupId,
+            },
+            trace,
+          )
+        : [];
+
+    return [
+      ...ranked,
+      ...graphAdded,
+      ...graphAdded2,
+      ...entityLinkAdded,
+      ...graphCypherAdded,
+    ];
   }
 
   /**
@@ -523,6 +640,54 @@ export class ChatV2RetrievalService {
     }));
   }
 
+  async listEpisodesByDateRange(args: {
+    tenantId: string;
+    dateFrom: Date;
+    dateTo: Date;
+    limit: number;
+  }): Promise<
+    Array<{
+      id: string;
+      title: string;
+      occurredAt: Date;
+      kind: string;
+      rawEventId: string;
+    }>
+  > {
+    const { tenantId, dateFrom, dateTo, limit } = args;
+    if (limit <= 0) return [];
+    try {
+      const rows = await this.prisma.sourceEpisode.findMany({
+        where: {
+          tenantId,
+          occurredAt: { gte: dateFrom, lte: dateTo },
+        },
+        select: {
+          id: true,
+          title: true,
+          occurredAt: true,
+          kind: true,
+          rawEventId: true,
+        },
+        orderBy: { occurredAt: 'desc' },
+        take: limit,
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        occurredAt: r.occurredAt,
+        kind: r.kind,
+        rawEventId: r.rawEventId,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: listEpisodesByDateRange упал — возвращаем []',
+      );
+      return [];
+    }
+  }
+
   async selectTopThemes(args: {
     tenantId: string;
     query: string;
@@ -558,7 +723,7 @@ export class ChatV2RetrievalService {
     const pTenant = pushParam(tenantId);
     const pVec = pushParam(toVectorLiteral(qvec));
     const branchClause = branches
-      ? ` AND "branch" = ANY(${pushParam(branches)}::text[])`
+      ? ` AND "branch"::text = ANY(${pushParam(branches)}::text[])`
       : '';
     const pLimit = pushParam(limit);
 
@@ -655,7 +820,7 @@ export class ChatV2RetrievalService {
       //    НЕЛЬЗЯ: rankByStructuralFilter делает recall-safe полный скан по
       //    pool'у, а pre-narrow до 5000 ближайших уронил бы recall (см. Ф3).
       // Дальше rankByCosineOrRecency обрежет до limit'а тем же вектором.
-      if (qvec && !hasStructuralFilter(input)) {
+      if (qvec && (!hasStructuralFilter(input) || input.filterMode === 'boost')) {
         try {
           const params: unknown[] = [];
           const pushParam = (v: unknown): string => {
@@ -1111,6 +1276,66 @@ export class ChatV2RetrievalService {
     }));
   }
 
+  private async rankByStructuralBoost(args: {
+    tenantId: string;
+    blockIds: string[];
+    qvec: number[] | null;
+    filters: Omit<StructuralFilterArgs, 'tenantParamRef'>;
+    limit: number;
+    boostWeight: number;
+  }): Promise<RankedBlockId[]> {
+    const { tenantId, blockIds, qvec, filters, limit, boostWeight } = args;
+    if (blockIds.length === 0) return [];
+
+    if (!qvec) {
+      const rows = await this.prisma.ideaBlock.findMany({
+        where: { tenantId, status: 'canonical', id: { in: blockIds } },
+        select: { id: true, updatedAt: true },
+        orderBy: { updatedAt: 'desc' },
+        take: limit,
+      });
+      return rows.map((r) => ({ blockId: r.id, score: 0, fromGraph: false }));
+    }
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const pTenant = pushParam(tenantId);
+    const pIds = pushParam(blockIds);
+    const pVec = pushParam(toVectorLiteral(qvec));
+    const pBoost = pushParam(boostWeight);
+    const predicates = buildStructuralPredicates(
+      { ...filters, tenantParamRef: pTenant },
+      pushParam,
+    );
+    const pLimit = pushParam(limit);
+    const boostExpr =
+      predicates.length > 0
+        ? ` + (${pBoost})::float8 * ((${predicates
+            .map((p) => `(CASE WHEN ${p} THEN 1 ELSE 0 END)`)
+            .join(' + ')})::float8 / ${predicates.length}::float8)`
+        : '';
+    const sql = `
+      SELECT b.id,
+             ((1 - (b.embedding <=> ${pVec}::vector(1536)))${boostExpr}) AS score
+      FROM "IdeaBlock" b
+      WHERE b."tenantId" = ${pTenant}
+        AND b.status = 'canonical'
+        AND b.id = ANY(${pIds}::text[])
+        AND b.embedding IS NOT NULL
+      ORDER BY score DESC
+      LIMIT ${pLimit}
+    `;
+    const rows = await this.prisma.$queryRawUnsafe<RankedRow[]>(sql, ...params);
+    return rows.map((r) => ({
+      blockId: r.id,
+      score: toFiniteNumber(r.score) ?? 0,
+      fromGraph: false,
+    }));
+  }
+
   // ─────────────────────────── graph expansion ───────────────────────────
 
   /**
@@ -1118,17 +1343,20 @@ export class ChatV2RetrievalService {
    * Учитываем все типы связей — для chat'а полезны и `causes`, и `develops`,
    * и `shares_topic`, и `shares_entity`. Лимит — `extraLimit` всего.
    */
-  private async expandViaGraph(args: {
-    tenantId: string;
-    seedBlockIds: string[];
-    knownIds: Set<string>;
-    extraLimit: number;
-    validAt: Date | null;
-    accessWhere?: Record<string, unknown>;
-    /** Support-desk Ф2 (R-INV-1) — закрытый контур: 1-hop-соседи тоже обязаны
-     *  быть в контуре, иначе граф-расширение «протечёт» наружу. Безусловный. */
-    contourGroupId?: string;
-  }): Promise<RankedBlockId[]> {
+  private async expandViaGraph(
+    args: {
+      tenantId: string;
+      seedBlockIds: string[];
+      knownIds: Set<string>;
+      extraLimit: number;
+      validAt: Date | null;
+      accessWhere?: Record<string, unknown>;
+      /** Support-desk Ф2 (R-INV-1) — закрытый контур: 1-hop-соседи тоже обязаны
+       *  быть в контуре, иначе граф-расширение «протечёт» наружу. Безусловный. */
+      contourGroupId?: string;
+    },
+    trace?: RetrievalTraceSink,
+  ): Promise<RankedBlockId[]> {
     const { tenantId, seedBlockIds, knownIds, extraLimit, validAt } = args;
     if (seedBlockIds.length === 0 || extraLimit <= 0) return [];
 
@@ -1217,7 +1445,7 @@ export class ChatV2RetrievalService {
     });
     const valid = new Set(canonical.map((b) => b.id));
 
-    return sorted
+    const result = sorted
       .filter(([id]) => valid.has(id))
       .map(([id, conf]) => ({
         blockId: id,
@@ -1225,6 +1453,276 @@ export class ChatV2RetrievalService {
         score: -1 + conf * 0.001,
         fromGraph: true,
       }));
+
+    if (trace) {
+      await this.recordGraphExpansionTrace(
+        trace,
+        tenantId,
+        seedBlockIds,
+        result.map((r) => r.blockId),
+        temporalWhere,
+      );
+    }
+
+    return result;
+  }
+
+  private async recordGraphExpansionTrace(
+    trace: RetrievalTraceSink,
+    tenantId: string,
+    seedBlockIds: string[],
+    neighborIds: string[],
+    temporalWhere: Record<string, unknown>,
+  ): Promise<void> {
+    if (neighborIds.length === 0) {
+      trace.addGraphExpansion(seedBlockIds, []);
+      return;
+    }
+    const seedSet = new Set(seedBlockIds);
+    const neighborSet = new Set(neighborIds);
+    try {
+      const edges = await this.prisma.ideaBlockLink.findMany({
+        where: {
+          tenantId,
+          ...ACTIVE_LINK_FILTER,
+          ...temporalWhere,
+          OR: [
+            { fromBlockId: { in: seedBlockIds }, toBlockId: { in: neighborIds } },
+            { fromBlockId: { in: neighborIds }, toBlockId: { in: seedBlockIds } },
+          ],
+        },
+        select: {
+          fromBlockId: true,
+          toBlockId: true,
+          relationType: true,
+          confidence: true,
+        },
+        orderBy: { confidence: 'desc' },
+      });
+      const seen = new Set<string>();
+      const neighbors = [];
+      for (const e of edges) {
+        const neighbor = neighborSet.has(e.toBlockId) ? e.toBlockId : e.fromBlockId;
+        const seed = seedSet.has(e.fromBlockId) ? e.fromBlockId : e.toBlockId;
+        if (seen.has(neighbor)) continue;
+        seen.add(neighbor);
+        neighbors.push({
+          blockId: neighbor,
+          viaRelation: String(e.relationType),
+          fromBlockId: seed,
+          confidence: toFiniteNumber(e.confidence) ?? 0,
+          viaSource: 'block-link' as const,
+        });
+      }
+      trace.addGraphExpansion(seedBlockIds, neighbors);
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: recordGraphExpansionTrace упал — трейс без деталей рёбер',
+      );
+      trace.addGraphExpansion(
+        seedBlockIds,
+        neighborIds.map((id) => ({
+          blockId: id,
+          viaRelation: 'unknown',
+          fromBlockId: seedBlockIds[0] ?? id,
+          confidence: 0,
+          viaSource: 'block-link' as const,
+        })),
+      );
+    }
+  }
+
+  private async expandViaEntityLinks(
+    args: {
+      tenantId: string;
+      entityIds: string[];
+      knownIds: Set<string>;
+      extraLimit: number;
+      validAt: Date | null;
+      accessWhere?: Record<string, unknown>;
+      contourGroupId?: string;
+    },
+    trace?: RetrievalTraceSink,
+  ): Promise<RankedBlockId[]> {
+    const { tenantId, entityIds, knownIds, extraLimit } = args;
+    if (entityIds.length === 0 || extraLimit <= 0) return [];
+
+    const links = await this.prisma.entityLink.findMany({
+      where: {
+        tenantId,
+        status: 'active',
+        deletedAt: null,
+        OR: [
+          { fromEntityId: { in: entityIds } },
+          { toEntityId: { in: entityIds } },
+        ],
+      },
+      select: {
+        fromEntityId: true,
+        toEntityId: true,
+        fromType: true,
+        toType: true,
+        confidence: true,
+      },
+      orderBy: { confidence: 'desc' },
+      take: extraLimit * 3,
+    });
+    if (links.length === 0) return [];
+
+    const seedSet = new Set(entityIds);
+    const relatedEntities = new Map<string, number>();
+    for (const l of links) {
+      let related: string | null = null;
+      let relatedType: string | null = null;
+      if (seedSet.has(l.fromEntityId) && !seedSet.has(l.toEntityId)) {
+        related = l.toEntityId;
+        relatedType = l.toType;
+      } else if (seedSet.has(l.toEntityId) && !seedSet.has(l.fromEntityId)) {
+        related = l.fromEntityId;
+        relatedType = l.fromType;
+      }
+      if (!related) continue;
+      if (relatedType !== null && relatedType !== 'entity') continue;
+      const conf = toFiniteNumber(l.confidence) ?? 0;
+      const prev = relatedEntities.get(related);
+      if (prev === undefined || conf > prev) relatedEntities.set(related, conf);
+    }
+    if (relatedEntities.size === 0) return [];
+
+    const relatedIds = [...relatedEntities.keys()];
+    const blockRows = await this.prisma.ideaBlockEntity.findMany({
+      where: {
+        entityId: { in: relatedIds },
+        block: {
+          status: 'canonical',
+          tenantId,
+          ...(args.validAt ? { createdAt: { lte: args.validAt } } : {}),
+          ...(args.accessWhere ?? {}),
+          ...(args.contourGroupId
+            ? { blockAccess: { some: { groupId: args.contourGroupId } } }
+            : {}),
+        },
+      },
+      select: { blockId: true, entityId: true },
+      orderBy: { block: { updatedAt: 'desc' } },
+      take: extraLimit * 3,
+    });
+
+    const result: RankedBlockId[] = [];
+    const neighbors: Array<{
+      blockId: string;
+      viaRelation: string;
+      fromBlockId: string;
+      confidence: number;
+      viaSource: 'entity-link';
+    }> = [];
+    const added = new Set<string>();
+    for (const row of blockRows) {
+      if (knownIds.has(row.blockId) || added.has(row.blockId)) continue;
+      added.add(row.blockId);
+      const conf = relatedEntities.get(row.entityId) ?? 0;
+      result.push({ blockId: row.blockId, score: -1 + conf * 0.001, fromGraph: true });
+      neighbors.push({
+        blockId: row.blockId,
+        viaRelation: 'entity-link',
+        fromBlockId: row.blockId,
+        confidence: conf,
+        viaSource: 'entity-link',
+      });
+      if (result.length >= extraLimit) break;
+    }
+
+    if (trace && neighbors.length > 0) {
+      trace.addGraphExpansion([], neighbors);
+    }
+    return result;
+  }
+
+  private async expandViaGraphCypher(
+    args: {
+      tenantId: string;
+      entityIds: string[];
+      knownIds: Set<string>;
+      extraLimit: number;
+      maxDepth: number;
+      validAt: Date | null;
+      accessWhere?: Record<string, unknown>;
+      contourGroupId?: string;
+    },
+    trace?: RetrievalTraceSink,
+  ): Promise<RankedBlockId[]> {
+    if (!this.graph || args.entityIds.length === 0 || args.extraLimit <= 0) return [];
+    const depth = Math.min(Math.max(1, Math.floor(args.maxDepth)), 5);
+    const seedSet = new Set(args.entityIds);
+    const relatedEntities = new Set<string>();
+    const seeds = args.entityIds.slice(0, GRAPH_CYPHER_MAX_SEEDS);
+    for (const eid of seeds) {
+      let res;
+      try {
+        res = await this.graph.getNeighbors({
+          tenantId: args.tenantId,
+          node: { type: 'entity', id: eid },
+          depth,
+          direction: 'both',
+        });
+      } catch (err) {
+        this.logger.debug(
+          { err: err instanceof Error ? err.message : String(err) },
+          'chat-v2 retrieval: expandViaGraphCypher getNeighbors упал — fail-open (реляционный путь отвечает)',
+        );
+        return [];
+      }
+      for (const node of res.nodes) {
+        if (node.type !== 'entity') continue;
+        if (seedSet.has(node.id)) continue;
+        relatedEntities.add(node.id);
+      }
+    }
+    if (relatedEntities.size === 0) return [];
+    const relatedIds = [...relatedEntities];
+    const blockRows = await this.prisma.ideaBlockEntity.findMany({
+      where: {
+        entityId: { in: relatedIds },
+        block: {
+          status: 'canonical',
+          tenantId: args.tenantId,
+          ...(args.validAt ? { createdAt: { lte: args.validAt } } : {}),
+          ...(args.accessWhere ?? {}),
+          ...(args.contourGroupId
+            ? { blockAccess: { some: { groupId: args.contourGroupId } } }
+            : {}),
+        },
+      },
+      select: { blockId: true, entityId: true },
+      orderBy: { block: { updatedAt: 'desc' } },
+      take: args.extraLimit * 3,
+    });
+    const result: RankedBlockId[] = [];
+    const neighbors: Array<{
+      blockId: string;
+      viaRelation: string;
+      fromBlockId: string;
+      confidence: number;
+      viaSource: 'age-cypher';
+    }> = [];
+    const added = new Set<string>();
+    for (const row of blockRows) {
+      if (args.knownIds.has(row.blockId) || added.has(row.blockId)) continue;
+      added.add(row.blockId);
+      result.push({ blockId: row.blockId, score: -2, fromGraph: true });
+      neighbors.push({
+        blockId: row.blockId,
+        viaRelation: 'age-cypher',
+        fromBlockId: row.blockId,
+        confidence: 0,
+        viaSource: 'age-cypher',
+      });
+      if (result.length >= args.extraLimit) break;
+    }
+    if (trace && neighbors.length > 0) trace.addGraphExpansion([], neighbors);
+    if (result.length > 0) this.metrics?.incChatV2GraphCypherRecall();
+    return result;
   }
 }
 

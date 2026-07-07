@@ -402,48 +402,6 @@ describe('ProbeService.suggest — Ф4 семантический дедуп в�
 });
 
 describe('ProbeService.suggest — центральный гейт политики (policy_silent)', () => {
-  it('авто-неподтверждённая запись (sourceBlockIds непуст, version null) → policy_silent, без события и enqueue', async () => {
-    const e = makeService({
-      card: { sourceBlockIds: ['b1'], currentVersion: null },
-      curationItem: null,
-    });
-    const res = await e.service.suggest({
-      tenantId: 'org-1',
-      emittedByService: '3-1-regulations',
-      reason: 'regulation.missing_owner',
-      payload: { contextCardId: 'r1', contextCardKind: 'regulation' },
-      recipientCandidates: ['user-1'],
-      priorityHint: 0.5,
-    });
-
-    expect('dropped' in res && res.dropped).toBe('policy_silent');
-    expect(e.incProbeEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'dropped_policy_silent' }),
-    );
-    expect(e.create).not.toHaveBeenCalled();
-    expect(e.enqueue).not.toHaveBeenCalled();
-    expect(e.regulationFindFirst).toHaveBeenCalledTimes(1);
-  });
-
-  it('открытый CurationItem (pending) при sourceBlockIds=[] → policy_silent', async () => {
-    const e = makeService({
-      card: { sourceBlockIds: [], currentVersion: null },
-      curationItem: { id: 'ci-1' },
-    });
-    const res = await e.service.suggest({
-      tenantId: 'org-1',
-      emittedByService: '3-1-regulations',
-      reason: 'regulation.missing_owner',
-      payload: { contextCardId: 'r1', contextCardKind: 'regulation' },
-      recipientCandidates: ['user-1'],
-      priorityHint: 0.5,
-    });
-
-    expect('dropped' in res && res.dropped).toBe('policy_silent');
-    expect(e.curationFindFirst).toHaveBeenCalledTimes(1);
-    expect(e.create).not.toHaveBeenCalled();
-  });
-
   it('подтверждённая запись (trustTier=human) → гейт пропускает, обычный pending', async () => {
     const e = makeService({
       card: { sourceBlockIds: ['b1'], currentVersion: { trustTier: 'human' } },

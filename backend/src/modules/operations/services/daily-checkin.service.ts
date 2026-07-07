@@ -626,4 +626,71 @@ export class DailyCheckInService {
         : null,
     };
   }
+
+  async getPlanNotClosingStreak(args: {
+    tenantId: string;
+    personId: string;
+  }): Promise<{
+    streakDays: number;
+    triggered: boolean;
+    lastNotDoneItems: string[];
+    thresholdDays: number;
+  }> {
+    const threshold =
+      (await this.cfg?.getDynamic<number>(
+        'operations.self_signals.plan_not_closing_streak_days',
+        undefined,
+        3,
+      )) ?? 3;
+    const rows = await this.prisma.dailyCheckIn.findMany({
+      where: {
+        tenantId: args.tenantId,
+        personId: args.personId,
+        kind: 'evening',
+        completedAt: { not: null },
+      },
+      select: { dateLocal: true, notDoneJson: true },
+      orderBy: { dateLocal: 'desc' },
+      take: 14,
+    });
+
+    let streak = 0;
+    let prevDate: string | null = null;
+    let lastNotDoneItems: string[] = [];
+    for (const r of rows) {
+      const items = this.notDoneToArray(r.notDoneJson);
+      if (items.length === 0) break;
+      if (prevDate !== null && this.dayAfter(r.dateLocal) !== prevDate) break;
+      if (streak === 0) lastNotDoneItems = items.slice(0, 5);
+      streak++;
+      prevDate = r.dateLocal;
+    }
+
+    return {
+      streakDays: streak,
+      triggered: streak >= threshold,
+      lastNotDoneItems,
+      thresholdDays: threshold,
+    };
+  }
+
+  private notDoneToArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((v) =>
+        typeof v === 'string'
+          ? v
+          : typeof v === 'object' && v && 'text' in v
+            ? String((v as { text: unknown }).text)
+            : '',
+      )
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+
+  private dayAfter(dateLocal: string): string {
+    const d = new Date(`${dateLocal}T00:00:00.000Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
 }

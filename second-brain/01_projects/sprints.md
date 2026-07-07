@@ -1,6 +1,6 @@
 ---
 title: Спринты — управление циклами с AI-помощником
-status: in_progress
+status: implemented
 created: 2026-05-27
 related:
   - 01_projects/tracker.md

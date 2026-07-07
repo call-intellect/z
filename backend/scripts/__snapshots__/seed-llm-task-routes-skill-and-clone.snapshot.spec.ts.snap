@@ -23,12 +23,12 @@ exports[`seed-llm-task-routes-skill-and-clone — snapshot защиты от с�
 exports[`seed-llm-task-routes-skill-and-clone — snapshot защиты от случайных правок модели > executable-persona-compile — цепочка стабильна > executable-persona-compile-chain 1`] = `
 [
   {
-    "model": "deepseek-v4-flash",
+    "model": "deepseek-v4-pro",
     "providerName": "deepseek",
     "tier": "primary",
   },
   {
-    "model": "gpt-5.4-mini",
+    "model": "gpt-5.4",
     "providerName": "openai-via-proxy",
     "tier": "secondary",
   },

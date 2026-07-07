@@ -48,6 +48,8 @@ function makeService(over: Partial<Deps> = {}): {
     getDynamic: vi.fn(async (key: string, _env: unknown, def: number) => {
       if (key === 'rag.rrf_k') return rrfK;
       if (key === 'rag.rerank_min_pool') return minPool;
+      if (key === 'knowledge.chatV2CascadeEnabled') return false;
+      if (key === 'knowledge.chatV2BaseRecallFloor') return false;
       return def;
     }),
     aiFeatures: { promptInjectionGuardEnabled: false },
@@ -107,16 +109,19 @@ type RunRetrievalCtx = {
   accessWhere: undefined;
 };
 
-function callRunRetrieval(
+async function callRunRetrieval(
   svc: ChatV2Service,
   input: Record<string, unknown>,
   kRetrieve = 30,
   kContext = 18,
 ): Promise<string[]> {
   const internal = svc as unknown as {
-    runRetrieval: (i: unknown, c: RunRetrievalCtx) => Promise<string[]>;
+    runRetrieval: (
+      i: unknown,
+      c: RunRetrievalCtx,
+    ) => Promise<{ blockIds: string[]; approximate: boolean }>;
   };
-  return internal.runRetrieval(
+  const result = await internal.runRetrieval(
     { tenantId: 'org-1', userId: 'u-1', scope: 'org', scopeId: null, ...input },
     {
       tenantId: 'org-1',
@@ -129,6 +134,7 @@ function callRunRetrieval(
       accessWhere: undefined,
     },
   );
+  return result.blockIds;
 }
 
 describe('ChatV2Service — RRF-слияние подзапросов', () => {
@@ -185,6 +191,7 @@ describe('ChatV2Service — split K (kRetrieve пул → реранк → kCont
 
     expect(fetchCandidates).toHaveBeenCalledWith(
       expect.objectContaining({ limit: 30 }),
+      undefined,
     );
   });
 
@@ -455,6 +462,8 @@ describe('ChatV2Service — both-ways роутер по классу запро�
         if (key === 'knowledge.router_v2_enabled') return false;
         if (key === 'rag.rrf_k') return 60;
         if (key === 'rag.rerank_min_pool') return 100;
+        if (key === 'knowledge.chatV2CascadeEnabled') return false;
+        if (key === 'knowledge.chatV2BaseRecallFloor') return false;
         return def;
       },
     );

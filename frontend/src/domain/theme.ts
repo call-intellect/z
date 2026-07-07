@@ -90,6 +90,22 @@ function parseDynamic(raw: string): ThemeDynamic {
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
 
+export type ThemeOrigin = "auto" | "user";
+export type ThemeVisibility = "personal" | "team";
+
+const KNOWN_ORIGINS: ReadonlySet<string> = new Set(["auto", "user"]);
+const KNOWN_VISIBILITIES: ReadonlySet<string> = new Set(["personal", "team"]);
+
+function parseOrigin(raw: string | null | undefined): ThemeOrigin {
+  return raw != null && KNOWN_ORIGINS.has(raw) ? (raw as ThemeOrigin) : "auto";
+}
+
+function parseVisibility(raw: string | null | undefined): ThemeVisibility {
+  return raw != null && KNOWN_VISIBILITIES.has(raw)
+    ? (raw as ThemeVisibility)
+    : "personal";
+}
+
 export type ThemeApi = {
   id: string;
   name: string;
@@ -99,6 +115,9 @@ export type ThemeApi = {
   weight: number;
   confidence: number;
   dynamic: string;
+  origin?: string;
+  visibility?: string;
+  isMine?: boolean;
   lastSignalAt: string | null;
   blocksCount: number;
   entitiesCount: number;
@@ -122,6 +141,9 @@ export type ThemeDomain = {
   weight: number;
   confidence: number;
   dynamic: ThemeDynamic;
+  origin: ThemeOrigin;
+  visibility: ThemeVisibility;
+  isMine: boolean;
   lastSignalAt: Date | null;
   blocksCount: number;
   entitiesCount: number;
@@ -139,6 +161,9 @@ export function themeFromApi(api: ThemeApi): ThemeDomain {
     weight: api.weight,
     confidence: api.confidence,
     dynamic: parseDynamic(api.dynamic),
+    origin: parseOrigin(api.origin),
+    visibility: parseVisibility(api.visibility),
+    isMine: api.isMine ?? false,
     lastSignalAt: parseDate(api.lastSignalAt),
     blocksCount: api.blocksCount,
     entitiesCount: api.entitiesCount,
@@ -146,6 +171,28 @@ export function themeFromApi(api: ThemeApi): ThemeDomain {
     updatedAt: new Date(api.updatedAt),
   };
 }
+
+export type ThemeBlockAddedVia = "clustered" | "autofill" | "manual";
+
+const KNOWN_ADDED_VIA: ReadonlySet<string> = new Set([
+  "clustered",
+  "autofill",
+  "manual",
+]);
+
+function parseAddedVia(
+  raw: string | null | undefined,
+): ThemeBlockAddedVia {
+  return raw != null && KNOWN_ADDED_VIA.has(raw)
+    ? (raw as ThemeBlockAddedVia)
+    : "clustered";
+}
+
+export const THEME_ADDED_VIA_LABELS: Record<ThemeBlockAddedVia, string> = {
+  clustered: "собрано в кластер",
+  autofill: "добавлено автоматически",
+  manual: "закреплено вручную",
+};
 
 export type ThemeBlockApi = {
   id: string;
@@ -157,6 +204,9 @@ export type ThemeBlockApi = {
   confidence: number;
   evidenceCount: number;
   status: string;
+  addedVia?: string;
+  score?: number | null;
+  reason?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -171,6 +221,9 @@ export type ThemeBlockDomain = {
   confidence: number;
   evidenceCount: number;
   status: string;
+  addedVia: ThemeBlockAddedVia;
+  score: number | null;
+  reason: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -186,6 +239,9 @@ export function themeBlockFromApi(api: ThemeBlockApi): ThemeBlockDomain {
     confidence: api.confidence,
     evidenceCount: api.evidenceCount,
     status: api.status,
+    addedVia: parseAddedVia(api.addedVia),
+    score: api.score ?? null,
+    reason: api.reason ?? null,
     createdAt: new Date(api.createdAt),
     updatedAt: new Date(api.updatedAt),
   };
@@ -220,10 +276,106 @@ export function themeEntityFromApi(api: ThemeEntityApi): ThemeEntityDomain {
   };
 }
 
+export type ThemeDecisionApi = {
+  id: string;
+  statement: string | null;
+  reversibility: string | null;
+  href: string;
+};
+
+export type ThemeDecisionDomain = {
+  id: string;
+  statement: string | null;
+  reversibility: string | null;
+  href: string;
+};
+
+export function themeDecisionFromApi(
+  api: ThemeDecisionApi,
+): ThemeDecisionDomain {
+  return {
+    id: api.id,
+    statement: api.statement ?? null,
+    reversibility: api.reversibility ?? null,
+    href: api.href,
+  };
+}
+
+export type ThemeTaskApi = {
+  id: string;
+  title: string;
+  href: string;
+};
+
+export type ThemeTaskDomain = {
+  id: string;
+  title: string;
+  href: string;
+};
+
+export function themeTaskFromApi(api: ThemeTaskApi): ThemeTaskDomain {
+  return {
+    id: api.id,
+    title: api.title,
+    href: api.href,
+  };
+}
+
+export type ThemeDocumentApi = {
+  id: string;
+  title: string;
+  href: string;
+};
+
+export type ThemeDocumentDomain = {
+  id: string;
+  title: string;
+  href: string;
+};
+
+export function themeDocumentFromApi(
+  api: ThemeDocumentApi,
+): ThemeDocumentDomain {
+  return {
+    id: api.id,
+    title: api.title,
+    href: api.href,
+  };
+}
+
+export type ThemeRegulationApi = {
+  id: string;
+  title: string;
+  category: string;
+  href: string;
+};
+
+export type ThemeRegulationDomain = {
+  id: string;
+  title: string;
+  category: string;
+  href: string;
+};
+
+export function themeRegulationFromApi(
+  api: ThemeRegulationApi,
+): ThemeRegulationDomain {
+  return {
+    id: api.id,
+    title: api.title,
+    category: api.category,
+    href: api.href,
+  };
+}
+
 export type ThemeDetailApi = {
   theme: ThemeApi;
   blocks: ThemeBlockApi[];
   entities: ThemeEntityApi[];
+  decisions?: ThemeDecisionApi[];
+  tasks?: ThemeTaskApi[];
+  documents?: ThemeDocumentApi[];
+  regulations?: ThemeRegulationApi[];
   mergedIntoId?: string;
 };
 
@@ -231,6 +383,10 @@ export type ThemeDetailDomain = {
   theme: ThemeDomain;
   blocks: ThemeBlockDomain[];
   entities: ThemeEntityDomain[];
+  decisions: ThemeDecisionDomain[];
+  tasks: ThemeTaskDomain[];
+  documents: ThemeDocumentDomain[];
+  regulations: ThemeRegulationDomain[];
   mergedIntoId: string | null;
 };
 
@@ -239,6 +395,10 @@ export function themeDetailFromApi(api: ThemeDetailApi): ThemeDetailDomain {
     theme: themeFromApi(api.theme),
     blocks: api.blocks.map(themeBlockFromApi),
     entities: api.entities.map(themeEntityFromApi),
+    decisions: (api.decisions ?? []).map(themeDecisionFromApi),
+    tasks: (api.tasks ?? []).map(themeTaskFromApi),
+    documents: (api.documents ?? []).map(themeDocumentFromApi),
+    regulations: (api.regulations ?? []).map(themeRegulationFromApi),
     mergedIntoId: api.mergedIntoId ?? null,
   };
 }

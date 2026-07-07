@@ -53,6 +53,7 @@ import { IntakeIssueSimilarService } from './services/intake-issue-similar.servi
 import { IntakeService } from './services/intake.service';
 import { IntegrationsStatusService } from './services/integrations-status.service';
 import { IssueActivityDigestService } from './services/issue-activity-digest.service';
+import { IssueEmbedQueueService } from './services/issue-embed-queue.service';
 import { IssueFieldsService } from './services/issue-fields.service';
 import { IssueGoalSuggestService } from './services/issue-goal-suggest.service';
 import { IssueInferFieldsService } from './services/issue-infer-fields.service';
@@ -193,6 +194,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     RecurrenceMaterializeCron,
     IssueInferFieldsService,
     IssueGoalSuggestService,
+    IssueEmbedQueueService,
     IntakeAutoTriageQueueService,
     IntakeAutoTriageWorker,
     IntakeIssueSimilarService,

@@ -7,16 +7,25 @@ owner: architecture
 
 # Карта AI-агентов проекта Z
 
-Полный реестр всех AI-агентов в Z (Кора) — каждое место, где код самостоятельно вызывает LLM (большую языковую модель), обрабатывает знание или общается с человеком. Карта живая: при добавлении нового агента — обновляй этот файл и индекс в `module-map.md`.
+Реестр AI-агентов в Z (Кора) — каждое место, где код самостоятельно вызывает LLM (большую языковую модель), обрабатывает знание или общается с человеком. Карта живая: при добавлении нового агента — обновляй этот файл и индекс в `module-map.md`. Ядро (ingest/специалисты/клоны/встречи) и диалоговый слой расписаны подробно; проактивный COS-слой (operations/proactive/goals/pending-actions) и дебат-инфраструктура добавлены позже — см. пункт-указатель ниже.
 
 Связанные документы:
 - [Карта модулей backend](module-map.md) — где живут модули и очереди
-- [Функциональные модули AI-агентов](agent-modules.md) — группировка ~127 агентов по способностям (другой разрез, чем 3 модуля «по запуску» здесь; M1 «Помощник и общение» описан)
+- [Функциональные модули AI-агентов](agent-modules.md) — группировка ~176 агентов по способностям (другой разрез, чем 3 модуля «по запуску» здесь; M1 «Помощник и общение» описан)
 - [Архитектура knowledge-core](knowledge-core.md) — ядро памяти компании
 - [AI-интеграция](ai-integration.md) — провайдеры и роутер
+- [LLM prompt caching / провайдеры](llm-cache-status.md) — матрица кэша по каналам
 - [LLM-провайдеры verified](../01_projects/llm-providers-verified.md) — какие модели сейчас primary
 - [AI-jobs](../01_projects/ai-jobs.md) — список jobs (заданий) в BullMQ
 - [Skill & Clone](../01_projects/skill-and-clone.md) — клоны ролей
+
+> **Не полностью в этой карте (COS-слой, добавлен 2026-05…07).** Production-агенты операционного слоя, которых карта пока не расписала подробно (код-истина — `backend/src/modules/`):
+> - **operations** — дайджесты день/неделя/месяц, `personal-daily-brief` (+`personal-brief-hint`), `exec-morning-push.cron`, `blocker-synthesis-summary`, `value-recap-narrative`, `checkin-parse`, `decision-hygiene`.
+> - **proactive** — `proactive-watcher` (правила контроля) + `proactive-message-craft` + dedup.
+> - **goals** — `goals-pulse-summarize`; **dashboard/agents** — `hr-recommender`, `forecast-weekly`.
+> - **practice-skills** — `practice-skill-extract` / retrieval / evaluator (флаг `PRACTICE_SKILLS_ENABLED=true`).
+> - **Дебат-инфраструктура** — `MultiAgentDebateService` (`ai/services/multi-agent-debate.service.ts`) + `conflict-arbiter.cron` (`curation/`): решение спорных конфликтов через 3 stance-`taskType` на разных провайдерах.
+> - **DORMANT (флаг OFF):** `orchestrator` (`ORCHESTRATOR_ENABLED=false`), `prompt-evolution` (GEPA/AutoRule — `PROMPT_EVOLUTION_ENABLED=false`, `AUTORULE_ENABLED=false`).
 
 ## Содержание
 
@@ -39,11 +48,11 @@ owner: architecture
 |---|---|---|---|
 | **1. Наполнение базы знаний** | События в системе (встреча завершилась, пришёл документ) | В БД — IdeaBlock, Entity, Decision, Insight, Skill и т.д. | block-ingest, 9 специалистов, кластеры, граф, клоны ролей |
 | **2. Автоматические агенты** | Cron-расписание или watcher-триггер | Дашборды, digest-ы, нотификации, probe-вопросы | COO daily/weekly digest, snapshot метрик, trigger-watcher persona, proactive watcher |
-| **3. Диалоговые с человеком** | Человек написал/нажал кнопку | Ответ в чате/UI | Concierge, Cmd+K, Chat-v2 компании, чат с клоном роли, чат встречи, orchestrator |
+| **3. Диалоговые с человеком** | Человек написал/нажал кнопку | Ответ в чате/UI | Concierge, Cmd+K, Chat-v2 компании, чат с клоном роли, чат встречи, orchestrator (DORMANT, флаг OFF) |
 
 Поверх всех трёх модулей — **общая LLM-инфраструктура**: маршрутизатор моделей (LlmRouter), реестр промптов с правкой из админки (Prompt Registry), сервис эмбеддингов (KnowledgeEmbeddingService), общий слой метрик.
 
-И отдельно — **Probe** (уточняющие вопросы): это не отдельный модуль, а механизм, который пронизывает Модуль 1 (специалисты ловят пропущенные данные) и приходит к человеку через Модуль 3 (нотификация + inline-кнопки). Подробно — раздел 5.
+И отдельно — **Probe** (уточняющие вопросы): это не отдельный модуль, а механизм, который пронизывает Модуль 1 (специалисты ловят пропущенные данные) и приходит к человеку через Модуль 3 (нотификация + ответ **свободным текстом или голосом**, без inline-кнопок). Подробно — раздел 5.
 
 ---
 
@@ -376,6 +385,8 @@ Rate-limit инференса: `cfg.skill.cloneAskPerUserPerDay` (по умол�
 
 ### 4.7. Orchestrator — глубокий research с субагентами
 
+> **Статус: DORMANT.** Модуль построен, но выключен по умолчанию (`ORCHESTRATOR_ENABLED=false`, `env.schema.ts`) — работает лишь как ad-hoc pull-research при явном включении. Не путать с боевыми Concierge / Chat-v2.
+
 | Аспект | Детали |
 |---|---|
 | **Frontend** | `/orchestrator` (request) → `/orchestrator/runs/:id` (live SSE timeline) |
@@ -394,7 +405,7 @@ Rate-limit инференса: `cfg.skill.cloneAskPerUserPerDay` (по умол�
 | **Clone (Role)** | `/clones/roles/:id/ask` | DeepSeek | `ChatV2Conversation`(mode=clone_style) | Только текст | Сотрудник | Нет |
 | **Meeting Chat** | `/meetings/:id/chat` | DeepSeek | Per-meeting history | Только текст | Участник встречи | Нет |
 | **Card Chat** | `/cards/:id/chat` | DeepSeek | Per-card | Только текст | Член проекта | Нет |
-| **Orchestrator** | `/orchestrator/run` (SSE) | Multi-agent | OrchestratorRun | Только текст | Сотрудник | Да (SSE) |
+| **Orchestrator** (DORMANT, флаг OFF) | `/orchestrator/run` (SSE) | Multi-agent | OrchestratorRun | Только текст | Сотрудник | Да (SSE) |
 
 ---
 
@@ -408,7 +419,7 @@ Rate-limit инференса: `cfg.skill.cloneAskPerUserPerDay` (по умол�
 |---|---|
 | **Единая точка входа** | `ProbeService` (модуль `modules/probe`) — дедупликация, rate-limit, priority scoring, cold-start window |
 | **Утилита получателей** | `services/probe-recipient.util.ts` — резолвит, кому слать (owner ресурса / direct manager / admin Org как fallback) |
-| **Формулирование вопроса** | `prompts/probe-formulate.prompt.ts` — единый промпт «Кора формулирует короткий вопрос ≤ 200 символов + 2–4 inline-кнопки ≤ 30 символов каждая» |
+| **Формулирование вопроса** | `modules/knowledge-core/prompts/probe-formulate.prompt.ts` — единый промпт «Кора превращает служебный сигнал о пробеле в ОДИН короткий тёплый вопрос»; strict JSON `{ question }` (без вариантов-кнопок) |
 | **Probe per-specialist** | `services/specialist-3-1-probe.service.ts` ... `specialist-3-9-experiment-probe.service.ts` — каждый специалист имеет свой набор триггеров |
 | **Обработка ответа** | `ProbeResponseHandler` — ответ пользователя → `RawEvent(kind=notification_response)` → обратно в knowledge-core (замыкание контура, SBA β-5 closing-loop) |
 
@@ -449,15 +460,14 @@ Rate-limit инференса: `cfg.skill.cloneAskPerUserPerDay` (по умол�
 
 ### 5.3. Как формулируется вопрос
 
-Промпт `probe-formulate.prompt.ts`:
-- System-инструкция: «Ты Кора, память компании. Сформулируй короткий уточняющий вопрос за роль `{specialistKind}`».
-- Output strict JSON: `{ question: string ≤ 200 символов, options: ["вариант 1" ≤ 30, "вариант 2" ≤ 30, ...] }` (2–4 варианта)
-- UI рендерит как inline-кнопки (Telegram inline keyboard или web-buttons).
+Промпт `probe-formulate.prompt.ts` (`modules/knowledge-core/prompts`):
+- System-инструкция: «Ты — голос Коры, памяти компании. Преврати служебный сигнал о пробеле в ОДИН короткий тёплый вопрос человеку за роль `{specialistKind}`».
+- Output strict JSON: `{ question: string }` — только вопрос (≤ ~200 символов), **без вариантов-кнопок**.
+- Пользователь отвечает **свободным текстом или голосом** (ASR) — никаких inline-кнопок (решение владельца, memory `feedback_probe_no_buttons_text_voice_only`). Ответ разбирает `probe-response-classify.prompt.ts`.
 
 Пример (для `decision.missing_decider`):
 ```
 question: "Кто здесь принял это решение?"
-options: ["Я", "Мария Иванова", "Команда продаж", "Решение не принято"]
 ```
 
 ### 5.4. Как доставляется
@@ -475,7 +485,7 @@ options: ["Я", "Мария Иванова", "Команда продаж", "Р�
 
 ### 5.5. Замыкание контура
 
-Когда пользователь нажал inline-кнопку или ответил текстом:
+Когда пользователь ответил свободным текстом или голосом (ASR):
 1. Канал (бот/email/UI) шлёт payload в `ProbeResponseHandler`.
 2. Тот создаёт `RawEvent(kind='notification_response')` с метаданными probe.
 3. RawEvent попадает в обычный pipeline ingest и сразу обогащает соответствующую сущность (Decision получает decider, Idea — supporter, и т.д.).
@@ -528,7 +538,7 @@ options: ["Я", "Мария Иванова", "Команда продаж", "Р�
 10. **Concierge tool-use loop**:
     `user → LLM → tool_call → ToolRouter → DB/API → result → LLM → ... → final answer`.
 11. **Probe-замыкание контура**:
-    `specialist-probe → ProbeService → sendNotification → user clicks button → ProbeResponseHandler → RawEvent(notification_response) → ingest → специалист обогащает сущность`.
+    `specialist-probe → ProbeService → sendNotification → ответ текстом/голосом (ASR) → ProbeResponseHandler → RawEvent(notification_response) → ingest → специалист обогащает сущность`.
 12. **Orchestrator multi-agent**:
     `request → планировщик → до 5 параллельных субагентов → агрегатор → final report`.
 
@@ -564,10 +574,11 @@ options: ["Я", "Мария Иванова", "Команда продаж", "Р�
 - `dataClass` — public < internal < sensitive < private
 - `tenantId` — обязателен
 
-**Иерархия dataClass провайдеров**:
-- Anthropic — maxDataClass=`sensitive` (но не закупается, см. ниже)
-- DeepSeek / OpenAI-via-proxy / KIE / GRSAI — `internal`
-- Ollama — `private` (localOnly)
+**Иерархия dataClass провайдеров** (`PROVIDER_CAPABILITY`, факт по коду — см. [security-and-152fz.md §3](security-and-152fz.md) и [llm-router.md](../01_projects/llm-router.md)):
+- `anthropic` — maxDataClass=`sensitive` (реализован, но не закупается — см. ниже)
+- `minimax` / `grsai` — `internal`
+- `deepseek` / `openai-via-proxy` / `kie` — `private`
+- `ollama` — `private` (localOnly)
 
 **Fallback**: primary → secondary → tertiary. Каждый уровень логируется в `AiUsageLog` с причиной (timeout, rate_limit, server_5xx).
 
@@ -596,7 +607,7 @@ options: ["Я", "Мария Иванова", "Команда продаж", "Р�
 - Фаза 7 §9 — clone-respond v2: dialog-layer + factual/judgmental + новая модель `CloneAccessGrant`, новый taskType `dialog-multi-query-clone`, flag `CLONE_V2_ENABLED`.
 - Фаза 8 §10.4 Find 2 — вынос 5 embedded-промптов в `prompts/*.prompt.ts` (block-distill, block-linker, theme-classify, reframing, entity-merge-arbiter) + 14 snapshot-тестов от тихих регрессий.
 
-Anthropic в продакшене **не используется** (нет ключа, не закупаем). Ollama для embeddings/chat не входит в основной поток (qwen3.5:9b только tertiary).
+Канал `anthropic` в роутере **реализован** (capability=`sensitive`), но Claude **не закупается** (нет ключа) и по стандарту маршрутизации не назначается primary — DeepSeek-v4 primary. Ollama для embeddings/chat не входит в основной поток (qwen3.5:9b только tertiary).
 
 ### 7.3. Prompt Registry
 

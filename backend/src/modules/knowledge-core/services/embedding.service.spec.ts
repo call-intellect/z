@@ -31,26 +31,19 @@ function build(): {
 }
 
 describe('KnowledgeEmbeddingService.embedBlocks', () => {
-  it('contextHeader непустой → каждый text начинается с header', async () => {
+  it('эмбеддит «question answer» БЕЗ контекст-хедера (block-space = query-space)', async () => {
     const { service, embed } = build();
     const blocks = [
       buildBlock({ criticalQuestion: 'Q1', trustedAnswer: 'A1' }),
       buildBlock({ criticalQuestion: 'Q2', trustedAnswer: 'A2' }),
     ];
-    await service.embedBlocks(blocks, 'Контекст: встреча «X»');
+    await service.embedBlocks(blocks);
     const passedTexts = embed.mock.calls[0]![0] as string[];
-    expect(passedTexts).toHaveLength(2);
+    expect(passedTexts).toEqual(['Q1 A1', 'Q2 A2']);
     for (const t of passedTexts) {
-      expect(t.startsWith('Контекст: встреча «X»\n')).toBe(true);
+      expect(t.includes('Контекст:')).toBe(false);
+      expect(t.includes('\n')).toBe(false);
     }
-    expect(passedTexts[0]).toBe('Контекст: встреча «X»\nQ1 A1');
-  });
-
-  it('без contextHeader → старое поведение «question answer»', async () => {
-    const { service, embed } = build();
-    await service.embedBlocks([buildBlock({ criticalQuestion: 'Q1', trustedAnswer: 'A1' })]);
-    const passedTexts = embed.mock.calls[0]![0] as string[];
-    expect(passedTexts[0]).toBe('Q1 A1');
   });
 
   it('пустой массив блоков → embed не зовётся', async () => {

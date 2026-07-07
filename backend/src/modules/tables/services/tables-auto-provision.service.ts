@@ -37,10 +37,14 @@ export class TablesAutoProvisionService {
           tenantId,
           name: tpl.name,
           icon: tpl.icon,
+          description: tpl.description,
           isSystem: true,
           systemKey: tpl.systemKey,
           entitySync: tpl.entitySync
             ? (tpl.entitySync as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+          graphSync: tpl.graphSync
+            ? (tpl.graphSync as unknown as Prisma.InputJsonValue)
             : Prisma.JsonNull,
           createdBy: ownerId,
         },

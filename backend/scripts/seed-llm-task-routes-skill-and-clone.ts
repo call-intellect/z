@@ -62,34 +62,36 @@ const SEEDS: TaskRouteSeed[] = [
   },
   {
     taskType: 'skill-trait-verify',
-    playbookSection: '§2.1 grounding-верификатор черты — дешёвый JSON in/out.',
+    playbookSection:
+      '§2.3 grounding-верификатор черты. Primary = deepseek-v4-pro: flash спотыкался на structured JSON (Thinking mode does not support tool_choice) → verify падал в fail-open (черта промоутится без реальной проверки). Verify — гейт качества черты в клоне, надёжность важнее цены.',
     chain: [
       {
         tier: 'primary',
         providerName: 'deepseek',
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-v4-pro',
       },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',
-        model: 'gpt-5.4-mini',
+        model: 'gpt-5.4',
       },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],
   },
   {
     taskType: 'executable-persona-compile',
-    playbookSection: '§2.1 persona compile — структурированный текст 300–800 слов.',
+    playbookSection:
+      '§2.3 capable LLM — сборка всего клона (persona 300–800 слов из 7 слоёв). Primary = deepseek-v4-pro: flash спотыкался на structured/thinking (Thinking mode does not support tool_choice) и иногда обнулял клон при сборке. Compile редкий (раз на сборку клона), стоимость Pro оправдана надёжностью + качеством персоны.',
     chain: [
       {
         tier: 'primary',
         providerName: 'deepseek',
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-v4-pro',
       },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',
-        model: 'gpt-5.4-mini',
+        model: 'gpt-5.4',
       },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],

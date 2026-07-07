@@ -33,7 +33,10 @@ function buildBlock(overrides: Record<string, unknown> = {}): IdeaBlock {
 
 interface Deps {
   router: { dispatch: ReturnType<typeof vi.fn> };
-  coreQueue: { enqueueBlockLinker: ReturnType<typeof vi.fn> };
+  coreQueue: {
+    enqueueBlockLinker: ReturnType<typeof vi.fn>;
+    enqueueSpecialistsCombined: ReturnType<typeof vi.fn>;
+  };
   prisma: any;
   tx: { ideaBlock: { update: ReturnType<typeof vi.fn> } };
 }
@@ -42,6 +45,8 @@ function buildWorker(
   opts: {
     dispatchThrows?: boolean;
     canonicalOverrides?: Record<string, unknown>;
+    specialistsCombinedEnabled?: boolean;
+    sourceType?: string;
   } = {},
 ): { worker: BlockDistillWorker; deps: Deps } {
   const router = {
@@ -54,6 +59,7 @@ function buildWorker(
   };
   const coreQueue = {
     enqueueBlockLinker: vi.fn(async () => undefined),
+    enqueueSpecialistsCombined: vi.fn(async () => undefined),
   };
 
   // Состояние для merge-теста.
@@ -88,12 +94,21 @@ function buildWorker(
     ideaBlock: {
       update: vi.fn(async () => undefined),
     },
+    ideaBlockEvidence: {
+      findFirst: vi.fn(async () => ({ rawEventId: 'raw-1' })),
+    },
+    rawEvent: {
+      findFirst: vi.fn(async () => ({
+        sourceType: opts.sourceType ?? 'conversational',
+        sourceExternalId: 'ext-1',
+      })),
+    },
     $transaction: vi.fn(async (fn: any) => fn(tx)),
   };
 
   const cfg = {
     bitemporal: { enabled: false, supersedeEnabled: false },
-    specialistsCombined: { enabled: false, delayMs: 0 },
+    specialistsCombined: { enabled: opts.specialistsCombinedEnabled ?? false, delayMs: 0 },
   } as any;
 
   const worker = new BlockDistillWorker(
@@ -239,5 +254,47 @@ describe('BlockDistillWorker — Б13 dataClass=max при merge', () => {
 
     const data = canonicalUpdateData(deps.tx);
     expect(data?.dataClass).toBe('sensitive');
+  });
+});
+
+describe('BlockDistillWorker — specialists-combined исключает tracker_event', () => {
+  it('markCanonical: источник tracker_event → enqueueSpecialistsCombined НЕ вызывается', async () => {
+    const { worker, deps } = buildWorker({
+      specialistsCombinedEnabled: true,
+      sourceType: 'tracker_event',
+    });
+    const block = buildBlock({ id: 'block-1', signalType: 'decision' });
+
+    await (worker as any).markCanonical(block);
+
+    expect(deps.coreQueue.enqueueSpecialistsCombined).not.toHaveBeenCalled();
+  });
+
+  it('markCanonical: источник conversational → enqueueSpecialistsCombined вызывается', async () => {
+    const { worker, deps } = buildWorker({
+      specialistsCombinedEnabled: true,
+      sourceType: 'conversational',
+    });
+    const block = buildBlock({ id: 'block-1', signalType: 'decision' });
+
+    await (worker as any).markCanonical(block);
+
+    expect(deps.coreQueue.enqueueSpecialistsCombined).toHaveBeenCalledTimes(1);
+    expect(deps.coreQueue.enqueueSpecialistsCombined).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', sourceType: 'conversational', externalId: 'ext-1' },
+      { delayMs: 0 },
+    );
+  });
+
+  it('markCanonical: источник meeting → enqueueSpecialistsCombined вызывается', async () => {
+    const { worker, deps } = buildWorker({
+      specialistsCombinedEnabled: true,
+      sourceType: 'meeting',
+    });
+    const block = buildBlock({ id: 'block-1', signalType: 'decision' });
+
+    await (worker as any).markCanonical(block);
+
+    expect(deps.coreQueue.enqueueSpecialistsCombined).toHaveBeenCalledTimes(1);
   });
 });

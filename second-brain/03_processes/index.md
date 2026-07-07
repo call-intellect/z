@@ -39,7 +39,9 @@
 |---|---|---|---|---|
 | [[notification-dispatch]] | event | внутренний `ConversationalService.sendNotification` | ✅ implemented | 2026-05-29 |
 | [[probe-question-flow]] | event | `ProbeService.suggest(...)` | ✅ implemented | 2026-05-29 |
-| [[coo-daily-digest]] ⭐ | cron | `0 22 * * *` UTC | ✅ implemented | 2026-05-29 |
+| [[coo-daily-digest]] ⭐ | cron | `0 7 * * *` МСК (Europe/Moscow) | ✅ implemented | 2026-07-05 |
+
+> **Ещё не заведены карточки** на производственный кластер дайджестов/брифов/проактива (все — прод cron+LLM, требуют отдельных карточек): `operations-weekly-digest`/`operations-monthly-digest` + `value-recap`, `personal-daily-brief` + `exec-morning-push`, `daily-checkin-prompt` (+ checkin-parser/sentiment), `blocker-synthesis` (@22:00 МСК), `pending-actions` (очередь действий, почасовое напоминание) и `proactive-watcher` (`0 */6`, 7 правил). См. код `backend/src/modules/operations/*` (digests + blocker-synthesis), `backend/src/modules/pending-actions/*`, `backend/src/modules/proactive/*` (proactive-watcher).
 
 ## Группа Г. Знания (knowledge-core)
 
@@ -109,4 +111,4 @@
 
 В каждой карточке **раздел 8** — расхождения только этого процесса.
 
-Сводный отчёт по всем 27 процессам с группировкой по типу проблемы (критические gap'ы, реализовано иначе, реализовано без ТЗ, открытые вопросы) — [`plans/analysis/2026-05-29-processes-gaps-summary.md`](../../plans/analysis/2026-05-29-processes-gaps-summary.md).
+Сводный отчёт по процессам с группировкой по типу проблемы (критические gap'ы, реализовано иначе, реализовано без ТЗ, открытые вопросы) — [`plans/analysis/2026-05-29-processes-gaps-summary.md`](../../plans/analysis/2026-05-29-processes-gaps-summary.md). В реестре **29** карточек (см. сводку по статусам выше); дополнительно есть незакарточенный кластер дайджестов/брифов/проактива (Группа В).

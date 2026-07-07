@@ -241,3 +241,82 @@ describe('GraphService upsertDecision — анти-потеря при @unique s
     expect(txClient.decision.create).not.toHaveBeenCalled();
   });
 });
+
+describe('GraphService Ф4-A — graph-only примитивы (только AGE, без записи в Prisma)', () => {
+  function sqls(mock: { prisma: { $queryRawUnsafe: ReturnType<typeof vi.fn> } }): string[] {
+    return mock.prisma.$queryRawUnsafe.mock.calls.map((c: unknown[]) => c[0] as string);
+  }
+
+  it('mergeEdgeGraphOnly: пишет MERGE-ребро в AGE, EntityLink.upsert НЕ вызывается', async () => {
+    const mock = buildPrismaMock(false);
+    const svc = new GraphService(mock.prisma, buildCfg(true));
+
+    await svc.mergeEdgeGraphOnly({
+      tenantId: 'tenant-1',
+      from: { type: 'entity', id: 'e1' },
+      to: { type: 'entity', id: 'e2' },
+      linkType: 'works_at',
+    });
+
+    const calls = sqls(mock);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.some((sql) => sql.includes('MERGE'))).toBe(true);
+    expect(calls.some((sql) => sql.includes('works_at'))).toBe(true);
+    expect(calls.some((sql) => sql.includes('tenant_id'))).toBe(true);
+    expect(mock.state.entityLinkUpserted).toHaveLength(0);
+    expect(mock.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('deleteEdgeGraphOnly: пишет DELETE r в AGE', async () => {
+    const mock = buildPrismaMock(false);
+    const svc = new GraphService(mock.prisma, buildCfg(true));
+
+    await svc.deleteEdgeGraphOnly({
+      tenantId: 'tenant-1',
+      from: { type: 'entity', id: 'e1' },
+      to: { type: 'entity', id: 'e2' },
+      linkType: 'works_at',
+    });
+
+    expect(sqls(mock).some((sql) => sql.includes('DELETE r'))).toBe(true);
+    expect(mock.state.entityLinkUpserted).toHaveLength(0);
+  });
+
+  it('deleteNodeGraphOnly: пишет DETACH DELETE в AGE', async () => {
+    const mock = buildPrismaMock(false);
+    const svc = new GraphService(mock.prisma, buildCfg(true));
+
+    await svc.deleteNodeGraphOnly({ tenantId: 'tenant-1', type: 'entity', id: 'e1' });
+
+    expect(sqls(mock).some((sql) => sql.includes('DETACH DELETE'))).toBe(true);
+  });
+
+  it('ageEnabled=false: mergeEdgeGraphOnly — no-op, $queryRawUnsafe не вызывается', async () => {
+    const mock = buildPrismaMock(false);
+    const svc = new GraphService(mock.prisma, buildCfg(false));
+
+    await svc.mergeEdgeGraphOnly({
+      tenantId: 'tenant-1',
+      from: { type: 'entity', id: 'e1' },
+      to: { type: 'entity', id: 'e2' },
+      linkType: 'works_at',
+    });
+
+    expect(mock.prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('mergeEdgeGraphOnly: неизвестный linkType — бросает, не молчит', async () => {
+    const mock = buildPrismaMock(false);
+    const svc = new GraphService(mock.prisma, buildCfg(true));
+
+    await expect(
+      svc.mergeEdgeGraphOnly({
+        tenantId: 'tenant-1',
+        from: { type: 'entity', id: 'e1' },
+        to: { type: 'entity', id: 'e2' },
+        linkType: 'conflicted_with' as never,
+      }),
+    ).rejects.toThrow();
+    expect(mock.prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+});

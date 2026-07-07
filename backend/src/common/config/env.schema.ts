@@ -435,8 +435,6 @@ const OrchestratorSchema = z.object({
 const WorkerKnobsSchema = z.object({
   AXIS_CLASSIFY_ENABLED: zBool(true),
   ROLE_PROFILE_MIN_BLOCKS: z.coerce.number().int().positive().default(5),
-  CONSISTENCY_CHECKER_DEDUP_TTL_SECONDS: z.coerce.number().int().positive().default(14_400),
-  CONSISTENCY_CHECKER_ENABLED: zBool(true),
   COMPLETENESS_SCANNER_ENABLED: zBool(true),
   GOAL_ALIGNMENT_LOW_ENABLED: zBool(true),
   TELEGRAM_DIGEST_HOUR_LOCAL: z.coerce.number().int().min(0).max(23).default(9),
@@ -543,7 +541,7 @@ const IdeasSchema = z.object({
 const ProbeSchema = z.object({
   PROBE_DEDUP_TTL_HOURS: z.coerce.number().int().positive().default(72),
   PROBE_RATE_LIMIT_PER_USER_PER_HOUR: z.coerce.number().int().positive().default(5),
-  PROBE_RATE_LIMIT_PER_USER_PER_DAY: z.coerce.number().int().positive().default(20),
+  PROBE_RATE_LIMIT_PER_USER_PER_DAY: z.coerce.number().int().positive().default(5),
   PROBE_EXPIRY_DAYS: z.coerce.number().int().positive().default(14),
   PROBE_PRIORITY_REFRESH_CRON: z.string().min(1).default('*/15 * * * *'),
   PROBE_QUIET_HOURS_DEFAULT_TZ_OFFSET_MIN: z.coerce.number().int().default(180),
@@ -564,7 +562,7 @@ const SkillSchema = z.object({
   SKILL_MANAGER_DIGEST_CRON: z.string().min(1).default('0 9 * * MON'),
   SKILL_REBUILD_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
   CLONE_ASK_PER_USER_PER_DAY: z.coerce.number().int().positive().default(20),
-  CLONE_TOPIC_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.7),
+  CLONE_TOPIC_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
   CLONE_TOPIC_MIN_BLOCKS: z.coerce.number().int().positive().default(2),
   CLONE_RESPOND_GROUNDING_ENABLED: zBool(true),
   ROLE_PRINCIPLE_SYNTHESIS_ENABLED: zBool(true),
@@ -578,7 +576,7 @@ const SkillSchema = z.object({
   CLONE_CONCEPT_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.92),
   CLONE_CONCEPT_ARCHIVE_AFTER_MONTHS: z.coerce.number().int().positive().default(6),
 
-  CLONE_V2_ENABLED: zBool(false),
+  CLONE_V2_ENABLED: zBool(true),
 });
 
 const ProcessTemplateSchema = z.object({
@@ -652,6 +650,7 @@ const BetaOpsSchema = z.object({
   PROACTIVE_WATCHER_ANTI_SPAM_TTL_HOURS: z.coerce.number().int().positive().default(24),
   PROACTIVE_RULE_INSIGHT_NO_MITIGATION_ENABLED: zBool(true),
   PROACTIVE_RULE_EXPERIMENT_RUNNING_TOO_LONG_ENABLED: zBool(true),
+  PROACTIVE_RULE_EXPERIMENT_RESULT_WITHOUT_LESSON_ENABLED: zBool(true),
   PROACTIVE_RULE_PROCESS_STALE_REVIEW_ENABLED: zBool(true),
   PROACTIVE_RULE_ROLE_LOW_COMPLETENESS_ENABLED: zBool(true),
   PROACTIVE_RULE_DEPARTMENT_NO_DOMAIN_ENABLED: zBool(true),

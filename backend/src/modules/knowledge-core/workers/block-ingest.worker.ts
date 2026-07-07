@@ -4,10 +4,8 @@ import {
   Logger,
   type OnModuleDestroy,
   type OnModuleInit,
-  Optional,
 } from '@nestjs/common';
 import {
-  type Entity,
   type EntityType,
   type ParticipantRole,
   Prisma,
@@ -25,8 +23,6 @@ import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { CORE_QUEUE_NAMES, type RawEventJobData } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
-import { isEntityUnattributed } from '../../probe/probe-reason-policy';
-import { ProbeService } from '../../probe/probe.service';
 import { S3Service } from '../../recordings/s3.service';
 import { ENTITY_TYPE_VALUES, SIGNAL_TYPE_VALUES } from '../prompts/block-ingest.prompt';
 import { AxisClassifierService } from '../services/axis-classifier.service';
@@ -36,12 +32,7 @@ import {
   type ExtractedBlock,
   type ExtractedEntityMention,
 } from '../services/block-extraction.service';
-import { ChunkContextService, CONTEXT_HEADER_VERSION } from '../services/chunk-context.service';
-import {
-  isCompanyEntityType,
-  makeContextHeaderInput,
-  resolveContextHeaderTitle,
-} from '../services/context-header-input';
+import { EMBED_NO_HEADER_VERSION } from '../services/chunk-context.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { isJunkEntityName } from '../services/entity-name-quality';
 import { EntityResolutionService } from '../services/entity-resolution.service';
@@ -175,15 +166,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BlockAccessDeriverService)
     private readonly blockAccessDeriver: BlockAccessDeriverService,
-    // Probe Ф6 (2026-06-17) — атрибуционный вопрос «к чему относится новая
-    // сущность». @Optional: ProbeModule глобальный (как у specialist-3-4),
-    // но Optional страхует юнит-тесты/конструирование без probe.
-    @Optional()
-    @Inject(ProbeService)
-    private readonly probeService?: ProbeService,
-    @Optional()
-    @Inject(ChunkContextService)
-    private readonly chunkContext?: ChunkContextService,
   ) {}
 
   onModuleInit(): void {
@@ -281,28 +263,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         'block-ingest: извлечение завершено',
       );
 
-      const headerInput = makeContextHeaderInput({
-        sourceTitle: resolveContextHeaderTitle({
-          sourceTitle: event.sourceTitle,
-          payloadTitle: meetingTitle ?? null,
-          sourceExternalId: event.sourceExternalId,
-          fallback: `${event.sourceType}:${event.id}`,
-        }),
-        companies: this.collectCompanyNames(blocksInOrder),
-        participants: this.tryGetParticipantNames(payload) ?? [],
-        meetingType: this.tryGetMeetingType(payload) ?? null,
-        meetingDateIso: event.occurredAt.toISOString(),
-      });
-      const contextHeader = this.chunkContext
-        ? await this.chunkContext
-            .buildContextHeader({ tenantId: event.tenantId, ...headerInput })
-            .catch(() => '')
-        : '';
-
       const embeddings =
-        blocksInOrder.length > 0
-          ? await this.embeddings.embedBlocks(blocksInOrder, contextHeader)
-          : [];
+        blocksInOrder.length > 0 ? await this.embeddings.embedBlocks(blocksInOrder) : [];
 
       const indexToBlockId = new Map<number, string>();
       const blockIds: string[] = [];
@@ -350,7 +312,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const summary = await this.maybePersistSourceSummary({
         event,
         payload,
-        contextHeader,
       }).catch((err) => {
         this.logger.warn(
           { rawEventId, err: err instanceof Error ? err.message : String(err) },
@@ -895,19 +856,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     return undefined;
   }
 
-  private collectCompanyNames(blocks: ExtractedBlock[]): string[] {
-    const names: string[] = [];
-    for (const b of blocks) {
-      for (const ent of b.mentionedEntities ?? []) {
-        if (isCompanyEntityType(ent.type) && typeof ent.name === 'string') {
-          const trimmed = ent.name.trim();
-          if (trimmed.length > 0) names.push(trimmed);
-        }
-      }
-    }
-    return names;
-  }
-
   private tryGetParticipantNames(payload: unknown): string[] | undefined {
     if (typeof payload !== 'object' || payload === null) return undefined;
     const parts = (payload as { participants?: unknown }).participants;
@@ -1091,9 +1039,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
   private async maybePersistSourceSummary(args: {
     event: RawEvent;
     payload: unknown;
-    contextHeader: string;
   }): Promise<MeetingSummaryResult> {
-    const { event, payload, contextHeader } = args;
+    const { event, payload } = args;
     const kind = this.resolveSourceEpisodeKind(event.sourceType);
     if (!kind) return { blockId: null, text: null, vector: null };
     const summaryText = this.resolveSourceSummaryText(kind, payload);
@@ -1113,7 +1060,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       mentionedEntities: [],
       role_relevant: false,
     };
-    const [vector] = await this.embeddings.embedBlocks([summaryBlock], contextHeader);
+    const [vector] = await this.embeddings.embedBlocks([summaryBlock]);
     const blockId = await this.persistBlock({
       event,
       block: summaryBlock,
@@ -1376,7 +1323,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           await tx.$executeRawUnsafe(
             'UPDATE "IdeaBlock" SET embedding = $1::vector(1536), "contextHeaderVersion" = $2 WHERE id = $3 AND "tenantId" = $4',
             this.toVectorLiteral(embedding),
-            CONTEXT_HEADER_VERSION,
+            EMBED_NO_HEADER_VERSION,
             ideaBlock.id,
             event.tenantId,
           );
@@ -1755,27 +1702,12 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       this.metrics.incExtractionEntity({ type: 'rejected_junk_name' });
       return;
     }
-    const { entity, created } = await this.entities.findOrCreateEntity({
+    const { entity } = await this.entities.findOrCreateEntity({
       tenantId: args.tenantId,
       type: args.mention.type as EntityType,
       name: args.mention.name,
       metadata: args.mention.metadata,
     });
-
-    // Probe Ф6 (2026-06-17) — атрибуционный вопрос. Только для НОВОЙ значимой
-    // сущности (клиент/поставщик) без явной привязки к отделу/клиенту/владельцу.
-    // best-effort: ошибка probe НЕ должна валить ingest.
-    if (created && args.event) {
-      await this.emitAttributionProbe(entity, args.event).catch((err) => {
-        this.logger.debug(
-          {
-            entityId: entity.id,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'block-ingest: attribution-probe не отправлен (best-effort) — продолжаем',
-        );
-      });
-    }
 
     try {
       await this.prisma.ideaBlockEntity.create({
@@ -1793,85 +1725,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       }
       throw err;
     }
-  }
-
-  /**
-   * Probe Ф6 (2026-06-17) — отправляет атрибуционный probe для НОВОЙ
-   * значимой сущности (клиент/поставщик) без явной привязки к
-   * отделу/клиенту/владельцу. reason='attribution.unresolved_at_ingest',
-   * окно deferrable (в дайджест). Дедуп/cooldown — штатные внутри
-   * `ProbeService.suggest` (content-hash + Ф4 семантика).
-   *
-   * Получатели: владелец встречи-источника (если sourceType='meeting'),
-   * иначе владелец/админы Org. Нет ни одного → эмиссию пропускаем.
-   */
-  private async emitAttributionProbe(
-    entity: Entity,
-    event: RawEvent,
-  ): Promise<void> {
-    if (!this.probeService) return;
-    // Чистая проверка типа + metadata: только customer/vendor без привязки.
-    if (!isEntityUnattributed({ type: entity.type, metadata: entity.metadata })) {
-      return;
-    }
-
-    const recipients = await this.resolveAttributionRecipients(entity.tenantId, event);
-    if (recipients.length === 0) return; // некому слать — молчим
-
-    const title = entity.canonicalName.slice(0, 100);
-    const graceDays = await this.cfg.getDynamic<number>('probe.confirmGraceDays', undefined, 2);
-    const notBeforeAt =
-      graceDays > 0 ? new Date(Date.now() + graceDays * 24 * 3600 * 1000) : undefined;
-    await this.probeService.suggest({
-      tenantId: entity.tenantId,
-      emittedByService: 'ingest-attribution',
-      reason: 'attribution.unresolved_at_ingest',
-      payload: {
-        message: `К чему отнести «${title}»? Это про какой отдел, проект или клиента?`,
-        contextCardId: entity.id,
-        contextCardKind: 'entity',
-        contextCardTitle: entity.canonicalName,
-        objectName: entity.canonicalName,
-        dataClass: 'internal',
-      },
-      recipientCandidates: recipients,
-      priorityHint: 0.4,
-      dataClass: 'internal',
-      notBeforeAt,
-    });
-    this.logger.debug(
-      { entityId: entity.id, type: entity.type, recipients: recipients.length },
-      'block-ingest: attribution-probe поставлен (reason=attribution.unresolved_at_ingest)',
-    );
-  }
-
-  /**
-   * Получатели атрибуционного probe: владелец встречи-источника (если событие
-   * из встречи), иначе владелец/админы Org. Возвращает уникальный список userId.
-   */
-  private async resolveAttributionRecipients(
-    tenantId: string,
-    event: RawEvent,
-  ): Promise<string[]> {
-    const out: string[] = [];
-    if (event.sourceType === 'meeting' && event.sourceExternalId) {
-      const meeting = await this.prisma.meeting
-        .findFirst({
-          where: { id: event.sourceExternalId, tenantId },
-          select: { ownerId: true },
-        })
-        .catch(() => null);
-      if (meeting?.ownerId) out.push(meeting.ownerId);
-    }
-    if (out.length === 0) {
-      const admins = await this.prisma.membership.findMany({
-        where: { orgId: tenantId, role: { in: ['owner', 'admin'] } },
-        select: { userId: true },
-        take: 20,
-      });
-      for (const m of admins) out.push(m.userId);
-    }
-    return [...new Set(out)];
   }
 
   private toVectorLiteral(vec: number[]): string {

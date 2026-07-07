@@ -281,7 +281,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const q = this.requireQueue(CORE_QUEUE_NAMES.SPECIALISTS_COMBINED);
     const { tenantId, sourceType, externalId } = descriptor;
-    const jobId = `specialists_combined_${sourceType}_${externalId}`;
+    const jobId = `specialists_combined_${sourceType}_${externalId}`.replace(/:/g, '_');
     const payload: SpecialistsCombinedJobData = {
       tenantId,
       sourceType,

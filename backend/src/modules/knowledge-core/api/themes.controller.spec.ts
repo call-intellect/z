@@ -234,6 +234,9 @@ function buildGateThemes(opts: {
         description: '',
         branch: null,
         status: 'active',
+        origin: 'auto',
+        visibility: 'team',
+        createdByUserId: null,
         weight: 1,
         confidence: 1,
         dynamic: 'stable',
@@ -246,6 +249,10 @@ function buildGateThemes(opts: {
     },
     themeIdeaBlock: { findMany: vi.fn(async () => opts.blockRows) },
     themeEntity: { findMany: vi.fn(async () => []) },
+    decision: { findMany: vi.fn(async () => []) },
+    issue: { findMany: vi.fn(async () => []) },
+    document: { findMany: vi.fn(async () => []) },
+    regulation: { findMany: vi.fn(async () => []) },
   } as unknown as PrismaService;
 
   const rbac = { canRead: async () => true } as unknown as RbacService;
@@ -336,5 +343,319 @@ describe('KnowledgeThemesController — Ф4 гейт доступа (unit)', () 
     expect(res.blocks.map((b) => b.id).sort()).toEqual(['b1', 'b2']);
     expect(incShadow).toHaveBeenCalledWith({ surface: 'themes' }, 1);
     expect(incDenied).not.toHaveBeenCalled();
+  });
+});
+
+const F4_USER: CurrentUserPayload = { id: 'f4-user', email: 'f4@test', role: 'user' };
+const F4_OTHER: CurrentUserPayload = { id: 'f4-other', email: 'o@test', role: 'user' };
+const F4_TENANT = 'f4-org';
+
+function themeRecord(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 't-1',
+    tenantId: F4_TENANT,
+    name: 'Theme',
+    description: '',
+    branch: null,
+    status: 'active',
+    origin: 'user',
+    visibility: 'personal',
+    createdByUserId: F4_USER.id,
+    weight: 1,
+    confidence: 1,
+    dynamic: 'stable',
+    lastSignalAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    mergedIntoId: null,
+    _count: { blocks: 0, entities: 0 },
+    ...over,
+  };
+}
+
+function mkThemeBlockRow(id: string): Record<string, unknown> {
+  return {
+    addedVia: 'autofill',
+    score: 0.812,
+    reason: 'Смысловая близость',
+    weight: 0.8,
+    createdAt: new Date(),
+    block: {
+      id,
+      name: `block ${id}`,
+      criticalQuestion: 'q',
+      trustedAnswer: 'a',
+      tags: [] as string[],
+      signalType: 'fact',
+      confidence: 0.9,
+      evidenceCount: 1,
+      status: 'canonical',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  };
+}
+
+function buildF4(opts: {
+  theme?: Record<string, unknown> | null;
+  canCreateTeamTheme?: boolean;
+  autofillEnabled?: boolean;
+  themeBlockRows?: Record<string, unknown>[];
+  themeEntityIds?: string[];
+  decisionRows?: Record<string, unknown>[];
+  taskRows?: Record<string, unknown>[];
+  documentRows?: Record<string, unknown>[];
+  regulationRows?: Record<string, unknown>[];
+}): {
+  ctrl: KnowledgeThemesController;
+  createTheme: ReturnType<typeof vi.fn>;
+  fillTheme: ReturnType<typeof vi.fn>;
+  unpin: ReturnType<typeof vi.fn>;
+  incThemeExclusions: ReturnType<typeof vi.fn>;
+} {
+  const themeRow = opts.theme === undefined ? themeRecord() : opts.theme;
+  const themeEntityIds = opts.themeEntityIds ?? [];
+  const prisma = {
+    theme: {
+      findUnique: vi.fn(async () => themeRow),
+    },
+    themeIdeaBlock: { findMany: vi.fn(async () => opts.themeBlockRows ?? []) },
+    themeEntity: {
+      findMany: vi.fn(async () =>
+        themeEntityIds.map((entityId) => ({
+          entityId,
+          entity: {
+            id: entityId,
+            type: 'person',
+            canonicalName: entityId,
+            aliases: [] as string[],
+            mentionsCount: 0,
+            metadata: null,
+          },
+        })),
+      ),
+    },
+    decision: { findMany: vi.fn(async () => opts.decisionRows ?? []) },
+    issue: { findMany: vi.fn(async () => opts.taskRows ?? []) },
+    document: { findMany: vi.fn(async () => opts.documentRows ?? []) },
+    regulation: { findMany: vi.fn(async () => opts.regulationRows ?? []) },
+  } as unknown as PrismaService;
+
+  const rbac = {
+    canRead: async () => true,
+    canCreateTeamTheme: async () => opts.canCreateTeamTheme ?? false,
+  } as unknown as RbacService;
+
+  const cfg = {
+    themeAutofillOpts: async () => ({
+      enabled: opts.autofillEnabled ?? true,
+      threshold: 0.72,
+      scanWindowDays: 14,
+      maxPerScan: 50,
+      dedupeSimilarity: 0.97,
+    }),
+  } as unknown as TypedConfigService;
+
+  const createTheme = vi.fn(async () => ({ id: 't-1' }));
+  const fillTheme = vi.fn(async () => ({ added: 0, addedBlockIds: [] as string[] }));
+  const themeWrite = {
+    createTheme,
+    renameTheme: vi.fn(async () => undefined),
+    archiveTheme: vi.fn(async () => undefined),
+    pin: vi.fn(async () => undefined),
+    unpin: vi.fn(async () => undefined),
+  };
+  const themeFill = { fillTheme };
+
+  const incThemeExclusions = vi.fn();
+  const metrics = {
+    incThemeExclusions,
+    incAccessDenied: vi.fn(),
+    incAccessShadowDiff: vi.fn(),
+  } as unknown as BusinessMetricsService;
+
+  const ctrl = new KnowledgeThemesController(
+    prisma,
+    rbac,
+    null,
+    cfg,
+    metrics,
+    themeWrite as never,
+    themeFill as never,
+  );
+  return { ctrl, createTheme, fillTheme, unpin: themeWrite.unpin, incThemeExclusions };
+}
+
+describe('KnowledgeThemesController — Ф4 темы пользователя (unit)', () => {
+  it('create personal → createTheme + fillTheme вызваны, isMine=true', async () => {
+    const { ctrl, createTheme, fillTheme } = buildF4({});
+    const res = await ctrl.create(
+      { phrase: 'моя тема', visibility: 'personal' },
+      F4_USER,
+      F4_TENANT,
+    );
+    expect(createTheme).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: F4_TENANT,
+        phrase: 'моя тема',
+        visibility: 'personal',
+        createdByUserId: F4_USER.id,
+      }),
+    );
+    expect(fillTheme).toHaveBeenCalledTimes(1);
+    expect(res.isMine).toBe(true);
+    expect(res.visibility).toBe('personal');
+  });
+
+  it('create team рядовым (canCreateTeamTheme=false) → Forbidden forbidden_team_theme, createTheme НЕ вызван', async () => {
+    const { ctrl, createTheme } = buildF4({ canCreateTeamTheme: false });
+    await expect(
+      ctrl.create({ phrase: 'команда', visibility: 'team' }, F4_USER, F4_TENANT),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(createTheme).not.toHaveBeenCalled();
+  });
+
+  it('byId чужой personal-темы → NotFound theme_not_found', async () => {
+    const { ctrl } = buildF4({
+      theme: themeRecord({ visibility: 'personal', createdByUserId: F4_OTHER.id }),
+    });
+    await expect(ctrl.byId('t-1', F4_USER, F4_TENANT)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('byId возвращает blocks c addedVia/score/reason + секции regulations/documents/decisions/tasks', async () => {
+    const { ctrl } = buildF4({
+      theme: themeRecord({ _count: { blocks: 1, entities: 1 } }),
+      themeBlockRows: [mkThemeBlockRow('b1')],
+      themeEntityIds: ['e1'],
+      decisionRows: [{ id: 'd1', statement: 'решили' }],
+      taskRows: [{ id: 'i1', title: 'задача' }],
+      documentRows: [{ id: 'doc1', name: 'док' }],
+      regulationRows: [{ id: 'r1', name: 'регламент', category: 'regulation' }],
+    });
+    const res = await ctrl.byId('t-1', F4_USER, F4_TENANT);
+    expect(res.blocks[0]).toEqual(
+      expect.objectContaining({ id: 'b1', addedVia: 'autofill', reason: 'Смысловая близость' }),
+    );
+    expect(res.blocks[0]?.score).toBeCloseTo(0.812, 3);
+    expect(res.decisions).toEqual([
+      expect.objectContaining({ id: 'd1', statement: 'решили', reversibility: null, href: '/decisions/d1' }),
+    ]);
+    expect(res.tasks).toEqual([expect.objectContaining({ id: 'i1', href: '/issues/i1' })]);
+    expect(res.documents).toEqual([
+      expect.objectContaining({ id: 'doc1', title: 'док', href: '/documents/doc1' }),
+    ]);
+    expect(res.regulations).toEqual([
+      expect.objectContaining({ id: 'r1', title: 'регламент', category: 'regulation', href: '/regulations/r1' }),
+    ]);
+  });
+
+  it('DELETE pin владельцем personal → unpin вызван + incThemeExclusions', async () => {
+    const { ctrl, unpin, incThemeExclusions } = buildF4({});
+    const res = await ctrl.unpin('t-1', 'block', 'b1', F4_USER, F4_TENANT);
+    expect(unpin).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: F4_TENANT, themeId: 't-1', kind: 'block', objectId: 'b1' }),
+    );
+    expect(incThemeExclusions).toHaveBeenCalledWith(
+      expect.objectContaining({ count: 1 }),
+    );
+    expect(res).toEqual({ ok: true });
+  });
+
+  it('DELETE pin с невалидным kind → BadRequest', async () => {
+    const { ctrl } = buildF4({});
+    await expect(ctrl.unpin('t-1', 'weird', 'b1', F4_USER, F4_TENANT)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});
+
+const F5_USER: CurrentUserPayload = { id: 'f5-user', email: 'f5@test', role: 'user' };
+const F5_TENANT = 'f5-org';
+
+function buildF5(opts: {
+  link?: Record<string, unknown> | null;
+  block?: { name: string | null; trustedAnswer: string } | null;
+  existingIssue?: { id: string } | null;
+  inboxProjectId?: string | null;
+  themeVisibility?: string;
+  themeOwnerId?: string | null;
+}): {
+  ctrl: KnowledgeThemesController;
+  create: ReturnType<typeof vi.fn>;
+  ensureInbox: ReturnType<typeof vi.fn>;
+  issueFindFirst: ReturnType<typeof vi.fn>;
+} {
+  const issueFindFirst = vi.fn(async () => opts.existingIssue ?? null);
+  const prisma = {
+    theme: {
+      findUnique: vi.fn(async () => ({
+        id: 't-1',
+        tenantId: F5_TENANT,
+        visibility: opts.themeVisibility ?? 'team',
+        createdByUserId: opts.themeOwnerId ?? null,
+      })),
+    },
+    themeIdeaBlock: {
+      findUnique: vi.fn(async () => (opts.link === undefined ? { themeId: 't-1' } : opts.link)),
+    },
+    ideaBlock: {
+      findFirst: vi.fn(async () =>
+        opts.block === undefined ? { name: 'Блок', trustedAnswer: 'Ответ' } : opts.block,
+      ),
+    },
+    issue: { findFirst: issueFindFirst },
+  } as unknown as PrismaService;
+
+  const rbac = { canRead: async () => true } as unknown as RbacService;
+
+  const create = vi.fn(async () => ({ id: 'issue-1', title: 'Блок' }));
+  const issues = { create } as never;
+  const ensureInbox = vi.fn(async () => opts.inboxProjectId ?? 'inbox-1');
+  const projects = { ensureInboxProjectId: ensureInbox } as never;
+
+  const ctrl = new KnowledgeThemesController(
+    prisma,
+    rbac,
+    null,
+    null,
+    null,
+    null,
+    null,
+    issues,
+    projects,
+  );
+  return { ctrl, create, ensureInbox, issueFindFirst };
+}
+
+describe('KnowledgeThemesController — Ф5 обязательство → задача (unit)', () => {
+  it('happy: блок привязан + не дублируется → issues.create вызван, created=true', async () => {
+    const { ctrl, create } = buildF5({});
+    const res = await ctrl.commitmentToTask('t-1', 'b1', F5_USER, F5_TENANT);
+    expect(create).toHaveBeenCalledWith(
+      'inbox-1',
+      expect.objectContaining({
+        sourceBlockIds: ['b1'],
+        externalSource: 'theme_commitment',
+        skipDedup: true,
+      }),
+      F5_TENANT,
+      F5_USER.id,
+    );
+    expect(res).toEqual({ taskId: 'issue-1', created: true });
+  });
+
+  it('идемпотентность: существующая задача → issues.create НЕ вызван, created=false', async () => {
+    const { ctrl, create } = buildF5({ existingIssue: { id: 'issue-existing' } });
+    const res = await ctrl.commitmentToTask('t-1', 'b1', F5_USER, F5_TENANT);
+    expect(create).not.toHaveBeenCalled();
+    expect(res).toEqual({ taskId: 'issue-existing', created: false });
+  });
+
+  it('блок не привязан → NotFound block_not_in_theme, issues.create НЕ вызван', async () => {
+    const { ctrl, create } = buildF5({ link: null });
+    await expect(ctrl.commitmentToTask('t-1', 'b1', F5_USER, F5_TENANT)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(create).not.toHaveBeenCalled();
   });
 });

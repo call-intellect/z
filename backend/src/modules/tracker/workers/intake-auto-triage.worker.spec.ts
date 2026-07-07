@@ -49,6 +49,7 @@ interface MkOpts {
     suggestedGoalId: string | null;
     suggestedDuplicateOfIssueId: string | null;
     meetingId: string | null;
+    ownerHintRaw: string | null;
   }>;
   llmText?: string;
   llmReject?: boolean;
@@ -93,6 +94,7 @@ function mkWorker(opts?: MkOpts): {
     suggestedGoalId: null,
     suggestedDuplicateOfIssueId: null,
     meetingId: null,
+    ownerHintRaw: null,
     ...(opts?.intake ?? {}),
   };
 
@@ -783,5 +785,51 @@ describe('IntakeAutoTriageWorker', () => {
     });
     await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
     expect(skillRouting.suggestAssignee).not.toHaveBeenCalled();
+  });
+
+  it('Ф1: meeting_report + рубильник ON → промоут в Issue, linkedMeetingIds=[meetingId], без skill-routing', async () => {
+    const { worker, prisma, issues, skillRouting, metrics } = mkWorker({
+      intake: {
+        source: 'meeting_report',
+        externalSource: 'meeting_report',
+        suggestedAssigneeId: null,
+        meetingId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      },
+      skillRoutingResult: [skillSuggestion({ userId: 'u-skill' })],
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(issues.create).toHaveBeenCalledTimes(1);
+    expect(issues.create).toHaveBeenCalledWith(
+      'proj-dev',
+      expect.objectContaining({
+        linkedMeetingIds: ['01ARZ3NDEKTSV4RRFFQ69G5FAV'],
+      }),
+      'org-1',
+      'user-owner',
+    );
+    expect(skillRouting.suggestAssignee).not.toHaveBeenCalled();
+    const updateArg = prisma.intakeIssue.update.mock.calls[0]?.[0] as {
+      data: { status?: string };
+    };
+    expect(updateArg.data.status).toBe('accepted');
+    expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'auto_accepted', source: 'meeting_report' }),
+    );
+  });
+
+  it('Ф2: meeting_report + ownerHintRaw=«Роман» → Issue создан с ownerHintRaw=«Роман»', async () => {
+    const { worker, issues } = mkWorker({
+      intake: {
+        source: 'meeting_report',
+        externalSource: 'meeting_report',
+        suggestedAssigneeId: null,
+        meetingId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        ownerHintRaw: 'Роман',
+      },
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(issues.create).toHaveBeenCalledTimes(1);
+    const dto = issues.create.mock.calls[0]?.[1] as { ownerHintRaw: string | null };
+    expect(dto.ownerHintRaw).toBe('Роман');
   });
 });

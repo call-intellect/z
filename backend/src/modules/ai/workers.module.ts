@@ -19,6 +19,7 @@ import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.work
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { BlockLinkerWorker } from '../knowledge-core/workers/block-linker.worker';
 import { CardRollupV2Worker } from '../knowledge-core/workers/card-rollup-v2.worker';
+import { EntityConsolidateSameNameCronService } from '../knowledge-core/workers/entity-consolidate-same-name.cron';
 import { EntityGraphBuilderCron } from '../knowledge-core/workers/entity-graph-builder.cron';
 import { EntityResolverCronService } from '../knowledge-core/workers/entity-resolver.cron';
 import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.worker';
@@ -31,6 +32,7 @@ import { GoalHierarchyRebuildCron } from '../knowledge-core/workers/goal-hierarc
 import { GoalTaskLinkerCron } from '../knowledge-core/workers/goal-task-linker.cron';
 import { GoalThemeLinkerCron } from '../knowledge-core/workers/goal-theme-linker.cron';
 import { GraphMaterializationVerifyCron } from '../knowledge-core/workers/graph-materialization-verify.cron';
+import { GraphReconcileCronService } from '../knowledge-core/workers/graph-reconcile.cron';
 import { IdeaClustererCron } from '../knowledge-core/workers/idea-clusterer.cron';
 import { InsightClustererCron } from '../knowledge-core/workers/insight-clusterer.cron';
 import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
@@ -64,7 +66,9 @@ import { SprintHelperWorker } from '../knowledge-core/workers/sprint-helper.work
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { TaskClarifySweepCron } from '../knowledge-core/workers/task-clarify-sweep.cron';
+import { ThemeAutofillCron } from '../knowledge-core/workers/theme-autofill.cron';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
+import { RegulationSummarizeCron } from '../knowledge-core/workers/regulation-summarize.cron';
 import { ThemeSummarizeCron } from '../knowledge-core/workers/theme-summarize.cron';
 import { MeetingUploadIngestWorker } from '../meeting-uploads/workers/meeting-upload-ingest.worker';
 import { MeetingUploadTranscribeWorker } from '../meeting-uploads/workers/meeting-upload-transcribe.worker';
@@ -78,8 +82,10 @@ import { FaststartWorker } from '../recordings/workers/faststart.worker';
 import { RoleMapModule } from '../role-map/role-map.module';
 import { TablesModule } from '../tables/tables.module';
 import { TableEnrichWorker } from '../tables/workers/table-enrich.worker';
+import { TableGraphsyncReconcileCronService } from '../tables/workers/table-graphsync-reconcile.cron';
 import { TableSyncWorker } from '../tables/workers/table-sync.worker';
 import { TrackerModule } from '../tracker/tracker.module';
+import { IssueEmbedWorker } from '../tracker/workers/issue-embed.worker';
 
 import { AnthropicService } from './services/anthropic.service';
 import { DeepSeekService } from './services/deepseek.service';
@@ -140,11 +146,13 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     BlockDistillWorker,
     EntityResolverWorker,
     EntityResolverCronService,
+    EntityConsolidateSameNameCronService,
     RegulationConsolidatorWorker,
     RegulationConsolidatorCronService,
     BlockLinkerWorker,
     EntityGraphBuilderCron,
     GraphMaterializationVerifyCron,
+    GraphReconcileCronService,
     // Аудит-баг Б4 (high, класс K7) — cron каждые 30 мин: реконсиляция
     // застрявших draft-блоков. block-ingest.worker помечает RawEvent=ingested
     // ДО best-effort enqueueBlockDistill; краш/сбой Redis между ними оставляет
@@ -164,7 +172,9 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     GoalHierarchyRebuildCron,
     ReframingCron,
     ThemeClustererCron,
+    ThemeAutofillCron,
     ThemeSummarizeCron,
+    RegulationSummarizeCron,
     CardRollupV2Worker,
     Specialist34ProjectCustomerWorker,
     Specialist31RegulationsWorker,
@@ -185,11 +195,8 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     Specialist314GoalsWorker,
     Specialist315TasksService,
     TaskClarifySweepCron,
-    // Ф5 (TZ 2026-06-16 task-dedup) — consumer `core.goal-embed`. Считает
-    // pgvector-embedding цели (name+description) для семантического дедупа
-    // целей (specialist-3-14 KNN по Goal.embedding вместо ILIKE). Зеркало
-    // IssueEmbedWorker; EmbeddingFallbackService — из @Global EmbeddingsModule.
     GoalEmbedWorker,
+    IssueEmbedWorker,
     // SBA β-5 — cron `30 *‎/4 * * *`: кластеризация Idea → IdeaCluster
     // (KNN + LLM idea-cluster-merge на критической массе).
     IdeaClustererCron,
@@ -221,6 +228,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
 
     TableSyncWorker,
     TableEnrichWorker,
+    TableGraphsyncReconcileCronService,
 
     ChatboxSyncWorker,
     BitrixSyncWorker,

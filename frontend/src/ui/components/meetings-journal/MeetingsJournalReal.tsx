@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowUpRight,
   Calendar,
+  CheckCircle2,
   ChevronRight,
   Circle,
   Clock,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 
 import { meetingsApi } from "@/api/meetings.api";
+import { issuesApi } from "@/api/tracker/issues.api";
 import { tagsApi } from "@/api/tags.api";
 import { exportsApi } from "@/api/exports.api";
 import { ApiError, humanizeApiError } from "@/api/api-error";
@@ -40,6 +42,7 @@ import {
   MEETING_TYPE_LABEL_RU,
 } from "@/domain/meeting";
 import { pickPrimarySummary } from "@/domain/ai-result";
+import type { Issue } from "@/domain/tracker";
 import { tagFromApi, type TagDomain } from "@/domain/tag";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useMeetingIssues } from "@/hooks/tracker/use-meeting-issues";
@@ -1033,8 +1036,31 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
     () => meetingsApi.result(meetingId),
     { revalidateOnFocus: false },
   );
-  const { issues: tasks } = useMeetingIssues(currentOrgId, meetingId);
+  const { issues: tasks, mutate: mutateTasks } = useMeetingIssues(
+    currentOrgId,
+    meetingId,
+  );
+  const [taskDoneOverride, setTaskDoneOverride] = useState<
+    Record<string, boolean>
+  >({});
   const [inviteOpen, setInviteOpen] = useState(false);
+
+  const onToggleTaskDone = async (t: Issue, currentlyDone: boolean) => {
+    if (!currentOrgId) return;
+    const next = !currentlyDone;
+    setTaskDoneOverride((m) => ({ ...m, [t.id]: next }));
+    try {
+      await issuesApi.transitionToCategory(
+        currentOrgId,
+        t.id,
+        next ? "completed" : "unstarted",
+      );
+      await mutateTasks();
+    } catch (e) {
+      setTaskDoneOverride((m) => ({ ...m, [t.id]: currentlyDone }));
+      toast.error(humanizeApiError(e, "Не удалось обновить задачу"));
+    }
+  };
 
   if (isLoading) {
     return (
@@ -1217,18 +1243,51 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                           ? t.dueDate.toLocaleDateString("ru-RU")
                           : undefined;
                         const hasAssignees = t.assigneeUserIds.length > 0;
+                        const done =
+                          taskDoneOverride[t.id] ??
+                          (t.isCompleted || t.stateCategory === "completed");
                         return (
                           <li
                             key={t.id}
-                            className="flex items-start gap-2.5 rounded-md px-3 py-2.5 transition-colors hover:bg-bg-overlay"
+                            className="relative flex items-start gap-2.5 rounded-md px-3 py-2.5 transition-colors hover:bg-bg-overlay"
                           >
-                            <Circle
-                              size={14}
-                              strokeWidth={1.5}
-                              className="mt-0.5 shrink-0 text-fg-tertiary"
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void onToggleTaskDone(t, done);
+                              }}
+                              className={cn(
+                                "relative z-10 mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full transition-colors",
+                                done
+                                  ? "text-accent"
+                                  : "text-fg-tertiary hover:text-accent",
+                              )}
+                              aria-label={
+                                done ? "Снять отметку" : "Отметить выполненной"
+                              }
+                            >
+                              {done ? (
+                                <CheckCircle2 size={14} strokeWidth={2} />
+                              ) : (
+                                <Circle size={14} strokeWidth={1.5} />
+                              )}
+                            </button>
+                            <Link
+                              href={`/issues/${encodeURIComponent(t.id)}`}
+                              className="absolute inset-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                              aria-label={`Открыть задачу: ${title}`}
                             />
                             <div className="min-w-0 flex-1">
-                              <div className="text-sm leading-snug text-fg-primary">
+                              <div
+                                className={cn(
+                                  "text-sm leading-snug",
+                                  done
+                                    ? "text-fg-tertiary line-through"
+                                    : "text-fg-primary",
+                                )}
+                              >
                                 {title}
                               </div>
                               {(hasAssignees || due) && (

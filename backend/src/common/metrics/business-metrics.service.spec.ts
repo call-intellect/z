@@ -298,3 +298,41 @@ describe('BusinessMetricsService — Пакет D (F-9 / F-8 / Ф3)', () => {
     expect(count).toBe(2);
   });
 });
+
+describe('BusinessMetricsService — experiment_tasks_extracted_total', () => {
+  let service: BusinessMetricsService;
+
+  beforeEach(() => {
+    register.clear();
+    service = new BusinessMetricsService();
+    service.onModuleInit();
+  });
+
+  afterEach(() => {
+    register.clear();
+  });
+
+  async function readTasks(tenantTop: string, surface: string): Promise<number> {
+    const metrics = await register.getMetricsAsJSON();
+    const metric = metrics.find((m) => m.name === 'experiment_tasks_extracted_total');
+    if (!metric) return 0;
+    const row = metric.values.find(
+      (v) => v.labels.tenant_top === tenantTop && v.labels.surface === surface,
+    );
+    return row?.value ?? 0;
+  }
+
+  it('инкрементит счётчик по tenant_top × surface', async () => {
+    expect(await readTasks('org', 'meeting')).toBe(0);
+
+    service.incExperimentTaskExtracted({ tenantTop: 'org', surface: 'meeting', count: 1 });
+
+    expect(await readTasks('org', 'meeting')).toBe(1);
+  });
+
+  it('count:0 — no-op', async () => {
+    service.incExperimentTaskExtracted({ tenantTop: 'org', surface: 'ingest', count: 0 });
+
+    expect(await readTasks('org', 'ingest')).toBe(0);
+  });
+});

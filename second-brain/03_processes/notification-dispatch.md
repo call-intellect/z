@@ -73,7 +73,7 @@ related_projects:
 | 2 | Валидация payload + создание Notification | `validateEventPayload(eventType, payload)` (Zod-схема per eventType из `event-payload.registry`); `prisma.notification.create({ data: { ..., responseStatus: eventType==='probe.question' ? 'pending' : null } })` | `backend/src/modules/conversational/conversational.service.ts:170..198`, `backend/src/modules/conversational/types/event-payload.registry.ts` | inline | `Notification` | ✅ |
 | 3 | ensureInAppForUser | `Channel.upsert({ where: { tenantId_kind: { tenantId, kind: 'in_app' } } })` + `ChannelBinding.upsert({ where: { channelId_externalId: { channelId, externalId: userId } } })` — гарантирует in-app как fallback | `backend/src/modules/conversational/conversational.service.ts:813..838` | inline | `Channel`, `ChannelBinding` (только на первом вызове для юзера) | ✅ |
 | 4 | resolveBindings | `prisma.channelBinding.findMany({ userId, verifiedAt: { not: null }, channel: { tenantId, status: 'active' } }, include: { channel } })` | `backend/src/modules/conversational/conversational.service.ts:794..806` | inline | (read-only) | ✅ |
-| 5 | Per-eventType policy | `EVENT_TYPE_CHANNEL_POLICY[eventType] ?? DEFAULT_POLICY=['in_app']`; `preferredChannelKinds` из вызова перебивает. 11 зарегистрированных типов (probe.question, curation.pending, system.message, idea.status_changed, chat.answer, specialist.probe, proactive.notification, operations.weekly_digest, issue.mention, event.reminder + DEFAULT) | `backend/src/modules/conversational/conversational.service.ts:83..111` | inline | — | ✅ |
+| 5 | Per-eventType policy | `EVENT_TYPE_CHANNEL_POLICY[eventType] ?? DEFAULT_POLICY=['in_app']`; `preferredChannelKinds` из вызова перебивает. ~30 зарегистрированных типов (растёт с каждым продюсером; policy редактируется в коде): probe.question / .clarify / .confirm / .digest / .answer_acknowledged, specialist.probe, curation.pending, system.message, idea.status_changed, chat.answer, chat.new_message, proactive.notification, notification.responded, operations.daily_digest / .weekly_digest / .monthly_recap, goals.pulse, tasks.daily_open, issue.assigned / .overdue / .mention, task.closed_for_review, checkin.ack / .prompt, note.ack, actions.reminder, meeting.invite, event.reminder, support.ticket_created / .ticket_reply (+ DEFAULT) | `backend/src/modules/conversational/conversational.service.ts:83..111` | inline | — | ✅ |
 | 6 | selectBindingsForNotification | Фильтр кандидатов: (a) `DataClassPolicyService.canEmit({ payload, sink, effectiveMax=min(Channel.maxDataClass, ChannelBinding.maxDataClass) })` или legacy lattice; (b) `policySet.has(ch.kind)`; (c) preferences (eventTypeAllow/Deny, disabledUntil); (d) quietHours (не для critical); fallback `in_app` если selected пустое | `backend/src/modules/conversational/conversational.service.ts:848..942` | inline | — | ✅ |
 | 7 | Создание NotificationDelivery + enqueue | Для каждого выбранного binding'а: `prisma.notificationDelivery.create({ data: { notificationId, channelBindingId } })`, `queue.enqueueSend({ deliveryId })`; метрика `conversational_deliveries_total{kind, status='queued'}` | `backend/src/modules/conversational/conversational.service.ts:247..264`, `backend/src/modules/conversational/queue/conversational-queue.service.ts` | очередь `conversational.send` | `NotificationDelivery` × N | ✅ |
 | 8 | Worker → adapter.send | `ConversationalSendWorker.process(job)` загружает delivery с notification + binding + channel, по `channel.kind` берёт адаптер через `ChannelRegistry.get(kind)`, вызывает `adapter.send({ delivery, notification, binding, channel })` | `backend/src/modules/conversational/queue/conversational-send.worker.ts:86..175`, `backend/src/modules/conversational/channel-registry.ts` | worker очереди `conversational.send` (concurrency = `cfg.conversational.outboundConcurrency`) | — (адаптер возвращает `externalMessageId`) | ✅ |
@@ -81,6 +81,7 @@ related_projects:
 | 8b | EmailSmtp adapter | `MailService.sendPlain({ to: binding.externalId, subject: subjectFor(eventType), text: renderPlainText(notification), template: 'conversational/{eventType}' })`; subject/body — русские шаблоны per eventType с deep-link на `/me/notifications/[id]` | `backend/src/modules/conversational/adapters/email-smtp.adapter.ts:51..160` | прямой вызов MailService | (worker обновит delivery) | ✅ |
 | 8c | TelegramBot adapter | `TelegramApiClient.sendMessage(...)` через прокси `telegram.crossmark.ru`; форматирование payload + опц. `reply_markup` (inline-кнопки для probe-вопросов) | `backend/src/modules/conversational/adapters/telegram-bot/telegram-bot.adapter.ts`, `telegram-api-client.ts` | прямой HTTP через прокси | (worker обновит delivery) | ✅ |
 | 8d | MaxBot adapter | `MaxApiClient.send(...)` (российский мессенджер MAX); по аналогии с Telegram | `backend/src/modules/conversational/adapters/max-bot/max-bot.adapter.ts` | прямой HTTP | (worker обновит delivery) | ✅ |
+| 8e | Push adapter | 5-й канал `push` (APNS/FCM/WebPush): `kind='push'`, `maxDataClass='internal'`, регистрируется в `ChannelRegistry` через `onModuleInit`. `PushService.sendToUser({ signal })` — шлёт **обезличенный** сигнал (для `chat.new_message` пробрасывает только `conversationId`, тело собирает push-сервис как «Кора / Новое сообщение», без содержимого). За kill-switch `CHAT_PUSH_ENABLED` (`cfg.push.chatPushEnabled`) — OFF → no-op. `chat.new_message` в policy включает `'push'` | `backend/src/modules/push/adapters/push-channel.adapter.ts:17,19,38`, `backend/src/modules/push/services/push.service.ts` | worker очереди `conversational.send` | (worker обновит delivery) | ✅ (за kill-switch) |
 | 9 | Успех / retry / failed | Success: `delivery.update({ status: 'delivered', deliveredAt, externalMessageId, attempts+1 })`. Exception: `newAttempts < maxDeliveryAttempts` → enqueue retry с backoff `2^attempts × 1000ms, cap 60min`; иначе `markDeliveryFailed(errorReason)` | `backend/src/modules/conversational/queue/conversational-send.worker.ts:121..193` | re-enqueue в `conversational.send` (delayMs) | `NotificationDelivery.status` | ✅ |
 | 10 | recomputeNotificationStatus | После каждого изменения delivery: groupBy `status`, выбор `NotificationStatus` (`responded > read > delivered > sent_partial > failed > queued`); `prisma.notification.update({ status })` + метрика | `backend/src/modules/conversational/queue/conversational-send.worker.ts:195..228` | inline | `Notification.status` | ✅ |
 
@@ -102,7 +103,8 @@ Notification.create
        ├── InAppChannelAdapter        → no-op
        ├── EmailSmtpChannelAdapter    → MailService.sendPlain
        ├── TelegramBotChannelAdapter  → TelegramApiClient (proxy)
-       └── MaxBotChannelAdapter       → MaxApiClient
+       ├── MaxBotChannelAdapter       → MaxApiClient
+       └── PushChannelAdapter         → PushService.sendToUser (обезличенный, kill-switch CHAT_PUSH_ENABLED)
             ↓ success/exception
             NotificationDelivery.status = delivered | failed (+ retry с backoff)
             ↓
@@ -129,6 +131,9 @@ Notification.create
 - `cfg.conversational.outboundConcurrency` — параллельная обработка job'ов одним worker'ом.
 - `cfg.conversational.maxDeliveryAttempts` — потолок ретраев.
 - `cfg.conversational.quietHoursDefault` — окно «не отправлять» (TZ серверная; локализация per-юзер — задача β+).
+- `NOTIFICATIONS_DAILY_BUDGET_PER_PERSON` (default 5) — дневной бюджет уведомлений на человека.
+
+**Дневной бюджет пушей + приоритет:** отдельный гейт «последней мили» — `NotificationBudgetService` (`backend/src/modules/conversational/notification-budget.service.ts`) поверх модели `NotificationBudgetLedger` (`schema.prisma:7470`): не больше `DEFAULT_DAILY_BUDGET_PER_PERSON=5` в день на человека. Каждое уведомление несёт `priorityTier` (`input.priorityTier ?? 2`); **`priorityTier === 1` (critical) обходит и бюджет, и тихие часы** (`isOverBudget` возвращает `false` для tier 1). Это защищает от «залипания» пользователя лавиной проактивных сигналов, но всегда пропускает критичное.
 
 **Логи:** `ConversationalService`, `ConversationalSendWorker`, `InAppChannelAdapter`, `EmailSmtpChannelAdapter`, `TelegramBotChannelAdapter`, `MaxBotChannelAdapter`, `ChannelRegistry`.
 
@@ -137,7 +142,7 @@ Notification.create
 - **Quiet hours не локализованы по таймзоне юзера.** Используется серверная TZ через `cfg.conversational.quietHoursDefault`. На α-1 — допустимо, в β+ — расширить.
 - **`DataClassPolicyService` опционален** (`@Optional()`). Если не инжектится — fallback на legacy lattice по `effectiveMax = min(Channel.maxDataClass, ChannelBinding.maxDataClass)`. В тестах часто этот fallback ловится.
 - **`Notification.status='failed'`** при нулевом числе выбранных каналов означает либо «ensureInAppForUser не сработал» (легаси-ветка), либо «W4.3 dataclass gate отверг все каналы, включая in_app». Запись в логах warn — единственная видимость.
-- **`@Global` модули** — все четыре адаптера `InApp/EmailSmtp/TelegramBot/MaxBot` регистрируются в `ChannelRegistry` через `onModuleInit`; падение регистрации = silent для одного типа. `ChannelRegistry.require(kind)` бросает явно, `get(kind)` — `null`.
+- **`@Global` модули** — все пять адаптеров `InApp/EmailSmtp/TelegramBot/MaxBot/Push` регистрируются в `ChannelRegistry` через `onModuleInit`; падение регистрации = silent для одного типа. `ChannelRegistry.require(kind)` бросает явно, `get(kind)` — `null`.
 
 **Кнопки админки:**
 - `/admin/platform/channels` (если страница есть; см. [[01_projects/admin]]) — список каналов, тумблеры, `maxDataClass`.
@@ -157,7 +162,7 @@ Notification.create
 **Реализовано полностью:**
 - Public API `sendNotification` с валидацией payload через Zod registry.
 - Per-eventType policy + перебивание через `preferredChannelKinds`.
-- 4 адаптера: in-app, email-smtp, telegram-bot, max-bot.
+- 5 адаптеров: in-app, email-smtp, telegram-bot, max-bot, push (последний — за kill-switch `CHAT_PUSH_ENABLED`).
 - Retry с exp-backoff (cap 1ч), `maxDeliveryAttempts`-граница.
 - Агрегация `Notification.status` из множества `NotificationDelivery`.
 - DataClass-gate через `DataClassPolicyService.canEmit` (W4.3) + legacy fallback.

@@ -26,7 +26,7 @@ verified_at: 2026-05-25
 | 8 | `kie` | `gpt-5-4` (Responses) | ⚠ | 0% sequential, **46.9% parallel** | нестабильно | 0% | Похоже на балансировку на разные backend. Кэш «прыгает», воспроизводимости нет. |
 | 9 | `kie` | `gemini-3-flash` (chat-compat) | ❌ | 0% | 0% | 0% | Кэш не работает. Очень медленный канал (~25 сек/запрос). |
 | 10 | `ollama` | `qwen3.5:9b` | (не тестирован) | — | — | — | Локальный канал, prompt caching на уровне API не предусмотрен. Тестировать смысла нет. |
-| 11 | `anthropic` (прямой) | claude-* | (не используется) | — | — | — | Решение владельца — Claude в Z **не закупаем**. См. [llm-providers-verified.md](../01_projects/llm-providers-verified.md). |
+| 11 | `anthropic` (прямой) | claude-* | (не тестирован) | — | — | — | Канал в роутере **реализован** (capability=`sensitive`), но Claude **не закупаем** (решение владельца) — кэш не проверяли. См. [llm-providers-verified.md](../01_projects/llm-providers-verified.md). |
 
 ## Главные выводы
 

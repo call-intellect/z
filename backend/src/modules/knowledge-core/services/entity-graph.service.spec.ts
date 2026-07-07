@@ -191,4 +191,76 @@ describe('EntityGraphService.judgeRelation (ТЗ-3 Ф1 — устойчивый 
     expect(metrics.incKcEntityGraphInvalidJson).toHaveBeenCalledTimes(1);
     expect(metrics.incKcEntityGraphFallbackNone).not.toHaveBeenCalled();
   });
+
+  it('явная ответственность → responsible_for, direction a_to_b', async () => {
+    const router = makeRouterReturning([
+      {
+        text: JSON.stringify({
+          relationType: 'responsible_for',
+          direction: 'a_to_b',
+          confidence: 0.9,
+          explanation: 'A взял задачу B',
+          validFromHint: null,
+          validUntilHint: null,
+          attributes: null,
+        }),
+      },
+    ]);
+    const svc = makeService(router);
+    const verdict = await svc.judgeRelation(judgeArgs);
+
+    expect(verdict).toEqual(
+      expect.objectContaining({
+        relationType: 'responsible_for',
+        direction: 'a_to_b',
+        confidence: 0.9,
+      }),
+    );
+  });
+
+  it('владелец метрики → owned_by, direction b_to_a пробрасывается', async () => {
+    const router = makeRouterReturning([
+      {
+        text: JSON.stringify({
+          relationType: 'owned_by',
+          direction: 'b_to_a',
+          confidence: 0.88,
+          explanation: 'Метрика A принадлежит владельцу B',
+          validFromHint: null,
+          validUntilHint: null,
+          attributes: null,
+        }),
+      },
+    ]);
+    const svc = makeService(router);
+    const verdict = await svc.judgeRelation(judgeArgs);
+
+    expect(verdict).toEqual(
+      expect.objectContaining({
+        relationType: 'owned_by',
+        direction: 'b_to_a',
+        confidence: 0.88,
+      }),
+    );
+  });
+
+  it('вердикт без direction → default a_to_b (backward-compat)', async () => {
+    const router = makeRouterReturning([
+      {
+        text: JSON.stringify({
+          relationType: 'works_at',
+          confidence: 0.9,
+          explanation: 'A работает в B',
+          validFromHint: null,
+          validUntilHint: null,
+          attributes: null,
+        }),
+      },
+    ]);
+    const svc = makeService(router);
+    const verdict = await svc.judgeRelation(judgeArgs);
+
+    expect(verdict.relationType).toBe('works_at');
+    expect(verdict.direction).toBe('a_to_b');
+  });
 });

@@ -114,8 +114,36 @@ export interface EntityMergeCandidate {
  * id одного из переданных кандидатов.
  */
 export type EntityMergeVerdict =
-  | { verdict: 'merge'; canonicalId: string; explanation: string }
+  | {
+      verdict: 'merge';
+      canonicalId: string;
+      canonicalType?: EntityType;
+      explanation: string;
+    }
   | { verdict: 'distinct'; explanation: string };
+
+const ENTITY_TYPE_VALUES: ReadonlySet<string> = new Set<EntityType>([
+  'client',
+  'person',
+  'customer',
+  'vendor',
+  'project',
+  'product',
+  'document',
+  'goal',
+  'event',
+  'topic',
+  'location',
+  'technology',
+  'metric',
+  'market',
+  'org_unit',
+  'custom',
+]);
+
+function isEntityType(value: unknown): value is EntityType {
+  return typeof value === 'string' && ENTITY_TYPE_VALUES.has(value);
+}
 
 /**
  * Сырая запись из $queryRawUnsafe — все поля Entity + similarity.
@@ -221,6 +249,33 @@ export class EntityMergeService {
     return result;
   }
 
+  async findCrossTypeSameNameCandidates(args: {
+    tenantId: string;
+    entityId: string;
+  }): Promise<Entity[]> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<Omit<RawCandidateRow, 'similarity'>>
+    >(
+      `
+      SELECT e.id, e."tenantId", e.type, e."canonicalName", e.aliases,
+             e."mergedIntoId", e."mentionsCount", e.metadata,
+             e."createdAt", e."updatedAt"
+      FROM "Entity" e
+      WHERE e."tenantId" = $1
+        AND e.id <> $2
+        AND e."mergedIntoId" IS NULL
+        AND e.type <> 'person'
+        AND e.type <> (SELECT type FROM "Entity" WHERE id = $2)
+        AND LOWER(e."canonicalName") = (SELECT LOWER("canonicalName") FROM "Entity" WHERE id = $2)
+      LIMIT 20
+      `,
+      args.tenantId,
+      args.entityId,
+    );
+
+    return rows.map((r) => this.rowToEntity({ ...r, similarity: 0 }));
+  }
+
   async judgeMerge(args: {
     tenantId: string;
     entity: Entity;
@@ -262,7 +317,10 @@ export class EntityMergeService {
         // Б12 [K5]: явный dataClass — иначе router дефолтит на 'internal'.
         dataClass,
       });
-      const parsed = this.parseVerdict(out.text, [args.candidate]);
+      const parsed = this.parseVerdict(out.text, [args.candidate], [
+        args.entity.type,
+        args.candidate.type,
+      ]);
       if (parsed) return parsed;
       this.logger.warn(
         { entityId: args.entity.id },
@@ -285,14 +343,13 @@ export class EntityMergeService {
     tenantId: string;
     fromEntityId: string;
     intoEntityId: string;
+    canonicalType?: EntityType;
     actor?: { byUserId?: string; source?: string; explanation?: string };
   }): Promise<{ ok: true }> {
-    const { tenantId, fromEntityId, intoEntityId } = args;
+    const { tenantId, fromEntityId, intoEntityId, canonicalType } = args;
     if (fromEntityId === intoEntityId) {
       throw new Error('mergeEntities: fromEntityId === intoEntityId');
     }
-
-    let mergedFromType: EntityType | null = null;
 
     await this.prisma.$transaction(async (tx) => {
       const [from, into] = await Promise.all([
@@ -307,10 +364,6 @@ export class EntityMergeService {
       if (from.mergedIntoId !== null || into.mergedIntoId !== null) {
         throw new Error('mergeEntities: одна из сущностей уже мержена (race)');
       }
-      if (from.type !== into.type) {
-        throw new Error('mergeEntities: разные type');
-      }
-      mergedFromType = from.type;
 
       await this.migrateEntityRefs(tx, {
         tenantId,
@@ -336,6 +389,9 @@ export class EntityMergeService {
         data: {
           mentionsCount: into.mentionsCount + from.mentionsCount,
           aliases: aliasesUnion,
+          ...(canonicalType && canonicalType !== into.type
+            ? { type: canonicalType }
+            : {}),
         },
       });
 
@@ -348,9 +404,9 @@ export class EntityMergeService {
 
     const typedSubrecordCount = await this.countTypedSubrecords(tenantId, fromEntityId);
     if (typedSubrecordCount > 0) {
-      this.logger.warn(
-        { fromEntityId, intoEntityId, type: mergedFromType },
-        'entity-merge: слиты сущности с типизированным сабрекордом — возможен over-merge (вне scope миграции)',
+      this.logger.error(
+        { fromEntityId, intoEntityId, typedSubrecordCount },
+        'entity-merge: после миграции остались сабрекорды (BUG)',
       );
     }
 
@@ -540,6 +596,153 @@ export class EntityMergeService {
       where: { tenantId, entityId: fromEntityId },
       data: { entityId: intoEntityId, entityTenantId: intoTenantId },
     });
+
+    if (await tx.vendor.findUnique({ where: { entityId: fromEntityId }, select: { id: true } })) {
+      if (await tx.vendor.findUnique({ where: { entityId: intoEntityId }, select: { id: true } })) {
+        await tx.vendor.delete({ where: { entityId: fromEntityId } });
+      } else {
+        await tx.vendor.update({
+          where: { entityId: fromEntityId },
+          data: { entityId: intoEntityId },
+        });
+      }
+    }
+
+    if (await tx.customer.findUnique({ where: { entityId: fromEntityId }, select: { id: true } })) {
+      if (await tx.customer.findUnique({ where: { entityId: intoEntityId }, select: { id: true } })) {
+        await tx.customer.delete({ where: { entityId: fromEntityId } });
+      } else {
+        await tx.customer.update({
+          where: { entityId: fromEntityId },
+          data: { entityId: intoEntityId },
+        });
+      }
+    }
+
+    if (await tx.event.findUnique({ where: { entityId: fromEntityId }, select: { id: true } })) {
+      if (await tx.event.findUnique({ where: { entityId: intoEntityId }, select: { id: true } })) {
+        await tx.event.delete({ where: { entityId: fromEntityId } });
+      } else {
+        await tx.event.update({
+          where: { entityId: fromEntityId },
+          data: { entityId: intoEntityId },
+        });
+      }
+    }
+
+    if (await tx.market.findUnique({ where: { entityId: fromEntityId }, select: { id: true } })) {
+      if (await tx.market.findUnique({ where: { entityId: intoEntityId }, select: { id: true } })) {
+        await tx.market.delete({ where: { entityId: fromEntityId } });
+      } else {
+        await tx.market.update({
+          where: { entityId: fromEntityId },
+          data: { entityId: intoEntityId },
+        });
+      }
+    }
+
+    if (await tx.orgUnit.findUnique({ where: { entityId: fromEntityId }, select: { id: true } })) {
+      if (await tx.orgUnit.findUnique({ where: { entityId: intoEntityId }, select: { id: true } })) {
+        await tx.orgUnit.delete({ where: { entityId: fromEntityId } });
+      } else {
+        await tx.orgUnit.update({
+          where: { entityId: fromEntityId },
+          data: { entityId: intoEntityId },
+        });
+      }
+    }
+
+    if (await tx.goal.findUnique({ where: { entityId: fromEntityId }, select: { id: true } })) {
+      if (await tx.goal.findUnique({ where: { entityId: intoEntityId }, select: { id: true } })) {
+        await tx.goal.delete({ where: { entityId: fromEntityId } });
+      } else {
+        await tx.goal.update({
+          where: { entityId: fromEntityId },
+          data: { entityId: intoEntityId, entityTenantId: intoTenantId },
+        });
+      }
+    }
+
+    if (await tx.document.findUnique({ where: { entityId: fromEntityId }, select: { id: true } })) {
+      if (await tx.document.findUnique({ where: { entityId: intoEntityId }, select: { id: true } })) {
+        await tx.document.delete({ where: { entityId: fromEntityId } });
+      } else {
+        await tx.document.update({
+          where: { entityId: fromEntityId },
+          data: { entityId: intoEntityId, entityTenantId: intoTenantId },
+        });
+      }
+    }
+
+    if (await tx.role.findUnique({ where: { entityId: fromEntityId }, select: { id: true } })) {
+      if (await tx.role.findUnique({ where: { entityId: intoEntityId }, select: { id: true } })) {
+        await tx.role.delete({ where: { entityId: fromEntityId } });
+      } else {
+        await tx.role.update({
+          where: { entityId: fromEntityId },
+          data: { entityId: intoEntityId, entityTenantId: intoTenantId },
+        });
+      }
+    }
+
+    if (await tx.department.findUnique({ where: { entityId: fromEntityId }, select: { id: true } })) {
+      if (await tx.department.findUnique({ where: { entityId: intoEntityId }, select: { id: true } })) {
+        await tx.department.delete({ where: { entityId: fromEntityId } });
+      } else {
+        await tx.department.update({
+          where: { entityId: fromEntityId },
+          data: { entityId: intoEntityId, entityTenantId: intoTenantId },
+        });
+      }
+    }
+
+    const riskSnapshots = await tx.customerRiskSnapshot.findMany({
+      where: { tenantId, customerEntityId: fromEntityId },
+    });
+    for (const snap of riskSnapshots) {
+      const conflicting = await tx.customerRiskSnapshot.findUnique({
+        where: {
+          tenantId_customerEntityId_dateLocal: {
+            tenantId,
+            customerEntityId: intoEntityId,
+            dateLocal: snap.dateLocal,
+          },
+        },
+        select: { id: true },
+      });
+      if (conflicting) {
+        await tx.customerRiskSnapshot.delete({ where: { id: snap.id } });
+      } else {
+        await tx.customerRiskSnapshot.update({
+          where: { id: snap.id },
+          data: { customerEntityId: intoEntityId },
+        });
+      }
+    }
+
+    const themeExclusions = await tx.themeExclusion.findMany({
+      where: { tenantId, entityId: fromEntityId },
+    });
+    for (const ex of themeExclusions) {
+      const conflicting = await tx.themeExclusion.findFirst({
+        where: {
+          tenantId,
+          themeId: ex.themeId,
+          kind: ex.kind,
+          blockId: ex.blockId,
+          entityId: intoEntityId,
+        },
+        select: { id: true },
+      });
+      if (conflicting) {
+        await tx.themeExclusion.delete({ where: { id: ex.id } });
+      } else {
+        await tx.themeExclusion.update({
+          where: { id: ex.id },
+          data: { entityId: intoEntityId },
+        });
+      }
+    }
   }
 
   async reconcileEntityRefs(
@@ -602,6 +805,8 @@ export class EntityMergeService {
       this.prisma.orgUnit.count({ where: { tenantId, entityId } }),
       this.prisma.role.count({ where: { tenantId, entityId } }),
       this.prisma.department.count({ where: { tenantId, entityId } }),
+      this.prisma.customerRiskSnapshot.count({ where: { tenantId, customerEntityId: entityId } }),
+      this.prisma.themeExclusion.count({ where: { tenantId, entityId } }),
     ]);
     return counts.reduce((sum, c) => sum + c, 0);
   }
@@ -611,6 +816,7 @@ export class EntityMergeService {
   private parseVerdict(
     text: string,
     candidates: Entity[],
+    allowedTypes?: EntityType[],
   ): EntityMergeVerdict | null {
     let raw: unknown;
     try {
@@ -632,9 +838,16 @@ export class EntityMergeService {
       );
       return null;
     }
+    const rawCanonicalType = parsed.data.canonicalType;
+    const allowed = allowedTypes ?? candidates.map((c) => c.type);
+    const canonicalType =
+      isEntityType(rawCanonicalType) && allowed.includes(rawCanonicalType)
+        ? rawCanonicalType
+        : undefined;
     return {
       verdict: 'merge',
       canonicalId,
+      ...(canonicalType ? { canonicalType } : {}),
       explanation: parsed.data.explanation,
     };
   }

@@ -471,6 +471,12 @@ function buildSettings(): SettingSeed[] {
       'Минимум co-mention',
     ],
     [
+      'knowledge.entityGraphPairsPerOrg',
+      50,
+      'medium',
+      'Кап пар со-упоминаний на Org за прогон графостроителя',
+    ],
+    [
       'knowledge.themeClusteringMinBlocks',
       envInt('THEME_CLUSTERING_MIN_BLOCKS', 10),
       'medium',

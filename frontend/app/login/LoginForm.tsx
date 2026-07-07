@@ -36,7 +36,7 @@ export function LoginForm() {
         ? nextParam!
         : isSuperAdmin
           ? "/admin"
-          : "/meetings";
+          : "/dashboard";
       router.replace(target);
     } catch (err) {
       if (err instanceof ApiError) {

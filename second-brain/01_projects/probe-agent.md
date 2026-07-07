@@ -1,8 +1,8 @@
 ---
 type: project
 status: active
-phase: beta-5
-updated: 2026-05-22
+phase: living
+updated: 2026-06-29
 related:
   - 02_architecture/module-map.md (β-5)
   - 01_projects/ideas.md
@@ -80,6 +80,8 @@ ProbePriorityCron (*/15 * * * *):
   • UPDATE ProbeEvent SET status='expired' WHERE expiresAt < now AND status='pending'.
   • per-user engagement_rate gauge: probe_recipient_engagement_rate{user_id}.
 ```
+
+> ⚠️ **Dormant-ветка `suppressOnUnconfirmedAuto`.** В `probe.service.ts` (шаги 60–97) есть гейт подавления probe на авто-неподтверждённых карточках: он зовёт `resolveProbeProvenance(...)` и подавляет только при `provenance === 'auto_unconfirmed'`. Но `resolveProbeProvenance` в `probe-reason-policy.ts:55` захардкожен на `return 'unknown'`, поэтому условие никогда не истинно — safety-gate по провенансу фактически no-op. Ложное впечатление «gate активен» снято: провенанс-подавление не работает.
 
 ## Сущность ProbeEvent
 
@@ -338,5 +340,5 @@ Kill-switch / крутилки — [[../../docs/operations/feature-flags|feature
 
 - [[probe-observers-catalog]] — **каталог всех наблюдателей-источников** (кто/что/когда/как ищет пробелы и какие промпты используют). Этот файл — про движок доставки; каталог — про источники вопросов.
 - [[ideas]] — главный потребитель Probe-Agent в β-5.
-- [[channels-foundation]] (α-1) — где живёт `ConversationalService`.
+- [[conversational-channels]] (α-1) — где живёт `ConversationalService`.
 - [[../02_architecture/module-map|02_architecture/module-map.md]] — раздел «SBA β-5».

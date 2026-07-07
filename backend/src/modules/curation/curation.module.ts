@@ -13,10 +13,6 @@ import {
   CompletenessScannerService,
 } from './workers/completeness-scanner.cron';
 import { ConflictArbiterCron } from './workers/conflict-arbiter.cron';
-import {
-  ConsistencyCheckerCron,
-  ConsistencyCheckerService,
-} from './workers/consistency-checker.cron';
 import { CurationAutotuneCron } from './workers/curation-autotune.cron';
 import { CurationItemLifecycleCron } from './workers/curation-item-lifecycle.cron';
 
@@ -33,8 +29,6 @@ import { CurationItemLifecycleCron } from './workers/curation-item-lifecycle.cro
     ConflictArbiterCron,
     CompletenessScannerService,
     CompletenessScannerCron,
-    ConsistencyCheckerService,
-    ConsistencyCheckerCron,
   ],
   exports: [CurationService, ConflictService, CuratorRoutingService, CompletenessScannerService],
 })

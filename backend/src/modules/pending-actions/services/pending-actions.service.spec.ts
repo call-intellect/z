@@ -6,6 +6,7 @@ import type { ConversationalService } from '../../conversational/conversational.
 import type { ConflictService } from '../../curation/services/conflict.service';
 import type { CurationService } from '../../curation/services/curation.service';
 import type { WorkChatService } from '../../messaging/services/work-chat.service';
+import type { RbacService } from '../../rbac/rbac.service';
 import type { IntakeService } from '../../tracker/services/intake.service';
 import type { IssuesService } from '../../tracker/services/issues.service';
 import type { ProgressUpdatesService } from '../../tracker/services/progress-updates.service';
@@ -58,6 +59,8 @@ describe('PendingActionsService (B0)', () => {
   let issuesService: IssuesService;
   let progressUpdatesService: ProgressUpdatesService;
   let workChat: WorkChatService;
+  let rbac: RbacService;
+  let canWriteMock: ReturnType<typeof vi.fn>;
   let cfg: TypedConfigService;
   let sendNotification: ReturnType<typeof vi.fn>;
   let progressConfirm: ReturnType<typeof vi.fn>;
@@ -140,6 +143,8 @@ describe('PendingActionsService (B0)', () => {
     cfg = {
       tracker: { closureNotifyCreatorEnabled: true },
     } as unknown as TypedConfigService;
+    canWriteMock = vi.fn().mockResolvedValue(true);
+    rbac = { canWrite: canWriteMock } as unknown as RbacService;
 
     curation = {
       source: 'curation',
@@ -193,6 +198,7 @@ describe('PendingActionsService (B0)', () => {
       issuesService,
       progressUpdatesService,
       workChat,
+      rbac,
       cfg,
     );
   });
@@ -933,5 +939,47 @@ describe('PendingActionsService (B0)', () => {
       }),
     ).rejects.toThrow();
     expect(decide).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirm intake: нет write-права → Forbidden, triage НЕ вызван (закрытие обхода RBAC)', async () => {
+    canWriteMock.mockResolvedValue(false);
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-member',
+        source: 'intake',
+        resourceId: 'ii-9',
+        resolution: 'accept',
+      }),
+    ).rejects.toThrow();
+    expect(canWriteMock).toHaveBeenCalledWith('u-member', 't-1', 'intake_issue');
+    expect(triage).not.toHaveBeenCalled();
+  });
+
+  it('confirm intake: есть write-право → triage вызван', async () => {
+    canWriteMock.mockResolvedValue(true);
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-admin',
+      source: 'intake',
+      resourceId: 'ii-9',
+      resolution: 'accept',
+    });
+    expect(triage).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirm conflict: нет write-права → Forbidden, resolve НЕ вызван (закрытие обхода RBAC)', async () => {
+    canWriteMock.mockResolvedValue(false);
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-member',
+        source: 'conflict',
+        resourceId: 'cf-9',
+        resolution: 'keep_old',
+      }),
+    ).rejects.toThrow();
+    expect(canWriteMock).toHaveBeenCalledWith('u-member', 't-1', 'conflict_item');
+    expect(resolveConflict).not.toHaveBeenCalled();
   });
 });

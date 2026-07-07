@@ -9,16 +9,19 @@ interface Mocks {
   prisma: {
     $queryRawUnsafe: ReturnType<typeof vi.fn>;
     role: { findFirst: ReturnType<typeof vi.fn> };
+    personRole: { findMany: ReturnType<typeof vi.fn> };
     regulation: { findMany: ReturnType<typeof vi.fn> };
     instruction: { findMany: ReturnType<typeof vi.fn> };
     policy: { findMany: ReturnType<typeof vi.fn> };
     process: { findMany: ReturnType<typeof vi.fn> };
+    ruleSummary: { findMany: ReturnType<typeof vi.fn> };
   };
   cfg: {
     getDynamic: ReturnType<typeof vi.fn>;
     ai: { embeddings: { dimensions: number } };
   };
   embedder: { embedQuery: ReturnType<typeof vi.fn> };
+  llm: { call: ReturnType<typeof vi.fn> };
 }
 
 const tableOf = (sql: string): string => {
@@ -31,10 +34,12 @@ const buildService = (mocks: Mocks): RoleRegulationRetrievalService =>
     mocks.prisma as never,
     mocks.cfg as never,
     mocks.embedder as never,
+    mocks.llm as never,
   );
 
 const makeMocks = (): Mocks => {
   const getDynamic = vi.fn(async (key: string, _env: unknown, def: unknown) => {
+    if (key === 'clone.regulations.router.enabled') return false;
     if (key === 'clone.regulations.retrieval.top_n') return 6;
     if (key === 'clone.regulations.retrieval.min_similarity') return 0.3;
     if (key === 'clone.regulations.scope.include_org') return true;
@@ -44,14 +49,17 @@ const makeMocks = (): Mocks => {
   return {
     prisma: {
       $queryRawUnsafe: vi.fn(),
-      role: { findFirst: vi.fn().mockResolvedValue({ departmentId: null }) },
+      role: { findFirst: vi.fn().mockResolvedValue({ departmentId: null, name: 'Роль' }) },
+      personRole: { findMany: vi.fn().mockResolvedValue([]) },
       regulation: { findMany: vi.fn().mockResolvedValue([]) },
       instruction: { findMany: vi.fn().mockResolvedValue([]) },
       policy: { findMany: vi.fn().mockResolvedValue([]) },
       process: { findMany: vi.fn().mockResolvedValue([]) },
+      ruleSummary: { findMany: vi.fn().mockResolvedValue([]) },
     },
     cfg: { getDynamic, ai: { embeddings: { dimensions: DIM } } },
     embedder: { embedQuery: vi.fn() },
+    llm: { call: vi.fn() },
   };
 };
 
@@ -191,6 +199,64 @@ describe('RoleRegulationRetrievalService.retrieveForRole', () => {
       ['role:r1', 'org'],
       0.3,
     );
+  });
+});
+
+describe('RoleRegulationRetrievalService.retrieveForRole (router B)', () => {
+  let mocks: Mocks;
+
+  beforeEach(() => {
+    mocks = makeMocks();
+    mocks.cfg.getDynamic.mockImplementation(async (key: string, _env: unknown, def: unknown) => {
+      if (key === 'clone.regulations.router.enabled') return true;
+      if (key === 'clone.regulations.router.context_level') return 'summary';
+      if (key === 'clone.regulations.router.max_tokens') return 1500;
+      if (key === 'clone.regulations.router.max_pool') return 60;
+      if (key === 'clone.regulations.router.model') return 'deepseek-v4-flash';
+      if (key === 'clone.regulations.retrieval.top_n') return 6;
+      if (key === 'clone.regulations.scope.include_org') return true;
+      return def;
+    });
+  });
+
+  it('роутер выбрал id → правило с ПОЛНЫМ текстом, вектор не трогался', async () => {
+    mocks.prisma.regulation.findMany.mockResolvedValue([
+      { id: 'reg1', name: 'Возврат средств', statement: 'Возврат в течение 14 дней по заявлению.', contentMd: '', scope: 'role:r1' },
+    ]);
+    mocks.prisma.ruleSummary.findMany.mockResolvedValue([
+      { kind: 'regulation', ruleId: 'reg1', summary: 'Про возвраты и сроки.' },
+    ]);
+    mocks.llm.call.mockResolvedValue({ text: '{"ids":["reg1"]}', inputTokens: 10, outputTokens: 5, modelUsed: 'deepseek:deepseek-v4-flash', durationMs: 1, cachedTokens: 0 });
+
+    const result = await buildService(mocks).retrieveForRole({ tenantId: 't1', roleId: 'r1', query: 'как оформить возврат?' });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: 'reg1', kind: 'regulation', text: 'Возврат в течение 14 дней по заявлению.' });
+    expect(mocks.embedder.embedQuery).not.toHaveBeenCalled();
+    expect(mocks.prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('роутер выдумал id вне пула → отфильтрован (fabrication=0)', async () => {
+    mocks.prisma.regulation.findMany.mockResolvedValue([
+      { id: 'reg1', name: 'Правило A', statement: 'Тело A.', contentMd: '', scope: 'role:r1' },
+    ]);
+    mocks.llm.call.mockResolvedValue({ text: '{"ids":["reg-INVENTED"]}', inputTokens: 10, outputTokens: 5, modelUsed: 'x', durationMs: 1, cachedTokens: 0 });
+
+    const result = await buildService(mocks).retrieveForRole({ tenantId: 't1', roleId: 'r1', query: 'вопрос' });
+    expect(result).toEqual([]);
+  });
+
+  it('llm упал → фолбэк на вектор', async () => {
+    mocks.prisma.regulation.findMany.mockResolvedValue([
+      { id: 'reg1', name: 'Правило A', statement: 'Тело A.', contentMd: '', scope: 'role:r1' },
+    ]);
+    mocks.llm.call.mockRejectedValue(new Error('router down'));
+    mocks.embedder.embedQuery.mockResolvedValue(validVec());
+    mocks.prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+    const result = await buildService(mocks).retrieveForRole({ tenantId: 't1', roleId: 'r1', query: 'вопрос' });
+    expect(result).toEqual([]);
+    expect(mocks.prisma.$queryRawUnsafe).toHaveBeenCalled();
   });
 });
 

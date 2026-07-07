@@ -784,4 +784,44 @@ OR (toEntityId = id AND toType IN (NULL,'entity'))`. Образец — `backend
 
 **Правило:** любой `data-[attr]:...` в Tailwind — presence-only. Если библиотека рендерит атрибут со строковым булевым значением безусловно (`"true"`/`"false"`), нужен явный `data-[attr=true]:...`. Фикс — `data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50`. Подробности — [[../05_история/2026-07-06-admin-dashboard-charts-filters]].
 
+## `EntityType` в ключе резолва/мёржа расщепляет одноимённые сущности (2026-07-03)
+
+Тип — это **атрибут** реального объекта, а НЕ ключ его идентичности. Когда `EntityType`
+попадает в ключ дедупликации/мёржа, один и тот же объект под одним именем, но
+по-разному классифицированный разными слоями (напр. «Битрикс» как `technology` и как
+`product`; клиент как `client` и как `customer`), живёт как 2+ отдельные Entity и
+**никогда не схлопывается**. До Ф1 консолидации (2026-07-03) тип был встроен в ключ на
+шести уровнях: `findOrCreateEntity` по `(tenantId, type, lower(name))`, `findCandidates`
+KNN «того же `type`», hard-guard разных типов в `mergeEntities`, правило арбитра
+«разный вид → distinct», отсутствие `client→customer` нормализации, отсутствие
+кросс-типового консолидатора.
+
+**Правило:** идентичность сущности определяется именем + свойствами, НЕ типом. При мёрже
+разных типов выбирай канонический тип детерминированно (`resolveCanonicalType`,
+[services/entity-type-priority.ts](../../backend/src/modules/knowledge-core/services/entity-type-priority.ts):
+domain>generic; `normalizeEntityType` сводит `client→customer`), спорное отдавай арбитру
+(`entity-merge-arbiter` возвращает `canonicalType`). **И помни про сабрекорды:** снимая
+guard разных типов, `migrateEntityRefs` ОБЯЗАН мигрировать типизированные 1:1-таблицы
+(`Vendor`/`Customer`/`Event`/`Goal`/`Document`/`Market`/`OrgUnit`/`Role`/`Department`/
+`CustomerRiskSnapshot`/`ThemeExclusion`) — иначе кросс-типовой merge оставляет
+осиротевший сабрекорд с `entityId` на снесённую сущность. `countTypedSubrecords>0` после
+мёржа = BUG-сигнал (`error`).
+
+## Контекст-хедер в дедуп-эмбеддинге ломает кросс-канальный дедуп И рассинхронит с query-space (2026-07-03)
+
+Если в вектор `IdeaBlock.embedding` печатать контекст-хедер (источник/участники/тип/дата),
+один и тот же факт из разных каналов или в разные дни даёт **разные векторы** — потому
+что хедер разный, а суть одна. Два следствия: (1) `block-distill` KNN-дедуп не схлопывает
+дубли одного факта из разных источников; (2) **рассинхрон doc-space ↔ query-space** —
+поисковые запросы (`embedQuery`) эмбеддятся БЕЗ хедера, а корпус — С хедером, поэтому
+близость запроса к релевантному блоку занижена, рекол проседает.
+
+**Правило:** дедуп/поисковый вектор блока строй ТОЛЬКО из его сути —
+`embed(criticalQuestion + " " + trustedAnswer)` без метастроки (`KnowledgeEmbeddingService.embedBlocks`,
+Ф2 консолидации, 2026-07-03). Контекст встречи для recall подавай в ИЗВЛЕЧЕНИЕ (в USER
+промпта `block-ingest`), не в эмбеддинг. Обе стороны (запрос и корпус) должны жить в одном
+пространстве. Гейт идемпотентности ре-эмбеддинга — `IdeaBlock.contextHeaderVersion`
+(`'noheader-v1'` = `EMBED_NO_HEADER_VERSION`); backfill `backfill-reembed-blocks-no-header.ts`
+(пере-эмбеддинг + REINDEX HNSW).
+
 [[../index|← index]]

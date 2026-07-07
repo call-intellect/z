@@ -111,7 +111,9 @@ function buildService(opts: {
     incAccessShadowDiff,
   } as unknown as BusinessMetricsService;
 
-  const cfg = {} as unknown as TypedConfigService;
+  const cfg = {
+    getDynamic: async (_key: string, _env?: string, def?: unknown) => def,
+  } as unknown as TypedConfigService;
 
   const svc = new ClonesService(
     prisma,
@@ -319,6 +321,14 @@ describe('ClonesService Ф6 (G) — clone-respond hardening', () => {
         cloneTopicMinBlocks: 2,
         cloneTopicSimilarityThreshold: 0.7,
       },
+      getDynamic: async (key: string, _env?: string, def?: unknown) => {
+        if (key === 'clone.topic.similarityThreshold') return 0.7;
+        if (key === 'clone.topic.minBlocks') return 2;
+        if (key === 'clone.retrieval.topK') return 20;
+        return def;
+      },
+      resolveSync: (key: string, _env?: string, def?: unknown) =>
+        key === 'clone.v2.enabled' ? false : def,
     } as unknown as TypedConfigService;
     const embedder = {
       embedQuery: vi.fn(opts?.embedQuery ?? (async () => [0.1, 0.2, 0.3])),

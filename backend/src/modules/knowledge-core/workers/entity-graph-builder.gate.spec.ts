@@ -15,6 +15,7 @@ function buildCron() {
     knowledgeCore: {
       entityGraphMinComentions: 2,
       linkMinConfidence: 0.6,
+      entityGraphPairsPerOrg: 50,
     },
   };
   const graph = {

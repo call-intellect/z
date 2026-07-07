@@ -1,0 +1,538 @@
+{
+  "_meta": {
+    "title": "Recall gold-набор (линейка, Волна 1) — заземлён на сигнатуры, не на frozen block-id",
+    "tenant": "Стрела (синтетика)",
+    "org": "cmr1qbvpx0001pwbwxbgmh1jl",
+    "source": "docs/testing/strela-recall-questions.json (банк-111) → отобрано ~50 с однозначным эталоном",
+    "grounding": "expectedBlockSignatures = стабильные {entity?, phrases[]}; метрика резолвит их к активным IdeaBlock (status=canonical, mergedIntoId=null; таких 299) В РАНТАЙМЕ. Block-id НЕ замораживаются (пере-сев «Стрелы» меняет id). expectedEntities резолвятся к активным Entity (canonicalName/aliases, mergedIntoId=null; таких 171).",
+    "orgPin": "Заземлено на КАНОНИЧЕСКИЙ org cmr1qbvpx0001pwbwxbgmh1jl (eval-config.ts RECALL_EVAL_ORG). ВНИМАНИЕ: .env содержит STRELA_ORG другого тенанта (свежая «Стрела» соседней фичи) — eval-скрипты НЕ читают STRELA_ORG, чтобы не бить в чужой тенант.",
+    "expectedKind": "answerable = факт есть в базе, ждём заземлённый ответ; honest_empty = данных нет, ждём честный отказ",
+    "meetingsCaveat": "meetings-вопросы (q054/q055/q057) отвечаются из Meeting-записей, не из IdeaBlock; block-сигнатуры для них — прокси, основная проверка — mustMention.",
+    "verify": "backend/scripts/eval/gold/recall-gold.verify.ts — read-only проверка, что сигнатуры/сущности резолвятся к «Стреле»",
+    "validator": "backend/scripts/eval/gold/recall-gold.spec.ts — структурная валидация набора",
+    "count": 50
+  },
+  "questions": [
+    {
+      "id": "q001",
+      "angle": "expertise",
+      "question": "К кому идти по вопросам retention и целеполагания?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Сергей"],
+      "mustMention": ["Сергей", "retention|удержани"],
+      "expectedBlockSignatures": [{ "entity": "Сергей", "phrases": ["retention", "удержани"] }]
+    },
+    {
+      "id": "q002",
+      "angle": "expertise",
+      "question": "Кто у нас лучше всех разбирается в интеграции Битрикс?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Михаил", "Битрикс"],
+      "mustMention": ["Михаил", "Битрикс"],
+      "expectedBlockSignatures": [{ "entity": "Михаил", "phrases": ["Битрикс", "429"] }]
+    },
+    {
+      "id": "q007",
+      "angle": "expertise",
+      "question": "Кто у нас за поддержку клиентов отвечает?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Елена"],
+      "mustMention": ["Елена", "поддержк"],
+      "expectedBlockSignatures": [{ "entity": "Елена", "phrases": ["поддержк", "регламент"] }],
+      "note": "targeted: Елена намеренно слита в Игоря, клон пуст → проверка целостности сущностей (может вернуть Игоря/пусто)"
+    },
+    {
+      "id": "q008",
+      "angle": "expertise",
+      "question": "Кто занимается разработкой фронтенда и как связаться по вопросам UI?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Анна"],
+      "mustMention": ["Анна"],
+      "expectedBlockSignatures": [{ "entity": "Анна", "phrases": ["фронт", "дизайн", "макет"] }],
+      "note": "в прогоне-111 был отказ при наличии факта → это real_fail, не honest_empty"
+    },
+    {
+      "id": "q010",
+      "angle": "decision",
+      "question": "Что решили по LiveKit?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["LiveKit"],
+      "mustMention": ["LiveKit", "медиа"],
+      "expectedBlockSignatures": [{ "entity": "LiveKit", "phrases": ["LiveKit", "медиа"] }]
+    },
+    {
+      "id": "q013",
+      "angle": "decision",
+      "question": "Почему выбрали exponential backoff для Битрикс?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "429"],
+      "mustMention": ["backoff", "429"],
+      "expectedBlockSignatures": [{ "entity": "Битрикс", "phrases": ["backoff", "429"] }]
+    },
+    {
+      "id": "q014",
+      "angle": "decision",
+      "question": "Какая у нас основная метрика квартала?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["retention"],
+      "mustMention": ["retention|удержани"],
+      "expectedBlockSignatures": [{ "entity": "retention", "phrases": ["retention", "выручк"] }]
+    },
+    {
+      "id": "q016",
+      "angle": "decision",
+      "question": "Что решили по пилоту для Логистик Плюс?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Логистик Плюс"],
+      "mustMention": ["пилот", "15", "30%"],
+      "expectedBlockSignatures": [{ "entity": "Логистик Плюс", "phrases": ["пилот", "логистик"] }]
+    },
+    {
+      "id": "q020",
+      "angle": "fact",
+      "question": "Сколько человек в Логистик Плюс и сколько в пилотном отделе?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Логистик Плюс"],
+      "mustMention": ["200", "15"],
+      "expectedBlockSignatures": [{ "entity": "Логистик Плюс", "phrases": ["15", "логистик"] }]
+    },
+    {
+      "id": "q022",
+      "angle": "fact",
+      "question": "Какую ошибку выдаёт Битрикс при массовом синке?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "429"],
+      "mustMention": ["429"],
+      "expectedBlockSignatures": [{ "entity": "429", "phrases": ["429"] }]
+    },
+    {
+      "id": "q024",
+      "angle": "fact",
+      "question": "С текущего до какого значения хотим поднять недельный retention?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["retention"],
+      "mustMention": ["42%", "55%"],
+      "expectedBlockSignatures": [{ "entity": "retention", "phrases": ["42", "55"] }]
+    },
+    {
+      "id": "q025",
+      "angle": "fact",
+      "question": "Кто ЛПР в Логистик Плюс и в каком он органе?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Виктор", "Логистик Плюс"],
+      "mustMention": ["Виктор", "совет"],
+      "expectedBlockSignatures": [{ "entity": "Виктор", "phrases": ["Виктор", "директор"] }]
+    },
+    {
+      "id": "q026",
+      "angle": "fact",
+      "question": "Кому надо отправить КП и кто это запрашивал?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Пётр"],
+      "mustMention": ["Пётр", "КП"],
+      "expectedBlockSignatures": [{ "entity": "Пётр", "phrases": ["КП", "Пётр"] }]
+    },
+    {
+      "id": "q028",
+      "angle": "broad",
+      "question": "Что вообще происходит с Битрикс?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "429"],
+      "mustMention": ["429", "backoff"],
+      "expectedBlockSignatures": [
+        { "entity": "Битрикс", "phrases": ["429"] },
+        { "entity": "Битрикс", "phrases": ["backoff", "webhook"] }
+      ]
+    },
+    {
+      "id": "q033",
+      "angle": "broad",
+      "question": "Расскажи в целом про клиента Ромашка.",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Ромашка"],
+      "mustMention": ["Ромашка", "отчёт", "Telegram"],
+      "expectedBlockSignatures": [
+        { "entity": "Ромашка", "phrases": ["отчёт", "формиру"] },
+        { "entity": "Ромашка", "phrases": ["Telegram"] }
+      ]
+    },
+    {
+      "id": "q037",
+      "angle": "composite",
+      "question": "Что с пилотом Логистик Плюс, кто за него отвечает и что его блокирует?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Логистик Плюс", "Игорь", "Zoom"],
+      "mustMention": ["пилот", "Игорь", "Zoom"],
+      "expectedBlockSignatures": [
+        { "entity": "Логистик Плюс", "phrases": ["пилот"] },
+        { "entity": "Zoom", "phrases": ["Zoom", "блокер"] }
+      ]
+    },
+    {
+      "id": "q038",
+      "angle": "composite",
+      "question": "Что за проблема с Битрикс, как решаем и кто этим занят?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "429", "Михаил"],
+      "mustMention": ["429", "backoff", "Михаил"],
+      "expectedBlockSignatures": [
+        { "entity": "429", "phrases": ["429"] },
+        { "entity": "Михаил", "phrases": ["Михаил"] }
+      ]
+    },
+    {
+      "id": "q039",
+      "angle": "composite",
+      "question": "Какая у нас цель по retention, идём ли к ней и кто за неё отвечает?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["retention", "Сергей"],
+      "mustMention": ["42%", "55%", "Сергей"],
+      "expectedBlockSignatures": [
+        { "entity": "retention", "phrases": ["42", "55"] },
+        { "entity": "Сергей", "phrases": ["Сергей"] }
+      ]
+    },
+    {
+      "id": "q029",
+      "angle": "synonym",
+      "question": "Что у нас с CRM?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс"],
+      "mustMention": ["Битрикс", "429"],
+      "expectedBlockSignatures": [{ "entity": "Битрикс", "phrases": ["429", "backoff"] }],
+      "note": "targeted synonym: «CRM» → Битрикс (терминологический разрыв)"
+    },
+    {
+      "id": "q043",
+      "angle": "synonym",
+      "question": "Что с ошибкой 429?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["429", "Битрикс"],
+      "mustMention": ["429", "backoff"],
+      "expectedBlockSignatures": [{ "entity": "429", "phrases": ["429", "синхрониз"] }]
+    },
+    {
+      "id": "q047",
+      "angle": "synonym",
+      "question": "Какая цель по удержанию пользователей?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["retention"],
+      "mustMention": ["42%", "55%"],
+      "expectedBlockSignatures": [{ "entity": "retention", "phrases": ["42", "55"] }],
+      "note": "targeted synonym: «удержание» → retention"
+    },
+    {
+      "id": "q054",
+      "angle": "meetings",
+      "question": "Покажи все встречи за последнюю неделю.",
+      "expectedKind": "answerable",
+      "expectedEntities": [],
+      "mustMention": ["планёрк", "стендап"],
+      "expectedBlockSignatures": [{ "phrases": ["планёрк", "стендап"] }],
+      "note": "в прогоне-111 ложно клеймился пустым (usedBlockIds=0), хотя ответ = список встреч → answered. Встречи в Meeting-записях; block-сигнатура — прокси."
+    },
+    {
+      "id": "q055",
+      "angle": "meetings",
+      "question": "Какие были встречи с Логистик Плюс?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Логистик Плюс"],
+      "mustMention": ["Логистик Плюс", "переговоры"],
+      "expectedBlockSignatures": [{ "entity": "Логистик Плюс", "phrases": ["логистик"] }],
+      "note": "ложно-пустой в прогоне → answered"
+    },
+    {
+      "id": "q057",
+      "angle": "meetings",
+      "question": "Покажи планёрки и стендапы команды.",
+      "expectedKind": "answerable",
+      "expectedEntities": [],
+      "mustMention": ["планёрк", "стендап"],
+      "expectedBlockSignatures": [{ "phrases": ["планёрк", "стендап"] }]
+    },
+    {
+      "id": "q062",
+      "angle": "multistep",
+      "question": "Кто отвечает за то, что блокирует продажи?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Zoom", "Александр"],
+      "mustMention": ["Zoom", "Александр"],
+      "expectedBlockSignatures": [
+        { "entity": "Zoom", "phrases": ["блокер", "продаж"] },
+        { "entity": "Александр", "phrases": ["Александр"] }
+      ],
+      "note": "targeted multistep: продажи→блокер(Zoom)→ответственный(Александр)"
+    },
+    {
+      "id": "q063",
+      "angle": "multistep",
+      "question": "Кто чинит то, из-за чего критично тормозит синхронизация?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["429", "Битрикс", "Михаил"],
+      "mustMention": ["429", "Михаил"],
+      "expectedBlockSignatures": [
+        { "entity": "429", "phrases": ["429", "синхрониз"] },
+        { "entity": "Михаил", "phrases": ["Михаил"] }
+      ],
+      "note": "targeted multistep: синк→блокер(429)→исполнитель(Михаил)"
+    },
+    {
+      "id": "q064",
+      "angle": "multistep",
+      "question": "Кому писать по интеграции, которую просит подключить Ромашка?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Ромашка", "Telegram", "Александр"],
+      "mustMention": ["Telegram", "Александр"],
+      "expectedBlockSignatures": [
+        { "entity": "Ромашка", "phrases": ["Telegram"] },
+        { "entity": "Александр", "phrases": ["Александр", "Telegram"] }
+      ],
+      "note": "targeted multistep: клиент(Ромашка)→запрос(Telegram)→ответственный(Александр)"
+    },
+    {
+      "id": "q065",
+      "angle": "multistep",
+      "question": "Кто владелец регламента, по которому обрабатывают клиентские обращения?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Елена"],
+      "mustMention": ["Елена", "регламент"],
+      "expectedBlockSignatures": [{ "entity": "Елена", "phrases": ["регламент", "обращени"] }],
+      "note": "targeted: регламент→владелец(Елена); Елена слита в Игоря"
+    },
+    {
+      "id": "q068",
+      "angle": "empty",
+      "question": "Какой у нас маркетинговый бюджет на квартал?",
+      "expectedKind": "honest_empty",
+      "expectedEntities": [],
+      "mustMention": [],
+      "expectedBlockSignatures": []
+    },
+    {
+      "id": "q070",
+      "angle": "empty",
+      "question": "Кто из сотрудников в отпуске на следующей неделе?",
+      "expectedKind": "honest_empty",
+      "expectedEntities": [],
+      "mustMention": [],
+      "expectedBlockSignatures": []
+    },
+    {
+      "id": "q072",
+      "angle": "empty",
+      "question": "Какая выручка компании за прошлый месяц?",
+      "expectedKind": "honest_empty",
+      "expectedEntities": [],
+      "mustMention": [],
+      "expectedBlockSignatures": [],
+      "note": "метрика — retention, не выручка; данных о выручке нет"
+    },
+    {
+      "id": "q074",
+      "angle": "empty",
+      "question": "Какие у нас договорённости с клиентом Мега-Транс?",
+      "expectedKind": "honest_empty",
+      "expectedEntities": [],
+      "mustMention": [],
+      "expectedBlockSignatures": [],
+      "note": "клиента Мега-Транс нет в данных — проверка на галлюцинацию несуществующего клиента"
+    },
+    {
+      "id": "q075",
+      "angle": "empty",
+      "question": "Кто отвечает за юридические вопросы в компании?",
+      "expectedKind": "honest_empty",
+      "expectedEntities": [],
+      "mustMention": [],
+      "expectedBlockSignatures": []
+    },
+    {
+      "id": "q076",
+      "angle": "goals",
+      "question": "Какая у нас цель на квартал?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["retention"],
+      "mustMention": ["42%", "55%"],
+      "expectedBlockSignatures": [{ "entity": "retention", "phrases": ["42", "55"] }]
+    },
+    {
+      "id": "q078",
+      "angle": "goals",
+      "question": "Какие метрики мы считаем главными и почему?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["retention"],
+      "mustMention": ["retention|удержани", "не выручк|важнее|следстви|опережа|ведущ|предсказ"],
+      "expectedBlockSignatures": [{ "entity": "retention", "phrases": ["retention", "выручк"] }]
+    },
+    {
+      "id": "q081",
+      "angle": "goals",
+      "question": "Что для нас важнее — рост выручки или удержание?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["retention"],
+      "mustMention": ["удержани", "не выручк|важнее|следстви|опережа"],
+      "expectedBlockSignatures": [{ "entity": "retention", "phrases": ["retention", "выручк"] }],
+      "note": "targeted synonym: «удержание» vs «выручка»"
+    },
+    {
+      "id": "q082",
+      "angle": "blockers",
+      "question": "Что блокирует продажи прямо сейчас?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Zoom", "Логистик Плюс"],
+      "mustMention": ["Zoom", "продаж"],
+      "expectedBlockSignatures": [{ "entity": "Zoom", "phrases": ["Zoom", "блокер"] }]
+    },
+    {
+      "id": "q083",
+      "angle": "blockers",
+      "question": "Что блокирует синхронизацию с Битрикс?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "429"],
+      "mustMention": ["429", "синхрониз"],
+      "expectedBlockSignatures": [{ "entity": "429", "phrases": ["429", "синхрониз"] }]
+    },
+    {
+      "id": "q085",
+      "angle": "blockers",
+      "question": "Есть ли узкие места в разработке/дизайне?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Анна"],
+      "mustMention": ["дизайн-ревью", "узкое место"],
+      "expectedBlockSignatures": [{ "phrases": ["дизайн", "ревью"] }]
+    },
+    {
+      "id": "q088",
+      "angle": "risks",
+      "question": "Что у нас сейчас горит?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "429", "Ромашка"],
+      "mustMention": ["429", "отчёт"],
+      "expectedBlockSignatures": [
+        { "entity": "429", "phrases": ["429"] },
+        { "entity": "Ромашка", "phrases": ["отчёт", "формиру"] }
+      ],
+      "note": "ложно-пустой в прогоне → answered"
+    },
+    {
+      "id": "q089",
+      "angle": "risks",
+      "question": "Какие у нас главные риски?",
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "Zoom"],
+      "mustMention": ["429", "Zoom", "база"],
+      "expectedBlockSignatures": [
+        { "entity": "429", "phrases": ["429"] },
+        { "entity": "Zoom", "phrases": ["Zoom"] },
+        { "phrases": ["база", "устарел"] }
+      ]
+    },
+    {
+      "id": "q092",
+      "angle": "risks",
+      "question": "Теряем ли мы договорённости после совещаний?",
+      "expectedKind": "answerable",
+      "expectedEntities": [],
+      "mustMention": ["договорённост", "теряется"],
+      "expectedBlockSignatures": [{ "phrases": ["договорённост", "теря"] }],
+      "note": "targeted synonym: «совещания» → планёрки"
+    },
+    {
+      "id": "q097",
+      "angle": "chain-1-decision",
+      "question": "Что решили по пилоту Логистик Плюс?",
+      "chain": "chain-1",
+      "turn": 1,
+      "expectedKind": "answerable",
+      "expectedEntities": ["Логистик Плюс"],
+      "mustMention": ["пилот", "15", "30%"],
+      "expectedBlockSignatures": [{ "entity": "Логистик Плюс", "phrases": ["пилот"] }]
+    },
+    {
+      "id": "q098",
+      "angle": "expertise",
+      "question": "А кто за него отвечает?",
+      "chain": "chain-1",
+      "turn": 2,
+      "expectedKind": "answerable",
+      "expectedEntities": ["Игорь", "Александр"],
+      "mustMention": ["Игорь"],
+      "expectedBlockSignatures": [{ "entity": "Игорь", "phrases": ["логистик", "Игорь"] }],
+      "note": "анафора «за него» = пилот Логистик Плюс из turn 1"
+    },
+    {
+      "id": "q099",
+      "angle": "fact",
+      "question": "Какой критерий перехода на контракт?",
+      "chain": "chain-1",
+      "turn": 3,
+      "expectedKind": "answerable",
+      "expectedEntities": ["Логистик Плюс"],
+      "mustMention": ["30%"],
+      "expectedBlockSignatures": [{ "entity": "Логистик Плюс", "phrases": ["30%", "задач"] }],
+      "note": "опущен субъект — держится на контексте цепочки"
+    },
+    {
+      "id": "q100",
+      "angle": "blockers",
+      "question": "Что сейчас его блокирует?",
+      "chain": "chain-1",
+      "turn": 4,
+      "expectedKind": "answerable",
+      "expectedEntities": ["Zoom", "Логистик Плюс"],
+      "mustMention": ["Zoom"],
+      "expectedBlockSignatures": [{ "entity": "Zoom", "phrases": ["Zoom", "блокер"] }],
+      "note": "анафора «его» + мост к блокеру Zoom"
+    },
+    {
+      "id": "q101",
+      "angle": "chain-2-broad",
+      "question": "Что у нас с Битрикс?",
+      "chain": "chain-2",
+      "turn": 1,
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "429"],
+      "mustMention": ["429", "backoff"],
+      "expectedBlockSignatures": [{ "entity": "429", "phrases": ["429"] }]
+    },
+    {
+      "id": "q102",
+      "angle": "risks",
+      "question": "А почему это критично?",
+      "chain": "chain-2",
+      "turn": 2,
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "429"],
+      "mustMention": ["429", "webhook"],
+      "expectedBlockSignatures": [
+        { "entity": "429", "phrases": ["синхрониз"] },
+        { "phrases": ["webhook", "поллинг"] }
+      ],
+      "note": "анафора «это» = Битрикс/429 из turn 1"
+    },
+    {
+      "id": "q103",
+      "angle": "expertise",
+      "question": "Кто этим занимается?",
+      "chain": "chain-2",
+      "turn": 3,
+      "expectedKind": "answerable",
+      "expectedEntities": ["Михаил"],
+      "mustMention": ["Михаил"],
+      "expectedBlockSignatures": [{ "entity": "Михаил", "phrases": ["Михаил"] }],
+      "note": "анафора «этим» = Битрикс/429"
+    },
+    {
+      "id": "q104",
+      "angle": "decision",
+      "question": "И что в итоге решили делать?",
+      "chain": "chain-2",
+      "turn": 4,
+      "expectedKind": "answerable",
+      "expectedEntities": ["Битрикс", "429"],
+      "mustMention": ["backoff", "мониторинг"],
+      "expectedBlockSignatures": [{ "entity": "Битрикс", "phrases": ["backoff", "мониторинг"] }],
+      "note": "опущен предмет решения — держится на контексте цепочки"
+    }
+  ]
+}

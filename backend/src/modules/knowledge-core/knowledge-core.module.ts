@@ -15,6 +15,7 @@ import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockFetchService, KnowledgeBlockResolver } from './services/block-fetch.service';
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
+import { BranchDerivationService } from './services/branch-derivation.service';
 import { CardRollupV2Service } from './services/card-rollup-v2.service';
 import { ChatV2RetrievalService } from './services/chat-v2-retrieval.service';
 import { ChatV2TableContextService } from './services/chat-v2-table-context.service';
@@ -46,6 +47,7 @@ import { ReasoningChainService } from './services/reasoning-chain.service';
 import { RegulationConsolidatorService } from './services/regulation-consolidator.service';
 import { RoleClonePersonaVersioningHandler } from './services/role-clone-persona-versioning.handler';
 import { RolePrincipleSynthesisService } from './services/role-principle-synthesis.service';
+import { RegulationSummaryService } from './services/regulation-summary.service';
 import { RoleRegulationRetrievalService } from './services/role-regulation-retrieval.service';
 import { RouterService } from './services/router.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
@@ -58,7 +60,6 @@ import { Specialist32ProbeService } from './services/specialist-3-2-probe.servic
 import { Specialist33Service } from './services/specialist-3-3-decisions.service';
 import { Specialist34ProbeService } from './services/specialist-3-4-probe.service';
 import { Specialist35Service } from './services/specialist-3-5-insights.service';
-import { Specialist35ProbeService } from './services/specialist-3-5-probe.service';
 import { Specialist36Service } from './services/specialist-3-6-ideas.service';
 import { Specialist36ProbeService } from './services/specialist-3-6-probe.service';
 import { Specialist37ProbeService } from './services/specialist-3-7-skill-probe.service';
@@ -73,6 +74,8 @@ import { TaskAssigneeResolverService } from './services/task-assignee-resolver.s
 import { TemporalConflictService } from './services/temporal-conflict.service';
 import { TemporalProbeService } from './services/temporal-probe.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
+import { ThemeFillService } from './services/theme-fill.service';
+import { ThemeWriteService } from './services/theme-write.service';
 import { ConfidenceCalibrationCron } from './workers/confidence-calibration.cron';
 import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
 import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.cron';
@@ -93,6 +96,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     KnowledgeEmbeddingService,
     ChunkContextService,
     RoleRegulationRetrievalService,
+    RegulationSummaryService,
     EntityResolutionService,
     RegulationConsolidatorService,
     BlockMergeService,
@@ -113,6 +117,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     RouterService,
     AxisClassifierService,
     BlockAccessDeriverService,
+    BranchDerivationService,
     OwnerResolverService,
     Specialist34ProbeService,
     Specialist31Service,
@@ -122,7 +127,6 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     Specialist32ProbeService,
     Specialist33Service,
     Specialist35Service,
-    Specialist35ProbeService,
     Specialist39ExperimentsService,
     Specialist39ExperimentProbeService,
     Specialist36Service,
@@ -159,6 +163,8 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     GoalThemeLinkerService,
     GoalTaskLinkerService,
     MeetingTitleService,
+    ThemeWriteService,
+    ThemeFillService,
   ],
   exports: [
     SegmentBuilderService,
@@ -167,6 +173,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     KnowledgeEmbeddingService,
     ChunkContextService,
     RoleRegulationRetrievalService,
+    RegulationSummaryService,
     EntityResolutionService,
     RegulationConsolidatorService,
     BlockMergeService,
@@ -186,6 +193,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     RouterService,
     AxisClassifierService,
     BlockAccessDeriverService,
+    BranchDerivationService,
     OwnerResolverService,
     Specialist34ProbeService,
     Specialist31Service,
@@ -195,7 +203,6 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     Specialist32ProbeService,
     Specialist33Service,
     Specialist35Service,
-    Specialist35ProbeService,
     Specialist39ExperimentsService,
     Specialist39ExperimentProbeService,
     Specialist36Service,
@@ -226,6 +233,8 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     GoalThemeLinkerService,
     GoalTaskLinkerService,
     MeetingTitleService,
+    ThemeWriteService,
+    ThemeFillService,
   ],
 })
 export class KnowledgeCoreModule {}

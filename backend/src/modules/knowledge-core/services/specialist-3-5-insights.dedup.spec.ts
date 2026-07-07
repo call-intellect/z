@@ -18,7 +18,6 @@ import type { CurationService } from '../../curation/services/curation.service';
 import type { KnowledgeEmbeddingService } from './embedding.service';
 import type { EntityResolutionService } from './entity-resolution.service';
 import { Specialist35Service } from './specialist-3-5-insights.service';
-import type { Specialist35ProbeService } from './specialist-3-5-probe.service';
 
 describe('Specialist35Service.processBlock — Б27 [K4] детерминированный дедуп', () => {
   it('существующий Insight по sourceBlockId → обогащаем (update), без create и без KNN', async () => {
@@ -89,12 +88,6 @@ describe('Specialist35Service.processBlock — Б27 [K4] детерминиро�
       incCoreSpecialistLlmTokens: vi.fn(),
     } as unknown as BusinessMetricsService;
 
-    const probes = {
-      checkAndEmitForInsight: vi.fn(async () => undefined),
-      emitEscalationSuggested: vi.fn(async () => undefined),
-      emitLinkedDecisionQuestion: vi.fn(async () => undefined),
-    } as unknown as Specialist35ProbeService;
-
     const entities = {
       findOrCreateEntity: vi.fn(),
     } as unknown as EntityResolutionService;
@@ -107,7 +100,6 @@ describe('Specialist35Service.processBlock — Б27 [K4] детерминиро�
       embedder,
       entities,
       curation,
-      probes,
       metrics,
       cfg,
       undefined,
@@ -199,12 +191,6 @@ describe('Specialist35Service.processBlock — Б27 [K4] детерминиро�
       incCoreSpecialistLlmTokens: vi.fn(),
     } as unknown as BusinessMetricsService;
 
-    const probes = {
-      checkAndEmitForInsight: vi.fn(async () => undefined),
-      emitEscalationSuggested: vi.fn(async () => undefined),
-      emitLinkedDecisionQuestion: vi.fn(async () => undefined),
-    } as unknown as Specialist35ProbeService;
-
     const entities = {
       findOrCreateEntity: vi.fn(),
     } as unknown as EntityResolutionService;
@@ -217,7 +203,6 @@ describe('Specialist35Service.processBlock — Б27 [K4] детерминиро�
       embedder,
       entities,
       curation,
-      probes,
       metrics,
       cfg,
       undefined,

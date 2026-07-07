@@ -1,0 +1,1618 @@
+{
+  "orgA": "cmr9pgpbi00011rsl8d9jsbbi",
+  "orgB": "cmr9pgpdb001h1rsliqxu4wpb",
+  "ownerUserIdA": "cmr9pgpal00001rsl4mr3wgvs",
+  "ownerUserIdB": "cmr9pgpda001g1rsle4uaqz9f",
+  "people": {
+    "Петя": "cmr9pgpc7000a1rslt55p4kze",
+    "Катя": "cmr9pgpc9000d1rsl9z6klseh",
+    "Дима": "cmr9pgpcc000g1rsl3zg8cpin",
+    "Мария": "cmr9pgpcf000j1rsl9yaqyvzr",
+    "Оля": "cmr9pgpch000m1rslqrd6daec",
+    "Иван": "cmr9pgpci000p1rslcz23jdga",
+    "Сергей": "cmr9pgpal00001rsl4mr3wgvs",
+    "Игорь": "cmr9pgpc100041rslalf0ageu",
+    "Аня": "cmr9pgpc500071rslq1f4jhwy"
+  },
+  "projects": {
+    "ops": {
+      "id": "cmr9pgpcl000s1rslgajx393g",
+      "identifier": "OPS",
+      "states": {
+        "backlog": "cmr9pgpcp000t1rslpzo8i4md",
+        "unstarted": "cmr9pgpcq000u1rslb5s36q6x",
+        "started": "cmr9pgpcq000v1rslq4rl01td",
+        "completed": "cmr9pgpcq000w1rslvpr9kxtm",
+        "cancelled": "cmr9pgpcq000x1rslrnmwu8jj"
+      }
+    },
+    "meet": {
+      "id": "cmr9pgpcx00101rslzqwpke7p",
+      "identifier": "MEET",
+      "states": {
+        "backlog": "cmr9pgpcz00111rslmhbh0ani",
+        "started": "cmr9pgpcz00121rslv48kprkg",
+        "completed": "cmr9pgpcz00131rslhiooh931"
+      }
+    },
+    "inbox": {
+      "id": "cmr9pgpd200161rsl4wto7q74",
+      "identifier": "INBOX",
+      "states": {
+        "backlog": "cmr9pgpd300171rsldqj1qdml",
+        "completed": "cmr9pgpd300181rslzxvaqu2h"
+      }
+    },
+    "nocomplete": {
+      "id": "cmr9pgpd5001b1rslguex6ibk",
+      "identifier": "NOCPL",
+      "states": {
+        "backlog": "cmr9pgpd6001c1rsl0apjsxq4",
+        "started": "cmr9pgpd6001d1rsla0o859c1"
+      }
+    }
+  },
+  "setupTasks": {
+    "smeta_x": {
+      "issueId": "cmr9pgqmc000026slxoii0pnz",
+      "title": "Подготовить смету по проекту X",
+      "assigneeUserId": "cmr9pgpci000p1rslcz23jdga",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "smeta_x_closed": {
+      "issueId": "cmr9pgqo0000626slcwm11sbb",
+      "title": "Подготовить смету по проекту X (первая версия)",
+      "assigneeUserId": "cmr9pgpci000p1rslcz23jdga",
+      "stateCategory": "completed",
+      "closed": true,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "maket_lending": {
+      "issueId": "cmr9pgqp9000c26slscm08xin",
+      "title": "Согласовать макет лендинга",
+      "assigneeUserId": "cmr9pgpcf000j1rsl9yaqyvzr",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "report_sales_anna": {
+      "issueId": "cmr9pgqpy000j26slpus7pofe",
+      "title": "Отчёт по продажам за квартал",
+      "assigneeUserId": "cmr9pgpal00001rsl4mr3wgvs",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "price_site": {
+      "issueId": "cmr9pgqqm000p26slqsdr20xy",
+      "title": "Обновить прайс на сайте",
+      "assigneeUserId": "cmr9pgpch000m1rslqrd6daec",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "plan_hire_q3": {
+      "issueId": "cmr9pgqr9000v26slo3xglazs",
+      "title": "Подготовить план найма Q3",
+      "assigneeUserId": "cmr9pgpc9000d1rsl9z6klseh",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "domain_lending": {
+      "issueId": "cmr9pgqrm001126slcwrw52h8",
+      "title": "Купить домен для лендинга",
+      "assigneeUserId": "cmr9pgpc100041rslalf0ageu",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "kp_beta": {
+      "issueId": "cmr9pgqs3001726sl33xz54nr",
+      "title": "Отправить КП клиенту Бета",
+      "assigneeUserId": "cmr9pgpc100041rslalf0ageu",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "maket_review": {
+      "issueId": "cmr9pgqsm001d26sljgkztn86",
+      "title": "Проверить макет с дизайнером и клиентом",
+      "assigneeUserId": "cmr9pgpcf000j1rsl9yaqyvzr",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "analytics": {
+      "issueId": "cmr9pgqt0001j26sl8fcaiq9s",
+      "title": "Настроить аналитику",
+      "assigneeUserId": "cmr9pgpcc000g1rsl3zg8cpin",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "export": {
+      "issueId": "cmr9pgqtf001p26slujwv4235",
+      "title": "Доделать экспорт данных",
+      "assigneeUserId": "cmr9pgpc100041rslalf0ageu",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "ci_task": {
+      "issueId": "cmr9pgqtw001v26sl1wya27n3",
+      "title": "Настроить CI",
+      "assigneeUserId": "cmr9pgpc100041rslalf0ageu",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "redesign_card": {
+      "issueId": "cmr9pgqu8002126slznp46u7v",
+      "title": "Редизайн карточки задачи",
+      "assigneeUserId": "cmr9pgpcf000j1rsl9yaqyvzr",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "report_ambig_1": {
+      "issueId": "cmr9pgqum002726slk24rwmwi",
+      "title": "Отчёт для совета директоров",
+      "assigneeUserId": "cmr9pgpcc000g1rsl3zg8cpin",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "report_ambig_2": {
+      "issueId": "cmr9pgqux002d26sl1j4n5ykj",
+      "title": "Отчёт по маркетингу",
+      "assigneeUserId": "cmr9pgpch000m1rslqrd6daec",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "release_v2": {
+      "issueId": "cmr9pgqvh002j26slnc1rzbn0",
+      "title": "Релиз v2",
+      "assigneeUserId": "cmr9pgpc100041rslalf0ageu",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "lending_parent": {
+      "issueId": "cmr9pgqvw002p26slnq2fisng",
+      "title": "Запустить лендинг",
+      "assigneeUserId": "cmr9pgpch000m1rslqrd6daec",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "onboard_dashboard_parent": {
+      "issueId": "cmr9pgqwa002v26sl9fx7l3ch",
+      "title": "Онбординг: дашборд",
+      "assigneeUserId": "cmr9pgpc9000d1rsl9z6klseh",
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "A"
+    },
+    "price_site_orgB": {
+      "issueId": "cmr9pgqwl003126slos424qur",
+      "title": "Обновить прайс на сайте",
+      "assigneeUserId": null,
+      "stateCategory": "started",
+      "closed": false,
+      "embeddingReady": true,
+      "tenant": "B"
+    }
+  },
+  "scenarios": {
+    "A-01": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "title~": "подготовить КП для Ромашки",
+        "assignee": "Игорь",
+        "dueDate": "next-friday",
+        "priority": "medium",
+        "sourceBlockIds": ">0"
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "meeting"
+    },
+    "A-02": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "title~": "обновить типовой договор (NDA)",
+        "assignee": "Аня",
+        "dueDate": "next-friday"
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "meeting"
+    },
+    "A-03": {
+      "creates": "intake_pending",
+      "count": 1,
+      "fields": {
+        "title~": "настроить мониторинг прода",
+        "assignee": null,
+        "priority": "high"
+      },
+      "notes": "probe assignee_unresolved ожидается (clarify-sweep)",
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "chat"
+    },
+    "A-04": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "title~": "докрутить лендинг",
+        "assignee": "Игорь",
+        "dueDate": "next-friday"
+      },
+      "targets": [
+        "Т2"
+      ],
+      "category": "creation-form",
+      "channel": "chat"
+    },
+    "A-05": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "title~": "выкатить релиз",
+        "assignee": "Дима",
+        "dueDate": "next-wednesday"
+      },
+      "targets": [
+        "Т2",
+        "Т1"
+      ],
+      "category": "creation-form",
+      "channel": "meeting"
+    },
+    "A-06": {
+      "creates": "nothing",
+      "count": 0,
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "chat"
+    },
+    "A-07": {
+      "creates": "nothing",
+      "count": 0,
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "chat"
+    },
+    "A-08": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "это Decision, не Task",
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "meeting"
+    },
+    "A-09": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "title~": "оформить договор с ТараПро",
+        "assignee": "Петя",
+        "dueDate": "next-monday"
+      },
+      "notes": "предложение Оли = idea (не задача, не decision)",
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "meeting"
+    },
+    "A-10": {
+      "creates": "nothing",
+      "count": 0,
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "meeting"
+    },
+    "A-11": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "нет открытой задачи — не заводить задачу на сделанное",
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "chat"
+    },
+    "A-12": {
+      "creates": "nothing",
+      "count": 0,
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "meeting"
+    },
+    "A-13": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "title~": "закрыть P1-баги",
+        "assignee": "Дима",
+        "dueDate": "next-thursday",
+        "priority": "high|urgent"
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "creation-form",
+      "channel": "meeting"
+    },
+    "A-14": {
+      "creates": "issue|intake_pending",
+      "count": 2,
+      "fields": {
+        "title~": "нанять продавца | обновить сайт"
+      },
+      "notes": "ДВА разных дела → 2 задачи (не 1 склеенная, не чек-лист)",
+      "targets": [
+        "Т3"
+      ],
+      "category": "creation-form",
+      "channel": "meeting"
+    },
+    "B-01": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "title~": "запустить лендинг",
+        "assignee": "Иван",
+        "checklistTotalCount": 5
+      },
+      "targets": [
+        "Т1"
+      ],
+      "category": "grouping",
+      "channel": "meeting"
+    },
+    "B-02": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "notes": "одно дело «интеграция» → 1 задача (можно с чек-листом), НЕ 3 карточки",
+      "targets": [
+        "Т3"
+      ],
+      "category": "grouping",
+      "channel": "meeting"
+    },
+    "B-03": {
+      "creates": "issue|intake_auto",
+      "count": 3,
+      "fields": {
+        "assignees": "Мария,Петя,Оля"
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "grouping",
+      "channel": "meeting"
+    },
+    "B-04": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "title~": "доделать экспорт",
+        "assignee": "Игорь",
+        "checklistTotalCount": 3
+      },
+      "targets": [
+        "Т1"
+      ],
+      "category": "grouping",
+      "channel": "chat"
+    },
+    "B-05": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "title~": "онбординг Ромашки",
+        "assignee": "Катя",
+        "checklistTotalCount": 3
+      },
+      "targets": [
+        "Т1"
+      ],
+      "category": "grouping",
+      "channel": "meeting"
+    },
+    "B-06": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "notes": "один и тот же пункт → 1 задача, не 3",
+      "targets": [
+        "Т3",
+        "Т7"
+      ],
+      "category": "grouping",
+      "channel": "meeting"
+    },
+    "B-07": {
+      "creates": "issue|relation",
+      "count": 1,
+      "notes": "1 задача + подсказка дубля на повтор; НЕ 2 задачи",
+      "targets": [
+        "Т3"
+      ],
+      "category": "grouping",
+      "channel": "meeting"
+    },
+    "B-08": {
+      "creates": "subtask",
+      "count": 1,
+      "fields": {
+        "parentId": "lending_parent",
+        "title~": "написать текст для лендинга"
+      },
+      "targets": [
+        "Т4"
+      ],
+      "category": "grouping",
+      "channel": "manual"
+    },
+    "C-01": {
+      "creates": "intake_auto",
+      "count": 1,
+      "fields": {
+        "project": "meet|ops",
+        "assignee": "Игорь"
+      },
+      "notes": "meetingPromote: проект есть → auto-accept → Issue",
+      "targets": [
+        "Т1"
+      ],
+      "category": "channel",
+      "channel": "meeting"
+    },
+    "C-02": {
+      "creates": "intake_pending",
+      "count": 1,
+      "fields": {
+        "priority": "low"
+      },
+      "notes": "низкое качество → priority→low, всё равно intake (не дроп)",
+      "targets": [
+        "штат"
+      ],
+      "category": "channel",
+      "channel": "chat"
+    },
+    "C-03": {
+      "creates": "intake_pending",
+      "count": 1,
+      "notes": "«Зинаида Петровна» не резолвится в userId → canAutoAccept=false",
+      "targets": [
+        "штат"
+      ],
+      "category": "channel",
+      "channel": "chat"
+    },
+    "C-04": {
+      "creates": "intake_pending|intake_auto",
+      "count": 1,
+      "fields": {
+        "source": "email",
+        "title~": "подготовить смету по объекту №7"
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "channel",
+      "channel": "email"
+    },
+    "C-05": {
+      "creates": "intake_pending|intake_auto",
+      "count": 1,
+      "fields": {
+        "source": "telegram",
+        "assignee": "Дима",
+        "title~": "проверить бэкапы"
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "channel",
+      "channel": "telegram"
+    },
+    "C-06": {
+      "creates": "issue",
+      "count": 1,
+      "fields": {
+        "title~": "обновить прайс",
+        "dueDate": "next-monday"
+      },
+      "notes": "assistant-create-task-tool создаёт Issue напрямую",
+      "targets": [
+        "штат"
+      ],
+      "category": "channel",
+      "channel": "concierge"
+    },
+    "C-07": {
+      "creates": "intake_pending",
+      "count": 1,
+      "fields": {
+        "source": "decision"
+      },
+      "notes": "повтор той же встречи дубль НЕ создаст (идемпотентность по sourceBlockIds; decision.actionExtractedAt)",
+      "targets": [
+        "Т7"
+      ],
+      "category": "channel",
+      "channel": "decision"
+    },
+    "C-08": {
+      "creates": "intake_pending",
+      "count": 1,
+      "fields": {
+        "project": "inbox"
+      },
+      "notes": "ensureInboxProjectId — не ошибка при отсутствии проекта",
+      "targets": [
+        "штат"
+      ],
+      "category": "channel",
+      "channel": "api"
+    },
+    "C-09": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "notes": "тот же quote/externalId → skip повторного",
+      "targets": [
+        "Т7"
+      ],
+      "category": "channel",
+      "channel": "meeting"
+    },
+    "C-10": {
+      "creates": "intake_pending",
+      "count": 1,
+      "notes": "source=chat не в autoAcceptSources → pending, даже если уверенно",
+      "targets": [
+        "штат"
+      ],
+      "category": "channel",
+      "channel": "chat"
+    },
+    "D-01": {
+      "creates": "relation|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "same"
+      },
+      "notes": "same → suggest (link/relation), НЕ merge, НЕ подзадача",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "chat"
+    },
+    "D-02": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "different|nil"
+      },
+      "notes": "написать текст ≠ согласовать макет → новая задача",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "chat"
+    },
+    "D-03": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "different"
+      },
+      "notes": "другой исполнитель = две задачи",
+      "targets": [
+        "R13",
+        "Т10"
+      ],
+      "category": "dedup-task",
+      "channel": "meeting"
+    },
+    "D-04": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "nil"
+      },
+      "notes": "общая тема «продажи» ≠ дубль",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "chat"
+    },
+    "D-05": {
+      "creates": "relation|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "same"
+      },
+      "notes": "действие+объект совпали, цифра срока не разводит",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "meeting"
+    },
+    "D-06": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "notes": "если нет открытой ≥0.88 — арбитр не зовётся, новая (внимание: price_site ≈ близко — проверить порог)",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "chat"
+    },
+    "D-07": {
+      "creates": "issue|intake_pending|relation",
+      "count": 1,
+      "notes": "smeta_x ОТКРЫТА → может дать same; smeta_x_closed ЗАКРЫТА → в KNN openOnly не участвует",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "chat"
+    },
+    "D-08": {
+      "creates": "issue",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "same"
+      },
+      "notes": "прямой create: задача ВСЁ РАВНО создаётся + подсказка-связь (НЕ merge)",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "manual"
+    },
+    "D-09": {
+      "creates": "intake_pending",
+      "count": 1,
+      "fields": {
+        "suggestedDuplicateOfIssueId": "price_site"
+      },
+      "notes": "auto-accept заблокирован, ждёт человека (triage decision=duplicate)",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "email"
+    },
+    "D-10": {
+      "creates": "intake_pending",
+      "count": 1,
+      "fields": {
+        "suggestedDuplicateOfIssueId": "price_site"
+      },
+      "notes": "даже с meetingTasksAlwaysPromote — при дубле pending",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "meeting"
+    },
+    "D-11": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "different|nil"
+      },
+      "notes": "купить домен ≠ написать текст",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "chat"
+    },
+    "D-12": {
+      "creates": "relation|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "same"
+      },
+      "notes": "почти дословно → выше порога → same",
+      "targets": [
+        "Т10"
+      ],
+      "category": "dedup-task",
+      "channel": "chat"
+    },
+    "D-13": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "nil"
+      },
+      "notes": "смежная тема, ниже порога → новая",
+      "targets": [
+        "Т10"
+      ],
+      "category": "dedup-task",
+      "channel": "chat"
+    },
+    "D-14": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "nil"
+      },
+      "notes": "fail-open: создание не блокируется дедупом",
+      "targets": [
+        "R13"
+      ],
+      "category": "dedup-task",
+      "channel": "chat"
+    },
+    "E-01": {
+      "creates": "intake_pending",
+      "count": 1,
+      "notes": "второе → dedup_pending (IntakeIssueSimilar), не 2 карточки",
+      "targets": [
+        "Т7"
+      ],
+      "category": "dedup-candidate",
+      "channel": "email"
+    },
+    "E-02": {
+      "creates": "intake_pending|issue",
+      "count": 1,
+      "notes": "повторный прогон блока не создаёт вторую",
+      "targets": [
+        "Т7"
+      ],
+      "category": "dedup-candidate",
+      "channel": "chat"
+    },
+    "E-03": {
+      "creates": "candidate",
+      "count": 1,
+      "notes": "P2002 по unique → тихий skip, второй кандидат не создаётся",
+      "targets": [
+        "Т7"
+      ],
+      "category": "dedup-candidate",
+      "channel": "cron"
+    },
+    "E-04": {
+      "creates": "issue|intake_auto",
+      "count": 3,
+      "notes": "ровно 3, 0 из болтовни",
+      "targets": [
+        "Т3",
+        "Т7"
+      ],
+      "category": "dedup-candidate",
+      "channel": "meeting"
+    },
+    "E-05": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "intakeStatus": "rejected"
+      },
+      "notes": "pending → rejected (авто-закрыт по сроку), Issue не создан",
+      "targets": [
+        "штат"
+      ],
+      "category": "dedup-candidate",
+      "channel": "cron"
+    },
+    "E-06": {
+      "creates": "intake_pending",
+      "count": 1,
+      "targets": [
+        "Т7"
+      ],
+      "category": "dedup-candidate",
+      "channel": "telegram"
+    },
+    "F-01": {
+      "creates": "subtask",
+      "count": 1,
+      "fields": {
+        "parentId": "lending_parent"
+      },
+      "targets": [
+        "Т4"
+      ],
+      "category": "subtask",
+      "channel": "manual"
+    },
+    "F-02": {
+      "creates": "error",
+      "count": 0,
+      "fields": {
+        "errorCode": "max_subtask_depth_exceeded",
+        "httpStatus": 400
+      },
+      "targets": [
+        "Т4"
+      ],
+      "category": "subtask",
+      "channel": "manual"
+    },
+    "F-03": {
+      "creates": "error",
+      "count": 0,
+      "fields": {
+        "errorCode": "cyclic_parent_not_allowed",
+        "httpStatus": 400
+      },
+      "targets": [
+        "Т4"
+      ],
+      "category": "subtask",
+      "channel": "manual"
+    },
+    "F-04": {
+      "creates": "error",
+      "count": 0,
+      "fields": {
+        "errorCode": "parent_in_different_project",
+        "httpStatus": 400
+      },
+      "targets": [
+        "Т4"
+      ],
+      "category": "subtask",
+      "channel": "manual"
+    },
+    "F-05": {
+      "creates": "error",
+      "count": 0,
+      "notes": "отказ переноса задачи с детьми",
+      "targets": [
+        "Т4"
+      ],
+      "category": "subtask",
+      "channel": "manual"
+    },
+    "F-06": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "checklistTotalCount": 3
+      },
+      "notes": "«подзадачи» из разговора = чек-лист (Т4)",
+      "targets": [
+        "Т4"
+      ],
+      "category": "subtask",
+      "channel": "meeting"
+    },
+    "F-07": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "checklistDoneCount": 4,
+        "checklistTotalCount": 5
+      },
+      "notes": "recountCounters",
+      "targets": [
+        "штат"
+      ],
+      "category": "subtask",
+      "channel": "manual"
+    },
+    "G-01": {
+      "creates": "progress",
+      "count": 1,
+      "fields": {
+        "draftState": "pending",
+        "authorType": "ai_agent",
+        "health": "on_track"
+      },
+      "notes": "done=false → журнал, не кандидат",
+      "targets": [
+        "штат"
+      ],
+      "category": "journal",
+      "channel": "meeting"
+    },
+    "G-02": {
+      "creates": "progress",
+      "count": 1,
+      "fields": {
+        "health": "at_risk",
+        "draftState": "pending"
+      },
+      "notes": "блокер-маркер → at_risk",
+      "targets": [
+        "штат"
+      ],
+      "category": "journal",
+      "channel": "chat"
+    },
+    "G-03": {
+      "creates": "candidate",
+      "count": 1,
+      "notes": "done=true → TaskClosureCandidate, не progress-запись",
+      "targets": [
+        "штат"
+      ],
+      "category": "journal",
+      "channel": "chat"
+    },
+    "G-04": {
+      "creates": "progress",
+      "count": 1,
+      "notes": "повтор того же блока → skip (sourceBlockIds.has)",
+      "targets": [
+        "Т7"
+      ],
+      "category": "journal",
+      "channel": "chat"
+    },
+    "G-05": {
+      "creates": "progress",
+      "count": 1,
+      "fields": {
+        "draftState": "pending",
+        "authorType": "ai_agent"
+      },
+      "notes": "LLM issue-progress-draft",
+      "targets": [
+        "штат"
+      ],
+      "category": "journal",
+      "channel": "cron"
+    },
+    "G-06": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "below_threshold",
+      "targets": [
+        "штат"
+      ],
+      "category": "journal",
+      "channel": "cron"
+    },
+    "G-07": {
+      "creates": "progress",
+      "count": 1,
+      "fields": {
+        "draftState": null,
+        "authorType": "human",
+        "health": "on_track"
+      },
+      "notes": "IssueActivity(progress_updated)",
+      "targets": [
+        "штат"
+      ],
+      "category": "journal",
+      "channel": "concierge"
+    },
+    "G-08": {
+      "creates": "error",
+      "count": 0,
+      "fields": {
+        "errorCode": "task_ambiguous",
+        "httpStatus": 409
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "journal",
+      "channel": "concierge"
+    },
+    "G-09": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "progressDraftState": "accepted"
+      },
+      "notes": "IssueActivity",
+      "targets": [
+        "штат"
+      ],
+      "category": "journal",
+      "channel": "manual"
+    },
+    "G-10": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "progressDraftState": "rejected"
+      },
+      "notes": "soft-delete, Issue не тронут",
+      "targets": [
+        "штат"
+      ],
+      "category": "journal",
+      "channel": "manual"
+    },
+    "H-01": {
+      "creates": "candidate",
+      "count": 1,
+      "fields": {
+        "candidateStatus": "pending"
+      },
+      "notes": "Issue НЕ закрыт (R13)",
+      "targets": [
+        "R13"
+      ],
+      "category": "closure",
+      "channel": "meeting"
+    },
+    "H-02": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "issueStateCategory": "completed",
+        "completedAt": "set",
+        "candidateStatus": "accepted"
+      },
+      "notes": "IssueComment «✅ Решение (из разговора)»",
+      "targets": [
+        "R13"
+      ],
+      "category": "closure",
+      "channel": "manual"
+    },
+    "H-03": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "candidateStatus": "rejected",
+        "completedAt": null
+      },
+      "targets": [
+        "R13"
+      ],
+      "category": "closure",
+      "channel": "manual"
+    },
+    "H-04": {
+      "creates": "progress",
+      "count": 1,
+      "notes": "done=false",
+      "targets": [
+        "штат"
+      ],
+      "category": "closure",
+      "channel": "chat"
+    },
+    "H-05": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "верификатор придирчив → done=false, инъекция не сработала",
+      "targets": [
+        "Т8",
+        "INV-3"
+      ],
+      "category": "closure",
+      "channel": "chat"
+    },
+    "H-06": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "KNN<0.85 и лексика<0.5 → no_match",
+      "targets": [
+        "штат"
+      ],
+      "category": "closure",
+      "channel": "chat"
+    },
+    "H-07": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "guard sourceType=tracker_event → новый кандидат не создаётся",
+      "targets": [
+        "штат"
+      ],
+      "category": "closure",
+      "channel": "cron"
+    },
+    "H-08": {
+      "creates": "probe",
+      "count": 0,
+      "fields": {
+        "response": "needs_detail"
+      },
+      "notes": "detailGate=ON, скудно → вопрос «что конкретно сделали?», кандидат НЕ создан",
+      "targets": [
+        "штат"
+      ],
+      "category": "closure",
+      "channel": "concierge"
+    },
+    "H-09": {
+      "creates": "candidate",
+      "count": 1,
+      "fields": {
+        "candidateStatus": "pending",
+        "sourceBlockId~": "concierge-complete"
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "closure",
+      "channel": "concierge"
+    },
+    "H-10": {
+      "creates": "candidate",
+      "count": 1,
+      "targets": [
+        "штат"
+      ],
+      "category": "closure",
+      "channel": "concierge"
+    },
+    "H-11": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "candidateStatus": "expired"
+      },
+      "notes": "Issue не тронут",
+      "targets": [
+        "штат"
+      ],
+      "category": "closure",
+      "channel": "cron"
+    },
+    "H-12": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "completedAt": null
+      },
+      "notes": "computeReopenRate учитывает; при >0.10 WARN + gauge",
+      "targets": [
+        "штат"
+      ],
+      "category": "closure",
+      "channel": "manual"
+    },
+    "H-13": {
+      "creates": "progress",
+      "count": 1,
+      "fields": {
+        "health": "at_risk"
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "closure",
+      "channel": "chat"
+    },
+    "H-14": {
+      "creates": "candidate",
+      "count": 1,
+      "notes": "P2002 тихий skip",
+      "targets": [
+        "Т7"
+      ],
+      "category": "closure",
+      "channel": "chat"
+    },
+    "I-01": {
+      "creates": "probe",
+      "count": 1,
+      "fields": {
+        "probeReason": "task.method_capture",
+        "recipient": "Игорь"
+      },
+      "notes": "complexity≥0.5",
+      "targets": [
+        "штат"
+      ],
+      "category": "method-capture",
+      "channel": "manual"
+    },
+    "I-02": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "complexity<0.5 → probe не поднят",
+      "targets": [
+        "штат"
+      ],
+      "category": "method-capture",
+      "channel": "manual"
+    },
+    "I-03": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "ingestSignalTypeHint": "reasoning"
+      },
+      "notes": "ответ → ingest как reasoning-блок (материал клона)",
+      "targets": [
+        "штат"
+      ],
+      "category": "method-capture",
+      "channel": "concierge"
+    },
+    "I-04": {
+      "creates": "nothing",
+      "count": 0,
+      "fields": {
+        "ingestSignalTypeHint": "reasoning"
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "method-capture",
+      "channel": "concierge"
+    },
+    "I-05": {
+      "creates": "probe",
+      "count": 1,
+      "fields": {
+        "probeReason": "task.method_capture"
+      },
+      "notes": "transitionState общий → probe должен подняться (если kp_beta сложная)",
+      "targets": [
+        "штат"
+      ],
+      "category": "method-capture",
+      "channel": "manual"
+    },
+    "J-01": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "nil|different"
+      },
+      "notes": "дубль price_site (org A) НЕ находится из org B",
+      "targets": [
+        "INV-2",
+        "Т9"
+      ],
+      "category": "adversarial",
+      "channel": "chat"
+    },
+    "J-02": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "нет открытой задачи в org B → no_match ; задача org A не кандидат",
+      "targets": [
+        "INV-2"
+      ],
+      "category": "adversarial",
+      "channel": "chat"
+    },
+    "J-03": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "100 задач НЕ создаётся; максимум 0-1 по смыслу",
+      "targets": [
+        "INV-3",
+        "Т8"
+      ],
+      "category": "adversarial",
+      "channel": "meeting"
+    },
+    "J-04": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "0 авто-закрытий",
+      "targets": [
+        "INV-3"
+      ],
+      "category": "adversarial",
+      "channel": "chat"
+    },
+    "J-05": {
+      "creates": "issue|intake_auto",
+      "count": 50,
+      "notes": "~50 задач, 0 ложных merge, петля не падает",
+      "targets": [
+        "Т7"
+      ],
+      "category": "adversarial",
+      "channel": "meeting"
+    },
+    "J-06": {
+      "creates": "relation",
+      "notes": "часть → suggest к price_site/друг к другу, 0 авто-merge",
+      "targets": [
+        "R13"
+      ],
+      "category": "adversarial",
+      "channel": "chat"
+    },
+    "J-07": {
+      "creates": "nothing|relation",
+      "count": 0,
+      "notes": "вторая реплика про существующую CI-задачу → не плодит новую (в идеале — правка/подсказка срока)",
+      "targets": [
+        "штат"
+      ],
+      "category": "adversarial",
+      "channel": "chat"
+    },
+    "J-08": {
+      "creates": "candidate",
+      "count": 1,
+      "notes": "первый сигнал → кандидат(pending); второй → сигнал риска/не подтверждать закрытие; НЕ два закрытия",
+      "targets": [
+        "штат"
+      ],
+      "category": "adversarial",
+      "channel": "chat"
+    },
+    "J-09": {
+      "creates": "relation|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "same"
+      },
+      "notes": "«КП» и «коммерческое предложение» — одно дело; слепота к формулировке = баг",
+      "targets": [
+        "Т10"
+      ],
+      "category": "adversarial",
+      "channel": "chat"
+    },
+    "J-10": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "dedupVerdict": "nil"
+      },
+      "notes": "taskDedup.enabled=false → дедуп не срабатывает (проверка рубильника)",
+      "targets": [
+        "штат"
+      ],
+      "category": "adversarial",
+      "channel": "chat"
+    },
+    "J-11": {
+      "creates": "nothing",
+      "count": 0,
+      "notes": "taskClosure.enabled=false → петля закрытия молчит",
+      "targets": [
+        "штат"
+      ],
+      "category": "adversarial",
+      "channel": "chat"
+    },
+    "J-12": {
+      "creates": "error",
+      "count": 0,
+      "fields": {
+        "errorCode": "task_closure_no_completed_state",
+        "httpStatus": 400
+      },
+      "targets": [
+        "штат"
+      ],
+      "category": "adversarial",
+      "channel": "manual"
+    },
+    "K-01": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "titleClean": true,
+        "title~": "проверить качество демонстрации экрана",
+        "descriptionClean": true,
+        "descriptionNotVerbatim": true,
+        "provenanceKept": true
+      },
+      "notes": "описание = короткая структурная суть («Проверить, что демонстрация экрана на платформе передаётся корректно»), БЕЗ слов-паразитов; дословная речь сохранена в провенансе (previewQuote/TaskSource.quote)",
+      "targets": [
+        "Т11"
+      ],
+      "category": "text-quality",
+      "channel": "meeting"
+    },
+    "K-02": {
+      "creates": "issue|intake_pending",
+      "count": 1,
+      "fields": {
+        "title~": "почистить дубли в базе",
+        "descriptionClean": true,
+        "descriptionNotVerbatim": true
+      },
+      "notes": "описание — короткая суть «Почистить дубли в базе данных», без филлеров",
+      "targets": [
+        "Т11"
+      ],
+      "category": "text-quality",
+      "channel": "chat"
+    },
+    "K-03": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "assignee": "Петя",
+        "dueDate": "2026-07-15|15-е",
+        "descriptionClean": true,
+        "keepsFacts": [
+          "Логистик Плюс",
+          "3.5 млн",
+          "15-е"
+        ]
+      },
+      "notes": "чистое описание, но факты (контрагент, сумма, срок) НЕ потеряны",
+      "targets": [
+        "Т11"
+      ],
+      "category": "text-quality",
+      "channel": "meeting"
+    },
+    "K-04": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "assignee": "Оля",
+        "checklistTotalCount": 4,
+        "checklistItemsClean": true
+      },
+      "notes": "пункты чек-листа — чистые формулировки («Написать текст», «Согласовать макет», «Купить домен», «Настроить аналитику»), НЕ сырые обрывки речи",
+      "targets": [
+        "Т11",
+        "Т4"
+      ],
+      "category": "text-quality",
+      "channel": "meeting"
+    },
+    "K-05": {
+      "creates": "intake_pending|intake_auto",
+      "count": 1,
+      "fields": {
+        "title~": "разобраться с торможением интеграции",
+        "descriptionClean": true,
+        "descriptionNotVerbatim": true
+      },
+      "notes": "описание — суть («Интеграция тормозит, особенно по утрам — диагностировать»), без вежливых расшаркиваний",
+      "targets": [
+        "Т11"
+      ],
+      "category": "text-quality",
+      "channel": "email"
+    },
+    "K-06": {
+      "creates": "intake_pending|intake_auto",
+      "count": 1,
+      "fields": {
+        "assignee": "Дима",
+        "priority": "high|urgent",
+        "title~": "разобраться почему отваливается платёжка на проде",
+        "descriptionClean": true
+      },
+      "notes": "описание — нормализованный текст без эмодзи/капса/опечаток; приоритет high из СРОЧНО",
+      "targets": [
+        "Т11"
+      ],
+      "category": "text-quality",
+      "channel": "telegram"
+    },
+    "K-07": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "assignee": "Аня",
+        "dueDate": "next-friday",
+        "title~": "подготовить отчёт по дебиторке за июнь",
+        "descriptionClean": true
+      },
+      "notes": "уже чистый вход — фикс не должен ломать/раздувать; описание короткое по сути",
+      "targets": [
+        "Т11"
+      ],
+      "category": "text-quality",
+      "channel": "chat"
+    },
+    "K-08": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "descriptionClean": true,
+        "provenanceKept": true
+      },
+      "notes": "оригинал доступен в previewQuote/TaskSource.quote/rawContent — НЕ потерян при переформулировании",
+      "targets": [
+        "Т11"
+      ],
+      "category": "text-quality",
+      "channel": "meeting"
+    },
+    "K-09": {
+      "creates": "intake_pending",
+      "count": 1,
+      "fields": {
+        "descriptionClean": true,
+        "noHallucination": true
+      },
+      "notes": "описание короткое, но НЕ выдумывает срок/детали/исполнителя, которых нет во входе",
+      "targets": [
+        "Т11",
+        "Т8"
+      ],
+      "category": "text-quality",
+      "channel": "chat"
+    },
+    "K-10": {
+      "creates": "issue|intake_auto",
+      "count": 1,
+      "fields": {
+        "assignee": "Катя",
+        "descriptionClean": true,
+        "checklistTotalCount": 4
+      },
+      "notes": "описание — сжатая суть (важный клиент, провести онбординг гладко); шаги → чистый чек-лист из 4; НЕ обрезка первых N символов сырой речи",
+      "targets": [
+        "Т11"
+      ],
+      "category": "text-quality",
+      "channel": "meeting"
+    }
+  },
+  "config": {
+    "taskDedup.enabled": true,
+    "taskDedup.suggestThreshold": 0.88,
+    "taskDedup.embedTimeoutMs": 2500,
+    "taskClosure.enabled": true,
+    "taskClosure.matchThreshold": 0.85,
+    "taskClosure.lexicalFallbackMinOverlap": 0.5,
+    "taskClosure.candidateTtlDays": 14,
+    "tracker.autoAcceptConfidenceThreshold": 0.75,
+    "tracker.meetingTasksAlwaysPromote": true,
+    "tracker.livingCardEnabled": true,
+    "tracker.progressFromConversationMinConfidence": 0.6,
+    "tracker.progressAutoDraftMinSignals": 2,
+    "tracker.methodCaptureEnabled": true,
+    "tracker.methodCaptureMinComplexity": 0.5,
+    "tracker.completionDetailGateEnabled": true,
+    "intake.autoAcceptSources": []
+  },
+  "createdAt": "2026-07-06T21:01:47.994Z"
+}

@@ -63,6 +63,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private kcBlockGleaningRoundsTotal!: Counter<'tenant_top'>;
   private kcBlockGleaningBlocksTotal!: Counter<'tenant_top'>;
   private kcBlockOverlapDedupTotal!: Counter<'tenant_top'>;
+  private themeAutofillAddedTotal!: Counter<'tenant_top'>;
+  private themeExclusionsTotal!: Counter<'tenant_top'>;
+
+  private branchesMapRequestsTotal!: Counter<string>;
+  private branchesMapMs!: Histogram<string>;
 
   private morningTasksDigestTotal!: Counter<'is_empty'>;
 
@@ -465,13 +470,11 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── Action Center A2 «лестница доверия» (2026-06-02) — autotune + kill-switch ──
   private curationKillSwitchTotal!: Counter<'resource_type'>;
   private curationAutotuneAdjustmentTotal!: Counter<'resource_type' | 'direction'>;
-  // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker ──
+  // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot ──
   // Cardinality-safe: tenant НЕ выносим в label (паттерн остальных curation/probe-метрик).
   // Top-100 tenant-агрегации делает Grafana / Prometheus recording rule поверх БД.
   private completenessSlotsOpenTotal!: Gauge<'card_type'>;
   private completenessSlotsFilledTotal!: Counter<'card_type'>;
-  private consistencyViolationsTotal!: Counter<'rule'>;
-  private consistencyCheckerDurationSeconds!: Histogram<never>;
 
   // ── specialists (SBA α-6 — эталонный референс контракта §5 зонтичного) ──
   // Метрики единые для всех специалистов Слоя 3 (3.1..3.7). Label `type`
@@ -494,6 +497,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private blockWithoutEvidenceTotal!: Counter<'reason'>;
   private riskEdgeTotal!: Counter<'relation' | 'outcome'>;
   private ragAbstainTotal!: Counter<'mode'>;
+  private chatV2GroundingEmbeddingHitsTotal!: Counter<string>;
+  private chatV2GraphCypherRecallTotal!: Counter<string>;
+  private graphReconcileMergedTotal!: Counter<'type'>;
+  private graphReconcileDeletedTotal!: Counter<'type'>;
   // Ф3 МТЗ «разблокировка конвейера» (баг #18) — счётчик ранних skip-return'ов
   // хендлеров специалистов. До этого skip был неотличим от success (duration-
   // метрика в finally на ВСЕХ путях). reason: 'block_not_found' /
@@ -805,6 +812,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private experimentsTotal!: Gauge<'tenant_top' | 'status'>;
   private experimentsRunningDurationDays!: Histogram<'tenant_top'>;
   private experimentsLessonsExtractedTotal!: Counter<'tenant_top'>;
+  private experimentTasksExtractedTotal!: Counter<'tenant_top' | 'surface'>;
   private experimentDetectorRunsTotal!: Counter<'tenant_top' | 'result'>;
 
   // ── SBA α-8 wave 4 — Role Map builder + completeness cron ────────────
@@ -1297,6 +1305,27 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_block_overlap_dedup_total',
       help: 'Ф12a — число блоков, отброшенных как дубль на нахлёсте окон в extractFull. tenant_top — top-100 bucket через tenantTopOf.',
       labelNames: ['tenant_top'] as const,
+    });
+    this.themeAutofillAddedTotal = this.getOrCreateCounter({
+      name: 'z_theme_autofill_added_total',
+      help: 'Авто-наполнение тем: число блоков, привязанных воркером (addedVia=autofill). tenant_top — top-bucket.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    this.themeExclusionsTotal = this.getOrCreateCounter({
+      name: 'z_theme_exclusions_total',
+      help: 'Убранные привязки темы (unpin → ThemeExclusion). tenant_top — bucket.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    this.branchesMapRequestsTotal = this.getOrCreateCounter({
+      name: 'z_branches_map_requests_total',
+      help: 'SBB Ф2 — число запросов карты 12 областей знаний (GET /api/v1/knowledge/branches).',
+    });
+    this.branchesMapMs = this.getOrCreateHistogram({
+      name: 'z_branches_map_ms',
+      help: 'SBB Ф2 — длительность агрегации карты областей знаний в миллисекундах.',
+      buckets: [10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
     });
 
     this.morningTasksDigestTotal = this.getOrCreateCounter({
@@ -2435,7 +2464,7 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['resource_type', 'direction'] as const,
     });
 
-    // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker
+    // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot
     this.completenessSlotsOpenTotal = this.getOrCreateGauge({
       name: 'completeness_slots_open_total',
       help: 'SBA α-4 wave 2 — сколько CompletenessSlot.filledAt IS NULL сейчас (card_type ∈ regulation|process|role|company_profile).',
@@ -2445,17 +2474,6 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'completeness_slots_filled_total',
       help: 'SBA α-4 wave 2 — сколько слотов было закрыто (auto-scanner либо manual mark-filled), counter.',
       labelNames: ['card_type'] as const,
-    });
-    this.consistencyViolationsTotal = this.getOrCreateCounter({
-      name: 'consistency_violations_total',
-      help: 'SBA α-4 wave 2 — сколько структурных нарушений детектировано ConsistencyCheckerCron (rule ∈ R1..R6).',
-      labelNames: ['rule'] as const,
-    });
-    this.consistencyCheckerDurationSeconds = this.getOrCreateHistogram({
-      name: 'consistency_checker_duration_seconds',
-      help: 'SBA α-4 wave 2 — длительность одного прохода ConsistencyCheckerCron в секундах.',
-      labelNames: [] as const,
-      buckets: [0.5, 1, 5, 15, 60, 300, 900],
     });
 
     // ── specialists (SBA α-6 — единый контракт §5 для Слоя 3) ────────
@@ -2527,6 +2545,24 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'rag_abstain_total',
       help: 'Гейт честности RAG: ответ не заземлён блоками → честный отказ. mode: on (отказ применён) | shadow (только наблюдение over-abstention)',
       labelNames: ['mode'] as const,
+    });
+    this.chatV2GroundingEmbeddingHitsTotal = this.getOrCreateCounter({
+      name: 'chat_v2_grounding_embedding_hits_total',
+      help: 'Понималщик chat-v2: семантические (эмбеддинг-KNN) подсказки-сущности, добавленные к лексическому справочнику',
+    });
+    this.chatV2GraphCypherRecallTotal = this.getOrCreateCounter({
+      name: 'chat_v2_graph_cypher_recall_total',
+      help: 'recall «Мастера»: deep-hop обход графа AGE (Cypher) добавил блоки в пул на многошаговом вопросе',
+    });
+    this.graphReconcileMergedTotal = this.getOrCreateCounter({
+      name: 'graph_reconcile_merged_total',
+      help: 'graph-reconcile: узлы/рёбра MERGE в z_graph (type: entity|entityLink)',
+      labelNames: ['type'] as const,
+    });
+    this.graphReconcileDeletedTotal = this.getOrCreateCounter({
+      name: 'graph_reconcile_deleted_total',
+      help: 'graph-reconcile: узлы/рёбра удалены (DETACH DELETE) из z_graph (type: entity|entityLink)',
+      labelNames: ['type'] as const,
     });
     // Ф3 МТЗ «разблокировка конвейера» (баг #18) — skip-return'ы хендлеров.
     this.coreSpecialistSkippedTotal = this.getOrCreateCounter({
@@ -3402,6 +3438,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'experiments_lessons_extracted_total',
       help: 'SBA β-6 — сколько уроков (lessonsJson entries) извлечено из завершённых экспериментов (tenant_top).',
       labelNames: ['tenant_top'] as const,
+    });
+    this.experimentTasksExtractedTotal = this.getOrCreateCounter({
+      name: 'experiment_tasks_extracted_total',
+      help: 'Эксперимент→задача — сколько задач в трекере привязано к эксперименту (tenant_top × surface: meeting | ingest).',
+      labelNames: ['tenant_top', 'surface'] as const,
     });
     this.experimentDetectorRunsTotal = this.getOrCreateCounter({
       name: 'experiment_detector_runs_total',
@@ -4674,6 +4715,25 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       args.count,
     );
+  }
+
+  incThemeAutofillAdded(args: { tenantTop: string; count: number }): void {
+    if (args.count <= 0) return;
+    this.themeAutofillAddedTotal?.inc({ tenant_top: args.tenantTop }, args.count);
+  }
+
+  incThemeExclusions(args: { tenantTop: string; count: number }): void {
+    if (args.count <= 0) return;
+    this.themeExclusionsTotal?.inc({ tenant_top: args.tenantTop }, args.count);
+  }
+
+  incBranchesMapRequest(): void {
+    this.branchesMapRequestsTotal?.inc();
+  }
+
+  observeBranchesMapMs(ms: number): void {
+    if (!Number.isFinite(ms) || ms < 0) return;
+    this.branchesMapMs?.observe(ms);
   }
 
   incMorningTasksDigest(args: { isEmpty: boolean }): void {
@@ -6000,17 +6060,6 @@ export class BusinessMetricsService implements OnModuleInit {
     this.completenessSlotsFilledTotal.inc({ card_type: args.cardType });
   }
 
-  /** Counter: ConsistencyChecker нашёл нарушение (rule ∈ R1..R6). */
-  incConsistencyViolation(args: { rule: string }): void {
-    this.consistencyViolationsTotal.inc({ rule: args.rule });
-  }
-
-  /** Histogram: длительность прохода ConsistencyCheckerCron, секунды. */
-  observeConsistencyCheckerDuration(seconds: number): void {
-    if (seconds < 0) return;
-    this.consistencyCheckerDurationSeconds.observe(seconds);
-  }
-
   // ────────────────────── specialists (SBA α-6) ────────────────────────
 
   /**
@@ -6225,6 +6274,22 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incRagAbstain(args: { mode: string }): void {
     this.ragAbstainTotal.inc({ mode: args.mode });
+  }
+
+  incChatV2GroundingEmbeddingHits(n = 1): void {
+    this.chatV2GroundingEmbeddingHitsTotal.inc(n);
+  }
+
+  incChatV2GraphCypherRecall(n = 1): void {
+    this.chatV2GraphCypherRecallTotal.inc(n);
+  }
+
+  incGraphReconcileMerged(args: { type: string }): void {
+    this.graphReconcileMergedTotal.inc({ type: args.type });
+  }
+
+  incGraphReconcileDeleted(args: { type: string }): void {
+    this.graphReconcileDeletedTotal.inc({ type: args.type });
   }
 
   /**
@@ -6462,6 +6527,19 @@ export class BusinessMetricsService implements OnModuleInit {
     if (args.count <= 0) return;
     this.experimentsLessonsExtractedTotal.inc(
       { tenant_top: args.tenantTop },
+      args.count,
+    );
+  }
+
+  /** Эксперимент→задача — инкремент счётчика задач, привязанных к эксперименту. */
+  incExperimentTaskExtracted(args: {
+    tenantTop: string;
+    surface: 'meeting' | 'ingest';
+    count: number;
+  }): void {
+    if (args.count <= 0) return;
+    this.experimentTasksExtractedTotal.inc(
+      { tenant_top: args.tenantTop, surface: args.surface },
       args.count,
     );
   }

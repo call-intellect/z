@@ -39,11 +39,22 @@ Enum'ы: `GoalStatus { active, paused, achieved, abandoned }`, `GoalThemeSource 
 
 `@Cron('0 2 * * *', { timeZone: 'Europe/Moscow' })` — 02:00 МСК, продюсер движения цели идёт ДО сборки компаса в 06:00 МСК (goals-engine-consolidation Ф1). Per-Org (`deletedAt IS NULL`) → активные `Goal` → enqueue с jobId `strat_${goalId}_${YYYYMMDD}` (дневной dedup).
 
+## Issue-based согласованность (проактивный probe)
+
+Отдельная ось от LLM-снимка выше — не «термометр цели», а адресный сигнал сотруднику «твои задачи оторваны от целей». Живёт в модуле `goals` (не knowledge-core):
+
+- **Cron** `backend/src/modules/goals/cron/strategic-alignment.cron.ts` — `@Cron('0 6 * * *', { timeZone: 'Europe/Moscow' })` (06:00 МСК).
+- **Сервис** `strategic-alignment-issues.service.ts` — `computeTimeProgress` + `findMisalignedUsers`; для каждого сотрудника считает долю задач без привязки к цели.
+- **Probe** reason `strategic_misalignment_high` («у вас X% задач не привязаны к целям») через `ProbeService`.
+- **Пороги** — статические константы сервиса: `MISALIGNMENT_RATIO_THRESHOLD = 0.8`, `MISALIGNMENT_MIN_ISSUES = 5`.
+
+Две оси: **LLM-снимок** (02:00, knowledge-core, `strategic-alignment.worker` → `GoalAlignmentSnapshot`) vs **issue-based misalignment probe** (06:00, goals, адресный сигнал сотруднику).
+
 ## Промпт
 
 `backend/src/modules/knowledge-core/prompts/goal-alignment.prompt.ts` — system + user-builder. Если `targetDate` ≤ 7 дней — добавляется пометка «Дедлайн близок (N дней)».
 
-LlmTaskRoute создан патчем `patch-goal-alignment-route.ts`, providers: `[anthropic, deepseek, openai-via-proxy]`.
+Актуальная цепочка `goal-alignment` (дефолт `seed-llm-task-routes-default.ts`): **deepseek-v4-pro** (primary) → **openai-via-proxy/gpt-5.5** (secondary) → **kie:gemini-3.1-pro** (tertiary). Провайдер `anthropic` из дефолта убран (нормализация 2026-06-05, Claude в Z не используется — см. [llm-providers-verified.md](llm-providers-verified.md)); исторический `patch-goal-alignment-route.ts` (в нём ещё `anthropic` первым) не отражает текущий прод.
 
 ## API
 
@@ -154,8 +165,9 @@ Quota: `MAX_GOAL_RECOMPUTE_PER_DAY=5` (per-user, отклонение от ТЗ 
 
 - **Модель `WeeklyGoalsPulseDigest`** (клон `DailyOperationsDigest`, `@@unique([tenantId, isoWeek]`) — идемпотентность cron'а.
 - **`GoalsPulseService`** — агрегирует счётчики целей по `progressStatus` + `newThisWeek`; `getOrGenerate` идемпотентен; LLM `goals-pulse-summarize` для связного текста + сухой fallback при ошибке LLM. Хелпер `common/utils/iso-week.ts`.
-- **`GoalsPulseCron`** (`@Cron('0 6 * * 1')` — понедельник 06:00 UTC = 09:00 МСК): тумблеры `goals.pulse.enabled` / `goals.pulse.deliver_to_telegram` через `getDynamic`; доставка ролям owner/coo через `ConversationalService.sendNotification(eventType='goals.pulse')` (+ payload-схема + строка в `EVENT_TYPE_CHANNEL_POLICY`); `markDelivered`; per-Org try/catch.
+- **`GoalsPulseCron`** (`@Cron('0 6 * * 1', { timeZone: 'Europe/Moscow' })` — понедельник 06:00 МСК): тумблеры `goals.pulse.enabled` / `goals.pulse.deliver_to_telegram` через `getDynamic`; доставка ролям owner/coo через `ConversationalService.sendNotification(eventType='goals.pulse')` (+ payload-схема + строка в `EVENT_TYPE_CHANNEL_POLICY`); `markDelivered`; per-Org try/catch.
 - AdminSetting `goals.pulse.enabled` (default true) / `goals.pulse.deliver_to_telegram` (default false), seed `seed-admin-setting-goals-pulse.ts`. Метрики `goals_pulse_{generated,failed,delivered}_total`.
+- **⚠ Доставка нарратива дайджеста dormant.** LLM-текст `WeeklyGoalsPulseDigest.summary` уходит только в Telegram, а тумблер `goals.pulse.deliver_to_telegram` по умолчанию `false` → в норме руководитель этот текст не получает. In-app экрана/REST для чтения дайджеста нет: `GoalsPulseService` инжектится в свой cron; дашбордный `GoalsPulseWidget` показывает **живые счётчики** (`director-dashboard.service.fetchGoalsPulse` пересчитывает `Goal.groupBy(progressStatus)`), а не сгенерированный нарратив. Сам пульс генерируется, но нарратив не виден — нарушение духа Ship-On, кандидат в `04_не-сделано`.
 - **Дашборд:** `DirectorDashboardDto.goalsTree?` (иерархия parent→children с per-KR `progressPercent`) и `goalsPulse?` (счётчики недели), наполняются `fetchGoalsTree` / `fetchGoalsPulse` в `getDirectorView`.
 - **Frontend:** `GoalsPulseWidget` (5 счётчиков парными токенами) + `GoalsTreeView` (рекурсивное дерево, чип статуса, per-KR бары) + переключатель «Список / Дерево» на `/goals`; на дашборде виджет + дерево смонтированы рядом со `StrategicAlignmentWidget`. Мапперы `progressStatusChipClasses` / `progressStatusTone` / `buildTree`.
 - **Отсрочка:** HTTP-e2e дашборд-эндпоинта отложен (нет авторизованного test-harness) — покрытие unit-тестами `fetchGoalsTree`/`fetchGoalsPulse`.

@@ -5,12 +5,15 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
+import type { RoleBearerChangedEvent } from '../../knowledge-core/services/role-clone-persona-versioning.handler';
 import type {
   BatchCreatePersonsDto,
   CreatePersonDto,
@@ -31,8 +34,57 @@ export class PersonsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events?: EventEmitter2,
   ) {
     this.useAppointment = this.cfg.persons.useAppointment;
+  }
+
+  private async maybeEmitBearerChanged(args: {
+    tenantId: string;
+    roleId: string;
+  }): Promise<void> {
+    if (!this.events) return;
+
+    const activeAppointments = await this.prisma.appointment.findMany({
+      where: { tenantId: args.tenantId, roleId: args.roleId, validTo: null },
+      orderBy: [{ loadPercent: 'desc' }, { validFrom: 'desc' }],
+      select: { personId: true },
+      take: 1,
+    });
+    const newBearerId = activeAppointments[0]?.personId ?? null;
+
+    const currentPersona = await this.prisma.executablePersona.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        scope: 'role',
+        scopeRefId: args.roleId,
+        status: 'active',
+      },
+      orderBy: [{ roleVersion: 'desc' }, { snapshotAt: 'desc' }],
+      select: { currentBearerPersonId: true },
+    });
+    const oldBearerId = currentPersona?.currentBearerPersonId ?? null;
+
+    if (oldBearerId === newBearerId) return;
+
+    const payload: RoleBearerChangedEvent = {
+      tenantId: args.tenantId,
+      roleId: args.roleId,
+      oldPersonId: oldBearerId,
+      newPersonId: newBearerId,
+      changedAt: new Date(),
+    };
+    void this.events.emitAsync('role.bearer_changed', payload).catch((err) => {
+      this.logger.warn(
+        {
+          roleId: args.roleId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'role.bearer_changed: emit упал',
+      );
+    });
   }
 
   async ensurePersonForUser(
@@ -376,6 +428,13 @@ export class PersonsService {
         },
       });
 
+      if (args.body.roleId) {
+        void this.maybeEmitBearerChanged({
+          tenantId: args.tenantId,
+          roleId: args.body.roleId,
+        });
+      }
+
       return this.get({ tenantId: args.tenantId, id: personId });
     } catch (err) {
       this.handleUniqueViolation(err, args.body.email);
@@ -571,6 +630,15 @@ export class PersonsService {
           changedFields: Object.keys(args.body),
         },
       });
+
+      if (args.body.roleId !== undefined && args.body.roleId !== currentRoleId) {
+        if (currentRoleId) {
+          void this.maybeEmitBearerChanged({ tenantId: args.tenantId, roleId: currentRoleId });
+        }
+        if (args.body.roleId) {
+          void this.maybeEmitBearerChanged({ tenantId: args.tenantId, roleId: args.body.roleId });
+        }
+      }
     } catch (err) {
       this.handleUniqueViolation(err, args.body.email);
       throw err;

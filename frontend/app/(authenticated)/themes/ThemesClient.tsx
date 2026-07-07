@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { Sparkles, TrendingDown, TrendingUp, Minus } from 'lucide-react';
+import { Plus, Sparkles, Star, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 
 import { themesApi } from '@/api/themes.api';
+import { CreateThemeDialog } from './CreateThemeDialog';
 import { pluralRu } from '@/domain/contribution';
 import {
   THEME_BRANCH_LABELS,
@@ -53,6 +54,7 @@ export function ThemesClient() {
   const [branch, setBranch] = useState<ThemeBranch | 'all'>('all');
   const [q, setQ] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const status: ThemeStatus = showArchived ? 'archived' : 'active';
 
@@ -75,7 +77,7 @@ export function ThemesClient() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
-      <header className="mb-6 flex flex-wrap items-center gap-3">
+      <header className="mb-6 flex flex-wrap items-start gap-3">
         <div className="flex-1 min-w-[200px]">
           <h1 className="text-2xl font-semibold">Темы</h1>
           <p className="text-sm text-fg-tertiary">
@@ -84,6 +86,13 @@ export function ThemesClient() {
             карточку и продолжайте работать в привычной структуре.
           </p>
         </div>
+        <Button
+          type="button"
+          className="gap-2"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus size={16} /> Новая тема
+        </Button>
       </header>
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -135,6 +144,8 @@ export function ThemesClient() {
           ))}
         </div>
       </QueryGate>
+
+      <CreateThemeDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );
 }
@@ -158,6 +169,11 @@ function ThemeListItem({ theme }: { theme: ThemeDomain }) {
         <div className="flex-1 min-w-0">
           <h3 className="truncate text-base font-medium">{theme.name}</h3>
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-fg-tertiary">
+            {theme.isMine && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-accent">
+                <Star size={11} /> моя тема
+              </span>
+            )}
             {branchLabel && (
               <span className="rounded-full bg-bg-overlay px-2 py-0.5">
                 {branchLabel}

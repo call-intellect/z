@@ -47,7 +47,7 @@ merge.worker (транскрипт готов)
 
 **Промпт.** `backend/src/modules/ai/services/prompts/meeting-report-fast.prompt.ts`:
 - Builder `buildMeetingReportFastPrompt({ meetingType, meetingTitle, transcript })`.
-- `SUMMARY_TEMPLATE_BY_TYPE` — 12 шаблонов summary_markdown по `MeetingType` (team, standup, plan_fact, project, sales, custdev, partner, interview, customer_success, review, retrospective, task_discussion).
+- `SUMMARY_TEMPLATE_BY_TYPE` — 13 шаблонов summary_markdown по `MeetingType` (team, standup, plan_fact, project, sales, custdev, partner, interview, customer_success, review, retrospective, task_discussion, sprint_review).
 - Compile-time exhaustiveness check через TypeScript.
 - 3 общие секции для всех типов: `chapters`, `tasks`, `quality_score`. `summary_markdown` — по типу.
 - Tool `submit_meeting_analysis` (JSON Schema), `tool_choice='auto'` (требование DeepSeek-V4-Pro с thinking).

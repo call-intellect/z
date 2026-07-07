@@ -82,6 +82,68 @@ function localWeekday(year: number, month0: number, day: number): number {
   return (jsDow + 6) % 7;
 }
 
+export const PERIOD_DETECT_CONFIDENT = 0.9;
+
+const YESTERDAY_PATTERN = /вчера/i;
+const TODAY_PATTERN = /сегодня/i;
+const LAST_N_DAYS_PATTERN = /за\s+(?:последн(?:ие|их)\s+)?(\d{1,3})\s*(?:дн|сут)/i;
+const LAST_WEEK_PATTERNS: RegExp[] = [
+  /за\s+(?:прошл(?:ую|ой)|последн(?:юю|ей)|прошедш(?:ую|ей))\s+недел[юияе]/i,
+  /(?:на|за)\s+прошл(?:ой|ую)\s+недел[юияе]/i,
+  /за\s+недел[юе]/i,
+];
+const THIS_WEEK_PATTERNS: RegExp[] = [
+  /(?:на|за)\s+(?:эт(?:ой|у|ой)|текущ(?:ей|ую))\s+недел[юияе]/i,
+];
+const LAST_MONTH_PATTERNS: RegExp[] = [
+  /за\s+прошл(?:ый|ом)\s+месяц[ае]?/i,
+  /(?:в|за)\s+прошл(?:ом|ый)\s+месяц[ае]?/i,
+  /прошл(?:ый|ом)\s+месяц[ае]?/i,
+];
+const THIS_MONTH_PATTERNS: RegExp[] = [
+  /за\s+(?:эт(?:от|ом)|текущ(?:ий|ем))\s+месяц[ае]?/i,
+  /(?:в|за)\s+(?:эт(?:ом|от)|текущ(?:ем|ий))\s+месяц[ае]?/i,
+  /эт(?:от|ом)\s+месяц[ае]?/i,
+];
+
+export function detectPeriodExpr(question: string): {
+  expr: PeriodExpr;
+  periodDays: number | null;
+  confidence: number;
+} {
+  const q = typeof question === 'string' ? question : '';
+
+  if (YESTERDAY_PATTERN.test(q)) {
+    return { expr: 'yesterday', periodDays: null, confidence: PERIOD_DETECT_CONFIDENT };
+  }
+  if (TODAY_PATTERN.test(q)) {
+    return { expr: 'today', periodDays: null, confidence: PERIOD_DETECT_CONFIDENT };
+  }
+
+  const nDays = LAST_N_DAYS_PATTERN.exec(q);
+  if (nDays) {
+    const n = Number.parseInt(nDays[1]!, 10);
+    if (Number.isFinite(n) && n > 0) {
+      return { expr: 'last_n_days', periodDays: n, confidence: PERIOD_DETECT_CONFIDENT };
+    }
+  }
+
+  for (const p of LAST_WEEK_PATTERNS) {
+    if (p.test(q)) return { expr: 'last_week', periodDays: null, confidence: PERIOD_DETECT_CONFIDENT };
+  }
+  for (const p of THIS_WEEK_PATTERNS) {
+    if (p.test(q)) return { expr: 'this_week', periodDays: null, confidence: PERIOD_DETECT_CONFIDENT };
+  }
+  for (const p of LAST_MONTH_PATTERNS) {
+    if (p.test(q)) return { expr: 'last_month', periodDays: null, confidence: PERIOD_DETECT_CONFIDENT };
+  }
+  for (const p of THIS_MONTH_PATTERNS) {
+    if (p.test(q)) return { expr: 'this_month', periodDays: null, confidence: PERIOD_DETECT_CONFIDENT };
+  }
+
+  return { expr: 'none', periodDays: null, confidence: 0 };
+}
+
 export function resolvePeriod(
   expr: PeriodExpr,
   todayIso: string,

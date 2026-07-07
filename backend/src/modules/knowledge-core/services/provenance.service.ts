@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { EntityLinkType } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -21,7 +22,13 @@ export type ProvenanceEntityType =
   | 'block'
   | 'notification'
   | 'entity'
-  | 'idea';
+  | 'idea'
+  | 'goal'
+  | 'insight'
+  | 'friction';
+
+const TEAM_FRICTION_RELATION_TYPES: EntityLinkType[] = ['conflicted_with'];
+const FRICTION_VERBATIM_ROLES_FALLBACK: readonly string[] = ['owner', 'admin'];
 
 export interface ProvenanceSourceRef {
   type: ProvenanceSourceType;
@@ -59,6 +66,7 @@ export interface ProvenanceNode {
 export interface ViewerContext {
   tenantId: string;
   userId: string;
+  viewerRole?: string;
 }
 
 export const PROVENANCE_ACCESS_MASK = 'Источник скрыт правами доступа';
@@ -401,7 +409,35 @@ export class ProvenanceService {
           hasAudioByRawEvent.has(ev.rawEventId),
       });
     }
+    if (entityType === 'friction') {
+      return this.maskFrictionByRole(nodes, viewer.viewerRole);
+    }
     return nodes;
+  }
+
+  private async maskFrictionByRole(
+    nodes: ProvenanceNode[],
+    viewerRole: string | undefined,
+  ): Promise<ProvenanceNode[]> {
+    const verbatimRoles = await this.cfg.getDynamic<readonly string[]>(
+      'provenance.frictionVerbatimRoles',
+      undefined,
+      FRICTION_VERBATIM_ROLES_FALLBACK,
+    );
+    if (viewerRole && verbatimRoles.includes(viewerRole)) return nodes;
+    return nodes.map((n) => {
+      if (n.accessFiltered) return n;
+      const aggregateDeepLink = n.source.deepLink
+        ? (n.source.deepLink.split('?')[0] ?? null)
+        : null;
+      return {
+        ...n,
+        quote: n.source.label,
+        startMs: null,
+        endMs: null,
+        source: { ...n.source, deepLink: aggregateDeepLink },
+      };
+    });
   }
 
   private async resolveHasAudio(
@@ -557,6 +593,9 @@ export class ProvenanceService {
       'block',
       'entity',
       'idea',
+      'goal',
+      'insight',
+      'friction',
     ];
     if (!VALID.includes(entityType as ProvenanceEntityType)) return [];
     const blockIds = await this.collectSourceBlockIds(
@@ -635,6 +674,13 @@ export class ProvenanceService {
       };
     }
     switch (sourceType) {
+      case 'meeting_report': {
+        const meetingId =
+          sourceExternalId && sourceExternalId.startsWith('report_')
+            ? sourceExternalId.slice('report_'.length)
+            : sourceExternalId;
+        return { type: 'meeting', refId: meetingId };
+      }
       case 'meeting':
         return { type: 'meeting', refId: sourceExternalId };
       case 'email':
@@ -724,6 +770,31 @@ export class ProvenanceService {
           select: { sourceBlockIds: true },
         });
         return i?.sourceBlockIds ?? [];
+      }
+      case 'goal': {
+        const g = await this.prisma.goal.findFirst({
+          where: { id: entityId, tenantId },
+          select: { sourceBlockIds: true },
+        });
+        return g?.sourceBlockIds ?? [];
+      }
+      case 'insight': {
+        const s = await this.prisma.insight.findFirst({
+          where: { id: entityId, tenantId },
+          select: { sourceBlockIds: true },
+        });
+        return s?.sourceBlockIds ?? [];
+      }
+      case 'friction': {
+        const l = await this.prisma.entityLink.findFirst({
+          where: {
+            id: entityId,
+            tenantId,
+            relationType: { in: TEAM_FRICTION_RELATION_TYPES },
+          },
+          select: { sourceBlockIds: true },
+        });
+        return l?.sourceBlockIds ?? [];
       }
       case 'notification':
         return [];

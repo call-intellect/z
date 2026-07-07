@@ -214,3 +214,69 @@ describe('TaskSolutionBuildService.runForOrg (integration)', () => {
     expect(count).toBe(1);
   });
 });
+
+const REPEAT_IDS = ['a', 'b', 'c'].map((s) => `${PREFIX}-rep-${s}`);
+const REPEAT_ISSUE_IDS = ['a', 'b', 'c'].map((s) => `${PREFIX}-repissue-${s}`);
+const REPEAT_VEC = `[${Array(1536).fill(0.1).join(',')}]`;
+
+async function seedRepeatGroup(prisma: PrismaService): Promise<void> {
+  for (let i = 0; i < 3; i += 1) {
+    await prisma.issue.create({
+      data: {
+        id: REPEAT_ISSUE_IDS[i]!,
+        tenantId: TENANT,
+        projectId: PROJECT_ID,
+        identifier: `TSB-REP${i + 1}`,
+        sequenceId: 10 + i,
+        title: `Похожая задача ${i + 1}`,
+        descriptionStripped: 'Одинаковый способ решения.',
+        createdById: USER_ID,
+      },
+    });
+    await prisma.taskSolution.create({
+      data: {
+        id: REPEAT_IDS[i]!,
+        tenantId: TENANT,
+        title: `Решение ${i + 1}`,
+        taskDescription: 'Одинаковый способ решения.',
+        solutionMd: '- один и тот же способ',
+        ownerPersonId: PERSON_ID,
+        personSubjectIds: [PERSON_ID],
+        sourceIssueId: REPEAT_ISSUE_IDS[i]!,
+        dataClass: 'internal',
+        version: 1,
+      },
+    });
+    await prisma.$executeRawUnsafe(
+      'UPDATE "task_solutions" SET "embedding" = $1::vector WHERE "id" = $2',
+      REPEAT_VEC,
+      REPEAT_IDS[i]!,
+    );
+  }
+}
+
+describe('TaskSolutionBuildService.assignRepeatGroup (integration)', () => {
+  it('3 близких решения → общий repeatGroupKey и candidateInstruction=true', async (testCtx) => {
+    if (skipIfNoDb(testCtx)) return;
+    const prisma = (await getPrismaClient()) as unknown as PrismaService;
+    await seedRepeatGroup(prisma);
+    const service = makeService(prisma);
+
+    await (
+      service as unknown as {
+        assignRepeatGroup: (t: string, id: string, vec: string) => Promise<void>;
+      }
+    ).assignRepeatGroup(TENANT, REPEAT_IDS[2]!, REPEAT_VEC);
+
+    const solutions = await prisma.taskSolution.findMany({
+      where: { id: { in: REPEAT_IDS } },
+      select: { id: true, repeatGroupKey: true, candidateInstruction: true },
+      orderBy: { id: 'asc' },
+    });
+    expect(solutions).toHaveLength(3);
+    const keys = new Set(solutions.map((s) => s.repeatGroupKey));
+    expect(keys.size).toBe(1);
+    expect([...keys][0]).toBeTruthy();
+    expect(solutions.every((s) => s.candidateInstruction)).toBe(true);
+  });
+});

@@ -12,7 +12,12 @@ function makeMocks() {
     issue: { findFirst: vi.fn() },
     person: { findMany: vi.fn() },
     ideaBlock: { findMany: vi.fn() },
-    taskSolution: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    taskSolution: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
     cardVersion: { create: vi.fn() },
     $queryRawUnsafe: vi.fn(),
     $executeRawUnsafe: vi.fn(),
@@ -186,6 +191,85 @@ describe('TaskSolutionBuildService.buildOne — идемпотентность',
     expect(res).toBe('skippedNoNew');
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.cardVersion.create).not.toHaveBeenCalled();
+  });
+});
+
+type AssignRepeatGroup = (
+  tenantId: string,
+  solutionId: string,
+  vecStr: string,
+) => Promise<void>;
+
+function assignRepeatGroup(service: TaskSolutionBuildService): AssignRepeatGroup {
+  return (service as unknown as { assignRepeatGroup: AssignRepeatGroup }).assignRepeatGroup.bind(
+    service,
+  );
+}
+
+describe('TaskSolutionBuildService.assignRepeatGroup — кластеризация повторов', () => {
+  it('не кластеризует одиночку: при groupSize < threshold updateMany не вызывается', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.$queryRawUnsafe.mockResolvedValue([{ id: 'ts-2', repeatGroupKey: null, similarity: 0.9 }]);
+
+    await assignRepeatGroup(service)('t1', 'ts-1', '[0.1,0.2]');
+
+    expect(prisma.taskSolution.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('игнорирует соседей ниже minSim: похожий только по расстоянию не считается повтором', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.$queryRawUnsafe.mockResolvedValue([
+      { id: 'ts-2', repeatGroupKey: null, similarity: 0.9 },
+      { id: 'ts-3', repeatGroupKey: null, similarity: 0.5 },
+      { id: 'ts-4', repeatGroupKey: null, similarity: 0.4 },
+    ]);
+
+    await assignRepeatGroup(service)('t1', 'ts-1', '[0.1,0.2]');
+
+    expect(prisma.taskSolution.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('при groupSize >= threshold и соседях без ключа: помечает группу candidateInstruction=true с ключом grp_', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.$queryRawUnsafe.mockResolvedValue([
+      { id: 'ts-2', repeatGroupKey: null, similarity: 0.95 },
+      { id: 'ts-3', repeatGroupKey: null, similarity: 0.88 },
+    ]);
+
+    await assignRepeatGroup(service)('t1', 'ts-1', '[0.1,0.2]');
+
+    expect(prisma.taskSolution.updateMany).toHaveBeenCalledTimes(1);
+    const arg = prisma.taskSolution.updateMany.mock.calls[0][0];
+    expect(arg).toEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 't1',
+          id: { in: expect.arrayContaining(['ts-1', 'ts-2', 'ts-3']) },
+          promotedToInstructionId: null,
+          deletedAt: null,
+        }),
+        data: expect.objectContaining({
+          candidateInstruction: true,
+          repeatGroupKey: expect.stringMatching(/^grp_/),
+        }),
+      }),
+    );
+    expect(arg.data.repeatGroupKey).toBe('grp_ts-1');
+  });
+
+  it('наследует существующий repeatGroupKey соседа, не плодит новый', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.$queryRawUnsafe.mockResolvedValue([
+      { id: 'ts-2', repeatGroupKey: 'grp_X', similarity: 0.95 },
+      { id: 'ts-3', repeatGroupKey: null, similarity: 0.9 },
+    ]);
+
+    await assignRepeatGroup(service)('t1', 'ts-9', '[0.1,0.2]');
+
+    expect(prisma.taskSolution.updateMany).toHaveBeenCalledTimes(1);
+    const arg = prisma.taskSolution.updateMany.mock.calls[0][0];
+    expect(arg.data.repeatGroupKey).toBe('grp_X');
+    expect(arg.data.candidateInstruction).toBe(true);
   });
 });
 

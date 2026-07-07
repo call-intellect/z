@@ -312,7 +312,8 @@ export class TaskSolutionBuildService {
         outcome = 'updated';
       }
 
-      await this.tryWriteEmbedding(solutionId, `${issue.title} ${bodyMd}`);
+      const vecStr = await this.tryWriteEmbedding(solutionId, `${issue.title} ${bodyMd}`);
+      if (vecStr) await this.assignRepeatGroup(tenantId, solutionId, vecStr);
       return outcome;
     } catch (err) {
       this.logger.warn(
@@ -345,22 +346,72 @@ export class TaskSolutionBuildService {
     return persons[0]!.id;
   }
 
-  private async tryWriteEmbedding(id: string, text: string): Promise<void> {
+  private async tryWriteEmbedding(id: string, text: string): Promise<string | null> {
     try {
       const t = text.trim().slice(0, 2_000);
-      if (!t) return;
+      if (!t) return null;
       const vec = await this.embedder.embedQuery(t);
-      if (!vec) return;
+      if (!vec) return null;
       const vecStr = `[${vec.join(',')}]`;
       await this.prisma.$executeRawUnsafe(
         'UPDATE "task_solutions" SET "embedding" = $1::vector WHERE "id" = $2',
         vecStr,
         id,
       );
+      return vecStr;
     } catch (err) {
       this.logger.debug(
         { id, err: err instanceof Error ? err.message : String(err) },
         'task-solution-build.tryWriteEmbedding: пропускаю (best-effort)',
+      );
+      return null;
+    }
+  }
+
+  private async assignRepeatGroup(
+    tenantId: string,
+    solutionId: string,
+    vecStr: string,
+  ): Promise<void> {
+    try {
+      const threshold = await this.cfg.getDynamic<number>(
+        'taskSolution.repeatThreshold',
+        undefined,
+        3,
+      );
+      const minSim = await this.cfg.getDynamic<number>(
+        'taskSolution.repeatSimilarity',
+        undefined,
+        0.85,
+      );
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ id: string; repeatGroupKey: string | null; similarity: number }>
+      >(
+        `SELECT id, "repeatGroupKey", (1 - (embedding <=> $1::vector)) AS similarity
+         FROM "task_solutions"
+         WHERE "tenantId" = $2 AND id <> $3 AND "deletedAt" IS NULL AND embedding IS NOT NULL
+         ORDER BY embedding <=> $1::vector
+         LIMIT 20`,
+        vecStr,
+        tenantId,
+        solutionId,
+      );
+      const neighbors = rows.filter((r) => Number(r.similarity) >= minSim);
+      const groupSize = neighbors.length + 1;
+      if (groupSize < threshold) return;
+      const existingKeys = [
+        ...new Set(neighbors.map((n) => n.repeatGroupKey).filter((k): k is string => !!k)),
+      ].sort();
+      const memberIds = [solutionId, ...neighbors.map((n) => n.id)];
+      const key = existingKeys[0] ?? `grp_${[...memberIds].sort()[0]}`;
+      await this.prisma.taskSolution.updateMany({
+        where: { tenantId, id: { in: memberIds }, promotedToInstructionId: null, deletedAt: null },
+        data: { repeatGroupKey: key, candidateInstruction: true },
+      });
+    } catch (err) {
+      this.logger.debug(
+        { solutionId, err: err instanceof Error ? err.message : String(err) },
+        'task-solution-build.assignRepeatGroup: пропускаю (best-effort)',
       );
     }
   }

@@ -1,0 +1,352 @@
+[
+  {
+    "scenarioId": "a5-create-from-probe",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть (лимитер + очередь ретраев с бэкоффом) схвачена точно, без потерь. Владелец и субъекты корректны: Михаил — и исполнитель, и клон.",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть решения (лимитер + очередь ретраев с бэкоффом) схвачена верно, владелец и субъекты корректны — Михаил и есть исполнитель.",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть (лимитер + очередь ретраев с бэкоффом) схвачена точно, владелец — решавший задачу Михаил, субъекты совпадают с эталоном. Сигнал дня полностью учтён, дублей и потерь нет.",
+        "error": null
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "good"
+  },
+  {
+    "scenarioId": "a5-daily-mentions",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть схвачена точно: предагрегация витрины + кеш на сутки → мгновенная работа отчёта. Владелец — Дарья (исполнитель), субъект тоже Дарья (она и решала). Вода не раздута, ключевые шаги сохранены.",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть решения схвачена верно: предагрегация витрины + кеш на сутки = мгновенный отчёт. Владелец — Дарья (она же исполнитель и решавший). Субъекты корректны — решение растёт к клону Дарьи.",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Суть решения (предагрегация витрины + кеш на сутки = мгновенно) схвачена верно, владелец (Дарья) корректен. Однако субъекты указаны ошибочно: в эталоне они не заданы (—), а в собранном решении значится Дарья, которая и так уже является владельцем — дублирование и отклонение от эталона.",
+        "error": null
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "good"
+  },
+  {
+    "scenarioId": "a5-one-per-task",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Три ключевых шага миграции (выгрузка лимитов → пересчёт и согласование → включение тарифа и проверка биллинга) зафиксированы полно и по порядку. Владелец = Иван (исполнитель) — верно. Субъект «Иван» корректен, так как знание растёт к клонам решавшего.",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Три шага methodology_step схвачены верно, владелец (Иван) корректен, но субъекты указаны как «Иван» при эталонном отсутствии субъектов («—»).",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Все три шага миграции из сигналов дня отражены полно и без дублей. Владелец — Иван (исполнитель), субъекты не противоречат эталону (Иван — единственный участник). Старое не потеряно при дополнении.",
+        "error": null
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "good"
+  },
+  {
+    "scenarioId": "a5-no-answer",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть («само решилось») схвачена верно и честно отражена в итоге. Владелец (Михаил) и субъекты (Михаил) корректны. Пустые шаги — следствие отсутствия деталей в сигналах, а не ошибка сборки.",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Владелец корректно указан как Михаил (исполнитель задачи), субъекты совпадают. Суть — отсутствие конкретных шагов, «само решилось» — отражена честно, без домысливания; пробелы честно помечены как требующие уточнения.",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": false,
+        "ownerCorrect": false,
+        "subjectsCorrect": false,
+        "verdict": "wrong",
+        "rationale": "",
+        "error": "parse: JSON Parse error: Unterminated string"
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "good"
+  },
+  {
+    "scenarioId": "a5-ownership-solver",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть (Михаил настроил SSO: поднял SAML, смапил группы, проверил вход) передана точно по сигналам дня. Владелец и субъекты — Михаил — корректны.",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Владелец (Михаил) совпадает с исполнителем задачи; суть решения (поднятие SAML, маппинг групп, проверка входа) корректно отражает сигнал Сергея; субъекты (Михаил) верны.",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть схвачена верно: Михаил настроил SSO — поднял SAML, смапил группы, проверил вход. Владелец — Михаил (исполнитель, а не рассказавший Сергей). Субъекты (клоны) — Михаил, корректно. Потерь старого и дублей нет.",
+        "error": null
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "good"
+  },
+  {
+    "scenarioId": "a5-repeat-candidate-instruction",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть решения (повторное применение связки «лимитер + очередь ретраев + бэкофф» для инцидента 429 у другого клиента) схвачена верно. Владелец определён правильно, субъект не противоречит эталону.",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Суть решения (лимитер, очередь ретраев, бэкофф — третий раз) и владелец (Михаил) определены верно. Однако субъекты указаны как «Михаил», в то время как в эталоне они не заданы (пусто).",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Субъекты в фактическом решении указаны как «Михаил», но эталон предполагает их отсутствие; суть и владелец верны.",
+        "error": null
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "flawed"
+  },
+  {
+    "scenarioId": "a5-dual-purpose",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть оптимизации схвачена верно: вынос тяжёлого джойна в матвью, добавление частичного индекса, итоговое ускорение с 4с до 200мс — все ключевые шаги отражены. Владелец (Дарья) совпадает с исполнителем. Субъекты не противоречат эталону.",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Суть решения и владелец (Дарья) верны, но субъекты указаны как «Дарья», тогда как эталон предполагает отсутствие субъектов (клоны: —). Дарья — исполнитель/владелец, а не клон.",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Суть решения (вынос джойна в матвью, частичный индекс, ускорение с 4с до 200мс) схвачена верно, владелец Дарья корректен. Однако в поле «субъекты» ошибочно указана Дарья, тогда как эталон предполагает отсутствие клонов (—).",
+        "error": null
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "flawed"
+  },
+  {
+    "scenarioId": "a5-owner-not-mentioner",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть решения схвачена верно: оба ключевых шага (добавление идемпотентного ключа и дедупликация по event_id) зафиксированы без потерь. Владелец — Иван (исполнитель), субъекты — тоже Иван, что корректно; Дарья лишь сообщила, знание растёт к тому, кто решал.",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": true,
+        "verdict": "good",
+        "rationale": "Суть решения (идемпотентный ключ + дедупликация по event_id) схвачена верно. Владелец — Иван (исполнитель), а не Дарья (сообщившая). Субъекты (Иван) корректны. Пробелы с «требует уточнения» — вопрос полноты, но не искажают атрибуцию и суть.",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Суть починки (идемпотентный ключ + дедуп по event_id) схвачена верно, владелец Иван корректен. Однако в поле «субъекты» указан Иван, тогда как по эталону субъекты отсутствуют (клоны не предусмотрены) — лишняя привязка.",
+        "error": null
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "good"
+  },
+  {
+    "scenarioId": "a5-extend-daily",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Все три шага из сигналов (ночной дамп, выгрузка в S3, еженедельная проверка восстановления) схвачены в тексте решения. Владелец указан верно — Иван. Однако субъекты проставлены как «Иван», тогда как эталон предполагает их отсутствие (—).",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Суть решения (ночной дамп, выгрузка в S3, проверка восстановления) схвачена верно, владелец — Иван — корректен. Однако субъекты указаны как «Иван», в то время как эталон не задаёт субъектов (прочерк).",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": false,
+        "ownerCorrect": false,
+        "subjectsCorrect": false,
+        "verdict": "wrong",
+        "rationale": "",
+        "error": "нет tool-call ответа"
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "flawed"
+  },
+  {
+    "scenarioId": "a5-multi-solver",
+    "votes": [
+      {
+        "judge": "суть-решения",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Суть решения передана верно, но среди субъектов не указан Михаил, который поднимал стораджи и участвовал в проверке отказоустойчивости.",
+        "error": null
+      },
+      {
+        "judge": "владелец",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Субъекты неполны: Михаил участвовал в решении (поднимал стораджи, совместная проверка отказоустойчивости), но в субъектах указан только Иван. По эталону субъекты: Иван, Михаил.",
+        "error": null
+      },
+      {
+        "judge": "полнота",
+        "gistCaptured": true,
+        "ownerCorrect": true,
+        "subjectsCorrect": false,
+        "verdict": "flawed",
+        "rationale": "Суть решения передана верно: сеть — Иван, стораджи — Михаил, совместная проверка. Владелец Иван корректен. Однако Михаил как соисполнитель не попал в субъекты клонов — потеря важного участника.",
+        "error": null
+      }
+    ],
+    "majorityGist": true,
+    "majorityOwner": true,
+    "consensus": "flawed"
+  }
+]

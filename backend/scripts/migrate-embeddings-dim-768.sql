@@ -2,6 +2,9 @@
 --
 -- TZ plans/tz/2026-06-30-embeddinggemma-768-migration.md.
 -- Сгенерировано автоматически через pg_attribute (25 колонок, public-схема, relkind='r').
+-- + SourceEpisode/IntakeIssue дописаны вручную (появились в схеме после генерации,
+--   пропущены исходным снапшотом pg_attribute — ловилось только реальным прогоном:
+--   "expected 1536 dimensions, not 768" на бэкфилле).
 --
 -- Эффекты:
 --   * Все существующие эмбеддинги обнуляются (USING NULL) — pgvector не кастит
@@ -28,10 +31,12 @@ ALTER TABLE public."Entity" ALTER COLUMN embedding TYPE vector(768) USING NULL;
 ALTER TABLE public."Goal" ALTER COLUMN embedding TYPE vector(768) USING NULL;
 ALTER TABLE public."HelpfulnessTrait" ALTER COLUMN embedding TYPE vector(768) USING NULL;
 ALTER TABLE public."IdeaBlock" ALTER COLUMN embedding TYPE vector(768) USING NULL;
+ALTER TABLE public."IntakeIssue" ALTER COLUMN embedding TYPE vector(768) USING NULL;
 ALTER TABLE public."Issue" ALTER COLUMN embedding TYPE vector(768) USING NULL;
 ALTER TABLE public."MeetingTranscriptChunk" ALTER COLUMN embedding TYPE vector(768) USING NULL;
 ALTER TABLE public."PromptFeedback" ALTER COLUMN "inputEmbedding" TYPE vector(768) USING NULL;
 ALTER TABLE public."PromptRule" ALTER COLUMN embedding TYPE vector(768) USING NULL;
+ALTER TABLE public."SourceEpisode" ALTER COLUMN embedding TYPE vector(768) USING NULL;
 ALTER TABLE public."Theme" ALTER COLUMN embedding TYPE vector(768) USING NULL;
 ALTER TABLE public.decisions ALTER COLUMN embedding TYPE vector(768) USING NULL;
 ALTER TABLE public.idea_clusters ALTER COLUMN embedding TYPE vector(768) USING NULL;

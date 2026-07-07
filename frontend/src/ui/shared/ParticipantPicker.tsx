@@ -43,6 +43,7 @@ export interface ParticipantPickerProps {
   placeholder?: string;
   disabled?: boolean;
   showChannels?: boolean;
+  onlyUsers?: boolean;
 }
 
 function isSameParticipant(
@@ -89,6 +90,7 @@ export function ParticipantPicker({
   placeholder = "Найти коллегу или внешний контакт",
   disabled = false,
   showChannels = false,
+  onlyUsers = false,
 }: ParticipantPickerProps): JSX.Element {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -112,7 +114,10 @@ export function ParticipantPicker({
     { revalidateOnFocus: false, dedupingInterval: 60_000 },
   );
 
-  const results = useMemo(() => data?.items ?? [], [data]);
+  const results = useMemo(() => {
+    const items = data?.items ?? [];
+    return onlyUsers ? items.filter((r) => r.type === "user") : items;
+  }, [data, onlyUsers]);
 
   const filteredResults = useMemo(
     () =>
@@ -123,13 +128,14 @@ export function ParticipantPicker({
   );
 
   const canQuickCreate = useMemo(() => {
+    if (onlyUsers) return false;
     if (debouncedQuery.length < 2) return false;
     if (quickCreating) return false;
     const qLower = debouncedQuery.toLowerCase();
     const exactInResults = results.some((r) => r.name.toLowerCase() === qLower);
     const exactInValue = value.some((v) => v.name.toLowerCase() === qLower);
     return !exactInResults && !exactInValue;
-  }, [debouncedQuery, quickCreating, results, value]);
+  }, [debouncedQuery, quickCreating, results, value, onlyUsers]);
 
   const addParticipant = useCallback(
     (next: ParticipantPickerValue) => {

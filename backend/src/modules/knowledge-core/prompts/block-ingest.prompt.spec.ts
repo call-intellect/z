@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildBlockIngestPrompt } from './block-ingest.prompt';
 import type { Segment } from '../services/segment-builder.service';
+
+import { buildBlockIngestPrompt } from './block-ingest.prompt';
 
 /**
  * Ф1 agent-chain-overhaul (2026-06-07) — recall классификации signalType.
@@ -135,5 +136,19 @@ describe('buildBlockIngestPrompt — контекст эпизода (Ф3 A)', (
     expect(system).toContain(
       '10. Многосторонние обязательства/договорённости не схлопнуты',
     );
+  });
+
+  it('companyAbout → секция «О компании» в начале user (до «Сегменты»)', () => {
+    const { user } = buildBlockIngestPrompt({
+      segments,
+      companyAbout: '## О компании\nНазвание: Ооо луа',
+    });
+    expect(user).toContain('## О компании');
+    expect(user.indexOf('## О компании')).toBeLessThan(user.indexOf('Сегменты'));
+  });
+
+  it('без companyAbout → нет секции «О компании» (обратная совместимость)', () => {
+    const { user } = buildBlockIngestPrompt({ segments });
+    expect(user).not.toContain('## О компании');
   });
 });

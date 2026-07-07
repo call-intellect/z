@@ -33,6 +33,7 @@ export interface TasksPromptOptions {
   calibrationOnly?: boolean;
   meetingDateIso?: string;
   orgContext?: TasksOrgContext;
+  companyAbout?: string;
   participants?: readonly AiParticipantContext[];
 }
 
@@ -255,6 +256,11 @@ function buildUserUnified(input: PromptInput, opts: TasksPromptOptions): string 
 
   if (opts.meetingDateIso) {
     lines.push(`Дата встречи: ${opts.meetingDateIso}`);
+  }
+
+  if (opts.companyAbout && opts.companyAbout.length > 0) {
+    lines.push('');
+    lines.push(opts.companyAbout);
   }
 
   const ctx = opts.orgContext;

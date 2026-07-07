@@ -2959,7 +2959,7 @@ export class BusinessMetricsService implements OnModuleInit {
     });
     this.companyCapsuleInjectedTotal = this.getOrCreateCounter({
       name: 'company_capsule_injected_total',
-      help: 'Авто-профиль компании: краткое описание (capsule) подставлено в SYSTEM по поверхности (surface): chat_v2 | concierge.',
+      help: 'Авто-профиль компании: краткое описание (capsule) подставлено в промпт по поверхности (surface): chat_v2 | concierge | block_ingest | tasks.',
       labelNames: ['surface'] as const,
     });
     this.subjectMemoryProbeSuppressedTotal = this.getOrCreateCounter({

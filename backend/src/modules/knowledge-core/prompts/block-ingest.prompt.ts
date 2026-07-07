@@ -489,6 +489,7 @@ interface BuildArgs {
   totalWindows?: number | undefined;
   gleaningExclude?: { name: string; signalType: string }[] | undefined;
   skeleton?: MeetingSkeleton | undefined;
+  companyAbout?: string | undefined;
 }
 
 function formatDateRu(iso: string): string | null {
@@ -547,6 +548,11 @@ export function buildBlockIngestPrompt(args: BuildArgs): {
           .join('\n')}\n\n`
       : '';
 
-  const user = `${header}${mapSection}${excludeSection}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
+  const companyAboutSection =
+    args.companyAbout && args.companyAbout.length > 0
+      ? `${args.companyAbout}\n\n`
+      : '';
+
+  const user = `${companyAboutSection}${header}${mapSection}${excludeSection}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
   return { system: SYSTEM_PROMPT, user };
 }

@@ -2,7 +2,9 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
+import { CompanyCapsuleService } from './company-capsule.service';
 import { LlmRouterService } from './llm-router.service';
+import { OrgContextService } from './org-context.service';
 import { applyInputGuards, type DialogTurn } from './prompts/common';
 import type { AiParticipantContext } from './prompts/participant-context';
 import {
@@ -36,14 +38,31 @@ export class TaskExtractionService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(CompanyCapsuleService)
+    private readonly capsule?: CompanyCapsuleService,
+    @Optional()
+    @Inject(OrgContextService)
+    private readonly orgContext?: OrgContextService,
   ) {}
 
   async extractTasks(input: ExtractTasksInput): Promise<TaskExtracted[]> {
     const participants = input.participants ?? [];
+    const companyAbout = this.capsule
+      ? await this.capsule.load(input.tenantId, 'tasks')
+      : '';
+    const orgContext = input.tenantId
+      ? await this.orgContext?.load(input.tenantId, null)
+      : undefined;
     const prompt = buildTasksStructuredPrompt({
       meeting: input.meeting,
       dialog: input.dialog,
       ...(participants.length > 0 ? { participants } : {}),
+      ...(companyAbout ? { companyAbout } : {}),
+      ...(orgContext ? { orgContext } : {}),
+      ...(orgContext?.meetingDateIso
+        ? { meetingDateIso: orgContext.meetingDateIso }
+        : {}),
     });
     const responseSchema = buildTasksStructuredJsonSchema(
       participants.length > 0 ? participants : null,

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { type DialogTurn } from './common';
 import type { AiParticipantContext } from './participant-context';
 import { buildTasksPromptUnified, buildTasksSchemaUnified } from './tasks-unified';
+import type { TasksOrgContext } from './tasks-unified';
 
 export const TASKS_STRUCTURED_TASK_TYPE = 'tasks';
 
@@ -52,6 +53,9 @@ export interface TasksStructuredPromptInput {
   meeting: { id: string; type: string; title: string };
   dialog: DialogTurn[];
   participants?: readonly AiParticipantContext[];
+  companyAbout?: string;
+  orgContext?: TasksOrgContext;
+  meetingDateIso?: string;
 }
 
 export function buildTasksStructuredPrompt(input: TasksStructuredPromptInput): {
@@ -71,6 +75,9 @@ export function buildTasksStructuredPrompt(input: TasksStructuredPromptInput): {
     {
       ...TASKS_STRUCTURED_OPTIONS,
       ...(participants.length > 0 ? { participants } : {}),
+      ...(input.companyAbout ? { companyAbout: input.companyAbout } : {}),
+      ...(input.orgContext ? { orgContext: input.orgContext } : {}),
+      ...(input.meetingDateIso ? { meetingDateIso: input.meetingDateIso } : {}),
     },
   );
 }

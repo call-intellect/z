@@ -1666,6 +1666,8 @@ export class TypedConfigService {
         insightNoMitigation: this.get('PROACTIVE_RULE_INSIGHT_NO_MITIGATION_ENABLED') !== false,
         experimentRunningTooLong:
           this.get('PROACTIVE_RULE_EXPERIMENT_RUNNING_TOO_LONG_ENABLED') !== false,
+        experimentResultWithoutLesson:
+          this.get('PROACTIVE_RULE_EXPERIMENT_RESULT_WITHOUT_LESSON_ENABLED') !== false,
         processStaleReview: this.get('PROACTIVE_RULE_PROCESS_STALE_REVIEW_ENABLED') !== false,
         roleLowCompleteness: this.get('PROACTIVE_RULE_ROLE_LOW_COMPLETENESS_ENABLED') !== false,
         departmentNoDomain: this.get('PROACTIVE_RULE_DEPARTMENT_NO_DOMAIN_ENABLED') !== false,

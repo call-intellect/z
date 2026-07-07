@@ -570,6 +570,11 @@ export class TypedConfigService {
         undefined,
         true,
       ),
+      taskSolutionEnabled: this.resolveSync<boolean>(
+        'aiFeatures.taskSolutionEnabled',
+        undefined,
+        true,
+      ),
       crossSourceDedupeThreshold: this.resolveSync<number>(
         'tasks.cross_source_dedupe_threshold',
         undefined,

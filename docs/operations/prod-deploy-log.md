@@ -62,6 +62,15 @@ docker compose run --rm --no-deps backend \
 
 > Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
 
+### Сущность «Решение задачи» (TaskSolution) — 2026-07-07 (ветка work/2026-07-07)
+
+- **Шаг 1 — ENV: новых нет.** 1 kill-switch + 5 крутилок через AdminSetting/`getDynamic` code-fallback (Ship-On, работают ДО сида): `aiFeatures.taskSolutionEnabled`=`true` (kill-switch тип A), `taskSolution.buildHourMsk`=`3`, `taskSolution.minSignalChars`=`40`, `taskSolution.lookbackHours`=`48`, `taskSolution.repeatThreshold`=`3`, `taskSolution.repeatSimilarity`=`0.85`. Реестр флагов — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Миграция (аддитивная, авто через `migrate deploy` на `up -d`):** `20260707120000_add_task_solution` — новая таблица `task_solutions` (карточка памяти: title/taskDescription/solutionMd/ownerPersonId/sourceIssueId/embedding vector(1536)/repeatGroupKey/candidateInstruction/soft-delete), `@@unique(tenantId, sourceIssueId)`, FK на Org/persons/Issue/CardVersion. Первая строка `SET search_path TO "public"` (AGE-грабля). Аддитивная, backfill НЕ нужен. Повтор = no-op. В STEPS не регистрируется (миграция схемы). Соответствует `data-model.md` §TaskSolution.
+- **Шаг 5 — Postgres-init (идемпотентно, `IF NOT EXISTS`, на каждом `up -d` через `--with-schema`):** новый HNSW `task_solutions_embedding_hnsw_cosine_idx ON "task_solutions" USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=128) WHERE embedding IS NOT NULL` (KNN cosine для «повтор→кандидат»). Прогон: `docker compose exec backend bun run apply-postgres-init`.
+- **Шаг 7 — Seed (НОВЫЙ, идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** `scripts/seed-admin-setting-task-solution.ts` — 6 ключей выше (kill-switch + 5 крутилок), защищает admin-edited (`updatedBy !== 'system'`). Доедет `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 12 — Smoke** (после rebuild): новый крон `docker compose exec backend sh -c "grep -rl 'task-solution-build' dist/ || true"`; Swagger-тег `task-solutions` виден в `/api/docs`; таблица есть: `docker compose exec backend sh -c "psql \$DATABASE_URL -c \"\\d task_solutions\""` (в public); эндпоинт `GET /api/v1/task-solutions` отвечает 200 из сессии кабинета.
+- Остальные шаги (2,3,6,8,9,10,11) — НЕ затронуты.
+
 ### Раздел «Сообщения»: вход «Новое сообщение» (коллега + внешний) + backfill канала «Вся компания» — 2026-07-07 (ветка work/2026-07-07)
 
 Приделан недостающий вход в готовый мессенджер: кнопка «Новое сообщение» + модалка (личка/группа с коллегой + дедуп личек; внешний чат по email/телефону поверх уже включённого `EXTERNAL_CHAT_ENABLED`). Backfill дожимает обязательный канал «Вся компания» + членство всех активных сотрудников для существующих Org. ТЗ [`plans/tz/2026-07-07-messaging-new-conversation.md`](../../plans/tz/2026-07-07-messaging-new-conversation.md). Схему БД НЕ трогаем.

@@ -383,6 +383,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-admin-setting-employee-stand.ts',
     hint: 'me.tasks.doneWindowDays + operations.personal_day_narrative.{enabled,evening_hour} + operations.self_signals.plan_not_closing_streak_days + knowledge.expertise.self_{max_blocks_scanned,top_k} (стенд сотрудника)',
   },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-task-solution.ts',
+    hint: 'aiFeatures.taskSolutionEnabled (kill-switch) + taskSolution.{buildHourMsk,minSignalChars,lookbackHours,repeatThreshold,repeatSimilarity} (сущность «Решение задачи»)',
+  },
 
   ...[
     'phase-B',

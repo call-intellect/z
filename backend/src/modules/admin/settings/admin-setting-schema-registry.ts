@@ -190,6 +190,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
   ['aiFeatures.regulationMinMaterializeConfidence', UNIT_INTERVAL],
   ['aiFeatures.regulationConsolidatorEnabled', z.boolean()],
+  ['aiFeatures.taskSolutionEnabled', z.boolean()],
   ['aiFeatures.clientProtocolEnabled', z.boolean()],
   ['aiFeatures.analyzeWorkerRouterEnabled', z.boolean()],
 
@@ -507,6 +508,12 @@ const registry = new Map<string, ZodTypeAny>([
   ['taskClosure.embedMaxAttempts', POSITIVE_INT],
   ['taskClosure.candidateTtlDays', POSITIVE_INT],
   ['taskClosure.lexicalFallbackMinOverlap', UNIT_INTERVAL],
+
+  ['taskSolution.buildHourMsk', z.number().int().min(0).max(23)],
+  ['taskSolution.minSignalChars', NON_NEGATIVE_INT],
+  ['taskSolution.lookbackHours', POSITIVE_INT],
+  ['taskSolution.repeatThreshold', POSITIVE_INT],
+  ['taskSolution.repeatSimilarity', UNIT_INTERVAL],
 
   ['conversational.telegramDigestHourLocal', z.number().int().min(0).max(23)],
 

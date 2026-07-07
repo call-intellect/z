@@ -71,6 +71,15 @@ docker compose run --rm --no-deps backend \
 - **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (промпты извлечения + `ExperimentTaskLink`-линковка в `intake-auto-triage.worker`).
 - **Шаг 12 — Smoke** (после rebuild): миграция применилась — `docker compose exec backend sh -c "psql \$DATABASE_URL -c \"\\d experiment_task_link\""` (таблица есть в `public`); после разбора встречи/чата с конкретным экспериментом-действием — И запись `experiments`, И задача, связка в `experiment_task_link` (`SELECT COUNT(*) FROM experiment_task_link` > 0); новая метрика `experiment_tasks_extracted_total{tenant_top,surface}` (surface=meeting|ingest) видна в `/metrics`: `docker compose exec backend sh -c 'curl -s localhost:3000/metrics | grep experiment_tasks_extracted_total'`.
 
+### Баг-фикс: эксперимент «результат без урока» больше не застревает в running — 2026-07-07 (ветка work/2026-07-02)
+
+Новое правило сторожа `ProactiveWatcher` `experiment_result_without_lesson`: эксперимент со статусом `running`, у которого ЕСТЬ результат, но НЕТ урока (>14 дней) — раньше был невидим (резолвер не завершает без урока, старое правило `experiment_running_too_long` требует `currentResult=null`) → теперь шлёт уведомление админу со ссылкой `/experiments/<id>`, чтобы дописать урок. Резолвер НЕ трогали, авто-завершения нет.
+
+- **Шаг 1 — ENV (новый флаг, опциональный, дефолт ВКЛ):** `PROACTIVE_RULE_EXPERIMENT_RESULT_WITHOUT_LESSON_ENABLED` (kill-switch, `zBool(true)`). **Прод-действия НЕ требует** — не задавать = включено; задать `false` только для экстренного глушения правила. Реестр — `docs/operations/feature-flags.md`.
+- **Шаги 4/5/6/7/8/9/10 — НЕ затронуты** (схема/сиды не менялись).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (едет с деплоем кода вместе с блоком выше).
+- **Шаг 12 — Smoke:** метрик новых нет; проверка — в кабинете админа уведомление про эксперимент с результатом без урока (или лог `ProactiveWatcher` `experiment_result_without_lesson`).
+
 ### Структурное описание задач (Т11, MTG-14) — 2026-07-07 (ветка work/2026-07-02)
 
 Описание задачи теперь структурный текст по сути, а не дословная расшифровка речи. Добавлено поле `description`

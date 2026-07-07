@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { type IdeaBlockStatus } from '@prisma/client';
+import { type IdeaBlockStatus, type SignalType } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -16,8 +16,18 @@ import {
 import { CompanyProfileService } from '../services/company-profile.service';
 
 const LIVING_STATUSES: readonly IdeaBlockStatus[] = ['canonical'];
-const TOP_BLOCKS_LIMIT = 50;
+const TOP_BLOCKS_LIMIT = 40;
 const FACT_MAX_LENGTH = 300;
+const DURABLE_SIGNAL_TYPES: readonly SignalType[] = [
+  'fact',
+  'decision',
+  'process_step',
+  'regulation',
+  'metric_change',
+  'commitment',
+  'lesson',
+  'result',
+];
 
 @Injectable()
 export class CompanySummaryCompilerCron {
@@ -84,6 +94,7 @@ export class CompanySummaryCompilerCron {
     }
 
     const generatedAt = extractGeneratedAt(profile?.summaryJson);
+    const currentSummary = extractSummaryContentMd(profile?.summaryJson);
     if (generatedAt != null) {
       const ageMs = Date.now() - Date.parse(generatedAt);
       const maxAgeMs =
@@ -95,8 +106,12 @@ export class CompanySummaryCompilerCron {
     }
 
     const blocks = await this.prisma.ideaBlock.findMany({
-      where: { tenantId, status: { in: [...LIVING_STATUSES] } },
-      orderBy: [{ dynamicScore: 'desc' }, { createdAt: 'desc' }],
+      where: {
+        tenantId,
+        status: { in: [...LIVING_STATUSES] },
+        signalType: { in: [...DURABLE_SIGNAL_TYPES] },
+      },
+      orderBy: [{ createdAt: 'desc' }],
       take: TOP_BLOCKS_LIMIT,
       select: { id: true, name: true, trustedAnswer: true, confidence: true },
     });
@@ -113,7 +128,7 @@ export class CompanySummaryCompilerCron {
     const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
     const guarded = applyInputGuards(
       COMPANY_SUMMARY_COMPILE_SYSTEM_PROMPT,
-      COMPANY_SUMMARY_COMPILE_USER_TEMPLATE({ facts }),
+      COMPANY_SUMMARY_COMPILE_USER_TEMPLATE({ currentSummary, facts }),
       { enabled: guardOn, injection: true },
     );
 
@@ -132,12 +147,22 @@ export class CompanySummaryCompilerCron {
       dataClass: 'internal',
     });
 
-    const parsed = JSON.parse(llmResult.text) as { contentMd?: unknown };
+    const parsed = JSON.parse(llmResult.text) as {
+      contentMd?: unknown;
+      changed?: unknown;
+    };
     const contentMd =
       typeof parsed.contentMd === 'string' ? parsed.contentMd.trim() : '';
     if (contentMd.length === 0) {
       this.metrics.incCompanySummaryCompile({ result: 'error' });
       return 'error';
+    }
+
+    const hasCurrent = (currentSummary ?? '').trim().length > 0;
+    if (parsed.changed === false && hasCurrent) {
+      await this.companyProfile.touchSummaryGeneratedAt(tenantId);
+      this.metrics.incCompanySummaryCompile({ result: 'skipped_no_change' });
+      return 'skipped_no_change';
     }
 
     const confidence = Math.min(
@@ -160,5 +185,11 @@ export class CompanySummaryCompilerCron {
 function extractGeneratedAt(json: unknown): string | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
   const v = (json as Record<string, unknown>).generatedAt;
+  return typeof v === 'string' ? v : null;
+}
+
+function extractSummaryContentMd(json: unknown): string | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const v = (json as Record<string, unknown>).contentMd;
   return typeof v === 'string' ? v : null;
 }

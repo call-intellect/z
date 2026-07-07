@@ -141,6 +141,25 @@ export class CompanyProfileService {
     return { applied: true, reason: 'updated' };
   }
 
+  async touchSummaryGeneratedAt(tenantId: string): Promise<void> {
+    const existing = await this.prisma.companyProfile.findUnique({
+      where: { tenantId },
+      select: { summaryJson: true },
+    });
+    const json = existing?.summaryJson;
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return;
+    const current = json as Record<string, unknown>;
+    if (typeof current.contentMd !== 'string') return;
+    const next = {
+      ...current,
+      generatedAt: new Date().toISOString(),
+    } as unknown as Prisma.InputJsonValue;
+    await this.prisma.companyProfile.update({
+      where: { tenantId },
+      data: { summaryJson: next },
+    });
+  }
+
   async rebuildCompleteness(args: {
     tenantId: string;
     userId: string;

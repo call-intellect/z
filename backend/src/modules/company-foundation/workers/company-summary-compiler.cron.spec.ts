@@ -42,6 +42,7 @@ function makeCron(args: {
   ideaBlockFindMany: ReturnType<typeof vi.fn>;
   getRaw: ReturnType<typeof vi.fn>;
   applyAutoSummary: ReturnType<typeof vi.fn>;
+  touchSummaryGeneratedAt: ReturnType<typeof vi.fn>;
   llmCall: ReturnType<typeof vi.fn>;
   incCompanySummaryCompile: ReturnType<typeof vi.fn>;
 } {
@@ -64,13 +65,17 @@ function makeCron(args: {
   const applyAutoSummary = vi
     .fn()
     .mockResolvedValue(args.applyResult ?? { applied: true, reason: 'updated' });
+  const touchSummaryGeneratedAt = vi.fn().mockResolvedValue(undefined);
   const companyProfile = {
     getRaw,
     applyAutoSummary,
+    touchSummaryGeneratedAt,
   } as unknown as CompanyProfileService;
 
   const llmCall = vi.fn().mockResolvedValue({
-    text: JSON.stringify(args.llmResponse ?? { contentMd: 'Описание компании.' }),
+    text: JSON.stringify(
+      args.llmResponse ?? { contentMd: 'Описание компании.', changed: true },
+    ),
   });
   const llm = { call: llmCall } as unknown as LlmRouterService;
 
@@ -101,6 +106,7 @@ function makeCron(args: {
     ideaBlockFindMany,
     getRaw,
     applyAutoSummary,
+    touchSummaryGeneratedAt,
     llmCall,
     incCompanySummaryCompile,
   };
@@ -110,7 +116,7 @@ describe('CompanySummaryCompilerCron', () => {
   it('happy path: компилирует summary и зовёт applyAutoSummary с непустыми sourceBlockIds', async () => {
     const h = makeCron({
       blocks: makeBlocks(10),
-      llmResponse: { contentMd: 'Чем занимается компания.' },
+      llmResponse: { contentMd: 'Чем занимается компания.', changed: true },
       applyResult: { applied: true, reason: 'updated' },
     });
 
@@ -178,5 +184,93 @@ describe('CompanySummaryCompilerCron', () => {
     await h.cron.run();
 
     expect(h.orgFindMany).not.toHaveBeenCalled();
+  });
+
+  it('инкремент: при наличии currentSummary в llm.call уходит user с блоком «Текущее описание компании»', async () => {
+    const h = makeCron({
+      summaryRebuildHours: 24,
+      getRaw: {
+        summaryPinned: false,
+        summaryJson: {
+          contentMd: 'Старый паспорт компании.',
+          generatedAt: new Date(
+            Date.now() - 8 * 24 * 3600000,
+          ).toISOString(),
+        },
+      },
+      blocks: makeBlocks(10),
+      llmResponse: { contentMd: 'Обновлённый паспорт.', changed: true },
+    });
+
+    await h.cron.run();
+
+    expect(h.llmCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessage: expect.stringContaining('Текущее описание компании'),
+      }),
+    );
+    expect(h.llmCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessage: expect.stringContaining('Старый паспорт компании.'),
+      }),
+    );
+  });
+
+  it('changed=false → applyAutoSummary НЕ вызван, touchSummaryGeneratedAt вызван, метрика skipped_no_change', async () => {
+    const h = makeCron({
+      summaryRebuildHours: 24,
+      getRaw: {
+        summaryPinned: false,
+        summaryJson: {
+          contentMd: 'Старый паспорт компании.',
+          generatedAt: new Date(
+            Date.now() - 8 * 24 * 3600000,
+          ).toISOString(),
+        },
+      },
+      blocks: makeBlocks(10),
+      llmResponse: { contentMd: 'Старый паспорт компании.', changed: false },
+    });
+
+    await h.cron.run();
+
+    expect(h.applyAutoSummary).not.toHaveBeenCalled();
+    expect(h.touchSummaryGeneratedAt).toHaveBeenCalledWith('org-1');
+    expect(h.incCompanySummaryCompile).toHaveBeenCalledWith(
+      expect.objectContaining({ result: 'skipped_no_change' }),
+    );
+  });
+
+  it('фильтр durable: выборка блоков не тащит idea/suggestion/reasoning', async () => {
+    const h = makeCron({
+      summaryRebuildHours: 24,
+      getRaw: {
+        summaryPinned: false,
+        summaryJson: {
+          contentMd: 'Старый паспорт компании.',
+          generatedAt: new Date(
+            Date.now() - 8 * 24 * 3600000,
+          ).toISOString(),
+        },
+      },
+      blocks: makeBlocks(10),
+      llmResponse: { contentMd: 'Обновлённый паспорт.', changed: true },
+    });
+
+    await h.cron.run();
+
+    const findManyArg = h.ideaBlockFindMany.mock.calls[0]?.[0] as unknown as {
+      where: { signalType: { in: string[] } };
+      orderBy: unknown;
+      take: number;
+    };
+    expect(Array.isArray(findManyArg.where.signalType.in)).toBe(true);
+    expect(findManyArg.where.signalType.in).toContain('fact');
+    expect(findManyArg.where.signalType.in).toContain('decision');
+    expect(findManyArg.where.signalType.in).not.toContain('idea');
+    expect(findManyArg.where.signalType.in).not.toContain('suggestion');
+    expect(findManyArg.where.signalType.in).not.toContain('reasoning');
+    expect(findManyArg.orderBy).toEqual([{ createdAt: 'desc' }]);
+    expect(findManyArg.take).toBe(40);
   });
 });

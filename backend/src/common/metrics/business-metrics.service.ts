@@ -2929,7 +2929,7 @@ export class BusinessMetricsService implements OnModuleInit {
     });
     this.companySummaryCompileTotal = this.getOrCreateCounter({
       name: 'company_summary_compile_total',
-      help: 'Авто-профиль компании: проход компилятора summary по тенанту (result): compiled | pinned | skipped_pinned | skipped_fresh | skipped_cold_start | error.',
+      help: 'Авто-профиль компании: проход компилятора summary по тенанту (result): compiled | pinned | skipped_pinned | skipped_fresh | skipped_cold_start | skipped_no_change | error.',
       labelNames: ['result'] as const,
     });
     this.routingSuggestionTotal = this.getOrCreateCounter({

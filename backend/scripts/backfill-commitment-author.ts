@@ -131,7 +131,7 @@ async function main(opts: Options): Promise<void> {
       return result;
     };
 
-    let cursorId: string | undefined = undefined;
+    let cursor: { id: string; tenantId: string } | undefined = undefined;
     let processed = 0;
     while (true) {
       if (opts.limit && processed >= opts.limit) break;
@@ -142,7 +142,9 @@ async function main(opts: Options): Promise<void> {
         select: { id: true, tenantId: true },
         orderBy: { id: 'asc' },
         take,
-        ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
+        ...(cursor
+          ? { skip: 1, cursor: { id_tenantId: { id: cursor.id, tenantId: cursor.tenantId } } }
+          : {}),
       });
       if (batch.length === 0) break;
 
@@ -208,7 +210,7 @@ async function main(opts: Options): Promise<void> {
             );
           } else {
             await prisma.ideaBlock.update({
-              where: { id: block.id },
+              where: { id_tenantId: { id: block.id, tenantId: block.tenantId } },
               data: { commitmentAuthorPersonId: authorPersonId },
             });
           }
@@ -221,7 +223,8 @@ async function main(opts: Options): Promise<void> {
         }
       }
 
-      cursorId = batch[batch.length - 1]?.id;
+      const last = batch[batch.length - 1];
+      cursor = last ? { id: last.id, tenantId: last.tenantId } : cursor;
       if (batch.length < take) break;
     }
 

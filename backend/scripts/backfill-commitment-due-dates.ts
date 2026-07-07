@@ -54,7 +54,7 @@ async function main(args: RunArgs): Promise<void> {
       `=== backfill-commitment-due-dates START (dryRun=${args.dryRun}, workdays=${workdays}) ===`,
     );
 
-    let cursor: string | undefined;
+    let cursor: { id: string; tenantId: string } | undefined;
     const pageSize = 500;
     while (true) {
       const blocks = await prisma.ideaBlock.findMany({
@@ -65,7 +65,9 @@ async function main(args: RunArgs): Promise<void> {
         select: { id: true, tenantId: true, createdAt: true },
         orderBy: { id: 'asc' },
         take: pageSize,
-        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        ...(cursor
+          ? { skip: 1, cursor: { id_tenantId: { id: cursor.id, tenantId: cursor.tenantId } } }
+          : {}),
       });
       if (blocks.length === 0) break;
 
@@ -79,7 +81,7 @@ async function main(args: RunArgs): Promise<void> {
           });
           if (!args.dryRun) {
             await prisma.ideaBlock.update({
-              where: { id: block.id },
+              where: { id_tenantId: { id: block.id, tenantId: block.tenantId } },
               data: {
                 commitmentDueDate: target,
               },
@@ -94,7 +96,8 @@ async function main(args: RunArgs): Promise<void> {
           );
         }
       }
-      cursor = blocks[blocks.length - 1]?.id;
+      const last = blocks[blocks.length - 1];
+      cursor = last ? { id: last.id, tenantId: last.tenantId } : cursor;
       // eslint-disable-next-line no-console
       console.log(
         `progress: scanned=${stats.scanned}, updated=${stats.updated}, errors=${stats.errors}`,

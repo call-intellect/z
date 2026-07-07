@@ -987,6 +987,12 @@ const STEPS: Step[] = [
     skipBootstrap: true,
     hint: 'smart-tables Ф4: проставить Table.graphSync системным таблицам из каталога + reconcile строк из графа (Goal/Experiment/IdeaBlock) по всем Org; идемпотентно',
   },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-company-channel.ts',
+    skipBootstrap: true,
+    hint: 'дожать обязательный канал «Вся компания» + членство всех активных сотрудников для существующих Org (messaging-new-conversation Ф2); ensureCompanyChannel upsert, идемпотентно (повтор → created:0)',
+  },
 ];
 
 interface ParsedArgs {

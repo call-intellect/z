@@ -8,6 +8,7 @@ import type { LlmCompleteInput, LlmCompleteOutput, LlmToolCall } from './llm.typ
 import { LlmError } from './llm.types';
 import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
 import { toOpenAiStrictSchema } from './strict-json-schema.util';
+import { stripThinkTags } from './think-tags.util';
 
 export function ensureJsonHint(instructions: string): string {
   if (/json/i.test(instructions)) return instructions;
@@ -139,7 +140,7 @@ export class OpenAiProxyService {
       }
 
       return {
-        text: response.output_text ?? '',
+        text: stripThinkTags(response.output_text ?? ''),
         inputTokens: response.usage?.input_tokens ?? 0,
         outputTokens: response.usage?.output_tokens ?? 0,
         cachedTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0,

@@ -1715,7 +1715,7 @@ export class TypedConfigService {
     const loopbackBaseUrlRaw = (
       this.get('CONCIERGE_LOOPBACK_BASE_URL') as string | undefined
     )?.trim();
-    let loopbackBaseUrl = 'http://127.0.0.1:3000';
+    let loopbackBaseUrl = `http://127.0.0.1:${this.runtime.port}`;
     if (loopbackBaseUrlRaw) {
       try {
         void new URL(loopbackBaseUrlRaw);

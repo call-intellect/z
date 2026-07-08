@@ -63,4 +63,5 @@ export type SetPriceRequest = {
   cachedCostPerMillionTokens?: number;
   currency?: string;
   effectiveFrom?: string;
+  modelId?: string;
 };

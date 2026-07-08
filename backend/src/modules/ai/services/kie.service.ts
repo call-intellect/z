@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import { LlmError } from './llm.types';
 import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
+import { stripThinkTags } from './think-tags.util';
 
 @Injectable()
 export class KieService {
@@ -170,12 +171,13 @@ export class KieService {
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     }>(url, body, apiKey);
     const raw = data.choices?.[0]?.message?.content ?? '';
-    const text =
+    const combined =
       typeof raw === 'string'
         ? raw
         : Array.isArray(raw)
           ? raw.map((p: { text?: string }) => p?.text ?? '').join('')
           : String(raw);
+    const text = stripThinkTags(combined);
     return {
       text,
       inputTokens: data.usage?.prompt_tokens ?? 0,

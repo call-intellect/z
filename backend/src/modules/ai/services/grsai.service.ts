@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import { LlmError } from './llm.types';
 import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
+import { stripThinkTags } from './think-tags.util';
 
 @Injectable()
 export class GrsaiService {
@@ -164,7 +165,7 @@ async function collectSse(resp: Response): Promise<{
     reader.releaseLock();
     resp.body?.cancel().catch(() => {});
   }
-  return { text: chunks.join(''), inputTokens, outputTokens };
+  return { text: stripThinkTags(chunks.join('')), inputTokens, outputTokens };
 }
 
 function errMsg(err: unknown): string {

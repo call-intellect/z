@@ -55,16 +55,15 @@ export class AdminPricesService {
     cachedCostPerMillionTokens: number;
     currency: string;
     effectiveFrom?: Date;
+    modelId?: string;
   }) {
     const effectiveFrom = args.effectiveFrom ?? new Date();
 
     await this.prisma.$transaction(async (tx) => {
       await tx.llmModelPrice.updateMany({
-        where: {
-          provider: args.provider,
-          model: args.model,
-          effectiveTo: null,
-        },
+        where: args.modelId
+          ? { modelId: args.modelId, effectiveTo: null }
+          : { provider: args.provider, model: args.model, effectiveTo: null },
         data: { effectiveTo: effectiveFrom },
       });
       await tx.llmModelPrice.create({
@@ -80,6 +79,7 @@ export class AdminPricesService {
           ),
           currency: args.currency,
           effectiveFrom,
+          ...(args.modelId ? { modelId: args.modelId } : {}),
         },
       });
     });

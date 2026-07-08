@@ -71,8 +71,8 @@ const services = [
   }),
 }));
 
-const backendPort = process.env.PORT ?? '3000';
-const frontendPort = process.env.FRONTEND_PORT ?? '3001';
+const backendPort = process.env.PORT ?? '4000';
+const frontendPort = process.env.FRONTEND_PORT ?? '4001';
 console.log('\n▶ dev-стек поднят:');
 console.log(
   `   backend   → http://localhost:${backendPort}   (Swagger /api/docs, health /health)`,

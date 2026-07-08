@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 import useSWR from "swr";
 
 import { meStandApi } from "@/api/me-stand.api";
+import { myCheckInsApi } from "@/api/my-check-ins.api";
 import { useAuth } from "@/contexts/auth-context";
 import { ideaHref, IDEA_KIND_LABEL, IDEA_STATUS_LABEL } from "@/domain/idea";
 import type {
@@ -218,10 +219,59 @@ function BucketColumn({
 function TaskBoard() {
   const { data } = useMe<TaskBuckets>("me-task-buckets", () => meStandApi.taskBuckets());
   const { data: pending } = useMe("me-method-capture-pending", () => meStandApi.methodCapturePending());
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const { data: eveningYesterday } = useMe("me-evening-checkin-yesterday", () =>
+    myCheckInsApi.list({ date: yesterday, kind: "evening" }),
+  );
   const pendingMethodIds = new Set((pending?.items ?? []).map((i) => i.id));
+  const missedEveningCheckIn =
+    eveningYesterday !== undefined && eveningYesterday.items.length === 0;
   return (
     <div>
-      <div style={sectionTitle}>Мои задачи</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ ...sectionTitle, marginBottom: 0 }}>Мои задачи</div>
+        <Link
+          href="/me/inbox"
+          style={{ fontSize: 12, color: CHART.cyan, textDecoration: "none" }}
+        >
+          Все задачи →
+        </Link>
+      </div>
+      {missedEveningCheckIn && (
+        <div
+          style={{
+            ...card,
+            padding: "12px 16px",
+            marginBottom: 12,
+            borderColor: STATE_COLOR.warn,
+            background: "var(--bg-elevated)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)" }}>
+            <span style={{ fontSize: 16 }}>⚠️</span>
+            Ты не отчитался за вчера — вечерний чек-ин не сдан.
+          </div>
+          <Link
+            href="/me/check-ins"
+            style={{
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: STATE_COLOR.warn,
+              textDecoration: "none",
+              borderRadius: 8,
+              padding: "6px 12px",
+              border: `1px solid ${STATE_COLOR.warn}`,
+            }}
+          >
+            Проверить и сдать
+          </Link>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         <BucketColumn title="Зависли / просрочено" items={data?.overdueStuck ?? []} tone={STATE_COLOR.risk} />
         <BucketColumn title="В работе" items={data?.inProgress ?? []} tone={STATE_COLOR.warn} />

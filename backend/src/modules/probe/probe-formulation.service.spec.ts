@@ -8,11 +8,14 @@ import type { LlmRouterService } from '../ai/services/llm-router.service';
 import { ProbeFormulationService } from './probe-formulation.service';
 import type { SubjectMemoryService } from './subject-memory/subject-memory.service';
 
-function makeProbe(payload: Record<string, unknown>): never {
+function makeProbe(
+  payload: Record<string, unknown>,
+  reason: string = 'decision.missing_decider',
+): never {
   return {
     id: 'probe-gate-1',
     tenantId: 'org-gate',
-    reason: 'decision.missing_decider',
+    reason,
     payload,
   } as unknown as never;
 }
@@ -125,6 +128,18 @@ describe('ProbeFormulationService.gate', () => {
     const { svc, llmCall } = makeService({ valueGateEnabled: false });
     const verdict = await svc.gate(makeProbe({ objectName: 'Склад №3' }));
     expect(verdict).toEqual({ ask: true, reason: 'gate_disabled' });
+    expect(llmCall).not.toHaveBeenCalled();
+  });
+
+  it('task.method_capture выведен из-под value-гейта: ask=true БЕЗ LLM даже при valueGateEnabled=true', async () => {
+    const { svc, llmCall } = makeService({ valueGateEnabled: true });
+    const verdict = await svc.gate(
+      makeProbe({ objectName: 'Миграция биллинга' }, 'task.method_capture'),
+    );
+    expect(verdict).toEqual({
+      ask: true,
+      reason: 'method_capture_complexity_gated',
+    });
     expect(llmCall).not.toHaveBeenCalled();
   });
 

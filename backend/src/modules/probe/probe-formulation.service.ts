@@ -221,6 +221,10 @@ export class ProbeFormulationService {
       );
     }
 
+    if (probe.reason === 'task.method_capture') {
+      return { ask: true, reason: 'method_capture_complexity_gated' };
+    }
+
     let enabled: boolean;
     try {
       enabled = await this.cfg.getDynamic<boolean>(

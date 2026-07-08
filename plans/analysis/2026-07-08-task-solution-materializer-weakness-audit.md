@@ -82,8 +82,8 @@ follow_up_tz: plans/tz/2026-07-08-task-solution-real-defects.md
 - **Что:** детекция требует `re.payload->>'contextCardId' IS NOT NULL` (`service.ts:70,78`). Единственный писатель `contextCardId` — ответ на probe `task.method_capture` (`conversational-ingest.adapter.ts:77`). `ingestFreeNote`/`ingest`/meetings его НЕ пишут.
 - **Удар:** человек рассказал «как починил» на планёрке или в чате — это НЕ станет «Решением задачи». Для платформы памяти — крупнейшая дыра захвата.
 - **Стенд это маскирует:** `seed-reg-feed.ts:221` ставит `contextCardId` каждому блоку независимо от канала → метка канала косметическая, 92% PASS завышают покрытие каналов.
-- **Фикс:** линковать how-solved блок ↔ Issue через связь блок↔задача на ingest встреч/чата, а не через `payload.contextCardId`.
-- **Провабельность:** нет на текущем стенде (нужен новый detection-режим на реальном RawEvent без `contextCardId`). → **Большое ТЗ.**
+- **Фикс:** переиспользовать существующий матч блок↔задача — петля закрытия `TaskCompletionHandler` уже на любом источнике матчит блок к задаче (`TaskClosureCandidate`); подключить его к суточной сборке (детекция = probe ∪ этот матч). Архитектура одобрена: [plans/architecture/task-solution-capture-scope.md](../architecture/task-solution-capture-scope.md).
+- **Провабельность:** нет на текущем стенде (нужен e2e-режим на реальном RawEvent без `contextCardId`). → **Большое ТЗ, Блок A (ядро).**
 
 ### R2 — Задача без assignee, но с решателем в тексте → знание теряется целиком
 - **Что:** `service.ts:155` `if (!ownerPersonId) return 'skippedNoOwner'` выполняется ДО refine (`:219`); `resolveOwnerPerson` возвращает null при Issue без assignee; solverNames рефайнера в этой ветке не запрашиваются.

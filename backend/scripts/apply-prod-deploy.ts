@@ -381,7 +381,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-employee-stand.ts',
-    hint: 'me.tasks.doneWindowDays + operations.personal_day_narrative.{enabled,evening_hour} + operations.self_signals.plan_not_closing_streak_days + knowledge.expertise.self_{max_blocks_scanned,top_k} (стенд сотрудника)',
+    hint: 'me.tasks.doneWindowDays + operations.personal_day_narrative.{enabled,morning_hour} + operations.self_signals.plan_not_closing_streak_days + knowledge.expertise.self_{max_blocks_scanned,top_k} (стенд сотрудника)',
   },
   {
     phase: 'seed-base',
@@ -714,6 +714,12 @@ const STEPS: Step[] = [
     skipBootstrap: true,
   },
   { phase: 'patch', script: 'scripts/patch-company-summary-weekly.ts', skipBootstrap: true },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-personal-day-narrative-morning-hour.ts',
+    hint: 'крутилка evening_hour → morning_hour (default 7) для письма «Твой день»',
+    skipBootstrap: true,
+  },
 
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-idea-quality.ts', skipBootstrap: true },

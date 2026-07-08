@@ -76,7 +76,7 @@ function LetterCover() {
       <div style={{ ...card, background: "var(--bg-elevated)" }}>
         <div style={sectionTitle}>Твой день</div>
         <p style={{ color: "var(--text-secondary)", margin: 0 }}>
-          Письмо появится вечером — Кора соберёт итог твоего дня.
+          Письмо придёт утром — Кора соберёт итог твоего вчерашнего дня.
         </p>
       </div>
     );

@@ -5,7 +5,7 @@ import type {
 
 export const PERSONAL_DAY_NARRATIVE_TASK_TYPE = 'personal-day-narrative';
 
-export const PERSONAL_DAY_NARRATIVE_PROMPT_VERSION = 'personal-day-v1';
+export const PERSONAL_DAY_NARRATIVE_PROMPT_VERSION = 'personal-day-v2';
 
 const PERSONAL_DAY_VERDICT_STATES = ['ok', 'warn', 'risk'] as const;
 
@@ -68,10 +68,10 @@ const PERSONAL_DAY_FEW_SHOT_JSON = JSON.stringify(
 
 export const PERSONAL_DAY_NARRATIVE_SYSTEM_PROMPT = [
   'РОЛЬ',
-  'Ты — личный помощник сотрудника. В конце его рабочего дня ты пишешь ему короткое личное письмо «Твой день» — честный, тёплый разбор того, как прошёл ЕГО день: что сделал, что зависло, что обещал, чем помог компании, что мешает. Не сухая сводка, а связный человеческий рассказ с конкретикой и ссылками на источники.',
+  'Ты — личный помощник сотрудника. Утром ты пишешь ему короткое личное письмо «Твой день» — честный, тёплый разбор того, как прошёл ЕГО вчерашний (прошедший) день: что сделал, что зависло, что обещал, чем помог компании, что мешает. Не сухая сводка, а связный человеческий рассказ с конкретикой и ссылками на источники.',
   '',
   'ВХОД',
-  'Тебе дают данные ТОЛЬКО по этому сотруднику за прошедший день: его задачи (закрытые сегодня, просроченные, зависшие без движения); его план на день и вечерний факт (сделано / не сделано); его обещания (данные сегодня и просроченные); его загрузку (число активных задач, уровень); его вклад в цель компании за неделю (готовое число); его собственные высказывания/идеи из графа со ссылками; его блокеры. Числа бери КАК ЕСТЬ — не пересчитывай и не округляй.',
+  'Тебе дают данные ТОЛЬКО по этому сотруднику за прошедший (вчерашний) день: его задачи (закрытые вчера, просроченные, зависшие без движения); его план на тот день и вечерний факт (сделано / не сделано); его обещания (данные вчера и просроченные); его загрузку (число активных задач, уровень); его вклад в цель компании за неделю (готовое число); его собственные высказывания/идеи из графа со ссылками; его блокеры. Числа бери КАК ЕСТЬ — не пересчитывай и не округляй.',
   '',
   'ТОН',
   '- По-русски, обращайся к сотруднику на «ты», по имени: «<Имя>, коротко — …».',
@@ -87,8 +87,8 @@ export const PERSONAL_DAY_NARRATIVE_SYSTEM_PROMPT = [
   '',
   'СОСТАВ ПИСЬМА — до 6 секций, строго в этом порядке; пиши только те, под которые есть данные. Каждая секция — элемент массива letter с {key, title, prose, cites?}, где key из фиксированного списка, prose — связная проза (без markdown-таблиц и служебной разметки).',
   '  - intro (Коротко): «<Имя>, коротко — <итог дня в 1-2 предложения>.»',
-  '  - tasks (Задачи): что закрыл сегодня + что зависло/просрочено; связной прозой, ключевое привяжи к источнику через cites. Без поштучного сухого списка.',
-  '  - commitments (Обещания): твои обещания — что дал сегодня и что просрочено. Нейтрально и по делу: «дано X, просрочено Y» — без оценочного «ты нарушил».',
+  '  - tasks (Задачи): что закрыл вчера + что зависло/просрочено; связной прозой, ключевое привяжи к источнику через cites. Без поштучного сухого списка.',
+  '  - commitments (Обещания): твои обещания — что дал вчера и что просрочено. Нейтрально и по делу: «дано X, просрочено Y» — без оценочного «ты нарушил».',
   '  - load (Загрузка): 1-2 предложения про объём работы — сколько активных задач, перегруз/норма. Только если есть сигнал (перегруз или простой).',
   '  - contribution (Вклад): чем твоя работа за неделю двигает цель компании — готовое число вклада, коротко и по-доброму.',
   '  - actions (На завтра): 1-3 конкретных действия на завтра, каждое с короткой причиной-почему, приоритет по срочности.',
@@ -183,7 +183,7 @@ function taskLines(label: string, tasks: PersonDayPackage['tasksDoneToday']): st
 
 export function buildPersonDayUserMessage(pkg: PersonDayPackage): string {
   const lines: string[] = [];
-  lines.push(`ДАННЫЕ ЗА ДЕНЬ ${pkg.dateLocal}`);
+  lines.push(`ДАННЫЕ ЗА ВЧЕРАШНИЙ (ПРОШЕДШИЙ) ДЕНЬ ${pkg.dateLocal}`);
   lines.push(`Сотрудник: ${pkg.personName ?? '—'}`);
   lines.push('');
 
@@ -195,12 +195,12 @@ export function buildPersonDayUserMessage(pkg: PersonDayPackage): string {
     lines.push('');
   }
 
-  lines.push(...taskLines('ЗАКРЫТО СЕГОДНЯ:', pkg.tasksDoneToday));
+  lines.push(...taskLines('ЗАКРЫТО ВЧЕРА:', pkg.tasksDoneToday));
   lines.push(...taskLines('ПРОСРОЧЕНО:', pkg.tasksOverdue));
   lines.push(...taskLines('ЗАВИСЛО БЕЗ ДВИЖЕНИЯ:', pkg.tasksStuck));
 
   if (pkg.planText) {
-    lines.push('', `ПЛАН НА ДЕНЬ (утро): ${pkg.planText}`);
+    lines.push('', `ПЛАН НА ТОТ ДЕНЬ (утро): ${pkg.planText}`);
   }
   if (pkg.factText) {
     lines.push(`ФАКТ (вечер): ${pkg.factText}`);
@@ -210,7 +210,7 @@ export function buildPersonDayUserMessage(pkg: PersonDayPackage): string {
   }
 
   if (pkg.commitmentsGiven.length > 0) {
-    lines.push('', 'ОБЕЩАНИЯ ДАНЫ СЕГОДНЯ:');
+    lines.push('', 'ОБЕЩАНИЯ ДАНЫ ВЧЕРА:');
     for (const c of pkg.commitmentsGiven) {
       lines.push(
         `  - ${c.text}${c.counterpartName ? ` (кому: ${c.counterpartName})` : ''}${c.dueLabel ? ` — срок ${c.dueLabel}` : ''} [id:${c.id}]`,
@@ -253,7 +253,7 @@ export function buildPersonDayFallbackMarkdown(pkg: PersonDayPackage): {
   lines.push(`# Твой день — ${pkg.dateLocal}`);
   lines.push('');
   lines.push(
-    `Закрыто сегодня: ${pkg.tasksDoneToday.length}. Просрочено: ${pkg.tasksOverdue.length}. Зависло: ${pkg.tasksStuck.length}.`,
+    `Закрыто вчера: ${pkg.tasksDoneToday.length}. Просрочено: ${pkg.tasksOverdue.length}. Зависло: ${pkg.tasksStuck.length}.`,
   );
   if (pkg.commitmentsOverdue.length > 0) {
     lines.push(`Просроченных обещаний: ${pkg.commitmentsOverdue.length}.`);
@@ -265,7 +265,7 @@ export function buildPersonDayFallbackMarkdown(pkg: PersonDayPackage): {
   const short =
     pkg.tasksOverdue.length + pkg.commitmentsOverdue.length > 0
       ? `Закрыто ${pkg.tasksDoneToday.length}, есть просрочки — загляни в задачи.`
-      : `Закрыто ${pkg.tasksDoneToday.length} задач за день.`;
+      : `Закрыто ${pkg.tasksDoneToday.length} задач за вчерашний день.`;
   return { bodyMarkdown: lines.join('\n'), shortSummary: short };
 }
 

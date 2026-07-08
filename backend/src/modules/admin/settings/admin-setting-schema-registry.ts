@@ -602,7 +602,7 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['me.tasks.doneWindowDays', z.number().int().min(1).max(90)],
   ['operations.personal_day_narrative.enabled', z.boolean()],
-  ['operations.personal_day_narrative.evening_hour', z.number().int().min(0).max(23)],
+  ['operations.personal_day_narrative.morning_hour', z.number().int().min(0).max(23)],
   ['operations.self_signals.plan_not_closing_streak_days', z.number().int().min(1).max(30)],
   ['knowledge.expertise.self_max_blocks_scanned', z.number().int().min(100).max(20_000)],
   ['knowledge.expertise.self_top_k', z.number().int().min(1).max(50)],

@@ -40,6 +40,11 @@ export function getLocalDate(now: Date, timezone: string | null | undefined): st
   }
 }
 
+export function yesterdayLocalDate(now: Date, timezone: string | null | undefined): string {
+  const startOfToday = startOfLocalDayUtc(now, timezone);
+  return getLocalDate(new Date(startOfToday.getTime() - 1000), timezone);
+}
+
 export function getLocalMinutesOfDay(now: Date, timezone: string | null | undefined): number {
   const tz = timezone && timezone.length > 0 ? timezone : DEFAULT_TIMEZONE;
   try {

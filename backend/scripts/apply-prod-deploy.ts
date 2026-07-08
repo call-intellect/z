@@ -497,6 +497,7 @@ const STEPS: Step[] = [
   },
   { phase: 'patch', script: 'scripts/patch-org-timezone-default.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-person-timezone-default.ts', skipBootstrap: true },
+  { phase: 'patch', script: 'scripts/patch-expire-retired-probe-backlog.ts', skipBootstrap: true },
   {
     phase: 'patch',
     script: 'scripts/patch-migrate-mvs-to-company-profile.ts',

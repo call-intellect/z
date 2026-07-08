@@ -30,6 +30,9 @@
 6. **Не мучиться с экранированием SQL**: слать удалённый bash одним base64-блобом — `echo <b64> | base64 -d | bash`, внутри heredoc для psql.
 7. **psql на проде (read-only!):** `cd /home/docker/z && set -a && . ./.env && set +a && docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -P pager=off -A -F '|'`. БД = `z_main`. Имена таблиц — Prisma-стиль: `"User"`, `"Org"`, `probe_events`, `persons`, `"Membership"`.
 8. **Только чтение** (правило №1). Для диагностики — исключительно `SELECT` / чтение логов; никаких write/restart/deploy без отдельного явного «да».
+9. **`-tt` + `git` = зависший пейджер.** С псевдо-tty (нужен для su-пароля) `git log` открывает `less` и ждёт ввода → таймаут. Гони git с `GIT_PAGER=cat` (или `git --no-pager …`). Аналогично любой авто-пейджер: psql уже `-P pager=off`, `docker compose ps` — только с `--format`.
+10. **`echo <b64> | base64 -d | bash` крадёт stdin.** bash читает СВОЙ скрипт из пайпа (stdin); любой внутренний `docker compose exec -T …` или `psql` без перенаправления читает тот же stdin и **съедает остаток скрипта** → bash обрывается на середине, ssh закрывается. Ставь **`</dev/null`** на каждый docker/psql-вызов внутри блоба (или пиши блоб во временный файл и запускай `bash /tmp/x.sh`).
+11. **`timeout` на macOS нет** (`command not found`, exit 127) — не оборачивай локальные команды в `timeout`; на удалённом Linux-хосте `timeout N …` доступен и полезен как per-command предохранитель.
 
 ## Когда вообще нужны ручные прогоны (важно — это НЕ повседневность)
 

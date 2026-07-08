@@ -96,6 +96,7 @@ ProbeDispatcherWorker → переформулирует вопрос (LLM) → 
 cold-start-гейтами, ставит в очередь `core.probe-events` (`:372`).
 
 `probe/probe-dispatcher.worker.ts:85` `process`:
+- **value-гейт диспетчера (`formulation.gate`, `:208`) для `task.method_capture` ПРОПУСКАЕТСЯ** — `gate()` возвращает `{ask:true, reason:'method_capture_complexity_gated'}` (`probe-formulation.service.ts`), т.к. опросник уже прошёл детерминированный порог сложности при подъёме (`computeMethodCaptureComplexity ≥ 0.5`); иначе недетерминированный LLM value-гейт спорадически давал `dropped_low_value` и душил основной поток захвата ещё до отправки. Доказано e2e P1 (регуляционный стенд, 9/9 при гейте ON);
 - переформулирует вопрос через LLM (`probe-formulate` + оценка качества, `:227-232`);
 - создаёт уведомление `conversational.sendNotification(eventType='probe.question')` (`:248-263`),
   payload `{ question, askedBy:'task-method-capture', context }`.

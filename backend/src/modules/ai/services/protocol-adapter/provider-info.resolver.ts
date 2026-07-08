@@ -18,8 +18,6 @@ const CACHE_TTL_MS = 60_000;
 export class ProviderInfoResolver {
   private readonly logger = new Logger(ProviderInfoResolver.name);
   private readonly cache = new Map<string, ProviderCacheEntry>();
-  private dbChecked = false;
-  private dbHasProviders = false;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -116,127 +114,13 @@ export class ProviderInfoResolver {
       return { info, protocolKind: entry.protocolKind };
     }
 
-    const envInfo = await this.buildFromEnvIfDbEmpty(name);
-    if (envInfo) {
-      const entry: ProviderCacheEntry = {
-        info: envInfo.info,
-        protocolKind: envInfo.protocolKind,
-        fetchedAt: now,
-      };
-      this.cache.set(name, entry);
-      return envInfo;
-    }
+    // Провайдер не найден в llm_providers. ENV-fallback удалён: источник правды
+    // единственный — БД. Окружение без сидов должно шуметь (dispatch бросит
+    // ошибку «провайдер не найден»), а не молча ехать на ENV-заглушках.
     return null;
   }
 
   invalidate(): void {
     this.cache.clear();
-    this.dbChecked = false;
-  }
-
-  private async buildFromEnvIfDbEmpty(name: string): Promise<{
-    info: ProtocolAdapterProviderInfo;
-    protocolKind: ProtocolKind;
-  } | null> {
-    if (!this.dbChecked) {
-      try {
-        const count = await this.prisma.llmProvider.count({
-          where: { deletedAt: null },
-        });
-        this.dbHasProviders = count > 0;
-      } catch (err) {
-        this.logger.warn(
-          `ProviderInfoResolver: db count failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-      this.dbChecked = true;
-    }
-    if (this.dbHasProviders) return null;
-    return this.buildFromEnv(name);
-  }
-
-  private buildFromEnv(name: string): {
-    info: ProtocolAdapterProviderInfo;
-    protocolKind: ProtocolKind;
-  } | null {
-    switch (name) {
-      case 'anthropic':
-        return {
-          info: {
-            name,
-            baseUrl: this.cfg.ai.anthropic.useProxy
-              ? this.cfg.ai.anthropic.proxyUrl
-              : 'https://api.anthropic.com',
-            apiKey: this.cfg.ai.anthropic.apiKey,
-            defaultModel: this.cfg.ai.anthropic.model,
-          },
-          protocolKind: 'anthropic-messages',
-        };
-      case 'minimax':
-        return {
-          info: {
-            name,
-            baseUrl: this.cfg.ai.minimax.baseUrl,
-            apiKey: this.cfg.ai.minimax.apiKey,
-          },
-          protocolKind: 'anthropic-messages',
-        };
-      case 'openai-via-proxy':
-        return {
-          info: {
-            name,
-            baseUrl: this.cfg.ai.proxy.baseUrl,
-            // Легаси OpenAiProxyService всегда ходит через прокси и всегда
-            // префиксует ключ `${PROXY_PREFIX}:${OPENAI_API_KEY}` (см. его
-            // конструктор) — buildFromEnv обязан вернуть тот же готовый к
-            // использованию ключ, иначе override.apiKey уйдёт в прокси без
-            // префикса и получит 401.
-            apiKey: `${this.cfg.ai.proxy.prefix}:${this.cfg.ai.openai.apiKey}`,
-            defaultModel: 'gpt-5-mini',
-          },
-          protocolKind: 'openai-responses',
-        };
-      case 'deepseek':
-        return {
-          info: {
-            name,
-            baseUrl: this.cfg.ai.deepseek.baseUrl,
-            apiKey: this.cfg.ai.deepseek.apiKey,
-            defaultModel: this.cfg.ai.deepseek.defaultModel,
-          },
-          protocolKind: 'openai-chat',
-        };
-      case 'ollama':
-        return {
-          info: {
-            name,
-            baseUrl: this.cfg.ai.ollama.baseUrl,
-            apiKey: this.cfg.ai.ollama.apiKey || null,
-            defaultModel: 'qwen3.5:9b',
-          },
-          protocolKind: 'ollama-native',
-        };
-      case 'kie':
-        return {
-          info: {
-            name,
-            baseUrl: this.cfg.ai.kie.baseUrl,
-            apiKey: this.cfg.ai.kie.apiKey,
-            timeoutMs: this.cfg.ai.kie.timeoutMs,
-          },
-          protocolKind: 'kie-native',
-        };
-      case 'grsai':
-        return {
-          info: {
-            name,
-            baseUrl: this.cfg.ai.grsai.baseUrl,
-            apiKey: this.cfg.ai.grsai.apiKey,
-          },
-          protocolKind: 'grsai-native',
-        };
-      default:
-        return null;
-    }
   }
 }

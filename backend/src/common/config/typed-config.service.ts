@@ -1794,7 +1794,7 @@ export class TypedConfigService {
         this.get('PROVIDER_SMOKE_TEST_INTERVAL_MINUTES') ?? 30,
       ),
       providerSmokeTestFailThreshold: Number(this.get('PROVIDER_SMOKE_TEST_FAIL_THRESHOLD') ?? 3),
-      useProtocolAdapterRegistry: this.get('USE_PROTOCOL_ADAPTER_REGISTRY') === true,
+      useProtocolAdapterRegistry: String(this.get('USE_PROTOCOL_ADAPTER_REGISTRY') ?? 'true') !== 'false',
     } as const;
   }
 

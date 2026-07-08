@@ -37,6 +37,10 @@ import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { isJunkEntityName } from '../services/entity-name-quality';
 import { EntityResolutionService } from '../services/entity-resolution.service';
 import { SegmentBuilderService, type Segment } from '../services/segment-builder.service';
+import {
+  LlmRouterDefaultChainInvalidError,
+  NoEligibleProviderError,
+} from '../../ai/services/llm-router.service';
 
 export const TRACKER_ECHO_SIGNALS = new Set<string>([
   'task_created',
@@ -813,6 +817,25 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
 
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const isDeferredError =
+        err instanceof NoEligibleProviderError ||
+        err instanceof LlmRouterDefaultChainInvalidError;
+      if (isDeferredError) {
+        this.logger.warn(
+          { rawEventId, err: message },
+          'block-ingest: deferred (нет провайдеров в llm_providers или defaultChain не настроен) — RawEvent будет re-енкнут по событию llm.providers.appeared',
+        );
+        await this.prisma.rawEvent
+          .update({
+            where: { id: rawEventId },
+            data: {
+              processingStatus: 'deferred',
+              processingError: message.slice(0, 4000),
+            },
+          })
+          .catch(() => undefined);
+        return;
+      }
       this.logger.error(
         { rawEventId, err: message },
         'block-ingest: ошибка обработки — RawEvent помечен failed, BullMQ ретрайнет',

@@ -61,6 +61,7 @@ export class AdminPricesController {
       cachedCostPerMillionTokens: dto.cachedCostPerMillionTokens,
       currency: dto.currency,
       ...(dto.effectiveFrom ? { effectiveFrom: dto.effectiveFrom } : {}),
+      ...(dto.modelId ? { modelId: dto.modelId } : {}),
     });
   }
 }

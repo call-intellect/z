@@ -1,4 +1,5 @@
 import type { SmokeTestRunApi } from "@/api/admin-smoke-test.api";
+import type { AdminLlmProviderDomain } from "@/domain/admin-llm-provider";
 
 export type SmokeTestRunUi = {
   id: string;
@@ -46,7 +47,7 @@ export function mapSmokeTestRun(
       typeof api.latencyMs === "number" ? `${api.latencyMs} мс` : "—",
     ranAt: api.startedAt,
     ranAtLabel: formatDateTime(api.startedAt),
-    message: api.error ?? null,
+    message: status === "ok" ? (api.reply ?? null) : (api.error ?? null),
   };
 }
 
@@ -62,4 +63,25 @@ function formatDateTime(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+export function mapProviderSmokeToUi(
+  provider: AdminLlmProviderDomain,
+): SmokeTestRunUi | null {
+  if (!provider.lastSmokeAt) return null;
+  const startedAt = provider.lastSmokeAt.toISOString();
+  const status: "ok" | "fail" = provider.lastSmokeSuccess ? "ok" : "fail";
+  return {
+    id: `${provider.name}-${startedAt}`,
+    provider: provider.name,
+    providerLabel: provider.displayName,
+    status,
+    statusLabel: status === "ok" ? "Успех" : "Ошибка",
+    statusTone: status === "ok" ? "success" : "danger",
+    latencyMs: null,
+    latencyLabel: "—",
+    ranAt: startedAt,
+    ranAtLabel: formatDateTime(startedAt),
+    message: provider.lastSmokeError ?? null,
+  };
 }

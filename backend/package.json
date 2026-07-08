@@ -9,9 +9,9 @@
   },
   "scripts": {
     "dev": "bun --watch src/main.ts",
-    "build": "tsc -p tsconfig.build.json && bun scripts/copy-assets.ts",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsc -p tsconfig.build.json && bun scripts/copy-assets.ts",
     "start": "bun dist/main.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:input-guards": "bun run scripts/lint-input-guards.ts",
     "format": "prettier --write \"src/**/*.ts\"",

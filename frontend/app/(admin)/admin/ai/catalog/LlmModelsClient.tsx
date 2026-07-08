@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ApiError } from "@/api/api-error";
 import { adminLlmModelsApi } from "@/api/admin-llm-models.api";
 import { adminLlmProvidersApi } from "@/api/admin-llm-providers.api";
+import { adminPricesApi } from "@/api/admin-prices.api";
 import {
   adminLlmModelFromApi,
   type AdminLlmModelDomain,
@@ -53,6 +54,10 @@ import {
   AdminLoading,
 } from "../../AdminStateViews";
 import { useAdminQuery } from "../../useAdminQuery";
+import {
+  notifyCatalogChange,
+  useCatalogRefresh,
+} from "./useCatalogRefresh";
 
 const ALL_PROVIDERS = "all";
 
@@ -124,6 +129,9 @@ export function LlmModelsClient() {
     [providerFilter, includeInactive],
   );
 
+  useCatalogRefresh("models", () => q.refetch());
+  useCatalogRefresh("prices", () => q.refetch());
+
   const performSimpleDelete = async (m: AdminLlmModelDomain) => {
     setBusyId(m.id);
     try {
@@ -134,6 +142,8 @@ export function LlmModelsClient() {
           : `Модель «${m.displayName}» удалена`,
       );
       q.refetch();
+      notifyCatalogChange("models");
+      notifyCatalogChange("prices");
     } catch (e) {
       toast.error(
         e instanceof ApiError ? e.message : "Не удалось удалить модель",
@@ -192,6 +202,8 @@ export function LlmModelsClient() {
       );
       setRemovalDialog(null);
       q.refetch();
+      notifyCatalogChange("models");
+      notifyCatalogChange("prices");
     } catch (e) {
       toast.error(
         e instanceof ApiError ? e.message : "Не удалось удалить модель",
@@ -207,6 +219,7 @@ export function LlmModelsClient() {
       await adminLlmModelsApi.setDefault(m.id);
       toast.success(`«${m.displayName}» назначена дефолтной моделью провайдера`);
       q.refetch();
+      notifyCatalogChange("models");
     } catch (e) {
       toast.error(
         e instanceof ApiError
@@ -229,6 +242,8 @@ export function LlmModelsClient() {
         : `Модель удалена, новая дефолтная модель — ${newDefaultModelKey}`,
     );
     q.refetch();
+    notifyCatalogChange("models");
+    notifyCatalogChange("prices");
   };
 
   const providers = providersQ.data ?? [];
@@ -357,6 +372,8 @@ export function LlmModelsClient() {
           onSaved={() => {
             setShowCreate(false);
             q.refetch();
+            notifyCatalogChange("models");
+            notifyCatalogChange("prices");
           }}
         />
       )}
@@ -368,6 +385,8 @@ export function LlmModelsClient() {
           onSaved={() => {
             setEditModel(null);
             q.refetch();
+            notifyCatalogChange("models");
+            notifyCatalogChange("prices");
           }}
         />
       )}
@@ -542,7 +561,39 @@ function ModelFormDialog({
   );
   const [isActive, setIsActive] = useState(model?.isActive ?? true);
   const [notes, setNotes] = useState(model?.notes ?? "");
+  const [priceLoading, setPriceLoading] = useState(isEdit);
+  const [inputCost, setInputCost] = useState("");
+  const [outputCost, setOutputCost] = useState("");
+  const [cachedCost, setCachedCost] = useState("");
+  const [currency, setCurrency] = useState("USD");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isEdit || !model) return;
+    let cancelled = false;
+    setPriceLoading(true);
+    adminLlmModelsApi
+      .priceHistory(model.id)
+      .then((res) => {
+        if (cancelled) return;
+        const active = res.items.find((p) => p.effectiveTo === null);
+        if (active) {
+          setInputCost(String(active.inputCostPerMillionTokens));
+          setOutputCost(String(active.outputCostPerMillionTokens));
+          setCachedCost(String(active.cachedCostPerMillionTokens));
+          setCurrency(active.currency);
+        }
+      })
+      .catch(() => {
+        // нет цены — оставляем поля пустыми
+      })
+      .finally(() => {
+        if (!cancelled) setPriceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdit, model]);
 
   const handleSubmit = async () => {
     if (!isEdit) {
@@ -569,8 +620,36 @@ function ModelFormDialog({
       contextWindowValue = c;
     }
 
+    const hasPrice =
+      inputCost.trim() !== "" || outputCost.trim() !== "";
+    let inputCostValue: number | undefined;
+    let outputCostValue: number | undefined;
+    let cachedCostValue = 0;
+    if (hasPrice) {
+      const i = inputCost.trim() !== "" ? Number(inputCost) : 0;
+      const o = outputCost.trim() !== "" ? Number(outputCost) : 0;
+      const c = cachedCost.trim() !== "" ? Number(cachedCost) : 0;
+      if (
+        !isFinite(i) ||
+        !isFinite(o) ||
+        !isFinite(c) ||
+        i < 0 ||
+        o < 0 ||
+        c < 0
+      ) {
+        toast.error("Стоимость токенов — неотрицательные числа");
+        return;
+      }
+      inputCostValue = i;
+      outputCostValue = o;
+      cachedCostValue = c;
+    }
+
     setSubmitting(true);
     try {
+      let savedModelId: string;
+      let providerName: string;
+      let savedModelKey: string;
       if (isEdit && model) {
         await adminLlmModelsApi.update(model.id, {
           displayName: displayName.trim(),
@@ -579,6 +658,9 @@ function ModelFormDialog({
           isActive,
           notes: notes.trim().length > 0 ? notes.trim() : undefined,
         });
+        savedModelId = model.id;
+        providerName = model.providerName;
+        savedModelKey = model.modelKey;
       } else {
         const body: CreateLlmModelRequest = {
           providerId,
@@ -591,8 +673,25 @@ function ModelFormDialog({
         }
         if (category !== "none") body.category = category;
         if (notes.trim().length > 0) body.notes = notes.trim();
-        await adminLlmModelsApi.create(body);
+        const created = await adminLlmModelsApi.create(body);
+        savedModelId = created.id;
+        const provider = providers.find((p) => p.id === providerId);
+        providerName = provider?.name ?? "";
+        savedModelKey = modelKey.trim();
       }
+
+      if (hasPrice && inputCostValue !== undefined && outputCostValue !== undefined) {
+        await adminPricesApi.set({
+          provider: providerName,
+          model: savedModelKey,
+          modelId: savedModelId,
+          inputCostPerMillionTokens: inputCostValue,
+          outputCostPerMillionTokens: outputCostValue,
+          cachedCostPerMillionTokens: cachedCostValue,
+          currency,
+        });
+      }
+
       toast.success(isEdit ? "Модель сохранена" : "Модель добавлена");
       onSaved();
     } catch (e) {
@@ -711,6 +810,62 @@ function ModelFormDialog({
               placeholder="необязательно"
             />
           </Field>
+          <div className="rounded-md border border-border-subtle bg-bg-subtle/40 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-medium text-fg-primary">
+                Стоимость токенов
+              </span>
+              <span className="text-[10px] text-fg-tertiary">
+                необязательно · за 1M токенов
+              </span>
+            </div>
+            {priceLoading ? (
+              <div className="py-2 text-xs text-fg-secondary">
+                Загружаем текущую цену…
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Input">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={inputCost}
+                    onChange={(e) => setInputCost(e.target.value)}
+                    placeholder="0"
+                  />
+                </Field>
+                <Field label="Output">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={outputCost}
+                    onChange={(e) => setOutputCost(e.target.value)}
+                    placeholder="0"
+                  />
+                </Field>
+                <Field label="Cached">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={cachedCost}
+                    onChange={(e) => setCachedCost(e.target.value)}
+                    placeholder="0"
+                  />
+                </Field>
+                <Field label="Currency">
+                  <Input
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    placeholder="USD"
+                  />
+                </Field>
+              </div>
+            )}
+            <p className="mt-2 text-[10px] text-fg-tertiary">
+              Оставьте пустым для subscription-провайдеров. При изменении цены
+              старая версия закрывается, новая становится активной.
+            </p>
+          </div>
         </div>
         <DialogFooter>
           <Button

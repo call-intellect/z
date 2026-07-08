@@ -7,6 +7,7 @@ export type SmokeTestRunApi = {
   latencyMs: number | null;
   startedAt: string;
   error?: string;
+  reply?: string;
 };
 
 export const adminSmokeTestApi = {

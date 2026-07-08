@@ -8,6 +8,7 @@ import { isThinkingModel } from '../../llm-thinking-models';
 import type { LlmCompleteInput, LlmCompleteOutput, LlmToolCall } from '../../llm.types';
 import { LlmError } from '../../llm.types';
 import { toOpenAiStrictSchema } from '../../strict-json-schema.util';
+import { stripThinkTags } from '../../think-tags.util';
 import type {
   LlmProtocolAdapter,
   ProtocolAdapterProviderInfo,
@@ -39,6 +40,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
       baseURL: provider.baseUrl,
       apiKey,
       defaultHeaders: provider.defaultHeaders,
+      timeout: provider.timeoutMs ?? undefined,
     });
     const model = input.model ?? provider.defaultModelKey ?? provider.defaultModel ?? 'gpt-4o-mini';
 
@@ -130,6 +132,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
                 choices?: Array<{
                   message?: {
                     content?: string | null;
+                    reasoning_content?: string | null;
                     tool_calls?: Array<{
                       function?: { name?: string; arguments?: string };
                     }>;
@@ -148,6 +151,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
         choices?: Array<{
           message?: {
             content?: string | null;
+            reasoning_content?: string | null;
             tool_calls?: Array<{
               function?: { name?: string; arguments?: string };
             }>;
@@ -160,7 +164,10 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
         };
       };
       const choice = resp.choices?.[0];
-      let text = choice?.message?.content ?? '';
+      const rawContent = choice?.message?.content ?? '';
+      const reasoning = choice?.message?.reasoning_content ?? '';
+      const combined = rawContent.trim().length > 0 ? rawContent : reasoning;
+      let text = stripThinkTags(combined);
       const toolCalls: LlmToolCall[] = [];
       for (const tc of choice?.message?.tool_calls ?? []) {
         const name = tc.function?.name ?? '';

@@ -52,8 +52,8 @@ const services = [
 }));
 
 console.log('\n▶ ЛОКАЛЬНЫЙ dev-стек (backend/.env поверх process.env, НЕ прод):');
-console.log('   backend   → http://localhost:3000   (Swagger /api/docs, health /health)');
-console.log('   frontend  → http://localhost:3001');
+console.log('   backend   → http://localhost:4000   (Swagger /api/docs, health /health)');
+console.log('   frontend  → http://localhost:4001');
 console.log('   Ctrl+C — остановит оба сервиса\n');
 
 let shuttingDown = false;

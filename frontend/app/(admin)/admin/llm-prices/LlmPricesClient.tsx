@@ -33,6 +33,10 @@ import {
   AdminLoading,
 } from "../AdminStateViews";
 import { useAdminQuery } from "../useAdminQuery";
+import {
+  notifyCatalogChange,
+  useCatalogRefresh,
+} from "../ai/catalog/useCatalogRefresh";
 
 export function LlmPricesClient() {
   const [activeOnly, setActiveOnly] = useState(true);
@@ -56,6 +60,8 @@ export function LlmPricesClient() {
     },
     [],
   );
+
+  useCatalogRefresh("prices", () => q.refetch());
   const providerBillingModeByName = providersQ.data ?? null;
   const existingProviderNames = providerBillingModeByName
     ? new Set(providerBillingModeByName.keys())
@@ -112,6 +118,7 @@ export function LlmPricesClient() {
           onSaved={() => {
             setShowAdd(false);
             q.refetch();
+            notifyCatalogChange("prices");
           }}
         />
       )}
@@ -123,6 +130,7 @@ export function LlmPricesClient() {
           onSaved={() => {
             setEditPrice(null);
             q.refetch();
+            notifyCatalogChange("prices");
           }}
         />
       )}
@@ -141,6 +149,8 @@ function PricesTable({
 }) {
   const isOrphaned = (provider: string) =>
     existingProviderNames !== null && !existingProviderNames.has(provider);
+  const isFree = (p: AdminPriceDomain) =>
+    p.inputCostPerMillionTokens === 0 && p.outputCostPerMillionTokens === 0;
 
   return (
     <>
@@ -174,7 +184,16 @@ function PricesTable({
                     )}
                   </div>
                 </td>
-                <td className="px-3 py-2 font-mono text-xs">{p.model}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  <div className="flex items-center gap-1.5">
+                    {p.model}
+                    {isFree(p) && (
+                      <Badge className="border-chip-success-bg bg-chip-success-bg text-chip-success-fg">
+                        free
+                      </Badge>
+                    )}
+                  </div>
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {p.inputCostPerMillionTokens.toFixed(2)}
                 </td>
@@ -224,6 +243,11 @@ function PricesTable({
                   <span className="truncate font-mono text-xs text-fg-primary">
                     {p.provider} / {p.model}
                   </span>
+                  {isFree(p) && (
+                    <Badge className="border-chip-success-bg bg-chip-success-bg text-chip-success-fg">
+                      free
+                    </Badge>
+                  )}
                   {isOrphaned(p.provider) && (
                     <Badge variant="secondary">провайдер удалён</Badge>
                   )}

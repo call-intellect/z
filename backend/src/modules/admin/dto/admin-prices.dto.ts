@@ -20,5 +20,6 @@ export const SetPriceSchema = z.object({
   cachedCostPerMillionTokens: z.number().nonnegative().default(0),
   currency: z.string().min(3).max(8).default('USD'),
   effectiveFrom: z.coerce.date().optional(),
+  modelId: z.string().optional(),
 });
 export type SetPriceDto = z.infer<typeof SetPriceSchema>;

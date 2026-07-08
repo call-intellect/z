@@ -14,8 +14,9 @@ export class ProviderSmokeTestCron {
   private readonly failStreak = new Map<string, number>();
   private readonly lastAlertAt = new Map<string, number>();
   private static readonly ALERT_COOLDOWN_MS = 2 * 3600 * 1000;
-  private static readonly SMOKE_PROMPT = 'Reply with the single word OK.';
-  private static readonly SMOKE_MAX_TOKENS = 64;
+  private static readonly SMOKE_PROMPT =
+    'Назови себя. Какая ты модель и версия? Ответь одной фразой на русском.';
+  private static readonly SMOKE_MAX_TOKENS = 512;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -122,9 +123,11 @@ export class ProviderSmokeTestCron {
     success: boolean;
     durationSeconds: number;
     error?: string;
+    reply?: string;
   }> {
     const startedAt = Date.now();
     let success: boolean;
+    let reply: string | undefined;
     let error: string | undefined;
     try {
       const resolved = await this.providerInfo.resolveByName(providerName);
@@ -138,10 +141,29 @@ export class ProviderSmokeTestCron {
           system: { text: 'You are a smoke-test responder.' },
           user: ProviderSmokeTestCron.SMOKE_PROMPT,
           maxTokens: ProviderSmokeTestCron.SMOKE_MAX_TOKENS,
+          ...(resolved.info.defaultModelKey
+            ? { model: resolved.info.defaultModelKey }
+            : {}),
         },
       });
-      success = typeof out.text === 'string' && out.text.length > 0;
-      if (!success) error = 'empty response';
+      const text = typeof out.text === 'string' ? out.text.trim() : '';
+      this.logger.debug(
+        {
+          provider: providerName,
+          model: resolved.info.defaultModelKey,
+          textLength: text.length,
+          textPreview: text.slice(0, 120),
+          outputTokens: out.outputTokens,
+          hasToolCalls: Boolean(out.toolCalls?.length),
+        },
+        'smoke-test: ответ модели',
+      );
+      success = text.length >= 5;
+      if (success) {
+        reply = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+      } else {
+        error = 'пустой или слишком короткий ответ';
+      }
     } catch (err) {
       success = false;
       error = err instanceof Error ? err.message : String(err);
@@ -164,7 +186,7 @@ export class ProviderSmokeTestCron {
         data: {
           lastSmokeAt: new Date(),
           lastSmokeSuccess: success,
-          lastSmokeError: success ? null : (error ?? 'unknown'),
+          lastSmokeError: success ? (reply ?? 'ок') : (error ?? 'unknown'),
         },
       });
     } catch (err) {
@@ -182,7 +204,7 @@ export class ProviderSmokeTestCron {
     } else {
       const wasFailing =
         (this.failStreak.get(providerName) ?? 0) >= this.cfg.budget.providerSmokeTestFailThreshold;
-      this.failStreak.set(providerName, 0);
+        this.failStreak.set(providerName, 0);
       if (wasFailing) {
         await this.notifyRecovery(providerName);
       }
@@ -192,7 +214,7 @@ export class ProviderSmokeTestCron {
       provider: providerName,
       success,
       durationSeconds,
-      ...(error ? { error } : {}),
+      ...(success ? { reply } : { error }),
     };
   }
 

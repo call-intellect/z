@@ -146,10 +146,13 @@ describe('ProviderInfoResolver.resolveByName — DB-строка (Ф3 — Рез
   });
 });
 
-describe('ProviderInfoResolver.resolveByName — buildFromEnv (нет DB-строки)', () => {
+describe('ProviderInfoResolver.resolveByName — buildFromEnv (БД пуста)', () => {
   it('kie → protocolKind=kie-native, baseUrl/apiKey/timeoutMs из ENV', async () => {
     const findUnique = vi.fn(async () => null);
-    const prisma = { llmProvider: { findUnique } } as unknown as PrismaService;
+    const count = vi.fn(async () => 0);
+    const prisma = {
+      llmProvider: { findUnique, count },
+    } as unknown as PrismaService;
     const resolver = new ProviderInfoResolver(prisma, makeCfg(), makeCrypto('x'));
 
     const result = await resolver.resolveByName('kie');
@@ -162,7 +165,10 @@ describe('ProviderInfoResolver.resolveByName — buildFromEnv (нет DB-стр�
 
   it('grsai → protocolKind=grsai-native, baseUrl/apiKey из ENV', async () => {
     const findUnique = vi.fn(async () => null);
-    const prisma = { llmProvider: { findUnique } } as unknown as PrismaService;
+    const count = vi.fn(async () => 0);
+    const prisma = {
+      llmProvider: { findUnique, count },
+    } as unknown as PrismaService;
     const resolver = new ProviderInfoResolver(prisma, makeCfg(), makeCrypto('x'));
 
     const result = await resolver.resolveByName('grsai');
@@ -172,13 +178,75 @@ describe('ProviderInfoResolver.resolveByName — buildFromEnv (нет DB-стр�
     expect(result?.info.apiKey).toBe('a');
   });
 
-  it('неизвестное имя → null', async () => {
+  it('неизвестное имя → null (даже при пустой БД)', async () => {
     const findUnique = vi.fn(async () => null);
-    const prisma = { llmProvider: { findUnique } } as unknown as PrismaService;
+    const count = vi.fn(async () => 0);
+    const prisma = {
+      llmProvider: { findUnique, count },
+    } as unknown as PrismaService;
     const resolver = new ProviderInfoResolver(prisma, makeCfg(), makeCrypto('x'));
 
     const result = await resolver.resolveByName('unknown-provider');
 
     expect(result).toBeNull();
+  });
+});
+
+describe('ProviderInfoResolver.resolveByName — ENV-fallback отключён при наличии БД-провайдеров', () => {
+  it('deepseek: в БД есть провайдеры → ENV не используется, возвращается null', async () => {
+    const findUnique = vi.fn(async () => null);
+    const count = vi.fn(async () => 1);
+    const prisma = {
+      llmProvider: { findUnique, count },
+    } as unknown as PrismaService;
+    const resolver = new ProviderInfoResolver(prisma, makeCfg(), makeCrypto('x'));
+
+    const result = await resolver.resolveByName('deepseek');
+
+    expect(result).toBeNull();
+  });
+
+  it('anthropic: в БД есть провайдеры → ENV не используется', async () => {
+    const findUnique = vi.fn(async () => null);
+    const count = vi.fn(async () => 5);
+    const prisma = {
+      llmProvider: { findUnique, count },
+    } as unknown as PrismaService;
+    const resolver = new ProviderInfoResolver(prisma, makeCfg(), makeCrypto('x'));
+
+    const result = await resolver.resolveByName('anthropic');
+
+    expect(result).toBeNull();
+  });
+
+  it('count вызывается один раз за lifecycle (кешируется, без регулярных запросов)', async () => {
+    const findUnique = vi.fn(async () => null);
+    const count = vi.fn(async () => 1);
+    const prisma = {
+      llmProvider: { findUnique, count },
+    } as unknown as PrismaService;
+    const resolver = new ProviderInfoResolver(prisma, makeCfg(), makeCrypto('x'));
+
+    await resolver.resolveByName('deepseek');
+    await resolver.resolveByName('anthropic');
+    await resolver.resolveByName('ollama');
+    await resolver.resolveByName('minimax');
+
+    expect(count).toHaveBeenCalledTimes(1);
+  });
+
+  it('после invalidate() count-кеш сбрасывается', async () => {
+    const findUnique = vi.fn(async () => null);
+    const count = vi.fn(async () => 1);
+    const prisma = {
+      llmProvider: { findUnique, count },
+    } as unknown as PrismaService;
+    const resolver = new ProviderInfoResolver(prisma, makeCfg(), makeCrypto('x'));
+
+    await resolver.resolveByName('deepseek');
+    resolver.invalidate();
+    await resolver.resolveByName('deepseek');
+
+    expect(count).toHaveBeenCalledTimes(2);
   });
 });

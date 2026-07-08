@@ -8,6 +8,7 @@ import { ensureJsonWordInUser } from './json-mode.util';
 import { isThinkingModel } from './llm-thinking-models';
 import type { LlmCompleteInput, LlmCompleteOutput, LlmToolCall } from './llm.types';
 import { LlmError, LlmFormatNotSupportedError } from './llm.types';
+import { stripThinkTags } from './think-tags.util';
 
 @Injectable()
 export class DeepSeekService {
@@ -222,7 +223,7 @@ export class DeepSeekService {
       };
     };
     const choice = r.choices?.[0];
-    let text = choice?.message?.content ?? '';
+    let text = stripThinkTags(choice?.message?.content ?? '');
     const toolCalls: LlmToolCall[] = [];
     for (const tc of choice?.message?.tool_calls ?? []) {
       const name = tc.function?.name ?? '';

@@ -63,6 +63,10 @@ import {
   AdminLoading,
 } from "../../AdminStateViews";
 import { useAdminQuery } from "../../useAdminQuery";
+import {
+  notifyCatalogChange,
+  useCatalogRefresh,
+} from "./useCatalogRefresh";
 
 const PROTOCOL_LABELS: Record<LlmProtocolKind, string> = {
   "openai-chat": "OpenAI Chat Completions",
@@ -132,6 +136,8 @@ export function LlmProvidersClient() {
     [],
   );
 
+  useCatalogRefresh("providers", () => q.refetch());
+
   const goToModels = (providerId: string) => {
     const next = new URLSearchParams(searchParams?.toString() ?? "");
     next.set("tab", "models");
@@ -149,6 +155,7 @@ export function LlmProvidersClient() {
           : `Провайдер «${p.displayName}» активирован`,
       );
       q.refetch();
+      notifyCatalogChange("providers");
     } catch (e) {
       toast.error(
         e instanceof ApiError ? e.message : "Не удалось изменить статус провайдера",
@@ -168,6 +175,8 @@ export function LlmProvidersClient() {
       if (r.success) toast.success(message);
       else toast.error(message);
       q.refetch();
+      notifyCatalogChange("providers");
+      notifyCatalogChange("smoke");
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Ошибка smoke-теста");
     } finally {
@@ -185,6 +194,8 @@ export function LlmProvidersClient() {
           : `Провайдер «${p.displayName}» удалён`,
       );
       q.refetch();
+      notifyCatalogChange("providers");
+      notifyCatalogChange("prices");
     } catch (e) {
       toast.error(
         e instanceof ApiError ? e.message : "Не удалось удалить провайдера",
@@ -254,6 +265,8 @@ export function LlmProvidersClient() {
       );
       setRemovalDialog(null);
       q.refetch();
+      notifyCatalogChange("providers");
+      notifyCatalogChange("prices");
     } catch (e) {
       toast.error(
         e instanceof ApiError ? e.message : "Не удалось удалить провайдера",
@@ -274,6 +287,8 @@ export function LlmProvidersClient() {
         : `Провайдер удалён, новый провайдер по умолчанию — ${newDefaultName}`,
     );
     q.refetch();
+    notifyCatalogChange("providers");
+    notifyCatalogChange("prices");
   };
 
   return (
@@ -328,8 +343,13 @@ export function LlmProvidersClient() {
           onSaved={() => {
             setShowCreate(false);
             q.refetch();
+            notifyCatalogChange("providers");
           }}
-          onModelsImported={() => q.refetch()}
+          onModelsImported={() => {
+            q.refetch();
+            notifyCatalogChange("providers");
+            notifyCatalogChange("models");
+          }}
         />
       )}
       {editProvider && (
@@ -339,8 +359,13 @@ export function LlmProvidersClient() {
           onSaved={() => {
             setEditProvider(null);
             q.refetch();
+            notifyCatalogChange("providers");
           }}
-          onModelsImported={() => q.refetch()}
+          onModelsImported={() => {
+            q.refetch();
+            notifyCatalogChange("providers");
+            notifyCatalogChange("models");
+          }}
         />
       )}
       {defaultDialogProvider && (

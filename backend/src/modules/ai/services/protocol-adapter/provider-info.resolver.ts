@@ -18,6 +18,8 @@ const CACHE_TTL_MS = 60_000;
 export class ProviderInfoResolver {
   private readonly logger = new Logger(ProviderInfoResolver.name);
   private readonly cache = new Map<string, ProviderCacheEntry>();
+  private dbChecked = false;
+  private dbHasProviders = false;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -114,7 +116,7 @@ export class ProviderInfoResolver {
       return { info, protocolKind: entry.protocolKind };
     }
 
-    const envInfo = this.buildFromEnv(name);
+    const envInfo = await this.buildFromEnvIfDbEmpty(name);
     if (envInfo) {
       const entry: ProviderCacheEntry = {
         info: envInfo.info,
@@ -129,6 +131,28 @@ export class ProviderInfoResolver {
 
   invalidate(): void {
     this.cache.clear();
+    this.dbChecked = false;
+  }
+
+  private async buildFromEnvIfDbEmpty(name: string): Promise<{
+    info: ProtocolAdapterProviderInfo;
+    protocolKind: ProtocolKind;
+  } | null> {
+    if (!this.dbChecked) {
+      try {
+        const count = await this.prisma.llmProvider.count({
+          where: { deletedAt: null },
+        });
+        this.dbHasProviders = count > 0;
+      } catch (err) {
+        this.logger.warn(
+          `ProviderInfoResolver: db count failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      this.dbChecked = true;
+    }
+    if (this.dbHasProviders) return null;
+    return this.buildFromEnv(name);
   }
 
   private buildFromEnv(name: string): {

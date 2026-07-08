@@ -8,6 +8,7 @@ export interface SmokeTestResult {
   status: 'ok' | 'fail';
   latencyMs: number;
   error?: string;
+  reply?: string;
   startedAt: string;
 }
 
@@ -56,6 +57,7 @@ export class AdminSmokeTestService {
       latencyMs: Math.round(cronResult.durationSeconds * 1000),
       startedAt: startedAt.toISOString(),
       ...(cronResult.error ? { error: cronResult.error } : {}),
+      ...(cronResult.reply ? { reply: cronResult.reply } : {}),
     };
 
     this.pushHistory({ ...result, trigger: 'manual_single', triggeredByUserId });
@@ -85,6 +87,7 @@ export class AdminSmokeTestService {
           latencyMs: Math.round(s.value.durationSeconds * 1000),
           startedAt: startedAt.toISOString(),
           ...(s.value.error ? { error: s.value.error } : {}),
+          ...(s.value.reply ? { reply: s.value.reply } : {}),
         };
       }
       const errMsg = s.reason instanceof Error ? s.reason.message : String(s.reason);

@@ -8,6 +8,7 @@ import { ApiError } from "@/api/api-error";
 import { adminSmokeTestApi } from "@/api/admin-smoke-test.api";
 import { adminLlmProvidersApi } from "@/api/admin-llm-providers.api";
 import {
+  mapProviderSmokeToUi,
   mapSmokeTestRun,
   providerLabel,
   type SmokeTestRunUi,
@@ -21,11 +22,14 @@ import { Button } from "@/ui/shadcn/button";
 
 import { AdminEmpty, AdminError, AdminLoading } from "../../AdminStateViews";
 import { useAdminQuery } from "../../useAdminQuery";
+import {
+  notifyCatalogChange,
+  useCatalogRefresh,
+} from "./useCatalogRefresh";
 
 type LastByProvider = Record<string, SmokeTestRunUi | null>;
 
 export function SmokeTestClient() {
-  const [lastByProvider, setLastByProvider] = useState<LastByProvider>({});
   const [history, setHistory] = useState<SmokeTestRunUi[]>([]);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [allBusy, setAllBusy] = useState(false);
@@ -41,6 +45,9 @@ export function SmokeTestClient() {
     [],
   );
 
+  useCatalogRefresh("providers", () => providersQ.refetch());
+  useCatalogRefresh("smoke", () => providersQ.refetch());
+
   const providerDisplayNameByName = useMemo(() => {
     const map: Record<string, string> = {};
     for (const p of providersQ.data ?? []) map[p.name] = p.displayName;
@@ -52,6 +59,15 @@ export function SmokeTestClient() {
     [providerDisplayNameByName],
   );
 
+  const lastByProvider = useMemo<LastByProvider>(() => {
+    const map: LastByProvider = {};
+    for (const p of providersQ.data ?? []) {
+      const ui = mapProviderSmokeToUi(p);
+      if (ui) map[p.name] = ui;
+    }
+    return map;
+  }, [providersQ.data]);
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError(null);
@@ -59,11 +75,6 @@ export function SmokeTestClient() {
       const res = await adminSmokeTestApi.history();
       const mapped = res.items.map((item) => mapSmokeTestRun(item, resolveLabel));
       setHistory(mapped);
-      const lastMap: LastByProvider = {};
-      for (const run of mapped) {
-        if (!(run.provider in lastMap)) lastMap[run.provider] = run;
-      }
-      setLastByProvider(lastMap);
     } catch (e) {
       setHistory([]);
       setHistoryError(
@@ -84,11 +95,12 @@ export function SmokeTestClient() {
       try {
         const run = await adminSmokeTestApi.run(provider.name);
         const ui = mapSmokeTestRun(run, resolveLabel);
-        setLastByProvider((m) => ({ ...m, [provider.name]: ui }));
         toast.success(
           `${ui.providerLabel}: ${ui.statusLabel} · ${ui.latencyLabel}`,
         );
+        await providersQ.refetch();
         await loadHistory();
+        notifyCatalogChange("smoke");
       } catch (e) {
         toast.error(
           e instanceof ApiError ? e.message : "Не удалось запустить smoke-тест",
@@ -97,21 +109,17 @@ export function SmokeTestClient() {
         setBusy((b) => ({ ...b, [provider.name]: false }));
       }
     },
-    [loadHistory, resolveLabel],
+    [loadHistory, providersQ, resolveLabel],
   );
 
   const handleRunAll = useCallback(async () => {
     setAllBusy(true);
     try {
       const res = await adminSmokeTestApi.runAll();
-      const next: LastByProvider = { ...lastByProvider };
-      for (const r of res.items) {
-        const ui = mapSmokeTestRun(r, resolveLabel);
-        next[ui.provider] = ui;
-      }
-      setLastByProvider(next);
       toast.success(`Smoke-тесты выполнены: ${res.items.length}`);
+      await providersQ.refetch();
       await loadHistory();
+      notifyCatalogChange("smoke");
     } catch (e) {
       toast.error(
         e instanceof ApiError ? e.message : "Не удалось запустить smoke-тесты",
@@ -119,7 +127,7 @@ export function SmokeTestClient() {
     } finally {
       setAllBusy(false);
     }
-  }, [lastByProvider, loadHistory, resolveLabel]);
+  }, [loadHistory, providersQ, resolveLabel]);
 
   const providers = providersQ.data ?? [];
 
@@ -167,9 +175,7 @@ export function SmokeTestClient() {
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Провайдер</th>
                   <th className="px-3 py-2 text-left font-medium">Статус</th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    Латентность
-                  </th>
+                  <th className="px-3 py-2 text-left font-medium">Ответ</th>
                   <th className="px-3 py-2 text-right font-medium">Время</th>
                   <th className="px-3 py-2 text-right font-medium">Действие</th>
                 </tr>
@@ -205,8 +211,14 @@ export function SmokeTestClient() {
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right text-xs text-fg-secondary">
-                        {last ? last.latencyLabel : "—"}
+                      <td className="px-3 py-2 text-xs text-fg-secondary">
+                        {last?.message ? (
+                          <span className="line-clamp-2 max-w-md">
+                            {last.message}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right text-xs text-fg-secondary">
                         {last ? last.ranAtLabel : "—"}

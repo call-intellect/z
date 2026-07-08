@@ -7,6 +7,7 @@ import { ensureJsonWordInUser } from './json-mode.util';
 import type { LlmCompleteInput, LlmCompleteOutput, LlmToolCall } from './llm.types';
 import { LlmError } from './llm.types';
 import type { LlmConnectionOverride } from './protocol-adapter/protocol-adapter.types';
+import { stripThinkTags } from './think-tags.util';
 
 @Injectable()
 export class OllamaService {
@@ -27,6 +28,7 @@ export class OllamaService {
     return new OpenAI({
       baseURL: override.baseUrl,
       apiKey: override.apiKey || 'no-key',
+      timeout: override.timeoutMs ?? undefined,
     });
   }
 
@@ -114,6 +116,7 @@ export class OllamaService {
       choices?: Array<{
         message?: {
           content?: string | null;
+          reasoning_content?: string | null;
           tool_calls?: Array<{
             function?: { name?: string; arguments?: string };
           }>;
@@ -122,7 +125,11 @@ export class OllamaService {
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     const choice = r.choices?.[0];
-    const text = choice?.message?.content ?? '';
+    const msg = choice?.message;
+    const rawContent = msg?.content ?? '';
+    const reasoning = msg?.reasoning_content ?? '';
+    const combined = rawContent.trim().length > 0 ? rawContent : reasoning;
+    const text = stripThinkTags(combined);
     const toolCalls: LlmToolCall[] = [];
     for (const tc of choice?.message?.tool_calls ?? []) {
       const name = tc.function?.name ?? '';

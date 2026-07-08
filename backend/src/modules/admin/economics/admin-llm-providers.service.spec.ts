@@ -379,7 +379,7 @@ describe('AdminLlmProvidersService', () => {
         }),
       );
 
-      const resA = await svc.setDefaultProvider('pA', 'model-a');
+      const resA = await svc.setDefaultProvider('pA', 'model-a', 'user-1');
 
       expect(resA).toEqual({ ok: true });
       expect(updateMany).toHaveBeenNthCalledWith(1, {
@@ -410,7 +410,7 @@ describe('AdminLlmProvidersService', () => {
         }),
       );
 
-      const resB = await svc.setDefaultProvider('pB', 'model-b');
+      const resB = await svc.setDefaultProvider('pB', 'model-b', 'user-1');
 
       expect(resB).toEqual({ ok: true });
       expect(updateMany).toHaveBeenNthCalledWith(2, {
@@ -430,7 +430,7 @@ describe('AdminLlmProvidersService', () => {
 
       let err: unknown;
       try {
-        await svc.setDefaultProvider('p1', 'bad-model');
+        await svc.setDefaultProvider('p1', 'bad-model', 'user-1');
       } catch (e) {
         err = e;
       }
@@ -440,6 +440,85 @@ describe('AdminLlmProvidersService', () => {
       });
       expect(transaction).not.toHaveBeenCalled();
       expect(invalidate).not.toHaveBeenCalled();
+    });
+
+    it('(c) ставит нового дефолт-провайдера в начало llm.router.defaultChain через adminSettings.set (ensureDefaultChainPrimary)', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pB', name: 'deepseek' }));
+      llmModelFindFirst.mockResolvedValueOnce({
+        id: 'm2',
+        providerId: 'pB',
+        modelKey: 'model-b',
+        isActive: true,
+        deletedAt: null,
+      });
+      updateMany.mockResolvedValueOnce({ count: 1 });
+      update.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pB',
+          name: 'deepseek',
+          isDefaultProvider: true,
+          defaultModelKey: 'model-b',
+        }),
+      );
+      getDynamic.mockResolvedValueOnce([
+        { provider: 'anthropic', model: 'claude-x' },
+      ]);
+
+      await svcFull.setDefaultProvider('pB', 'model-b', 'user-7');
+
+      expect(adminSettingsSet).toHaveBeenCalledWith(
+        'llm.router.defaultChain',
+        [
+          { provider: 'deepseek', model: 'model-b' },
+          { provider: 'anthropic', model: 'claude-x' },
+        ],
+        { userId: 'user-7', reason: 'default_provider_set' },
+      );
+      expect(refreshCache).toHaveBeenCalledTimes(1);
+    });
+
+    it('(d) не перезаписывает defaultChain, если провайдер уже primary в нём', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pB', name: 'deepseek' }));
+      llmModelFindFirst.mockResolvedValueOnce({
+        id: 'm2',
+        providerId: 'pB',
+        modelKey: 'model-b',
+        isActive: true,
+        deletedAt: null,
+      });
+      updateMany.mockResolvedValueOnce({ count: 1 });
+      update.mockResolvedValueOnce(
+        fakeProvider({
+          id: 'pB',
+          name: 'deepseek',
+          isDefaultProvider: true,
+          defaultModelKey: 'model-b',
+        }),
+      );
+      getDynamic.mockResolvedValueOnce([
+        { provider: 'deepseek', model: 'model-b' },
+        { provider: 'anthropic', model: 'claude-x' },
+      ]);
+
+      await svcFull.setDefaultProvider('pB', 'model-b', 'user-7');
+
+      expect(adminSettingsSet).not.toHaveBeenCalled();
     });
   });
 

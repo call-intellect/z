@@ -37,6 +37,7 @@ export type TaskTypeRouteApi = {
   secondary: ProviderInTierApi | null;
   tertiary: ProviderInTierApi | null;
   chain: ProviderInTierApi[];
+  effectivePrimary: { providerName: string; model: string | null } | null;
 };
 
 export type TaskTypeMetricsApi = {
@@ -141,8 +142,11 @@ export type BulkReassignPreviewRequest = {
   fromProviderName?: string;
 };
 
-export type BulkReassignRequest = BulkReassignPreviewRequest & {
-  toProviderName: AiModelProvider;
+export type BulkReassignRequest = {
+  scope: BulkReassignScope;
+  tier?: AiModelTier;
+  fromProviderName?: string;
+  toProviderName: string;
   toModel: string;
   reason: string;
 };

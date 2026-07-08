@@ -68,8 +68,9 @@ export class AdminLlmProvidersController {
   setDefault(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(SetDefaultProviderSchema)) dto: SetDefaultProviderDto,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.svc.setDefaultProvider(id, dto.model);
+    return this.svc.setDefaultProvider(id, dto.model, user.id);
   }
 
   @Post()

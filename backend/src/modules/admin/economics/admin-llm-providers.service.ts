@@ -185,7 +185,7 @@ export class AdminLlmProvidersService {
     }
   }
 
-  async setDefaultProvider(id: string, model: string): Promise<{ ok: true }> {
+  async setDefaultProvider(id: string, model: string, userId: string): Promise<{ ok: true }> {
     const row = await this.getRow(id);
     const modelRow = await this.prisma.llmModel.findFirst({
       where: { providerId: id, modelKey: model, isActive: true, deletedAt: null },
@@ -209,8 +209,54 @@ export class AdminLlmProvidersService {
         data: { isDefaultProvider: true, defaultModelKey: model },
       }),
     ]);
+    await this.ensureDefaultChainPrimary(row.name, model, userId);
     this.providerInfo.invalidate();
+    this.router?.refreshCache().catch(() => undefined);
     return { ok: true };
+  }
+
+  private async ensureDefaultChainPrimary(
+    providerName: string,
+    modelKey: string,
+    userId: string,
+  ): Promise<void> {
+    const chain = await this.cfg
+      ?.getDynamic<DefaultChainEntry[]>(DEFAULT_CHAIN_SETTING_KEY, undefined, [])
+      .catch(() => []);
+    const current = Array.isArray(chain) ? chain : [];
+    if (current.length > 0 && current[0]?.provider === providerName) return;
+
+    const rest = current.filter((e) => e?.provider !== providerName);
+    const next: DefaultChainEntry[] = [
+      { provider: providerName, model: modelKey },
+      ...rest,
+    ].slice(0, 5);
+
+    if (this.adminSettings) {
+      await this.adminSettings.set(DEFAULT_CHAIN_SETTING_KEY, next, {
+        userId,
+        reason: 'default_provider_set',
+      });
+      return;
+    }
+
+    await this.prisma.adminSetting.upsert({
+      where: { key: DEFAULT_CHAIN_SETTING_KEY },
+      create: {
+        key: DEFAULT_CHAIN_SETTING_KEY,
+        value: next as unknown as Prisma.InputJsonValue,
+        category: 'platform',
+        section: 'misc',
+        severity: 'low',
+        updatedBy: userId,
+        comment: 'default_provider_set',
+      },
+      update: {
+        value: next as unknown as Prisma.InputJsonValue,
+        updatedBy: userId,
+        comment: 'default_provider_set',
+      },
+    });
   }
 
   private async getDefaultProvider(): Promise<{
@@ -283,7 +329,7 @@ export class AdminLlmProvidersService {
           },
         });
       }
-      await this.setDefaultProvider(reassignDefaultTo.providerId, reassignDefaultTo.model);
+      await this.setDefaultProvider(reassignDefaultTo.providerId, reassignDefaultTo.model, userId);
     }
 
     const defaultProvider = await this.getDefaultProvider();

@@ -86,7 +86,10 @@ export const BulkReassignPreviewSchema = BulkReassignScopeSchema.superRefine(
 export type BulkReassignPreviewDto = z.infer<typeof BulkReassignPreviewSchema>;
 
 export const BulkReassignSchema = BulkReassignScopeSchema.extend({
-  toProviderName: z.enum(PROVIDER_NAMES),
+  toProviderName: z
+    .string()
+    .regex(/^[a-z0-9-]+$/)
+    .max(60),
   toModel: z.string().min(1).max(120),
   reason: z.string().min(3).max(500),
 }).superRefine(requireFromProviderForScopeProvider);

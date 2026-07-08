@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Блюпринт — стенд сотрудника</title>
+<style>
+  :root{
+    --bg:#0b1310; --panel:#121e18; --panel2:#16241d; --ink:#eaf4ee; --text:#d3e2da; --muted:#8ba299; --faint:#61756c;
+    --border:#223129; --accent:#2bc99a; --accent2:#46d6ab; --accentsoft:#10281f;
+    --good:#2bc99a; --bad:#f0787c; --warn:#e0ad55; --badsoft:#2c1616; --warnsoft:#2a2110; --goodsoft:#12271f;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f7f5; --panel:#fff; --panel2:#f7faf8; --ink:#10201a; --text:#1d2b26; --muted:#5c6f68; --faint:#869790;
+    --border:#dde7e1; --accent:#0f9d76; --accent2:#0a7a5b; --accentsoft:#e2f4ec;
+    --good:#0f9d76; --bad:#d63d42; --warn:#b7791f; --badsoft:#fbe6e6; --warnsoft:#f7edd8; --goodsoft:#e3f5ed;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;}
+  .proto-nav{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:14px;height:46px;padding:0 18px;background:rgba(11,19,16,.88);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);}
+  :root[data-theme="light"] .proto-nav{background:rgba(255,255,255,.85);}
+  .pn-brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:var(--ink);}
+  .pn-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);}
+  .pn-links{display:flex;gap:4px;margin-left:6px;}
+  a.pn{padding:6px 13px;border-radius:999px;font-size:12.5px;font-weight:600;color:var(--muted);text-decoration:none;}
+  a.pn.active{background:var(--accent);color:#04140e;}
+  .pn-tbtn{margin-left:auto;padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;}
+
+  .wrap{max-width:900px;margin:0 auto;padding:0 22px 100px;}
+  header.h{padding:52px 0 26px;}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent2);}
+  h1{font-size:clamp(28px,4.5vw,42px);font-weight:800;letter-spacing:-.02em;color:var(--ink);margin:12px 0 0;text-wrap:balance;}
+  .lede{font-size:18px;color:var(--muted);margin-top:16px;max-width:680px;}
+  .status{display:inline-flex;align-items:center;gap:8px;margin-top:20px;padding:7px 14px;border-radius:999px;background:var(--warnsoft);color:var(--warn);font-size:12.5px;font-weight:700;border:1px solid color-mix(in oklab,var(--warn) 30%,transparent);}
+  .cta-proto{display:inline-flex;align-items:center;gap:8px;margin-top:20px;margin-left:10px;padding:8px 16px;border-radius:999px;background:var(--accent);color:#04140e;font-size:13px;font-weight:700;text-decoration:none;}
+
+  section{margin-top:44px;}
+  h2{font-size:24px;font-weight:800;color:var(--ink);letter-spacing:-.01em;margin:0 0 6px;}
+  h2 .num{font-family:var(--mono);color:var(--accent2);font-size:16px;margin-right:10px;}
+  .sub{color:var(--muted);margin:0 0 18px;}
+  p{margin:0 0 12px;}
+  ul{margin:0;padding-left:2px;list-style:none;display:flex;flex-direction:column;gap:9px;}
+  ul li{padding-left:20px;position:relative;font-size:15px;line-height:1.5;}
+  ul li::before{content:"";position:absolute;left:3px;top:10px;width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  b{color:var(--ink);}
+  code{font-family:var(--mono);font-size:.86em;background:var(--panel2);padding:1px 6px;border-radius:5px;color:var(--accent2);}
+
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px 24px;}
+  .steps{display:flex;flex-direction:column;gap:10px;}
+  .step{display:flex;gap:14px;align-items:flex-start;background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+  .step .i{flex:none;width:26px;height:26px;border-radius:8px;background:var(--accent);color:#04140e;font-weight:800;display:grid;place-items:center;font-family:var(--mono);font-size:13px;}
+  .step .i.z{background:var(--ink);color:var(--panel);}
+  .step p{margin:0;font-size:14.5px;}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px;}
+  th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:0 12px 10px;font-weight:700;}
+  td{padding:13px 12px;border-top:1px solid var(--border);vertical-align:top;line-height:1.5;}
+  td.who{font-weight:700;color:var(--ink);white-space:nowrap;}
+  td.was{color:var(--muted);}
+
+  .three{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .three .c{border-radius:13px;padding:16px 17px;border:1px solid var(--border);}
+  .three .show{background:var(--goodsoft);border-color:color-mix(in oklab,var(--good) 25%,transparent);}
+  .three .hide{background:var(--warnsoft);border-color:color-mix(in oklab,var(--warn) 25%,transparent);}
+  .three .cut{background:var(--badsoft);border-color:color-mix(in oklab,var(--bad) 25%,transparent);}
+  .three h4{margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;}
+  .three .show h4{color:var(--good);} .three .hide h4{color:var(--warn);} .three .cut h4{color:var(--bad);}
+  .three .cap{font-size:11px;color:var(--muted);margin-bottom:10px;}
+  .three ul li{font-size:12.7px;}
+  .three .show ul li::before{background:var(--good);} .three .hide ul li::before{background:var(--warn);} .three .cut ul li::before{background:var(--bad);}
+
+  .rhythm{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .rhythm .m{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:16px;}
+  .rhythm .m .t{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--accent2);margin-bottom:8px;}
+  .rhythm .m p{font-size:13px;color:var(--text);margin:0;}
+
+  .qa{display:flex;flex-direction:column;gap:11px;}
+  .q{border:1px solid var(--border);border-radius:12px;padding:15px 17px;background:var(--panel);}
+  .q .ttl{font-weight:700;color:var(--ink);font-size:14.5px;margin-bottom:7px;}
+  .q .rec{font-size:13.5px;line-height:1.5;padding-left:14px;border-left:2px solid var(--accent);}
+  .q .rec b{color:var(--accent2);}
+
+  footer{margin-top:56px;padding-top:24px;border-top:1px solid var(--border);color:var(--faint);font-size:12.5px;}
+  @media(max-width:760px){.three,.rhythm{grid-template-columns:1fr;} td.who{white-space:normal;}}
+</style>
+</head>
+<body>
+<div class="proto-nav">
+  <span class="pn-brand"><span class="pn-dot"></span>Стенд сотрудника</span>
+  <span class="pn-links">
+    <a class="pn" href="index.html">Прототип</a>
+    <a class="pn" href="report.html">Отчёт · 5 персон</a>
+    <a class="pn active" href="blueprint.html">Блюпринт</a>
+  </span>
+  <button class="pn-tbtn" onclick="var r=document.documentElement;r.setAttribute('data-theme', r.getAttribute('data-theme')==='light'?'dark':'light')">🌓 Тема</button>
+</div>
+
+<div class="wrap">
+  <header class="h">
+    <div class="eyebrow">Архитектура решения · человеческим языком</div>
+    <h1>Стенд сотрудника — что делаем и как это будет выглядеть</h1>
+    <p class="lede">Пересобираем стенд сотрудника по образцу того, как переделали дашборд руководителя. Основано на исследовании 5 персон. Владелец читает, одобряет — потом ТЗ.</p>
+    <div>
+      <span class="status">● status: draft — ждёт твоего одобрения</span>
+      <a class="cta-proto" href="index.html">→ Открыть живой прототип</a>
+    </div>
+  </header>
+
+  <section>
+    <h2><span class="num">1</span>Что есть сейчас</h2>
+    <p class="sub">Свой стенд у сотрудника есть (директорский не показывают — редиректит на <code>/me</code>), но собран неудобно.</p>
+    <ul>
+      <li>Вход открывается на <b>журнал встреч</b> (<code>/meetings</code>), а не на «мой день».</li>
+      <li>«Что делать» размазано по <b>5 экранам</b>: Обзор · Твой день · Мои дела · Требует вас · Чек-ин.</li>
+      <li>Дефолтная вкладка «Обзор» — <b>HR-профиль</b> (карта должности, польза, благодарности), а не рабочая повестка.</li>
+      <li>Настоящий «Твой день» есть, но <b>спрятан</b> в под-роут; клонов в меню нет.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="num">2</span>Что делаем</h2>
+    <p class="sub">Один рабочий экран «Сегодня» на входе — за 30 секунд отвечает «что мне сделать и кого не подвесить». В том же визуальном языке, что директорский дашборд (тёмное стекло + мятный акцент, обложка дня с осями-статусом).</p>
+    <div class="panel steps">
+      <div class="step"><span class="i z">0</span><p><b>Строка «Спросить Кору»</b> прибита сверху — ответ с цитатами-источниками, на всех экранах.</p></div>
+      <div class="step"><span class="i">1</span><p><b>«Ждут ответа / ты обещал»</b> — короткая очередь, просрочка красным. Общая боль №1 у всех пяти.</p></div>
+      <div class="step"><span class="i">2</span><p><b>Мои задачи на сегодня</b> — чекбокс закрыть на месте; авто из встреч помечены молнией + ссылкой на источник; крупная «+ добавить» (голос/мессенджер).</p></div>
+      <div class="step"><span class="i">3</span><p><b>Один адаптивный ролевой блок</b> — наполняется по данным: продажи → клиенты; продукт → блокеры; маркетинг → «тебя касается»; админ → чек-лист; инженер → «новое из встреч».</p></div>
+      <div class="step"><span class="i">4</span><p><b>Встречи сегодня</b> компактно + <b>вечерний хвост</b> (перенести на завтра, авто-чек-ин из закрытых задач).</p></div>
+    </div>
+    <p style="margin-top:14px;color:var(--muted);font-size:14px">HR-профиль, метрики вклада, признание и директорская аналитика — уходят с глаз (под аватар / за клик).</p>
+  </section>
+
+  <section>
+    <h2><span class="num">3</span>Как будет выглядеть — было → стало</h2>
+    <p class="sub">Каждая персона в прототипе (<a class="pn" style="padding:2px 8px" href="index.html">переключатель ролей</a>) видит свой вариант первого экрана.</p>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Персона</th><th>Было</th><th>Стало</th></tr></thead>
+        <tbody>
+          <tr><td class="who">Ирина<br><span style="font-weight:500;color:var(--muted);font-size:12px">админ</span></td><td class="was">журнал встреч + 5 вкладок + HR-профиль, «боюсь кнопок»</td><td><b>Простой режим:</b> крупный чек-лист «что сегодня сделать», красное «ты обещала», блок «заказать», большая «+ добавить голосом», «перенести на завтра». 3 кнопки внизу.</td></tr>
+          <tr><td class="who">Дмитрий<br><span style="font-weight:500;color:var(--muted);font-size:12px">продажи</span></td><td class="was">не видит follow-up, лезет в CRM 10 раз</td><td>Обложка «День в продажах» → «ждут/обещал» с просрочкой → задачи → <b>«Мои клиенты»</b>: решили / обещал / следующий шаг / срок.</td></tr>
+          <tr><td class="who">Аня<br><span style="font-weight:500;color:var(--muted);font-size:12px">продукт</span></td><td class="was">решения тонут, задачи плоско</td><td>Обложка «День продакта» → <b>«Где застряло»</b>: блокеры фич (кто держит, сколько дней) + плашка «решение без задачи → завести».</td></tr>
+          <tr><td class="who">Костя<br><span style="font-weight:500;color:var(--muted);font-size:12px">инженер</span></td><td class="was">журнал встреч, HR-театр, шум</td><td>Обложка «Сегодня · без шума» (🔕 тихий режим) → задачи с чекбоксом → <b>«Новое из встреч»</b> (авто-задача + источник). Пульс/вклад скрыты.</td></tr>
+          <tr><td class="who">Марина<br><span style="font-weight:500;color:var(--muted);font-size:12px">маркетинг</span></td><td class="was">узнаёт о решениях последней</td><td>Обложка «Твой день» → <b>«Тебя касается»</b> (решения руководства) + <b>«Твой вклад за неделю»</b> (охваты/запуски/благодарности).</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">4</span>Ритм дня</h2>
+    <div class="rhythm">
+      <div class="m"><div class="t">☀ Утро — сборка</div><p>Экран сам собирает картину: что горит + обещания с просрочкой + авто-задачи со вчерашних встреч + «тебя коснулось решение». То же — в утренний бриф в Telegram.</p></div>
+      <div class="m"><div class="t">◑ День — на ходу</div><p>Скорость ввода/закрытия: «+добавить» голосом, чекбокс на месте, «Спросить: что по клиенту X?», после встречи «шаг + напоминание». Нуджи приглушены.</p></div>
+      <div class="m"><div class="t">☾ Вечер — закрытие</div><p>«Перенести на завтра». Чек-ин план↔факт собирается сам из закрытых задач. Мягкий дайджест вклада — для кого важно.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">5</span>Показываем / прячем / убираем</h2>
+    <div class="three">
+      <div class="c show"><h4>Показываем</h4><div class="cap">первый экран, каждый день</div><ul><li>Очередь «ждут / обещал»</li><li>Задачи + чекбокс + источник</li><li>«+ добавить»</li><li>Строка «Спросить»</li><li>Ролевой блок</li><li>Встречи сегодня</li></ul></div>
+      <div class="c hide"><h4>Прячем за клик</h4><div class="cap">не на глаза, не удаляем</div><ul><li>Память / реестры → справка через «Спросить»</li><li>Клоны → «Спросить клон»</li><li>Задачи-доска</li><li>Встречи-журнал</li></ul></div>
+      <div class="c cut"><h4>Убираем в профиль</h4><div class="cap">под аватар, вне навигации</div><ul><li>Карта должности + %</li><li>«Моя польза за неделю»</li><li>Благодарности, «чем помогаю»</li><li>Пульс / настроение</li><li>Баннеры «заполни профиль»</li></ul></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">6</span>Развилки — нужно твоё решение</h2>
+    <p class="sub">Каждая с моей рекомендацией. Одобришь — идём в ТЗ.</p>
+    <div class="qa">
+      <div class="q"><div class="ttl">1. Ролевой блок — по данным, а не новые роли?</div><div class="rec"><b>Рекомендую:</b> один слот, наполнение по признакам данных (клиенты/Битрикс → клиентский; блокеры → продуктовый; входящие решения → «тебя касается») + ручной выбор. MVP — эвристика.</div></div>
+      <div class="q"><div class="ttl">2. Вклад/признание — куда (Марина хочет, Костя против)?</div><div class="rec"><b>Рекомендую:</b> по умолчанию НЕ на первом экране, включаемый блок + вечерний дайджест; для нетехнических развёрнут, для инженеров свёрнут; тумблер в профиле.</div></div>
+      <div class="q"><div class="ttl">3. Тихий режим нуджей — один тумблер?</div><div class="rec"><b>Рекомендую:</b> глобальный тумблер с белым списком «тебя реально ждёт человек» (обещания/прямые вопросы проходят, авто-нуджи глушатся).</div></div>
+      <div class="q"><div class="ttl">4. Два пресета плотности — простой vs плотный?</div><div class="rec"><b>Рекомендую:</b> да. Простой = 3 кнопки, крупные чекбоксы; плотный = ролевой блок, Cmd+K, статусы. Авто по роли + ручное переключение.</div></div>
+      <div class="q"><div class="ttl">5. Ввод голосом / из мессенджера — насколько глубоко?</div><div class="rec"><b>Рекомендую:</b> MVP — inline «+добавить» + голос; следом приём задач из Telegram/WhatsApp/Slack как источник.</div></div>
+      <div class="q"><div class="ttl">6. Чек-ин — оставлять ручным экраном?</div><div class="rec"><b>Рекомендую:</b> убрать как отдельный маршрут, собирать план↔факт авто из закрытых задач + опц. строчка вечером.</div></div>
+      <div class="q"><div class="ttl">7. Заказы-чек-лист (Ирина) — спецсущность?</div><div class="rec"><b>Рекомендую:</b> не спецсущность, а тип личной задачи «список-чеклист» со статусом «уже сделано».</div></div>
+      <div class="q"><div class="ttl">8. Клоны в навигации — куда вернуть?</div><div class="rec"><b>Рекомендую:</b> «Спросить клон должности» внутри «Спросить».</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">7</span>Границы: что переиспользуем, что новое</h2>
+    <ul>
+      <li>✅ <b>Переиспользуем:</b> содержимое <code>/me/daily-brief</code> → становится первым экраном; <code>/me/inbox</code>, <code>/actions</code>, чек-ин, «Спросить», авто-задачи из встреч. Это <b>консолидация</b>, а не постройка с нуля.</li>
+      <li>🆕 <b>Новое:</b> единый экран «Сегодня» как дефолтный роут (сменить старт с <code>/meetings</code>); адаптивный ролевой слот; глобальный тихий режим; простой пресет.</li>
+      <li>🚫 <b>Не делаем:</b> директорские виджеты сотруднику; новый LLM-агент; дефолт-OFF флаги (Ship-On).</li>
+    </ul>
+  </section>
+
+  <footer>
+    Канонический источник: <code>plans/architecture/2026-07-06-employee-stand.md</code> · анализ: <code>plans/analysis/2026-07-06-employee-stand-persona-research.md</code>. Живой прототип и отчёт — в этой же навигации сверху. После одобрения (status → approved) — ТЗ.
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,1237 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отчёт — стенд сотрудника (5 персон)</title>
+<style>
+  .proto-nav{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:14px;height:46px;padding:0 18px;background:rgba(11,19,16,.88);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;}
+  :root[data-theme="light"] .proto-nav{background:rgba(255,255,255,.85);border-bottom-color:rgba(0,0,0,.10);}
+  .proto-nav .pn-brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:#d3e2da;}
+  :root[data-theme="light"] .proto-nav .pn-brand{color:#1d2b26;}
+  .proto-nav .pn-dot{width:9px;height:9px;border-radius:50%;background:#12b886;box-shadow:0 0 10px #12b886;}
+  .proto-nav .pn-links{display:flex;gap:4px;margin-left:6px;}
+  .proto-nav a.pn{padding:6px 13px;border-radius:999px;font-size:12.5px;font-weight:600;color:#8ba299;text-decoration:none;}
+  .proto-nav a.pn.active{background:#12b886;color:#04140e;}
+  .pn-tbtn{margin-left:auto;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:transparent;color:#8ba299;font-size:12px;font-weight:600;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="proto-nav">
+  <span class="pn-brand"><span class="pn-dot"></span>Стенд сотрудника</span>
+  <span class="pn-links">
+    <a class="pn" href="index.html">Прототип</a>
+    <a class="pn active" href="report.html">Отчёт · 5 персон</a>
+    <a class="pn" href="blueprint.html">Блюпринт</a>
+  </span>
+  <button class="pn-tbtn" onclick="var r=document.documentElement;r.setAttribute('data-theme', r.getAttribute('data-theme')==='light'?'dark':'light')">🌓 Тема</button>
+</div>
+<title>Стенд сотрудника — 5 голосов + рекомендация</title>
+<style>
+  :root {
+    --bg: #f4f7f5;
+    --bg-2: #eaf0ec;
+    --panel: #ffffff;
+    --panel-2: #f7faf8;
+    --ink: #10201a;
+    --text: #1d2b26;
+    --muted: #5c6f68;
+    --faint: #869790;
+    --border: #dde7e1;
+    --border-strong: #c6d4cc;
+    --accent: #0f9d76;
+    --accent-ink: #0a7a5b;
+    --accent-soft: #e2f4ec;
+    --good: #0f9d76;
+    --good-soft: #e3f5ed;
+    --bad: #d63d42;
+    --bad-soft: #fbe6e6;
+    --warn: #b7791f;
+    --warn-soft: #f7edd8;
+    --neutral: #6b7d75;
+    --neutral-soft: #eceff0;
+    --mono-bg: #0e1a15;
+    --mono-ink: #cfe8dd;
+    --mono-border: #23352c;
+    --shadow: 0 1px 2px rgba(16,32,26,.04), 0 6px 20px rgba(16,32,26,.06);
+    --shadow-lg: 0 2px 6px rgba(16,32,26,.06), 0 18px 48px rgba(16,32,26,.10);
+    --p-irina: #cf8a2e;
+    --p-dmitry: #109a8f;
+    --p-anya: #7a6bd0;
+    --p-kostya: #4f86b3;
+    --p-marina: #cf5f88;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", "Palatino", Georgia, "Times New Roman", serif;
+    --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b1310;
+      --bg-2: #0e1712;
+      --panel: #121e18;
+      --panel-2: #16241d;
+      --ink: #eaf4ee;
+      --text: #d3e2da;
+      --muted: #8ba299;
+      --faint: #61756c;
+      --border: #223129;
+      --border-strong: #2c3e34;
+      --accent: #2bc99a;
+      --accent-ink: #46d6ab;
+      --accent-soft: #10281f;
+      --good: #2bc99a;
+      --good-soft: #12271f;
+      --bad: #f0787c;
+      --bad-soft: #2c1616;
+      --warn: #e0ad55;
+      --warn-soft: #2a2110;
+      --neutral: #8aa199;
+      --neutral-soft: #1a2620;
+      --mono-bg: #08110d;
+      --mono-ink: #bfe0d3;
+      --mono-border: #1d2c24;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.35);
+      --shadow-lg: 0 2px 6px rgba(0,0,0,.35), 0 18px 48px rgba(0,0,0,.5);
+      --p-irina: #e0a24a;
+      --p-dmitry: #2cc3b4;
+      --p-anya: #a596ea;
+      --p-kostya: #78add8;
+      --p-marina: #ef85ab;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b1310; --bg-2: #0e1712; --panel: #121e18; --panel-2: #16241d;
+    --ink: #eaf4ee; --text: #d3e2da; --muted: #8ba299; --faint: #61756c;
+    --border: #223129; --border-strong: #2c3e34;
+    --accent: #2bc99a; --accent-ink: #46d6ab; --accent-soft: #10281f;
+    --good: #2bc99a; --good-soft: #12271f; --bad: #f0787c; --bad-soft: #2c1616;
+    --warn: #e0ad55; --warn-soft: #2a2110; --neutral: #8aa199; --neutral-soft: #1a2620;
+    --mono-bg: #08110d; --mono-ink: #bfe0d3; --mono-border: #1d2c24;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.35);
+    --shadow-lg: 0 2px 6px rgba(0,0,0,.35), 0 18px 48px rgba(0,0,0,.5);
+    --p-irina: #e0a24a; --p-dmitry: #2cc3b4; --p-anya: #a596ea; --p-kostya: #78add8; --p-marina: #ef85ab;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f7f5; --bg-2: #eaf0ec; --panel: #ffffff; --panel-2: #f7faf8;
+    --ink: #10201a; --text: #1d2b26; --muted: #5c6f68; --faint: #869790;
+    --border: #dde7e1; --border-strong: #c6d4cc;
+    --accent: #0f9d76; --accent-ink: #0a7a5b; --accent-soft: #e2f4ec;
+    --good: #0f9d76; --good-soft: #e3f5ed; --bad: #d63d42; --bad-soft: #fbe6e6;
+    --warn: #b7791f; --warn-soft: #f7edd8; --neutral: #6b7d75; --neutral-soft: #eceff0;
+    --mono-bg: #0e1a15; --mono-ink: #cfe8dd; --mono-border: #23352c;
+    --shadow: 0 1px 2px rgba(16,32,26,.04), 0 6px 20px rgba(16,32,26,.06);
+    --shadow-lg: 0 2px 6px rgba(16,32,26,.06), 0 18px 48px rgba(16,32,26,.10);
+    --p-irina: #cf8a2e; --p-dmitry: #109a8f; --p-anya: #7a6bd0; --p-kostya: #4f86b3; --p-marina: #cf5f88;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 22px 120px; }
+  .reading { max-width: 760px; }
+
+  h1, h2, h3, h4 { color: var(--ink); text-wrap: balance; margin: 0; line-height: 1.18; letter-spacing: -.01em; }
+  p { margin: 0; }
+  a { color: var(--accent-ink); }
+  .eyebrow {
+    font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  .muted { color: var(--muted); }
+
+  /* Header */
+  header.hero { padding: 60px 0 30px; }
+  header.hero .kora {
+    display: inline-flex; align-items: center; gap: 8px; font-weight: 800;
+    letter-spacing: .04em; color: var(--ink); font-size: 15px; margin-bottom: 30px;
+  }
+  header.hero .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); display:inline-block; }
+  header.hero h1 { font-size: clamp(30px, 5vw, 50px); font-weight: 800; letter-spacing: -.025em; }
+  header.hero .lede { font-size: clamp(17px, 2.2vw, 20px); color: var(--muted); margin-top: 20px; max-width: 720px; line-height: 1.5; }
+  .metastrip { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 28px; font-size: 13.5px; color: var(--muted); }
+  .metastrip b { color: var(--ink); font-weight: 700; }
+
+  /* Generic panel */
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 26px 28px; box-shadow: var(--shadow);
+  }
+  section { margin-top: 46px; }
+  .section-head { margin-bottom: 20px; }
+  .section-head h2 { font-size: clamp(21px, 3vw, 27px); font-weight: 800; margin-top: 8px; }
+  .section-head .sub { color: var(--muted); margin-top: 10px; max-width: 760px; }
+
+  /* Current state callout */
+  .gap-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 8px; }
+  .gap-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 13px; padding: 16px 18px; }
+  .gap-card .n { font-family: var(--mono); font-size: 12px; color: var(--bad); font-weight: 700; }
+  .gap-card h4 { font-size: 15px; margin: 6px 0 5px; }
+  .gap-card p { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+
+  /* Persona legend */
+  .legend { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .legend .lg {
+    border: 1px solid var(--border); border-radius: 13px; padding: 15px 14px; background: var(--panel);
+    border-top: 3px solid var(--pc); box-shadow: var(--shadow);
+  }
+  .legend .av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    font-weight: 800; color: #fff; font-size: 15px; background: var(--pc); margin-bottom: 10px; }
+  .legend .lg .nm { font-weight: 700; color: var(--ink); font-size: 15px; }
+  .legend .lg .rl { font-size: 12.5px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+  .legend .lg .co { font-size: 11.5px; color: var(--faint); margin-top: 7px; line-height: 1.35; }
+
+  /* Persona card */
+  .persona { --pc: var(--accent); border: 1px solid var(--border); border-radius: 18px; background: var(--panel);
+    box-shadow: var(--shadow-lg); overflow: hidden; margin-top: 22px; }
+  .persona-head { display: flex; gap: 16px; align-items: flex-start; padding: 24px 26px 20px;
+    border-bottom: 1px solid var(--border); background:
+    linear-gradient(180deg, color-mix(in oklab, var(--pc) 9%, var(--panel)), var(--panel)); }
+  .persona-head .av { width: 52px; height: 52px; border-radius: 14px; flex: none; display: grid; place-items: center;
+    font-weight: 800; color: #fff; font-size: 22px; background: var(--pc); box-shadow: 0 3px 10px color-mix(in oklab, var(--pc) 40%, transparent); }
+  .persona-head .who { flex: 1; min-width: 0; }
+  .persona-head .nm { font-size: 22px; font-weight: 800; color: var(--ink); }
+  .persona-head .rl { font-size: 14px; color: var(--text); margin-top: 2px; font-weight: 600; }
+  .persona-head .co { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .tagrow { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+  .tag { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+    background: var(--neutral-soft); color: var(--muted); border: 1px solid var(--border); }
+  .tag.verdict { background: var(--bad-soft); color: var(--bad); border-color: transparent; font-weight: 700; }
+  .persona-body { padding: 22px 26px 26px; display: flex; flex-direction: column; gap: 22px; }
+
+  .quote { font-family: var(--serif); font-size: 19px; line-height: 1.45; color: var(--ink);
+    font-style: italic; padding-left: 16px; border-left: 3px solid var(--pc); }
+
+  .subhead { font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .subhead .ic { color: var(--pc); }
+
+  .day { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .day .slot { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 15px; }
+  .day .slot .t { font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--pc); margin-bottom: 7px; }
+  .day .slot p { font-size: 13px; color: var(--text); line-height: 1.5; }
+
+  ul.clean { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+  ul.clean li { font-size: 13.5px; line-height: 1.5; color: var(--text); padding-left: 16px; position: relative; }
+  ul.clean li::before { content: ""; position: absolute; left: 2px; top: 9px; width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
+
+  .react { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .react .box { border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; background: var(--panel-2); }
+  .react .box.like { border-left: 3px solid var(--good); }
+  .react .box.dis { border-left: 3px solid var(--bad); }
+  .react .box.conf { border-left: 3px solid var(--warn); }
+  .react .box.irr { border-left: 3px solid var(--neutral); }
+  .react .box .h { font-size: 12px; font-weight: 800; letter-spacing: .04em; margin-bottom: 9px; display:flex; align-items:center; gap:7px; }
+  .react .box.like .h { color: var(--good); }
+  .react .box.dis .h { color: var(--bad); }
+  .react .box.conf .h { color: var(--warn); }
+  .react .box.irr .h { color: var(--neutral); }
+  .react ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .react ul li { font-size: 12.7px; line-height: 1.45; color: var(--text); }
+
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+  .ol { list-style: none; margin: 0; padding: 0; counter-reset: p; display: flex; flex-direction: column; gap: 8px; }
+  .ol li { font-size: 13.3px; line-height: 1.45; color: var(--text); padding-left: 30px; position: relative; counter-increment: p; }
+  .ol li::before { content: counter(p); position: absolute; left: 0; top: 0; width: 20px; height: 20px; border-radius: 6px;
+    background: var(--accent-soft); color: var(--accent-ink); font-size: 11px; font-weight: 800; display: grid; place-items: center; font-family: var(--mono); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip { font-size: 12.3px; padding: 5px 11px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+    border: 1px solid color-mix(in oklab, var(--accent) 22%, transparent); font-weight: 600; }
+
+  /* Mono prototype */
+  .proto { background: var(--mono-bg); border: 1px solid var(--mono-border); border-radius: 14px; overflow: hidden; }
+  .proto .bar { display: flex; align-items: center; gap: 7px; padding: 10px 14px; border-bottom: 1px solid var(--mono-border); }
+  .proto .bar .d { width: 10px; height: 10px; border-radius: 50%; background: #3a4f45; }
+  .proto .bar .lbl { margin-left: 8px; font-size: 11.5px; color: #6f8a7d; font-family: var(--mono); letter-spacing: .03em; }
+  .proto pre { margin: 0; padding: 18px 16px; overflow-x: auto; color: var(--mono-ink); font-family: var(--mono);
+    font-size: 12.5px; line-height: 1.5; -webkit-overflow-scrolling: touch; }
+  .proto pre::selection { background: rgba(43,201,154,.3); }
+  .rationale { font-size: 13.5px; color: var(--text); line-height: 1.55; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .rationale .lead { color: var(--pc); font-weight: 700; }
+  .navwish { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .navwish b { color: var(--ink); }
+
+  /* Synthesis */
+  .synth-headline { font-size: clamp(19px, 2.6vw, 25px); font-weight: 800; color: var(--ink); line-height: 1.35;
+    padding: 26px 28px; border-radius: 16px; background: var(--accent-soft);
+    border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent); text-wrap: balance; }
+  .synth-headline .hl { color: var(--accent-ink); }
+
+  .need-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .need-item { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+    font-size: 13.5px; line-height: 1.5; color: var(--text); border-left: 3px solid var(--good); }
+
+  table.diverge { width: 100%; border-collapse: collapse; font-size: 13.3px; }
+  table.diverge td { padding: 13px 14px; border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.5; }
+  table.diverge tr:last-child td { border-bottom: none; }
+  table.diverge td.who { font-weight: 700; color: var(--ink); white-space: nowrap; width: 1%; }
+  table.diverge td.who span { display: block; font-weight: 500; font-size: 11.5px; color: var(--muted); }
+  table.diverge td.who .bar { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:7px; background: var(--pc); }
+
+  .rec-screen { display: flex; flex-direction: column; gap: 10px; counter-reset: rs; }
+  .rec-screen .row { display: flex; gap: 14px; align-items: flex-start; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 12px; padding: 15px 17px; }
+  .rec-screen .row .idx { flex: none; width: 26px; height: 26px; border-radius: 8px; background: var(--accent); color: #04140e;
+    font-weight: 800; display: grid; place-items: center; font-family: var(--mono); font-size: 13px; }
+  .rec-screen .row .idx.zero { background: var(--ink); color: var(--panel); }
+  .rec-screen .row p { font-size: 13.6px; line-height: 1.5; }
+  .rec-screen .row b { color: var(--ink); }
+
+  .showhide { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .showhide .c { border-radius: 13px; padding: 16px 17px; border: 1px solid var(--border); }
+  .showhide .c.show { background: var(--good-soft); border-color: color-mix(in oklab, var(--good) 25%, transparent); }
+  .showhide .c.hide { background: var(--warn-soft); border-color: color-mix(in oklab, var(--warn) 25%, transparent); }
+  .showhide .c.cut { background: var(--bad-soft); border-color: color-mix(in oklab, var(--bad) 25%, transparent); }
+  .showhide .c h4 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 4px; }
+  .showhide .c.show h4 { color: var(--good); }
+  .showhide .c.hide h4 { color: var(--warn); }
+  .showhide .c.cut h4 { color: var(--bad); }
+  .showhide .c .cap { font-size: 11.5px; color: var(--muted); margin-bottom: 11px; }
+  .showhide .c ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+  .showhide .c ul li { font-size: 12.7px; line-height: 1.45; color: var(--text); padding-left: 15px; position: relative; }
+  .showhide .c ul li::before { position: absolute; left: 0; top: 1px; font-weight: 800; }
+  .showhide .c.show ul li::before { content: "+"; color: var(--good); }
+  .showhide .c.hide ul li::before { content: "~"; color: var(--warn); }
+  .showhide .c.cut ul li::before { content: "\00d7"; color: var(--bad); }
+
+  .diff { display: flex; flex-direction: column; gap: 9px; }
+  .diff .d { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px; padding: 12px 15px; }
+  .diff .d .was { font-size: 13px; color: var(--muted); }
+  .diff .d .arr { color: var(--accent); font-weight: 800; font-size: 16px; }
+  .diff .d .now { font-size: 13px; color: var(--ink); font-weight: 600; }
+
+  .qa { display: flex; flex-direction: column; gap: 12px; }
+  .qa .q { border: 1px solid var(--border); border-radius: 12px; padding: 15px 17px; background: var(--panel); }
+  .qa .q .ttl { font-weight: 700; color: var(--ink); font-size: 14px; margin-bottom: 8px; }
+  .qa .q .rec { font-size: 13.3px; color: var(--text); line-height: 1.5; padding-left: 14px; border-left: 2px solid var(--accent); }
+  .qa .q .rec b { color: var(--accent-ink); }
+
+  .callout-mnv { background: var(--panel-2); border: 1px solid var(--border); border-radius: 13px; padding: 4px 4px; display:grid; grid-template-columns: repeat(3,1fr); gap:4px; }
+  .callout-mnv .m { padding: 15px 16px; border-radius: 10px; }
+  .callout-mnv .m .t { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing:.08em; color: var(--accent-ink); margin-bottom: 8px; display:flex; gap:8px; align-items:center; }
+  .callout-mnv .m p { font-size: 12.8px; color: var(--text); line-height: 1.5; }
+
+  footer.end { margin-top: 60px; padding-top: 26px; border-top: 1px solid var(--border); color: var(--faint); font-size: 12.5px; }
+
+  @media (max-width: 820px) {
+    .gap-grid, .legend, .day, .react, .cols2, .need-grid, .showhide, .callout-mnv { grid-template-columns: 1fr; }
+    .legend { grid-template-columns: 1fr 1fr; }
+    .diff .d { grid-template-columns: 1fr; text-align: left; gap: 4px; }
+    .diff .d .arr { justify-self: start; transform: rotate(90deg); }
+    .persona-head { flex-wrap: wrap; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="reading">
+      <span class="kora"><span class="dot"></span>КОРА · продуктовое исследование</span>
+      <div class="eyebrow">Стенд сотрудника</div>
+      <h1>Что рядовой сотрудник должен видеть первым экраном</h1>
+      <p class="lede">Дашборд руководителя мы уже переделали в «День / Неделя / Месяц компании». Теперь — стенд сотрудника. Пять разных работников, не знающих друг о друге, «попользовались» Корой и пришли с обратной связью: свой день, свои боли, что нравится и что бесит, и собственный прототип идеального первого экрана.</p>
+      <div class="metastrip">
+        <span><b>5</b> независимых персон</span>
+        <span><b>Роли:</b> админ · продажи · продукт · инженер · маркетинг</span>
+        <span><b>Метод:</b> ролевой fan-out + синтез</span>
+        <span><b>6 июля 2026</b></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- CURRENT STATE -->
+  <section>
+    <div class="section-head reading">
+      <div class="eyebrow">Отправная точка</div>
+      <h2>Что у сотрудника сейчас — по факту</h2>
+      <p class="sub">Свой стенд у сотрудника есть (директорский дашборд ему не показывают — редиректит на <code>/me</code>). Но он собран неудобно: «HR-профильный» вместо рабочего, а главное — размазан. Именно это персоны и критикуют.</p>
+    </div>
+    <div class="gap-grid">
+      <div class="gap-card">
+        <div class="n">01 · вход</div>
+        <h4>Открывается журнал встреч</h4>
+        <p>После логина сотрудник попадает на <code>/meetings</code> — список видеовстреч, а не на «что мне сегодня делать».</p>
+      </div>
+      <div class="gap-card">
+        <div class="n">02 · фрагментация</div>
+        <h4>Actionable размазан по 5 экранам</h4>
+        <p>«Обзор» · «Твой день» · «Мои дела» · «Требует вас» · «Чек-ин» — пять похожих очередей, границы между ними не считываются.</p>
+      </div>
+      <div class="gap-card">
+        <div class="n">03 · приоритет</div>
+        <h4>Дефолт /me — это HR-профиль</h4>
+        <p>Первым показывают карту должности, «мою пользу за неделю», благодарности, «чем помогаю коллегам» — а не рабочую повестку.</p>
+      </div>
+      <div class="gap-card">
+        <div class="n">04 · спрятано</div>
+        <h4>Настоящий «Твой день» — под-роут</h4>
+        <p><code>/me/daily-brief</code> (задачи · риски · кто знает) по содержанию верный, но по умолчанию не открывается — его надо найти.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- LEGEND -->
+  <section>
+    <div class="section-head reading">
+      <div class="eyebrow">Пять голосов</div>
+      <h2>Кого мы посадили за Кору</h2>
+      <p class="sub">Спред намеренно широкий — от «самого простого» нетехнического пользователя до системного продакта и минималиста-инженера; разные функции и разные компании.</p>
+    </div>
+    <div class="legend">
+      <div class="lg" style="--pc:var(--p-irina)"><div class="av">И</div><div class="nm">Ирина</div><div class="rl">Офис-администратор</div><div class="co">Стоматология · 12 чел. · нетехническая, боится софта</div></div>
+      <div class="lg" style="--pc:var(--p-dmitry)"><div class="av">Д</div><div class="nm">Дмитрий</div><div class="rl">Менеджер по продажам B2B</div><div class="co">Поставщик оборудования · 30 чел. · живёт в CRM</div></div>
+      <div class="lg" style="--pc:var(--p-anya)"><div class="av">А</div><div class="nm">Аня</div><div class="rl">Продакт-менеджер</div><div class="co">IT-продукт (SaaS) · 60 чел. · системная</div></div>
+      <div class="lg" style="--pc:var(--p-kostya)"><div class="av">К</div><div class="nm">Костя</div><div class="rl">Backend-разработчик</div><div class="co">Аутсорс-студия · 25 чел. · минималист-скептик</div></div>
+      <div class="lg" style="--pc:var(--p-marina)"><div class="av">М</div><div class="nm">Марина</div><div class="rl">Маркетолог / SMM</div><div class="co">E-commerce · 18 чел. · про причастность</div></div>
+    </div>
+  </section>
+
+  <!-- ===================== PERSONAS ===================== -->
+  <section>
+    <div class="section-head reading">
+      <div class="eyebrow">Обратная связь · дословно</div>
+      <h2>Пять сотрудников — пять разборов</h2>
+      <p class="sub">Каждый говорит от первого лица. Внизу карточки — его собственный ASCII-прототип первого экрана (прокручивается вбок).</p>
+    </div>
+
+    <!-- IRINA -->
+    <article class="persona" style="--pc:var(--p-irina)">
+      <div class="persona-head">
+        <div class="av">И</div>
+        <div class="who">
+          <div class="nm">Ирина</div>
+          <div class="rl">Офис-администратор / ассистент</div>
+          <div class="co">Частная стоматологическая клиника · 12 человек</div>
+          <div class="tagrow">
+            <span class="tag">Нетехническая</span>
+            <span class="tag">Блокнот · WhatsApp · Excel</span>
+            <span class="tag verdict">Вердикт: слишком много</span>
+          </div>
+        </div>
+      </div>
+      <div class="persona-body">
+        <p class="quote">«Мне нужен один простой список „что сегодня сделать“ с галочками и напоминалка „ты обещала“ — чтобы ничего не потерялось и меня не пугали лишние кнопки.»</p>
+
+        <div>
+          <div class="subhead"><span class="ic">◷</span> Мой день</div>
+          <div class="day">
+            <div class="slot"><div class="t">Утро</div><p>Открываю блокнот и WhatsApp, боюсь что-то забыть. Хочу увидеть просто: «Ирина, вот что сегодня сделать». А меня кидает на «Встречи», которые мне не сдались.</p></div>
+            <div class="slot"><div class="t">Обед</div><p>Звонки потоком, доктор бросает «закажи и перезвони». Мне нужно за две секунды: открыл — увидел — сделал — вычеркнул. Руки заняты трубкой.</p></div>
+            <div class="slot"><div class="t">Вечер</div><p>Проверить, что ничего не потеряла: всё заказала, всем перезвонила. «Осталось 2 дела» — либо добить, либо перекинуть на завтра одной кнопкой.</p></div>
+          </div>
+        </div>
+
+        <div class="cols2">
+          <div>
+            <div class="subhead"><span class="ic">✦</span> Боли</div>
+            <ul class="clean">
+              <li>Всё в голове и на стикерах — что-то обязательно забываю, когда звонки идут потоком.</li>
+              <li>Поручения сыпятся отовсюду: устно, в WhatsApp, на бумажке — нет одного места.</li>
+              <li>Обещала перезвонить и закрутилась — вспоминаю, когда уже поздно.</li>
+              <li>Заказы материалов: то забуду заказать, то забуду что уже заказала.</li>
+              <li>Боюсь сложных программ: много кнопок — замираю, не понимаю куда жать.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="subhead"><span class="ic">◎</span> Что хочу первым экраном</div>
+            <ol class="ol">
+              <li>Что мне сегодня сделать — простой список с галочками, по порядку.</li>
+              <li>Что я обещала / кому перезвонить — чтобы не забыть.</li>
+              <li>Что заказать (материалы) — отдельной строчкой.</li>
+              <li>Большая кнопка «+ добавить дело» на виду.</li>
+              <li>Что перенеслось на завтра / осталось на вечер.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="react">
+          <div class="box like"><div class="h">👍 Нравится</div><ul>
+            <li>Что вообще есть идея одного места, где дела не потеряются — прям мечта.</li>
+            <li>Можно спросить голосом «какие у меня задачи» — понятно и не страшно.</li>
+            <li>Задачи заводятся сами из разговоров — меньше писать вручную.</li>
+          </ul></div>
+          <div class="box dis"><div class="h">👎 Бесит</div><ul>
+            <li>Захожу — сразу «Встречи». Я их не провожу. Первое, что раздражает.</li>
+            <li>Дела раскиданы по пяти местам — путаюсь, куда уже смотрела.</li>
+            <li>Очень много кнопок в меню — голова кругом.</li>
+            <li>Самое нужное — «Твой день» — спрятано, а должно быть первым.</li>
+          </ul></div>
+          <div class="box conf"><div class="h">❓ Непонятно</div><ul>
+            <li>«Пульс» — это что, моё настроение? Зачем в рабочей программе?</li>
+            <li>«Память», «граф», «второй мозг», 12 областей — вообще не для меня.</li>
+            <li>«Клоны должностей» — совсем не понимаю, что это.</li>
+            <li>Чем «Мои дела» отличаются от «Требует вас» и «Твой день»?</li>
+          </ul></div>
+          <div class="box irr"><div class="h">🚫 Лишнее</div><ul>
+            <li>Встречи с видео, память, граф, клоны.</li>
+            <li>Пульс, настроение, «чем я полезен / помогаю коллегам», благодарности.</li>
+            <li>Зрелость, аналитика, цели, структура.</li>
+            <li>Партнёрка, предложения, должности, таблицы.</li>
+          </ul></div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▢</span> Минимум, который мне реально нужен</div>
+          <div class="chips">
+            <span class="chip">Список «Мои дела на сегодня» с галочками</span>
+            <span class="chip">Кнопка добавить (голосом / из WhatsApp)</span>
+            <span class="chip">Напоминания «ты обещала»</span>
+            <span class="chip">Список заказов материалов</span>
+            <span class="chip">Спросить по-человечески</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▤</span> Мой прототип</div>
+          <div class="proto">
+            <div class="bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="lbl">первый экран — Ирина</span></div>
+<pre>+----------------------------------------------+
+|  Доброе утро, Ирина!        [ + Добавить ]   |
+|  Вторник, 6 июля            сегодня: 5 дел   |
++----------------------------------------------+
+|                                              |
+|  СЕГОДНЯ СДЕЛАТЬ                              |
+|  [ ] Перезвонить поставщику по счёту  9:00   |
+|  [ ] Заказать пломбировочный материал        |
+|  [ ] Напомнить д-ру Смирнову про снимок       |
+|  [x] Записать Иванову на четверг              |
+|  [ ] Подтвердить запись на завтра (3 чел.)   |
+|                                              |
++----------------------------------------------+
+|  ! ТЫ ОБЕЩАЛА (не забудь)                    |
+|  [ ] Перезвонить пациентке Петровой  вчера   |
++----------------------------------------------+
+|  ЗАКАЗАТЬ (материалы)                        |
+|  [ ] Перчатки  (мало осталось)               |
+|  [x] Анестетик  — заказано                   |
++----------------------------------------------+
+|                                              |
+|  [ Перенести оставшееся на завтра ]          |
+|                                              |
+|  Спросить Кору: "..............."   [микр.]  |
++----------------------------------------------+
+| Внизу: [ Сегодня ] [ Заказы ] [ Спросить ]  |
++----------------------------------------------+</pre>
+          </div>
+        </div>
+        <p class="rationale"><span class="lead">Почему так:</span> Зашла — и сразу без нажатий вижу, что сегодня надо. Сверху большая «Добавить», потому что поручения летят на ходу, записать за секунду, пока трубку держу. «Ты обещала» красным — я всегда про звонки забываю. Заказы отдельно с пометкой «уже заказано», чтобы не заказать дважды. Внизу — три кнопки, чтобы не терялась.</p>
+        <p class="navwish"><b>Навигация:</b> три большие кнопки внизу — «Сегодня», «Заказы», «Спросить», и всё. Никаких раскрывающихся меню на двадцать пунктов. «Сегодня» открывается сразу, а не встречи.</p>
+      </div>
+    </article>
+
+    <!-- DMITRY -->
+    <article class="persona" style="--pc:var(--p-dmitry)">
+      <div class="persona-head">
+        <div class="av">Д</div>
+        <div class="who">
+          <div class="nm">Дмитрий</div>
+          <div class="rl">Менеджер по продажам (B2B), промышленное оборудование</div>
+          <div class="co">Поставщик оборудования · ~30 человек</div>
+          <div class="tagrow">
+            <span class="tag">Прагматик</span>
+            <span class="tag">40+ клиентов · Битрикс24</span>
+            <span class="tag verdict">Вердикт: слишком много</span>
+          </div>
+        </div>
+      </div>
+      <div class="persona-body">
+        <p class="quote">«Покажите на одном экране, кому я сегодня должен, что обещал и что дальше по каждому клиенту — и не дайте забыть follow-up. А не грузите профилем, зрелостью и идеями компании.»</p>
+
+        <div>
+          <div class="subhead"><span class="ic">◷</span> Мой день</div>
+          <div class="day">
+            <div class="slot"><div class="t">Утро</div><p>За 30 секунд понять: кому позвонить, у кого назрел follow-up, кто ждёт ответа. А меня кидает на «Встречи». Чтобы собрать «что делать», лезу в три раздела — теряю темп.</p></div>
+            <div class="slot"><div class="t">Обед</div><p>В полях. Между звонками нужна карточка клиента: что решили, что обещал, когда созвон. После звонка — записать следующий шаг и напоминание. В один тап, а не по разделам.</p></div>
+            <div class="slot"><div class="t">Вечер</div><p>Прошёлся по обещаниям: выполнил / перенёс / просрочил. Красным: «обещал перезвонить и не перезвонил». Забытый follow-up = потерянная сделка. Чек-ин должен собираться сам.</p></div>
+          </div>
+        </div>
+
+        <div class="cols2">
+          <div>
+            <div class="subhead"><span class="ic">✦</span> Боли</div>
+            <ul class="clean">
+              <li>Забываю, кому что обещал — а забытый follow-up это прямо потерянная сделка.</li>
+              <li>40+ клиентов, хронология по каждому расползается: что решили, о чём договорились.</li>
+              <li>После встречи трачу время записать итоги руками — а надо ехать на следующую.</li>
+              <li>Нет в одном месте «горит сегодня»: кто ждёт, где просрочка, у кого назрел контакт.</li>
+              <li>Двойная работа: сделал → потом ещё отдельно отметь галочку в чек-ине.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="subhead"><span class="ic">◎</span> Что хочу первым экраном</div>
+            <ol class="ol">
+              <li>Follow-up на сегодня: кому звонить, с датой обещания, просрочки — красным.</li>
+              <li>Кто ждёт от меня ответа прямо сейчас.</li>
+              <li>Встречи/звонки сегодня + вход в итоги прошлой встречи по клиенту.</li>
+              <li>Строка «Спросить: что по клиенту X?».</li>
+              <li>Сколько сделок в работе / что под риском — одной строкой, без графиков.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="react">
+          <div class="box like"><div class="h">👍 Нравится</div><ul>
+            <li>AI-отчёт после встречи с готовыми задачами и «следующим шагом» — экономит время.</li>
+            <li>AI-чат «Спросить»: «что мы решили по клиенту X?» с цитатами — по делу.</li>
+            <li>Авто-задачи из встреч — меньше ручной писанины.</li>
+            <li>Напоминания «ты обещал и не ответил» — прямо про мою боль.</li>
+          </ul></div>
+          <div class="box dis"><div class="h">👎 Бесит</div><ul>
+            <li>Вход открывается на журнал видеовстреч, а не на «что мне делать».</li>
+            <li>«Что делать» размазано по 5 экранам.</li>
+            <li>Первый экран /me — HR-профиль: карта должности, «польза», благодарности. Для продажника шум.</li>
+            <li>Нет разреза «по клиентам» — а я живу клиентами, а не «идеями компании».</li>
+          </ul></div>
+          <div class="box conf"><div class="h">❓ Непонятно</div><ul>
+            <li>Чем «Мои дела» отличаются от «Требует вас» и «Твой день» — три похожих списка.</li>
+            <li>Зачем мне «Карта должности» и процент её полноты.</li>
+            <li>«Чем я полезен / помогаю коллегам» на главном экране — зачем?</li>
+            <li>Чек-ин vs просто отметить задачу — не двойная ли это работа? Куда делись клоны?</li>
+          </ul></div>
+          <div class="box irr"><div class="h">🚫 Лишнее</div><ul>
+            <li>Карта должности и процент заполнения.</li>
+            <li>«Моя польза за неделю», судьба идей, благодарности.</li>
+            <li>Вкладки «Пульс», «Чем я полезен / помогаю коллегам».</li>
+            <li>Зрелость, должности, структура, таблицы; 12 областей памяти.</li>
+          </ul></div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▢</span> Минимум, который мне реально нужен</div>
+          <div class="chips">
+            <span class="chip">Мой день: follow-up + ждут + просрочки</span>
+            <span class="chip">Клиенты: решили / обещал / next / дата</span>
+            <span class="chip">AI-отчёт встречи с авто-задачами</span>
+            <span class="chip">Спросить (по клиенту)</span>
+            <span class="chip">Нуджи «ты обещал и не ответил»</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▤</span> Мой прототип</div>
+          <div class="proto">
+            <div class="bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="lbl">первый экран — Дмитрий</span></div>
+<pre>┌───────────────────────────────────────────────────────────┐
+│  МОЙ ДЕНЬ · Дмитрий · вторник, 6 июля      [Спросить: __ ]│
+├───────────────────────────────────────────────────────────┤
+│  СЕГОДНЯ ГОРИТ — follow-up (7)                             │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │ !ПРОСРОЧКА  Сибзавод — обещал КП, срок был вчера  →  │  │
+│  │ !ПРОСРОЧКА  Иванов (Уралмаш) — перезвонить, 2 дня →  │  │
+│  │  сегодня    Петров — выслать спеку по насосам     →  │  │
+│  │  сегодня    ТД Восток — созвон 15:00, подтвердить →  │  │
+│  │  сегодня    Ромашка ООО — счёт на оплату          →  │  │
+│  └─────────────────────────────────────────────────────┘  │
+├──────────────────────────────┬────────────────────────────┤
+│  ТЕБЯ ЖДУТ (3)               │  ВСТРЕЧИ/ЗВОНКИ СЕГОДНЯ (2) │
+│  · Рук-ль: статус по Сибзав. │  10:00 Уралмаш — созвон    │
+│  · Петров ответил, нужен ты  │  15:00 ТД Восток — Zoom    │
+│  · Снабжение: уточни срок    │  [итоги прошлой встречи →] │
+├──────────────────────────────┴────────────────────────────┤
+│  МОИ КЛИЕНТЫ (быстрый доступ)      сделок в работе: 12     │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │ Клиент      Последнее решили     Следующий шаг  Дата │  │
+│  │ Сибзавод    берут 3 станка       выставить КП   ⚠   │  │
+│  │ Уралмаш     думают по цене        перезвонить   ⚠   │  │
+│  │ ТД Восток   ждут спецификацию     созвон 15:00  ок  │  │
+│  │ Ромашка     согласовали          счёт+оплата    ок  │  │
+│  └─────────────────────────────────────────────────────┘  │
+│                                        [все клиенты →]     │
+├───────────────────────────────────────────────────────────┤
+│ [Клиенты] [Встречи] [Спросить] [Задачи] [Профиль ⋯]        │
+└───────────────────────────────────────────────────────────┘</pre>
+          </div>
+        </div>
+        <p class="rationale"><span class="lead">Почему так:</span> Я живу вопросом «кому должен и что дальше по каждому клиенту». Сверху — что горит сегодня, просрочки красным: забыл follow-up — потерял сделку. Ниже — клиенты в одну строку: «решили → следующий шаг → дата». Это ровно то, за чем я лезу в CRM по десять раз в день, только собрано за меня. Карту должности, пользу, зрелость — за «Профиль ⋯».</p>
+        <p class="navwish"><b>Навигация:</b> 5 кнопок максимум — Клиенты · Встречи · Спросить · Задачи · Профиль. Из карточки клиента в один тап — в итоги последней встречи и обратно. «Спросить» строкой сверху всегда.</p>
+      </div>
+    </article>
+
+    <!-- ANYA -->
+    <article class="persona" style="--pc:var(--p-anya)">
+      <div class="persona-head">
+        <div class="av">А</div>
+        <div class="who">
+          <div class="nm">Аня</div>
+          <div class="rl">Продакт-менеджер</div>
+          <div class="co">Продуктовая IT-компания (B2B SaaS) · ~60 человек</div>
+          <div class="tagrow">
+            <span class="tag">Системный мыслитель</span>
+            <span class="tag">Notion · Linear · 6–8 встреч/день</span>
+            <span class="tag verdict">Вердикт: слишком много</span>
+          </div>
+        </div>
+      </div>
+      <div class="persona-body">
+        <p class="quote">«Мне нужен экран, который показывает не список встреч, а живую связь „что решили → кто делает → на каком статусе → где застряло“ — чтобы решения не тонули в созвонах.»</p>
+
+        <div>
+          <div class="subhead"><span class="ic">◷</span> Мой день</div>
+          <div class="day">
+            <div class="slot"><div class="t">Утро</div><p>За 2 минуты понять: что горит, что от меня ждут, где заблокировано. Окно крошечное — 6–8 встреч впереди. А Кора открывает журнал созвонов. Настоящий экран спрятан.</p></div>
+            <div class="slot"><div class="t">Обед</div><p>В потоке встреч. Критично, чтобы «на созвоне договорились X» тут же стало задачей с исполнителем. Проверяю: завелись ли задачи из утренних встреч, кто взял, не повисло ли без владельца.</p></div>
+            <div class="slot"><div class="t">Вечер</div><p>Закрыть петли: что обещала и не ответила, что зависло на коллегах, где фича встала и почему. Хочу один экран «на конец дня»: обещания, блокеры, что ушло в работу.</p></div>
+          </div>
+        </div>
+
+        <div class="cols2">
+          <div>
+            <div class="subhead"><span class="ic">✦</span> Боли</div>
+            <ul class="clean">
+              <li>Решения тонут в созвонах — через неделю никто не помнит формулировку и ответственного.</li>
+              <li>Задачи расползаются по трекерам — нет картины «где фича и почему застряла».</li>
+              <li>Теряется контекст фичи: кто за что, что заблокировано и кем.</li>
+              <li>Трачу утро на ручную сборку «что важно» из разных мест.</li>
+              <li>Нет связки «решение → задача → статус» — не вижу, доехало ли решение до работы.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="subhead"><span class="ic">◎</span> Что хочу первым экраном</div>
+            <ol class="ol">
+              <li>Что от меня ждут сейчас (обещания + «требует вас») — свести в одно.</li>
+              <li>Мои задачи на сегодня с риском/дедлайном и статусом.</li>
+              <li>Блокеры: где мои фичи застряли и кто держит.</li>
+              <li>Свежие решения из моих встреч → доехали ли до задач.</li>
+              <li>Строка AI-чата «Спросить» прямо тут + встречи компактно.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="react">
+          <div class="box like"><div class="h">👍 Нравится</div><ul>
+            <li>Авто-задачи из встреч «решили X → задача» — ровно моя боль, если работает.</li>
+            <li>AI-чат с цитатами-источниками — то, ради чего держала бы систему.</li>
+            <li>Отдельные аудиодорожки → точное «кто что сказал» — честный протокол решений.</li>
+            <li>Реестр Решений — то, что я всегда хотела от Notion, но там руками.</li>
+          </ul></div>
+          <div class="box dis"><div class="h">👎 Бесит</div><ul>
+            <li>Вход на журнал встреч — каждое утро начинается с не того экрана.</li>
+            <li>Actionable размазан по 5 экранам — нет единой точки.</li>
+            <li>Стартовый /me — HR-профиль, а не рабочий экран.</li>
+            <li>Задачи плоским списком, а мне нужен статус и связи «решение → задача → блокер».</li>
+          </ul></div>
+          <div class="box conf"><div class="h">❓ Непонятно</div><ul>
+            <li>Зачем при входе «Моя карта должности» с процентом полноты.</li>
+            <li>Разница между «Мои дела», «Требует вас», «Твой день» — три очереди.</li>
+            <li>«Чем я полезен / помогаю коллегам» — это для меня или для отчёта руководителю?</li>
+            <li>Где посмотреть статус конкретной фичи целиком — не нашла.</li>
+          </ul></div>
+          <div class="box irr"><div class="h">🚫 Лишнее</div><ul>
+            <li>«Моя польза за неделю», благодарности, признание — HR-ритуалы.</li>
+            <li>«Пульс» (настроение/активность).</li>
+            <li>Карта должности с процентом на первом экране.</li>
+            <li>Партнёрка, поставщики, зрелость, таблицы в общем меню.</li>
+          </ul></div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▢</span> Минимум, который мне реально нужен</div>
+          <div class="chips">
+            <span class="chip">«Мой день»: ждут / задачи / блокеры / решения из встреч</span>
+            <span class="chip">Встречи с AI-отчётом (решения + авто-задачи)</span>
+            <span class="chip">AI-чат с источниками</span>
+            <span class="chip">Задачи со статусами и связью с решениями</span>
+            <span class="chip">Реестр Решений — справка по запросу</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▤</span> Мой прототип</div>
+          <div class="proto">
+            <div class="bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="lbl">первый экран — Аня</span></div>
+<pre>┌──────────────────────────────────────────────────────────────┐
+│  МОЙ ДЕНЬ · Аня, продакт            вт, 06.07   [🔍 Спросить…] │
+├──────────────────────────────────────────────────────────────┤
+│  ⚠ ЖДУТ ОТ МЕНЯ (4)                                           │
+│  • Ответить Игорю по scope фичи «Биллинг»   обещала вчера ⏰   │
+│  • Ревью PRD «Онбординг» — просил Лид        сегодня          │
+│  • Согласовать дату релиза v2.3             &gt; ответить        │
+│  • [показать все 4]                                          │
+├──────────────────────────────────────────────────────────────┤
+│  ✅ МОИ ЗАДАЧИ СЕГОДНЯ (3 из 9)                               │
+│  ▸ Финализировать метрики Discovery   [в работе]  дедлайн 18:00│
+│  ▸ Собрать фидбек по бете «Экспорт»    [не начато] риск ⚠      │
+│  ▸ Отдать макеты в разработку          [ждёт меня]            │
+├──────────────────────────────────────────────────────────────┤
+│  ⛔ ГДЕ ЗАСТРЯЛО (мои фичи)                                    │
+│  • «Биллинг»   → блок: ждём решения юр.   держит: Правовой   3д│
+│  • «Экспорт»   → блок: нет ресурса QA     держит: Дев-лид    2д│
+│                                              [пингануть]      │
+├──────────────────────────────────────────────────────────────┤
+│  🧩 РЕШЕНИЯ ИЗ ВСТРЕЧ → ЗАДАЧИ                                 │
+│  Синк с разработкой (вчера):                                  │
+│   «Делаем экспорт в CSV в v2.3» → задача #421  [заведена ✓]   │
+│   «Переносим SSO на Q4»          → задача       [нет задачи!] │
+├──────────────────────────────────────────────────────────────┤
+│  📅 СЕГОДНЯ: 11:00 Discovery · 14:00 1:1 · 16:00 Планёрка     │
+│  [Мои дела] [Встречи] [Задачи] [Память] [Чек-ин] [Профиль]   │
+└──────────────────────────────────────────────────────────────┘</pre>
+          </div>
+        </div>
+        <p class="rationale"><span class="lead">Почему так:</span> Экран отвечает на «что сегодня важно и что застряло». Сверху — что от меня ждут и обещания (именно это забываю). Задачи — со статусом и риском, не плоско. Блок «где застряло» — я живу блокерами: кто держит фичу и сколько дней. И главное от Коры — решения из встреч в задачи, с пометкой «нет задачи!» там, где договорённость повисла. Встречи — внизу, это контекст, а не точка входа.</p>
+        <p class="navwish"><b>Навигация:</b> единый «Мой день» на входе + тонкая панель из 5–6 рабочих разделов. Глобальная «Спросить» наверху и Cmd+K: набрал фичу — её карточка со связями «решения → задачи → блокеры». HR-профиль — вглубь.</p>
+      </div>
+    </article>
+
+    <!-- KOSTYA -->
+    <article class="persona" style="--pc:var(--p-kostya)">
+      <div class="persona-head">
+        <div class="av">К</div>
+        <div class="who">
+          <div class="nm">Костя</div>
+          <div class="rl">Backend-разработчик</div>
+          <div class="co">Аутсорс веб-студия · 25 человек</div>
+          <div class="tagrow">
+            <span class="tag">Минималист-скептик</span>
+            <span class="tag">IDE · GitHub · Slack</span>
+            <span class="tag verdict">Вердикт: слишком много</span>
+          </div>
+        </div>
+      </div>
+      <div class="persona-body">
+        <p class="quote">«Мне нужно ровно одно: чтобы Кора молча вытаскивала задачи из встреч и складывала их с блокерами на один тихий экран „Сегодня“ — и не мешала мне жить в коде.»</p>
+
+        <div>
+          <div class="subhead"><span class="ic">◷</span> Мой день</div>
+          <div class="day">
+            <div class="slot"><div class="t">Утро</div><p>За 10 секунд: что на мне висит, кто ждёт ответа, есть ли новые таски, вытащенные из вчерашних созвонов. А меня кидает на журнал встреч. Серьёзно? Мой «сегодня» ещё найти надо.</p></div>
+            <div class="slot"><div class="t">Обед</div><p>В коде, в IDE, вылезать не хочу. Нужно одно: если на созвоне прозвучала задача на меня — чтобы система сама её завела с ссылкой на расшифровку. Плюс спросить «что решили по X». Всё.</p></div>
+            <div class="slot"><div class="t">Вечер</div><p>Закрыть сделанное и глянуть, не обещал ли чего. Один чек: галочки по задачам. Чек-ин «план/факт» — это отчётность для начальника, делаю нехотя. Пусть статус подтягивается сам.</p></div>
+          </div>
+        </div>
+
+        <div class="cols2">
+          <div>
+            <div class="subhead"><span class="ic">✦</span> Боли</div>
+            <ul class="clean">
+              <li>Встречи рвут фокус — половина созвонов только чтобы вслух надиктовать мне задачу.</li>
+              <li>Задачи и «что от меня ждут» размазаны по пяти экранам — время уходит на навигацию.</li>
+              <li>Вход на журнал встреч — каждое утро лишний клик и раздражение.</li>
+              <li>Контекст-switching: решение по клиенту ищу в Slack/почте/чьей-то голове.</li>
+              <li>Корп-софт обычно = ещё один источник шума и нуджей.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="subhead"><span class="ic">◎</span> Что хочу первым экраном</div>
+            <ol class="ol">
+              <li>Мои задачи на сегодня (вкл. авто из встреч, с пометкой источника) — закрыть прямо тут.</li>
+              <li>Требует моего ответа / я обещал и не закрыл — короткая очередь.</li>
+              <li>Новое из встреч: что Кора вытащила на меня со вчерашних созвонов.</li>
+              <li>Строка «Спросить» с источниками.</li>
+              <li>Всё остальное — за одним кликом, но не на первом экране.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="react">
+          <div class="box like"><div class="h">👍 Нравится</div><ul>
+            <li>Авто-вытаскивание задач из встреч — единственное, ради чего вообще открыл бы.</li>
+            <li>AI-чат с цитатами — нормальная замена рытью в Slack, если даёт ссылку на первоисточник.</li>
+            <li>Отдельные аудиодорожки → точное «кто что сказал» — по-инженерному честно.</li>
+            <li>То, что директорский дашборд мне НЕ показывают и редиректят — правильно.</li>
+          </ul></div>
+          <div class="box dis"><div class="h">👎 Бесит</div><ul>
+            <li>«Моя польза за неделю», судьба идей, благодарности — чистый HR-театр, аллергия.</li>
+            <li>«Пульс», «Чем я полезен / помогаю коллегам» — мониторинг под видом заботы.</li>
+            <li>Вход на журнал встреч как домашняя страница разработчика — абсурд.</li>
+            <li>Баннер «заполните профиль / подключите Telegram» на главном — навязывание.</li>
+          </ul></div>
+          <div class="box conf"><div class="h">❓ Непонятно</div><ul>
+            <li>Почему «мой день» — спрятанный под-роут, а не дефолт?</li>
+            <li>Чем «Мои дела» отличаются от «Требует вас» и задач в /projects — три места про одно.</li>
+            <li>Роль на фронте называется «manager», хотя я обычный сотрудник — подумал, дали не тот доступ.</li>
+            <li>Клоны есть, а пункта в меню нет — как я должен был узнать?</li>
+          </ul></div>
+          <div class="box irr"><div class="h">🚫 Лишнее</div><ul>
+            <li>Пульс / настроение / активность.</li>
+            <li>Благодарности и геймификация вклада.</li>
+            <li>Карта должности с процентом полноты.</li>
+            <li>Компания, зрелость, поставщики, клиенты, события, партнёрка, таблицы, должности.</li>
+          </ul></div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▢</span> Минимум, который мне реально нужен</div>
+          <div class="chips">
+            <span class="chip">Единый экран «Сегодня» (задачи + ждут + новое из встреч)</span>
+            <span class="chip">Авто-задачи из встреч с ссылкой на источник</span>
+            <span class="chip">AI-чат с цитатами</span>
+            <span class="chip">Тихий режим: один тумблер против всех нуджей</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▤</span> Мой прототип</div>
+          <div class="proto">
+            <div class="bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="lbl">первый экран — Костя</span></div>
+<pre>┌──────────────────────────────────────────────────────────────┐
+│  СЕГОДНЯ · Костя                        [Спросить Кору…]  🔕⚙️ │
+├──────────────────────────────────────────────────────────────┤
+│  МОИ ЗАДАЧИ                                                   │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │ [ ] Починить ретрай в очереди egress      сегодня     │    │
+│  │ [ ] Ревью PR #482 (auth-guard)            сегодня     │    │
+│  │ [ ] ⚡из встречи: вынести конфиг в AdminSetting        │    │
+│  │        └ планёрка 05.07 · «Костя вынесет…»  [источник]│    │
+│  │ [x] Пофиксить миграцию drift                          │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                                                              │
+│  ЖДУТ МЕНЯ (2)                                                │
+│  • Игорь спросил про статус интеграции S3      ответить →    │
+│  • Ты обещал ТЗ по TURN и не закрыл            2 дня  →      │
+│                                                              │
+│  НОВОЕ ИЗ ВСТРЕЧ (за вчера)                                   │
+│  • 1 задача заведена на тебя · 1 решение затрагивает бэкенд  │
+│    └ созвон «архитектура клонов» 05.07        разобрать →    │
+├──────────────────────────────────────────────────────────────┤
+│  Задачи · Спросить · Память        (всё остальное — скрыто)   │
+└──────────────────────────────────────────────────────────────┘</pre>
+          </div>
+        </div>
+        <p class="rationale"><span class="lead">Почему так:</span> Один экран, который отвечает на «что делать» и «кого не подвесить». Задачи с чекбоксами — закрывать прямо тут. Задачи из встреч помечены молнией и ссылкой на источник — вижу, откуда это, могу доверять. «Ждут меня» — короткая очередь, чтобы не будили нуджами. «Новое из встреч» — ровно та ценность, ради которой открываю Кору. Наверху «Спросить» и колокольчик тихого режима. Никакого пульса и благодарностей.</p>
+        <p class="navwish"><b>Навигация:</b> узкое меню из 3–4 пунктов (Сегодня · Задачи · Спросить · Память) и Cmd+K. А лучше — чтобы основное приходило в Slack/GitHub, а в кабинет я заходил раз в день на «Сегодня».</p>
+      </div>
+    </article>
+
+    <!-- MARINA -->
+    <article class="persona" style="--pc:var(--p-marina)">
+      <div class="persona-head">
+        <div class="av">М</div>
+        <div class="who">
+          <div class="nm">Марина</div>
+          <div class="rl">Маркетолог / SMM-менеджер</div>
+          <div class="co">Интернет-магазин (e-commerce) · 18 человек</div>
+          <div class="tagrow">
+            <span class="tag">Коммуникационная</span>
+            <span class="tag">6+ каналов · про признание</span>
+            <span class="tag verdict">Вердикт: слишком много</span>
+          </div>
+        </div>
+      </div>
+      <div class="persona-body">
+        <p class="quote">«Мне нужен один экран „вот что от тебя сегодня хотят и что тебя касается“ плюс возможность спросить и увидеть, что мой вклад заметили — чтобы перестать теряться в каналах и узнавать о важном последней.»</p>
+
+        <div>
+          <div class="subhead"><span class="ic">◷</span> Мой день</div>
+          <div class="day">
+            <div class="slot"><div class="t">Утро</div><p>Понять «что горит и что от меня хотят». А это в Telegram с ночными правками, в задачах, в комментариях дизайнера. Собираю картину минут двадцать. Кора кидает на «Встречи».</p></div>
+            <div class="slot"><div class="t">Обед</div><p>В потоке: посты, правки, согласование акции. Важно спросить «что решили по распродаже?» — решение приняли на планёрке без меня. Бесит переключаться между пятью экранами.</p></div>
+            <div class="slot"><div class="t">Вечер</div><p>Закрыть день красиво: отметить сделанное, и чтобы это было видно. Мне важно чувствовать, что вклад заметили. За 30 секунд «план/факт» — а он живёт отдельным экраном.</p></div>
+          </div>
+        </div>
+
+        <div class="cols2">
+          <div>
+            <div class="subhead"><span class="ic">✦</span> Боли</div>
+            <ul class="clean">
+              <li>Куча каналов — договорённости теряются, забываю, кому что обещала.</li>
+              <li>Узнаю о решениях руководства последней — а потом делаю уже неактуальное.</li>
+              <li>Не вижу «что сейчас важно компании» — работаю вслепую.</li>
+              <li>Мой вклад незаметен: много делаю, но охваты и запуски никто не видит.</li>
+              <li>Утром долго собираю картину дня руками.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="subhead"><span class="ic">◎</span> Что хочу первым экраном</div>
+            <ol class="ol">
+              <li>Что от меня ждут сегодня (дела + дедлайны акций/постов), горящее сверху.</li>
+              <li>Что под риском / что я обещала и не ответила.</li>
+              <li>Что тебя коснулось: решения руководства и вопросы ко мне.</li>
+              <li>Строка «Спросить» прямо тут.</li>
+              <li>Мой вклад за неделю (охваты/запуски/благодарности) + чек-ин в 1 клик.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="react">
+          <div class="box like"><div class="h">👍 Нравится</div><ul>
+            <li>AI-чат «Спросить»: спросила про решение по акции — ответ с источником. Спасение.</li>
+            <li>Что Кора помнит за всю команду — договорённости не растворяются в чатах.</li>
+            <li>Блок «Моя польза за неделю»: видно охваты, судьбу идей, благодарности. Мне не хватает признания.</li>
+            <li>Задачи заводятся сами из встреч — не переписывать из чата.</li>
+          </ul></div>
+          <div class="box dis"><div class="h">👎 Бесит</div><ul>
+            <li>Вход на журнал ВСТРЕЧ — я не про совещания живу.</li>
+            <li>Настоящий «рабочий день» спрятан — нашла случайно.</li>
+            <li>Actionable по пяти экранам — путаюсь, где что.</li>
+            <li>Меню перегружено: поставщики, зрелость, партнёрка, таблицы, должности.</li>
+          </ul></div>
+          <div class="box conf"><div class="h">❓ Непонятно</div><ul>
+            <li>Зачем мне на входе журнал встреч, если я не веду совещания.</li>
+            <li>Чем «Твой день» отличается от «Мои дела» и «Требует вас».</li>
+            <li>Что такое «Моя карта должности» и её процент полноты.</li>
+            <li>«Зрелость», «Партнёрка», «Должности» — это про меня или начальственное?</li>
+          </ul></div>
+          <div class="box irr"><div class="h">🚫 Лишнее</div><ul>
+            <li>Зрелость (какая-то оценка компании).</li>
+            <li>Партнёрка, поставщики.</li>
+            <li>Должности как раздел, процент полноты инструкции.</li>
+            <li>Вкладка «Пульс» с настроением.</li>
+          </ul></div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▢</span> Минимум, который мне реально нужен</div>
+          <div class="chips">
+            <span class="chip">Мой день: дела + риски + что ждут + чек-ин</span>
+            <span class="chip">Спросить (по памяти компании)</span>
+            <span class="chip">Лента «что важно / решения, которые меня касаются»</span>
+            <span class="chip">Мой вклад за неделю</span>
+            <span class="chip">Задачи (где я исполнитель)</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="subhead"><span class="ic">▤</span> Мой прототип</div>
+          <div class="proto">
+            <div class="bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="lbl">первый экран — Марина</span></div>
+<pre>+====================================================================+
+|  КОРА · Твой день, Марина            [ 🔍 Спросить Кору... ]  ▾ Я  |
++====================================================================+
+|                                                                    |
+|  🔥 СЕГОДНЯ ГОРИТ                                                   |
+|  +--------------------------------------------------------------+  |
+|  | ⏰ 10:00  Запостить акцию «Чёрная пятница» — НЕ согласован    |  |
+|  |          оффер! [Спросить: что решили?] [Открыть]            |  |
+|  | ⏰ 14:00  Отдать дизайнеру ТЗ на баннеры                      |  |
+|  | ⏰ сег.   Ответить подрядчику по рассылке                     |  |
+|  +--------------------------------------------------------------+  |
+|                                                                    |
+|  ❗ ТЕБЯ КАСАЕТСЯ / ТЕБЯ СПРОСИЛИ            (не пропусти!)          |
+|  +--------------------------------------------------------------+  |
+|  | • Руководитель на планёрке: «двигаем распродажу на 25-е» →   |  |
+|  |   затронут твой контент-план  [Что именно решили?]          |  |
+|  | • Ты обещала текст оффера вчера — не ответила  [Ответить]    |  |
+|  +--------------------------------------------------------------+  |
+|                                                                    |
+|  📋 МОИ ДЕЛА (где я исполнитель)                    [все дела →]    |
+|  +--------------------------------------------------------------+  |
+|  | ☐ Контент-план на неделю     ☐ Собрать охваты за октябрь     |  |
+|  | ☐ Согласовать сторис с брендом                               |  |
+|  +--------------------------------------------------------------+  |
+|                                                                    |
+|  🌟 ТВОЙ ВКЛАД ЗА НЕДЕЛЮ                                            |
+|  +----------------+----------------+----------------------------+  |
+|  | Охваты: +18%   | Запусков: 3    | Благодарности: 2 ❤        |  |
+|  +----------------+----------------+----------------------------+  |
+|                                                                    |
+|  ✅ ЧЕК-ИН ДНЯ:  [ план на сегодня ] → [ отметить факт ]  (1 клик)  |
+|                                                                    |
++====================================================================+
+| 🏠 Мой день   💬 Спросить   📋 Задачи   🧠 Память   📣 Что в компании|
++====================================================================+</pre>
+          </div>
+        </div>
+        <p class="rationale"><span class="lead">Почему так:</span> Захожу — сразу три вещи: что горит, что меня касается (чтобы не узнавать последней) и что от меня ждут ответа. Сверху острое с дедлайнами постов. Блок «тебя касается» — моя главная боль: ловить решения руководства, которые ломают контент-план. Вклад за неделю — на главной, а не в глубокой вкладке: важно видеть, что работа заметна. Чек-ин в один клик внизу.</p>
+        <p class="navwish"><b>Навигация:</b> узкое меню из 5 иконок — Мой день · Спросить · Задачи · Память · Что в компании. «Спросить» прибита сверху на каждом экране. Профиль и справочники — под аватарку.</p>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- ===================== SYNTHESIS ===================== -->
+  <section>
+    <div class="section-head reading">
+      <div class="eyebrow">Синтез пяти голосов</div>
+      <h2>Что из этого следует</h2>
+      <p class="sub">Не усреднение в кашу: где все пятеро сходятся — берём в каркас; где расходятся по ролям — решаем одним адаптивным слотом.</p>
+    </div>
+
+    <div class="synth-headline">Стенд сотрудника — это <span class="hl">один рабочий экран «Сегодня»</span> на входе, который за 30 секунд отвечает «что мне сделать и кого не подвесить», с прибитой строкой «Спросить» и одним адаптивным ролевым блоком. HR-профиль, метрики вклада и вся директорская аналитика уходят с глаз в глубину.</div>
+
+    <div style="margin-top:32px">
+      <div class="subhead" style="font-size:13px"><span class="ic" style="color:var(--good)">◆</span> Чего хотят ВСЕ пятеро (пересечение)</div>
+      <div class="need-grid">
+        <div class="need-item">Единый первый экран на входе вместо журнала встреч — все пятеро в один голос: <b>/meetings как домашняя = абсурд</b>.</div>
+        <div class="need-item">Свести пять actionable-экранов (Обзор · Твой день · Мои дела · Требует вас · Чек-ин) в ОДИН — дословно главная претензия каждого.</div>
+        <div class="need-item">Очередь «что от меня ждут / я обещал» с подсветкой просрочки — <b>общая боль №1</b> у всех пяти ролей.</div>
+        <div class="need-item">Мои задачи на сегодня, которые можно закрыть прямо тут, без прыжков по вкладкам.</div>
+        <div class="need-item">Прибитая сверху строка «Спросить Кору» с ответом по источникам — единственная функция, которую хвалят все пятеро.</div>
+        <div class="need-item">Короткое меню на 5–6 пунктов вместо простыни; журнал встреч и справочники руководителя — вон со старта.</div>
+      </div>
+    </div>
+
+    <div style="margin-top:30px">
+      <div class="subhead" style="font-size:13px"><span class="ic" style="color:var(--warn)">⇄</span> Где роли расходятся</div>
+      <div class="panel" style="padding:6px 10px">
+        <table class="diverge">
+          <tr style="--pc:var(--p-irina)"><td class="who"><span class="bar"></span>Ирина<span>офис-админ</span></td><td>Тупо-простой список с галочками и БОЛЬШИМИ кнопками. Ввод голосом / из WhatsApp, отдельный чек-лист заказов, «перенести на завтра». Встречи, память, граф, клоны — чужой язык, убрать полностью. Потолок навигации — 3 кнопки.</td></tr>
+          <tr style="--pc:var(--p-kostya)"><td class="who"><span class="bar"></span>Костя<span>инженер</span></td><td>«Молча вытащи задачи и не мешай». Минимум, чекбоксы на месте, авто-задачи из встреч с молнией + ссылкой на расшифровку, ОДИН тумблер тихого режима, Cmd+K. HR-театр (польза, пульс, благодарности) — аллергия.</td></tr>
+          <tr style="--pc:var(--p-dmitry)"><td class="who"><span class="bar"></span>Дмитрий<span>продажи</span></td><td>Живёт КЛИЕНТАМИ. Разрез по клиентам: «решили → обещал → следующий шаг → дата», follow-up с просрочкой красным, связка с Битрикс24, после звонка в один тап «шаг + напоминание».</td></tr>
+          <tr style="--pc:var(--p-anya)"><td class="who"><span class="bar"></span>Аня<span>продукт</span></td><td>Нужны СВЯЗИ, а не список: «решение → задача → исполнитель → статус → блокер». Доска фич «где застряло и кто держит», пометка «решение повисло без задачи», Cmd+K с карточкой фичи.</td></tr>
+          <tr style="--pc:var(--p-marina)"><td class="who"><span class="bar"></span>Марина<span>маркетинг</span></td><td>Нужна ПРИЧАСТНОСТЬ: блок «тебя касается: решения руководства», лента «что важно компании», вклад за неделю на ВИДНОМ месте. Ровно то, что Костя требует убрать — прямое столкновение.</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="margin-top:30px">
+      <div class="subhead" style="font-size:13px"><span class="ic">▦</span> Рекомендуемый первый экран — сверху вниз</div>
+      <div class="rec-screen">
+        <div class="row"><div class="idx zero">0</div><p><b>Прибитая строка «Спросить Кору»</b> — единственный элемент, который хвалят все пятеро. Всегда на месте, ответ с цитатами-источниками, не уводит со страницы.</p></div>
+        <div class="row"><div class="idx">1</div><p><b>«Ждут ответа / ты обещал»</b> — короткая очередь обещаний и входящих ожиданий, просрочка красным. Пересечение боли всех пятерых → ставим первым: это то, что реально теряется.</p></div>
+        <div class="row"><div class="idx">2</div><p><b>«Сегодня» — мои задачи с чекбоксами</b>, закрыть прямо тут. Авто-заведённые из встреч помечены молнией + ссылкой на источник. Рядом крупная «+ добавить дело» (голосом / из мессенджера).</p></div>
+        <div class="row"><div class="idx">3</div><p><b>Адаптивный ролевой блок</b> (один слот, наполнение по данным): продажи → клиенты «решили / обещал / next / дата»; продукт → блокеры фич + «решение без задачи»; маркетинг → «тебя касается»; админ → простой чек-лист; инженер → «новое из встреч» + тихий режим.</p></div>
+        <div class="row"><div class="idx">4</div><p><b>Встречи сегодня</b> — компактной строкой внизу (у кого есть), не журналом; вход в AI-отчёт последней встречи. Для Ирины блок скрыт.</p></div>
+        <div class="row"><div class="idx">5</div><p><b>Вечерний хвост</b> (сворачиваемый): «перенести на завтра» одним тапом + мягкий вклад/причастность для тех, кому важно. По умолчанию свёрнут для инженерных ролей.</p></div>
+      </div>
+    </div>
+
+    <div style="margin-top:30px">
+      <div class="subhead" style="font-size:13px"><span class="ic">◷</span> Экран в ритме дня</div>
+      <div class="callout-mnv">
+        <div class="m"><div class="t">☀ Утро — сборка</div><p>Экран сам собирает картину, которую сейчас лепят руками из пяти мест. Сверху — что горит и обещания с просрочкой; ниже — авто-задачи со вчерашних встреч; для маркетинга/продукта — «тебя коснулось решение X». То же уходит в утренний бриф в Telegram.</p></div>
+        <div class="m"><div class="t">◑ День — на ходу</div><p>Скорость ввода и закрытия: «+ добавить» голосом за секунду, чекбокс закрыть не уходя, «Спросить: что по клиенту X?» на бегу, после встречи в один тап «шаг + напоминание». Нуджи приглушены тихим режимом.</p></div>
+        <div class="m"><div class="t">☾ Вечер — закрытие</div><p>«Перенести на завтра» одним нажатием. Чек-ин собирается АВТОМАТИЧЕСКИ из закрытого за день. Мягкий дайджест «твой вклад» — для тех, кому важна причастность; свёрнут у тех, для кого это HR-театр.</p></div>
+      </div>
+    </div>
+
+    <div style="margin-top:30px">
+      <div class="subhead" style="font-size:13px"><span class="ic">⊞</span> Минимальный стенд: показываем / прячем / убираем</div>
+      <div class="showhide">
+        <div class="c show">
+          <h4>Показываем</h4>
+          <div class="cap">на первом экране, каждый день</div>
+          <ul>
+            <li>Очередь «ждут / обещал» с просрочкой</li>
+            <li>Задачи на сегодня + чекбокс + источник</li>
+            <li>Кнопка «+ добавить»</li>
+            <li>Прибитая строка «Спросить»</li>
+            <li>Один ролевой блок</li>
+            <li>Компактные встречи сегодня</li>
+          </ul>
+        </div>
+        <div class="c hide">
+          <h4>Прячем за клик</h4>
+          <div class="cap">не на глаза, но не удаляем</div>
+          <ul>
+            <li>Полная память / 12 областей / реестры — как справка через «Спросить»</li>
+            <li>Клоны — как «Спросить клон» внутри Спросить</li>
+            <li>Задачи-доска целиком</li>
+            <li>Встречи-журнал</li>
+          </ul>
+        </div>
+        <div class="c cut">
+          <h4>Убираем в профиль</h4>
+          <div class="cap">под аватар, вне навигации</div>
+          <ul>
+            <li>Карта должности и % полноты</li>
+            <li>«Моя польза за неделю», благодарности</li>
+            <li>«Чем полезен / помогаю коллегам»</li>
+            <li>Пульс / настроение</li>
+            <li>Баннеры «заполни профиль»</li>
+          </ul>
+        </div>
+      </div>
+      <p class="muted" style="font-size:12.5px; margin-top:12px; line-height:1.5">Принцип: первый экран отвечает на «что делать и кого не подвесить». Всё, что отвечает на «какой я молодец» или «как устроена компания», — на второй план. <b>Прячем — не значит режем:</b> упрощаем = оптимизируем, фичи остаются доступны по клику.</p>
+    </div>
+
+    <div style="margin-top:30px">
+      <div class="subhead" style="font-size:13px"><span class="ic">▤</span> Рекомендуемый прототип — два режима плотности</div>
+      <div class="proto">
+        <div class="bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="lbl">синтез — «плотный» и «простой» режимы</span></div>
+<pre>=====================================================================
+ РЕЖИМ «ПЛОТНЫЙ / СИСТЕМНЫЙ» (по умолчанию: продажи, продукт, инженер)
+=====================================================================
+ +-----------------------------------------------------------------+
+ | [ 🔎 Спросить Кору:  что решили по клиенту X? ...      ] [Cmd+K] |  &lt;- прибито всегда
+ +-----------------------------------------------------------------+
+ |  СЕГОДНЯ, пн 6 июля                          [🔕 тихий режим ▸] |
+ +-----------------------------------------------------------------+
+ |  ⚠ ЖДУТ ОТВЕТА / ТЫ ОБЕЩАЛ                                       |
+ |  • перезвонить поставщику «Ролс»     обещал ПТ  🔴 просрочка 2д  |
+ |  • ответить Игорю по КП              ждёт с 09:14   [ответить]  |
+ |  • ТЗ на лендинг — обещал сегодня 18:00                          |
+ +-----------------------------------------------------------------+
+ |  ✅ МОИ ЗАДАЧИ НА СЕГОДНЯ                        [ + добавить ]  |
+ |  [ ] Подготовить смету для «Атлант»                             |
+ |  [ ] ⚡ Починить экспорт отчёта   ← из встречи 05.07 [источник] |
+ |  [ ] ⚡ Согласовать бюджет акции  ← решение планёрки [источник] |
+ |  [x] Отправить договор (закрыто)                               |
+ +-----------------------------------------------------------------+
+ |  ▣ РОЛЕВОЙ БЛОК  (подставляется по данным сотрудника)           |
+ |  · ПРОДАЖНИК → Мои клиенты: решили / обещал / next / дата       |
+ |      Атлант   счёт согласован   → выставить    завтра          |
+ |      Ролс     ждут ТЗ           → отправить ТЗ  🔴 просрочено   |
+ |  · ПРОДАКТ   → Где застряло: блокер / кто держит / решение→таск |
+ |      Фича «поиск»  держит Backend 4д   ⚠ решение БЕЗ задачи     |
+ |  · МАРКЕТОЛОГ→ Тебя касается: решения руководства / что важно   |
+ |      «Перенос акции на 10-е» — затрагивает твой контент-план    |
+ +-----------------------------------------------------------------+
+ |  📅 встречи сегодня: 14:00 планёрка отдела   [отчёт прошлой ▸]  |
+ +-----------------------------------------------------------------+
+ |  [Сегодня] [Задачи] [Спросить] [Клиенты/Память] [ ⌄ ещё ][👤]  |
+ +-----------------------------------------------------------------+
+
+=====================================================================
+ РЕЖИМ «ПРОСТОЙ» (по умолчанию для офис-админа / нетехнических)
+=====================================================================
+ +-----------------------------------------------------------------+
+ |  🔎  Спросить Кору словами...                                    |
+ +-----------------------------------------------------------------+
+ |            ЧТО СЕГОДНЯ СДЕЛАТЬ                                   |
+ |                                                                 |
+ |   🔴 ТЫ ОБЕЩАЛА перезвонить поставщику — не забудь!            |
+ |                                                                 |
+ |   [ ] Записать пациента на пятницу                             |
+ |   [ ] Оплатить счёт за материалы                              |
+ |   [ ] Позвонить в лабораторию                                 |
+ |                                                                 |
+ |            +----------------------------+                       |
+ |            |   +  ДОБАВИТЬ ДЕЛО  🎤     |   (голос / из WhatsApp) |
+ |            +----------------------------+                       |
+ |                                                                 |
+ |   🛒 ЗАКАЗАТЬ:  [ ] перчатки   [x] маски (уже заказано)        |
+ |                                                                 |
+ |            [  Перенести остаток на завтра  ]                    |
+ +-----------------------------------------------------------------+
+ |        [ 📋 Сегодня ]   [ 🛒 Заказы ]   [ 🔎 Спросить ]         |
+ +-----------------------------------------------------------------+
+  (три большие кнопки, никаких раскрывающихся меню)</pre>
+      </div>
+    </div>
+
+    <div style="margin-top:30px">
+      <div class="subhead" style="font-size:13px"><span class="ic">⇢</span> Чем это отличается от сегодняшнего</div>
+      <div class="diff">
+        <div class="d"><div class="was">Вход на /meetings (журнал встреч)</div><div class="arr">→</div><div class="now">Единый экран «Сегодня» на входе</div></div>
+        <div class="d"><div class="was">5 экранов actionable</div><div class="arr">→</div><div class="now">ОДИН экран с секциями</div></div>
+        <div class="d"><div class="was">Дефолт /me — HR-профиль</div><div class="arr">→</div><div class="now">Рабочий экран; HR под аватар</div></div>
+        <div class="d"><div class="was">«Твой день» спрятан в под-роут</div><div class="arr">→</div><div class="now">Его содержимое И ЕСТЬ первый экран</div></div>
+        <div class="d"><div class="was">Меню-простыня (~20 пунктов)</div><div class="arr">→</div><div class="now">5–6 пунктов + ролевой слот</div></div>
+        <div class="d"><div class="was">Задачи плоским списком</div><div class="arr">→</div><div class="now">С источником, чекбоксом, статусом/блокером</div></div>
+        <div class="d"><div class="was">«Спросить» — отдельный раздел /chat</div><div class="arr">→</div><div class="now">Прибита сверху на всех экранах</div></div>
+        <div class="d"><div class="was">Клонов нет в меню</div><div class="arr">→</div><div class="now">Есть как «Спросить клон»</div></div>
+        <div class="d"><div class="was">Чек-ин — отдельная обязаловка</div><div class="arr">→</div><div class="now">Авто-сборка из закрытых задач</div></div>
+        <div class="d"><div class="was">Всем один обрезанный экран</div><div class="arr">→</div><div class="now">Ролевой блок + 2 пресета плотности</div></div>
+      </div>
+    </div>
+
+    <div style="margin-top:30px">
+      <div class="subhead" style="font-size:13px"><span class="ic" style="color:var(--accent)">?</span> Развилки для тебя как владельца</div>
+      <div class="qa">
+        <div class="q"><div class="ttl">1. Ролевая адаптация 4-го блока — заводить подтипы сотрудника или определять по данным?</div><div class="rec"><b>Рекомендую:</b> не плодить роли, а один «ролевой слот» по признакам данных (есть карточки клиентов/Битрикс → клиентский вид; фичи с блокерами → продуктовый; много входящих решений → «тебя касается»). MVP — эвристика + ручной выбор вида.</div></div>
+        <div class="q"><div class="ttl">2. Вклад / признание на главной — прямое столкновение Марины (хочет) и Кости (аллергия)</div><div class="rec"><b>Рекомендую:</b> по умолчанию НЕ на первом экране, но включаемый блок + вечерний дайджест; для нетехнических — развёрнут, для инженерных — свёрнут; тумблер в профиле. Не жертвуем ни причастностью, ни тишиной.</div></div>
+        <div class="q"><div class="ttl">3. Тихий режим нуджей — один тумблер «выключить всё, кроме прямого человека»?</div><div class="rec"><b>Рекомендую:</b> глобальный тихий режим с белым списком «тебя реально ждёт человек» (обещания и прямые вопросы всегда проходят, авто-нуджи глушатся). Снимает страх «корп-софт = ещё один источник шума».</div></div>
+        <div class="q"><div class="ttl">4. Простой режим (Ирина) vs плотный (Костя/Аня/Дмитрий) — делать два пресета?</div><div class="rec"><b>Рекомендую:</b> да, авто-выбор по роли + ручное переключение. Простой = 3 кнопки, крупные чекбоксы, без встреч/памяти; плотный = ролевой блок, Cmd+K, статусы. Один экран на всех либо перегрузит Ирину, либо оголодит Аню.</div></div>
+        <div class="q"><div class="ttl">5. Ввод дел голосом и из мессенджера (WhatsApp / Slack) — насколько глубоко?</div><div class="rec"><b>Рекомендую:</b> MVP — быстрый inline «+ добавить» + голосовой ввод; следом приём задач из Telegram/WhatsApp/Slack как источник (Кора и так подключена к чатам). Закрывает «записать за секунду, пока держу трубку».</div></div>
+        <div class="q"><div class="ttl">6. Чек-ин — оставлять ручным экраном?</div><div class="rec"><b>Рекомендую:</b> убрать как отдельный маршрут, собирать план↔факт автоматически из закрытых задач + опциональная строчка вечером. Дмитрий и Костя прямо называют ручной чек-ин двойной работой.</div></div>
+        <div class="q"><div class="ttl">7. Заказы-чек-лист (кейс Ирины) — заводить спецсущность?</div><div class="rec"><b>Рекомендую:</b> не отдельная сущность, а тип личной задачи «список-чеклист» с галочками и статусом «уже сделано». Дёшево, покрывает и заказы материалов, и любые рутинные списки.</div></div>
+        <div class="q"><div class="ttl">8. Клоны в навигации — куда вернуть?</div><div class="rec"><b>Рекомендую:</b> как «Спросить клон должности» внутри раздела «Спросить», а не отдельным верхним пунктом — это подрежим AI-чата; заодно перестаёт быть спрятанным.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="end">
+    Метод: 5 независимых ролевых агентов (Opus 4.8) отыграли сотрудников от первого лица на выверенном по коду брифе текущего стенда, затем шестой агент свёл голоса в рекомендацию. Прототипы нарисованы самими персонами. Источник данных — реальная навигация и роуты кабинета Коры на 6 июля 2026.
+  </footer>
+
+</div>
+
+</body>
+</html>

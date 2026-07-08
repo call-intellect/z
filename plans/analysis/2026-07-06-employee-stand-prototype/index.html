@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кора — стенд сотрудника (широкий, как у руководителя)</title>
+<link rel="stylesheet" href="design-system.css">
+<style>
+  /* мета-навигация */
+  .proto-nav { position: sticky; top: 0; z-index: 80; display: flex; align-items: center; gap: 12px;
+    height: 44px; padding: 0 18px; background: oklch(0.11 0.02 280 / 0.9); backdrop-filter: blur(14px);
+    border-bottom: 1px solid oklch(1 0 0 / 0.07); }
+  body[data-theme="light"] .proto-nav { background: oklch(1 0 0 / 0.85); border-bottom-color: oklch(0.5 0.05 268 / 0.12); }
+  .proto-nav .pn-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 12.5px; color: var(--text); }
+  .proto-nav .pn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 9px var(--mint); }
+  .proto-nav .pn-links { display: flex; gap: 3px; margin-left: 4px; }
+  .proto-nav a.pn { padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--dim); text-decoration: none; }
+  .proto-nav a.pn.active { background: var(--grad-violet); color: #fff; }
+  .app { min-height: calc(100vh - 44px); }
+  .app .sidebar { top: 44px; height: calc(100vh - 44px); }
+
+  /* обложка-отчёт (зеркало day-cover руководителя) */
+  .day-cover { position: relative; overflow: hidden; border-radius: 24px; padding: 26px 30px;
+    background: radial-gradient(150% 120% at 0% 0%, oklch(0.42 0.16 200 / 0.4), transparent 55%),
+      linear-gradient(180deg, oklch(0.30 0.04 280 / 0.6), oklch(0.21 0.03 278 / 0.55));
+    border: var(--glass-border); box-shadow: var(--glass-shadow); backdrop-filter: var(--glass-blur); }
+  body[data-theme="light"] .day-cover { background: radial-gradient(150% 120% at 0% 0%, oklch(0.82 0.09 200 / 0.5), transparent 55%), var(--glass-bg); }
+  .dc-top { display: flex; align-items: flex-start; gap: 16px; }
+  .dc-ava { width: 48px; height: 48px; border-radius: 14px; background: var(--grad-teal); display: grid; place-items: center; flex: none; box-shadow: 0 8px 22px -8px oklch(0.82 0.13 178 / 0.8); }
+  .dc-title { flex: 1; min-width: 0; }
+  .dc-title h2 { font-size: 25px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+  .dc-date { font-size: 13px; color: var(--dim); }
+  .dc-actions { display: flex; gap: 8px; flex: none; }
+  .dc-oneliner { font-size: 16px; line-height: 1.6; color: var(--text); margin: 18px 0 22px; max-width: 900px; }
+  .dc-oneliner b { font-weight: 700; } .dc-oneliner .goal { color: var(--mint); font-weight: 600; }
+  .axes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .axis { border-radius: 16px; padding: 14px 16px; background: oklch(1 0 0 / 0.05); border: 1px solid oklch(1 0 0 / 0.08); display: flex; flex-direction: column; gap: 7px; }
+  body[data-theme="light"] .axis { background: oklch(0.5 0.06 268 / 0.05); border-color: oklch(0.5 0.05 268 / 0.12); }
+  .axis .ax-h { display: flex; align-items: center; gap: 8px; }
+  .axis .ax-led { width: 10px; height: 10px; border-radius: 999px; background: currentColor; box-shadow: 0 0 12px currentColor; flex: none; }
+  .axis .ax-name { font-size: 12px; color: var(--dim); font-weight: 600; }
+  .axis .ax-state { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+  .axis .ax-why { font-size: 11.5px; color: var(--faint); line-height: 1.4; }
+  .axis.ok { color: var(--mint); } .axis.warn { color: var(--amber); } .axis.risk { color: var(--red); } .axis.info { color: var(--blue); }
+  .axis.ok .ax-state, .axis.warn .ax-state, .axis.risk .ax-state, .axis.info .ax-state { color: var(--text); }
+  .dc-meta { font-size: 11.5px; color: var(--faint); margin-top: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dc-meta .dot { width: 3px; height: 3px; border-radius: 9px; background: var(--faint); }
+
+  /* письмо-отчёт (collapsible) */
+  .letter-wrap { margin-top: 14px; }
+  .read-cta { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 13px; border-radius: 14px; background: var(--surface-soft); border: 1px dashed oklch(1 0 0 / 0.14);
+    color: var(--dim); font-size: 13px; font-weight: 600; }
+  body[data-theme="light"] .read-cta { border-color: oklch(0.5 0.05 268 / 0.2); }
+  .read-cta::-webkit-details-marker { display: none; }
+  .letter-wrap[open] .read-cta { margin-bottom: 4px; }
+  .letter { padding: 20px 4px 4px; }
+  .lsec { padding: 14px 0; border-top: var(--row-line); }
+  .lsec:first-child { border-top: none; }
+  .lsec-h { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+  .lsec-ico { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; color: #fff; flex: none; }
+  .lsec-h h4 { font-size: 14px; font-weight: 700; margin: 0; }
+  .lsec p { font-size: 13.5px; line-height: 1.6; color: var(--text); margin: 0; }
+  .lsec .cite { color: var(--cyan); border-bottom: 1px dashed oklch(0.80 0.13 205 / 0.5); }
+
+  /* таск-борд по состояниям (широкий, 4 колонки) */
+  .tboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .tcol { background: oklch(1 0 0 / 0.03); border: 1px solid oklch(1 0 0 / 0.06); border-radius: 14px; padding: 14px; }
+  body[data-theme="light"] .tcol { background: oklch(0.5 0.06 268 / 0.04); border-color: oklch(0.5 0.05 268 / 0.1); }
+  .tcol-h { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .tcol-h .led { width: 8px; height: 8px; border-radius: 999px; background: currentColor; box-shadow: 0 0 8px currentColor; }
+  .tcol-h .nm { font-size: 12.5px; font-weight: 700; letter-spacing: 0.01em; }
+  .tcol-h .cnt { margin-left: auto; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; padding: 1px 8px; border-radius: 999px; background: oklch(1 0 0 / 0.08); color: var(--dim); }
+  .tcol.risk { color: var(--red); } .tcol.info { color: var(--blue); } .tcol.warn { color: var(--amber); } .tcol.ok { color: var(--mint); }
+  .titem { display: flex; gap: 9px; align-items: flex-start; padding: 9px 0; border-top: var(--row-line); }
+  .titem:first-of-type { border-top: none; }
+  .titem .cbx { width: 17px; height: 17px; border-radius: 5px; border: 1.5px solid oklch(1 0 0 / 0.22); flex: none; display: grid; place-items: center; cursor: pointer; margin-top: 1px; }
+  body[data-theme="light"] .titem .cbx { border-color: oklch(0.5 0.05 268 / 0.3); }
+  .titem .cbx.done { background: var(--grad-teal); border-color: transparent; }
+  .titem .cbx svg { display: none; } .titem .cbx.done svg { display: block; }
+  .titem .tt { font-size: 12.7px; color: var(--text); line-height: 1.4; }
+  .titem.is-done .tt { color: var(--faint); text-decoration: line-through; }
+  .titem .sub { font-size: 10.5px; color: var(--faint); margin-top: 2px; }
+  .titem .sub.draft { color: var(--mint); font-weight: 600; }
+  .titem .sub.nudge { color: var(--amber); }
+  .tcol .alllink { margin-top: 10px; font-size: 11.5px; color: var(--faint); cursor: pointer; }
+
+  /* строки-инбокс / лента */
+  .frow { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-top: var(--row-line); }
+  .frow:first-of-type { border-top: none; }
+  .frow .fl { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: none; }
+  .frow .fb { flex: 1; min-width: 0; }
+  .frow .ft { font-size: 13.5px; color: var(--text); }
+  .frow .fm { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+  .mine-tag { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; background: var(--ok-bg); color: var(--mint); }
+
+  .night-item { display: flex; align-items: center; gap: 11px; padding: 10px 0; border-top: var(--row-line); }
+  .night-item:first-of-type { border-top: none; }
+  .night-item .ni { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; background: oklch(0.82 0.13 178 / 0.16); }
+  .night-item .nt { flex: 1; font-size: 13px; color: var(--text); }
+
+  .checkin-warn { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 14px; background: var(--warn-bg); border: 1px solid oklch(0.84 0.16 80 / 0.3); margin-bottom: 14px; }
+  .checkin-warn .t { flex: 1; font-size: 13px; color: var(--amber); font-weight: 600; }
+
+  .theme-switch { position: fixed; right: 18px; bottom: 18px; z-index: 70; display: flex; gap: 5px; padding: 5px; border-radius: 999px;
+    background: oklch(0.16 0.03 280 / 0.92); border: 1px solid oklch(1 0 0 / 0.1); backdrop-filter: blur(14px); box-shadow: 0 18px 40px -18px oklch(0 0 0 / 0.8); }
+  body[data-theme="light"] .theme-switch { background: oklch(1 0 0 / 0.92); border-color: oklch(0.5 0.05 268 / 0.14); }
+  .theme-switch button { padding: 7px 12px; border-radius: 999px; border: none; background: none; color: var(--dim); font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font); }
+  .theme-switch button.active { background: var(--grad-violet); color: #fff; }
+
+  .trust { margin-top: 4px; font-size: 12px; color: var(--faint); display: flex; align-items: center; gap: 8px; justify-content: center; padding: 14px; }
+  .trust svg { color: var(--mint); }
+
+  @media (max-width: 1100px) { .tboard { grid-template-columns: 1fr 1fr; } .axes { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 860px) { .app { grid-template-columns: 1fr; } .app .sidebar { display: none; } }
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="proto-nav">
+  <span class="pn-brand"><span class="pn-dot"></span>Стенд сотрудника</span>
+  <span class="pn-links">
+    <a class="pn active" href="index.html">Прототип</a>
+    <a class="pn" href="report.html">Отчёт · 5 персон</a>
+    <a class="pn" href="blueprint.html">Блюпринт</a>
+    <a class="pn" href="data-sources.html">Источники данных</a>
+  </span>
+</div>
+
+<div class="app">
+  <!-- САЙДБАР -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">К</div>
+      <div><div class="brand-name">Кора</div><div class="brand-sub">ООО «Сибтех»</div></div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Каждый день</div>
+      <a class="nav-item active"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>Сегодня</a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 8v8M15 8v5"/></svg>Мои задачи<span class="nav-badge">9</span></a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Требует вас<span class="nav-badge">4</span></a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Чек-ин</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Работа</div>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg>Встречи</a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>Спросить Кору</a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>Память</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Личное</div>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Я</a>
+    </div>
+    <div style="margin-top:auto; padding:12px 8px 4px; display:flex; align-items:center; gap:10px;">
+      <div class="avatar" style="background:var(--grad-teal); width:34px; height:34px;">А</div>
+      <div style="min-width:0;"><div style="font-size:13px; font-weight:600;">Алексей</div><div class="faint" style="font-size:11px;">Сотрудник</div></div>
+    </div>
+  </aside>
+
+  <!-- ОСНОВНАЯ ОБЛАСТЬ -->
+  <main class="main">
+    <div class="page">
+      <div class="topbar">
+        <div class="topbar-left">
+          <h1>Мой день</h1>
+          <span class="topbar-sub">Вторник, 6 июля · Кора собрала за ночь</span>
+        </div>
+        <div class="topbar-right">
+          <div class="search-pill"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>Спросить Кору…</div>
+          <button class="create-btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>Создать</button>
+          <button class="avatar-btn"></button>
+        </div>
+      </div>
+
+      <!-- 1. ОБЛОЖКА-ОТЧЁТ (персональное письмо Коры) -->
+      <div class="day-cover">
+        <div class="dc-top">
+          <div class="dc-ava"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 200)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></div>
+          <div class="dc-title">
+            <h2>Твой день, Алексей</h2>
+            <div class="dc-date">Вторник, 6 июля 2026 · рабочий день</div>
+          </div>
+          <div class="dc-actions">
+            <button class="btn ghost">🔊 Озвучить</button>
+            <button class="btn">↻ Пересобрать</button>
+          </div>
+        </div>
+        <p class="dc-oneliner">Вошёл ровно, но день держат два хвоста: <b>КП «Сибзаводу» просрочено</b> со вчера, а <b>договор по «Атланту»</b> к завтрашнему сроку ты ещё не начинал. Сегодня главное — <b>досчитать смету</b>: она двигает <span class="goal">цель «Запуск v2»</span>. Ты взял 9 задач — реально закрыть 2–3, остальное помогу перенести.</p>
+        <div class="axes">
+          <div class="axis risk"><div class="ax-h"><span class="ax-led"></span><span class="ax-name">Задачи</span></div><div class="ax-state">2 просрочки</div><div class="ax-why">и 3 зависли &gt;7 дней</div></div>
+          <div class="axis warn"><div class="ax-h"><span class="ax-led"></span><span class="ax-name">Обещания</span></div><div class="ax-state">1 просрочено</div><div class="ax-why">отчёт Анне — со вчера</div></div>
+          <div class="axis warn"><div class="ax-h"><span class="ax-led"></span><span class="ax-name">Загрузка</span></div><div class="ax-state">Перегруз</div><div class="ax-why">9 активных · норма 5–6</div></div>
+          <div class="axis ok"><div class="ax-h"><span class="ax-led"></span><span class="ax-name">Вклад в цель</span></div><div class="ax-state">+3 за неделю</div><div class="ax-why">ты двигаешь «Запуск v2»</div></div>
+        </div>
+        <div class="dc-meta">
+          <span>Собрано ночью в 07:00</span><span class="dot"></span>
+          <span>покрыто: 2 встречи · твои чек-ины · 9 задач · 3 решения</span><span class="dot"></span>
+          <span>отчёт готовит один агент сразу для всех сотрудников</span>
+        </div>
+
+        <!-- полный отчёт -->
+        <details class="letter-wrap">
+          <summary class="read-cta">Читать полный отчёт за день <span>▾</span></summary>
+          <div class="letter">
+            <div class="lsec">
+              <div class="lsec-h"><span class="lsec-ico" style="background:var(--grad-violet)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21 8 14 2 9.4h7.6z"/></svg></span><h4>Главное сегодня</h4></div>
+              <p>Досчитать смету для запуска и отдать в работу — она на критическом пути <span class="cite">цель «Запуск v2»</span> и держит ещё двоих. Начни с неё, пока день свежий.</p>
+            </div>
+            <div class="lsec">
+              <div class="lsec-h"><span class="lsec-ico" style="background:var(--grad-teal)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span><h4>Что ты сделал вчера</h4></div>
+              <p>Закрыл 3 задачи, в том числе настройку интеграции. По чек-ину: план на 4 — сделал 3, одно перенёс (ждал данные). <span class="cite">твой вечерний чек-ин 05.07</span></p>
+            </div>
+            <div class="lsec">
+              <div class="lsec-h"><span class="lsec-ico" style="background:var(--grad-amber)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><h4>Что зависло / просрочено</h4></div>
+              <p>КП «Сибзаводу» просрочено на день. Три задачи стоят без движения больше недели — почти все ждут смежников. Ниже предложу снять или перекинуть.</p>
+            </div>
+            <div class="lsec">
+              <div class="lsec-h"><span class="lsec-ico" style="background:var(--grad-pink)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></span><h4>Что ты обещал</h4></div>
+              <p>Обещал отчёт Анне — срок был вчера. Запиши свою сторону (перенёс/сделаю сегодня) раньше, чем это увидит руководитель.</p>
+            </div>
+            <div class="lsec">
+              <div class="lsec-h"><span class="lsec-ico" style="background:var(--grad-mint)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/></svg></span><h4>Твой вклад</h4></div>
+              <p>За неделю твои закрытые задачи дали <b>+3</b> к цели «Запуск v2» — это заметный сдвиг. Цель «Онбординг» ждёт твоего шага 4 дня.</p>
+            </div>
+            <div class="lsec">
+              <div class="lsec-h"><span class="lsec-ico" style="background:var(--grad-red)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span><h4>Что мешает</h4></div>
+              <p>Две задачи ждут данные от смежного отдела — это твой блокер, не твоя вина. Кора может напомнить им от твоего имени.</p>
+            </div>
+            <div class="lsec">
+              <div class="lsec-h"><span class="lsec-ico" style="background:var(--grad-blue)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2 2"/></svg></span><h4>Взгляд Коры</h4></div>
+              <p>Не хватайся за всё — при перегрузе 9 реально держать 2–3. Начни со сметы, договор по «Атланту» вынеси на завтра первым делом, а зависшие отдай мне на разбор. Так к вечеру закроешь важное, а не распылишься.</p>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- 2. МОИ ЗАДАЧИ — широкий борд по состояниям -->
+      <div class="glass mt">
+        <div class="card-title">
+          <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+          <h3>Мои задачи</h3>
+          <span class="chip info" style="margin-left:auto"><span class="led"></span>всего 9</span>
+        </div>
+        <div class="checkin-warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+          <span class="t">Ты не отчитался за вчера — вечерний чек-ин не сдан. Кора набросала черновик из закрытых задач.</span>
+          <button class="btn">Проверить и сдать</button>
+        </div>
+        <div class="tboard">
+          <div class="tcol risk">
+            <div class="tcol-h"><span class="led"></span><span class="nm">ЗАВИСЛИ / ПРОСРОЧЕНО</span><span class="cnt">3</span></div>
+            <div class="titem"><span class="cbx" onclick="tog(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><div><div class="tt">Отправить КП «Сибзаводу»</div><div class="sub draft">✦ черновик готов · срок вчера</div></div></div>
+            <div class="titem"><span class="cbx" onclick="tog(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><div><div class="tt">Ревью сметы субподряда</div><div class="sub">стоит 9 дней · ждёт данные</div></div></div>
+            <div class="titem"><span class="cbx" onclick="tog(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><div><div class="tt">Обновить регламент приёмки</div><div class="sub">стоит 12 дней</div></div></div>
+            <div class="alllink">Кора: снять / делегировать / перенести →</div>
+          </div>
+          <div class="tcol info">
+            <div class="tcol-h"><span class="led"></span><span class="nm">В РАБОТЕ</span><span class="cnt">3</span></div>
+            <div class="titem"><span class="cbx" onclick="tog(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><div><div class="tt">Досчитать смету для запуска</div><div class="sub">3 шага в журнале · сегодня</div></div></div>
+            <div class="titem"><span class="cbx" onclick="tog(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><div><div class="tt">Ревью договора подрядчика</div><div class="sub">2 шага · нет срока в 2 дня</div></div></div>
+            <div class="titem"><span class="cbx" onclick="tog(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><div><div class="tt">Договор по «Атланту»</div><div class="sub nudge">⚡ загорится завтра · не начинал</div></div></div>
+            <div class="alllink">открыть трекер со шагами →</div>
+          </div>
+          <div class="tcol ok">
+            <div class="tcol-h"><span class="led"></span><span class="nm">СДЕЛАНО</span><span class="cnt">2</span></div>
+            <div class="titem is-done"><span class="cbx done" onclick="tog(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><div><div class="tt">Настроить интеграцию S3</div><div class="sub nudge">🎤 расскажи как делал — для клона</div></div></div>
+            <div class="titem is-done"><span class="cbx done" onclick="tog(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><div><div class="tt">Согласовать макет</div><div class="sub">рассказал ✓ · в памяти</div></div></div>
+            <div class="alllink">завершённые за неделю →</div>
+          </div>
+          <div class="tcol warn">
+            <div class="tcol-h"><span class="led"></span><span class="nm">БЕЗ СРОКА</span><span class="cnt">1</span></div>
+            <div class="titem"><span class="cbx" onclick="tog(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><div><div class="tt">Собрать данные по конкурентам</div><div class="sub">у тебя не проставлен срок</div></div></div>
+            <div class="alllink">проставить срок →</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Требует тебя + Кора за ночь (2 колонки) -->
+      <div class="grid g2 mt">
+        <div class="glass float">
+          <span class="glow amber"></span>
+          <div class="card-title"><span class="card-ico" style="background:var(--grad-amber)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.04 55)" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.5z"/></svg></span><h3>Требует тебя</h3><span class="chip warn" style="margin-left:auto">4</span></div>
+          <div class="row-list">
+            <div class="frow"><span class="fl" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg></span><div class="fb"><div class="ft">Игорь спросил: срок по интеграции?</div><div class="fm">ждёт ответа со вчера</div></div><button class="btn">Ответить</button></div>
+            <div class="frow"><span class="fl" style="background:var(--ok-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg></span><div class="fb"><div class="ft">Решение «новый тариф» ещё не стало задачей</div><div class="fm">планёрка 05.07 · заведи, если на тебе</div></div><button class="btn ok">Завести</button></div>
+            <div class="frow"><span class="fl" style="background:var(--risk-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><div class="fb"><div class="ft">Ты обещал отчёт Анне</div><div class="fm">срок был вчера · запиши свою сторону</div></div><button class="btn">Перенести</button></div>
+            <div class="frow"><span class="fl" style="background:var(--surface-soft)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg></span><div class="fb"><div class="ft">Планёрка отдела — 14:00</div><div class="fm">вход в AI-отчёт прошлой</div></div><button class="btn">Открыть</button></div>
+          </div>
+        </div>
+
+        <div class="glass float">
+          <span class="glow teal"></span>
+          <div class="card-title"><span class="card-ico" style="background:var(--grad-teal)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></span><h3>Кора сделала за тебя ночью</h3></div>
+          <div>
+            <div class="night-item"><span class="ni"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M9 15l2 2 4-4"/></svg></span><span class="nt"><b>2 черновика отчётов</b> готовы — проверь и отправь</span><button class="btn" style="flex:none">Открыть</button></div>
+            <div class="night-item"><span class="ni"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg></span><span class="nt"><b>3 задачи вытащены</b> из вчерашней планёрки</span><button class="btn" style="flex:none">Смотреть</button></div>
+            <div class="night-item"><span class="ni"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span class="nt"><b>Твой клон ответил</b> коллегам 2 раза, пока тебя не было</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Кора на твоей стороне + Ты двигаешь (2 колонки) -->
+      <div class="grid g-2-1 mt">
+        <div class="glass">
+          <div class="card-title"><span class="card-ico" style="background:var(--grad-mint)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><h3>Кора на твоей стороне</h3><span class="chip ok" style="margin-left:auto"><span class="led"></span>ты видишь это первым</span></div>
+          <div class="row-list">
+            <div class="frow"><div class="fb"><div class="ft">Ты взял 9 задач — это перегруз</div><div class="fm">реально закрыть 2–3; перенесу лишнее, чтобы не сорвать сроки</div></div><button class="btn">Разгрузить</button></div>
+            <div class="frow"><div class="fb"><div class="ft">3 задачи зависли больше недели</div><div class="fm">нет движения ≥7 дней — снять, делегировать или неактуально?</div></div><button class="btn">Разобрать</button></div>
+            <div class="frow"><div class="fb"><div class="ft">Третий день план не закрывается полностью</div><div class="fm">если мешает — набросаю сообщение руководителю, отправишь сам</div></div><button class="btn ghost">Помочь</button></div>
+          </div>
+        </div>
+        <div class="glass" style="display:flex;flex-direction:column;justify-content:center">
+          <div class="card-title"><span class="card-ico" style="background:var(--grad-mint)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 200)" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/></svg></span><h3>Ты двигаешь</h3></div>
+          <div class="hero-num glow-text" style="color:var(--mint)">+3</div>
+          <div class="faint" style="font-size:12.5px;margin:6px 0 4px">к цели «Запуск v2» за неделю — благодаря твоим задачам</div>
+          <div style="font-size:12px;color:var(--dim);margin-top:8px">Твой клон ответил за тебя <b style="color:var(--pink)">7 раз</b> · ты растёшь как эксперт по <b>интеграциям</b></div>
+        </div>
+      </div>
+
+      <!-- 5. В КОНЦЕ: БЛОКЕРЫ и ИДЕИ (лента как у руководителя, выделены твои) -->
+      <div class="section-h mt" style="margin-top:26px">В компании · выделено то, что касается тебя</div>
+      <div class="grid g2">
+        <div class="glass">
+          <div class="card-title"><span class="card-ico" style="background:var(--grad-red)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span><h3>Блокеры</h3><span class="more">все →</span></div>
+          <div class="row-list">
+            <div class="frow"><span class="fl" style="background:var(--risk-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--red);box-shadow:0 0 8px var(--red)"></span></span><div class="fb"><div class="ft">Ждём данные от смежного отдела <span class="mine-tag">твой</span></div><div class="fm">держит 2 твои задачи · Кора может напомнить им</div></div><button class="btn">Напомнить</button></div>
+            <div class="frow"><span class="fl" style="background:var(--warn-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--amber);box-shadow:0 0 8px var(--amber)"></span></span><div class="fb"><div class="ft">Не оплачены коннекторы интеграции <span class="mine-tag">твой</span></div><div class="fm">6-й день · тормозит запуск</div></div></div>
+            <div class="frow"><span class="fl" style="background:var(--surface-soft)"><span style="width:8px;height:8px;border-radius:9px;background:var(--faint)"></span></span><div class="fb"><div class="ft">Поддержка молчит клиенту «Ромашка»</div><div class="fm">компанийный · не на тебе — для контекста</div></div></div>
+          </div>
+        </div>
+        <div class="glass">
+          <div class="card-title"><span class="card-ico" style="background:var(--grad-pink)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.6 1 1.4 1 2.3h6c0-.9.4-1.7 1-2.3A7 7 0 0 0 12 2z"/></svg></span><h3>Идеи</h3><span class="chip ok" style="margin-left:auto"><span class="led"></span>ты молодец — 4 за месяц</span></div>
+          <div class="row-list">
+            <div class="frow"><span class="fl" style="background:var(--ok-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span><div class="fb"><div class="ft">Автоматизировать отчёты <span class="mine-tag">твоя</span></div><div class="fm">взята в работу · поддержали 3</div></div></div>
+            <div class="frow"><span class="fl" style="background:var(--warn-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/></svg></span><div class="fb"><div class="ft">Единый шаблон КП <span class="mine-tag">твоя</span></div><div class="fm">на обсуждении · поддержали 2</div></div></div>
+            <div class="frow"><span class="fl" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></span><div class="fb"><div class="ft">Дашборд поставок для клиентов</div><div class="fm">идея коллеги в твоей зоне — может пригодиться</div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="trust">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        Кора показывает тебе то же, что руководителю — про тебя, и первым. Скрытых панелей нет. Настроение и здоровье — только для тебя.
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div class="theme-switch">
+  <button id="th-dark" class="active" onclick="setTheme('dark')">🌙</button>
+  <button id="th-light" onclick="setTheme('light')">☀️</button>
+</div>
+
+<script>
+  function tog(el){ el.classList.toggle('done'); var r=el.closest('.titem'); if(r) r.classList.toggle('is-done', el.classList.contains('done')); }
+  function setTheme(t){ document.body.setAttribute('data-theme',t); document.getElementById('th-dark').classList.toggle('active',t==='dark'); document.getElementById('th-light').classList.toggle('active',t==='light'); }
+</script>
+</body>
+</html>

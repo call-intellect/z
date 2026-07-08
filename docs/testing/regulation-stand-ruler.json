@@ -18315,7 +18315,10 @@
         "created": true,
         "owner": "Дарья",
         "builtFrom": "daily-mention-no-probe",
-        "sourceIssueLinked": true
+        "sourceIssueLinked": true,
+        "subjectPersons": [
+          "Дарья"
+        ]
       }
     },
     "a5-one-per-task": {
@@ -18323,7 +18326,10 @@
         "created": true,
         "count": 1,
         "owner": "Иван",
-        "note": "три захода за день -> ОДНА TaskSolution (апдейт/дополнение), не три; идемпотентность"
+        "note": "три захода за день -> ОДНА TaskSolution (апдейт/дополнение), не три; идемпотентность",
+        "subjectPersons": [
+          "Иван"
+        ]
       }
     },
     "a5-no-answer": {
@@ -18334,8 +18340,12 @@
     },
     "a5-trivial-gated": {
       "a5": {
-        "created": false,
-        "note": "тривиальная задача под гейтом сложности -> материализатор не срабатывает"
+        "created": true,
+        "note": "краткое-но-конкретное решение (32 симв, «Перезапустил под, всё поднялось») — раньше резалось предфильтром длины (40), теперь проходит по смыслу (hasConcreteMethod=true) и материализуется; длина осталась лишь грубым отсевом совсем пустого (<15)",
+        "owner": "Иван",
+        "subjectPersons": [
+          "Иван"
+        ]
       }
     },
     "a5-ownership-solver": {
@@ -18348,7 +18358,10 @@
         "mustNotOwn": [
           "Сергей"
         ],
-        "note": "владелец = решавший Михаил, НЕ рассказавший Сергей (anti-cross-clone, ось A4)"
+        "note": "владелец = решавший Михаил, НЕ рассказавший Сергей (anti-cross-clone, ось A4)",
+        "mustNotSubject": [
+          "Сергей"
+        ]
       }
     },
     "a5-repeat-candidate-instruction": {
@@ -18356,7 +18369,10 @@
         "created": true,
         "owner": "Михаил",
         "repeatCandidateInstruction": true,
-        "note": "похожий способ ×N -> repeatGroupKey + флаг кандидата в Инструкцию; инструкция НЕ создаётся авто"
+        "note": "похожий способ ×N -> repeatGroupKey + флаг кандидата в Инструкцию; инструкция НЕ создаётся авто",
+        "subjectPersons": [
+          "Михаил"
+        ]
       }
     },
     "a5-dual-purpose": {
@@ -18364,7 +18380,10 @@
         "created": true,
         "owner": "Дарья",
         "cloneAlsoFed": true,
-        "note": "двойное назначение: тот же блок кормит клон Дарьи И рождает TaskSolution"
+        "note": "двойное назначение: тот же блок кормит клон Дарьи И рождает TaskSolution",
+        "subjectPersons": [
+          "Дарья"
+        ]
       }
     },
     "a5-owner-not-mentioner": {
@@ -18374,7 +18393,13 @@
         "mustNotOwn": [
           "Дарья"
         ],
-        "note": "рассказала Дарья, решал Иван -> владелец Иван"
+        "note": "рассказала Дарья, решал Иван -> владелец Иван",
+        "subjectPersons": [
+          "Иван"
+        ],
+        "mustNotSubject": [
+          "Дарья"
+        ]
       }
     },
     "a5-extend-daily": {
@@ -18389,7 +18414,10 @@
         "contentMustContain": [
           "проверка восстановления"
         ],
-        "note": "опрос + дневное уточнение -> одна сущность, старое сохранено (дополнение)"
+        "note": "опрос + дневное уточнение -> одна сущность, старое сохранено (дополнение)",
+        "subjectPersons": [
+          "Иван"
+        ]
       }
     },
     "a5-no-issue-link": {

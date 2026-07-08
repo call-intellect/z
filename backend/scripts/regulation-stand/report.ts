@@ -28,6 +28,7 @@ function metricAggs(matches: A5Match[]): MetricAgg[] {
     { key: 'created', label: 'created_correctly (плодим только по делу)' },
     { key: 'owner', label: 'owner_is_solver (владелец = решавший)' },
     { key: 'mustNotOwn', label: 'no_cross_clone_leak (упомянувший ≠ владелец)' },
+    { key: 'mustNotSubject', label: 'no_subject_leak (рассказавший ∉ субъекты)' },
     { key: 'subjectPersons', label: 'subject_accuracy (рост к правильным клонам)' },
     { key: 'count', label: 'one_per_task (идемпотентность сборки)' },
     { key: 'sourceIssueLinked', label: 'source_issue_linked (привязка к задаче)' },
@@ -222,6 +223,15 @@ export function runReport(stamp: string, prevStamp?: string): string {
   lines.push(`- create: ${JSON.stringify(raw.passStats.create)}`);
   lines.push(`- extend: ${JSON.stringify(raw.passStats.extend)}`);
   lines.push(`- idempotency (повтор): ${JSON.stringify(idem)} → ${idemClean ? '✅ Δ=0 (created=0, updated=0)' : '❌ повтор породил изменения'}`);
+  lines.push('');
+
+  lines.push('## Гейты отсева (видимость)');
+  lines.push('');
+  lines.push('| гейт | create | extend | idempotency |');
+  lines.push('|---|---:|---:|---:|');
+  lines.push(`| skippedGate (пусто, предфильтр длины) | ${raw.passStats.create.skippedGate} | ${raw.passStats.extend.skippedGate} | ${idem.skippedGate} |`);
+  lines.push(`| skippedNoMethod (нет содержательного метода, смысл) | ${raw.passStats.create.skippedNoMethod} | ${raw.passStats.extend.skippedNoMethod} | ${idem.skippedNoMethod} |`);
+  lines.push(`| skippedCompilerUnavailable (компилятор OFF/сбой на дополнении → defer) | ${raw.passStats.create.skippedCompilerUnavailable} | ${raw.passStats.extend.skippedCompilerUnavailable} | ${idem.skippedCompilerUnavailable} |`);
   lines.push('');
 
   lines.push('## Таблица диагнозов — атрибуция к агенту');

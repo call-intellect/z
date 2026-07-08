@@ -26,7 +26,7 @@ import type {
 
 const KNOBS: Record<string, unknown> = {
   'taskSolution.lookbackHours': 48,
-  'taskSolution.minSignalChars': 40,
+  'taskSolution.minSignalChars': 15,
   'taskSolution.repeatThreshold': 3,
   'taskSolution.repeatSimilarity': 0.85,
   'taskSolution.refineEnabled': true,
@@ -304,7 +304,9 @@ async function runForOrg(builder: TaskSolutionBuildService, orgId: string, now: 
     updated: s.updated,
     skippedNoOwner: s.skippedNoOwner,
     skippedGate: s.skippedGate,
+    skippedNoMethod: s.skippedNoMethod,
     skippedNoNew: s.skippedNoNew,
+    skippedCompilerUnavailable: s.skippedCompilerUnavailable,
   };
 }
 
@@ -444,7 +446,7 @@ export async function build(stamp: string): Promise<RawRun> {
         blockIdsByScenario.set(s.id, prev);
       }
       log(`  посеяно доп. блоков: ${extendSeeded}`);
-      const extendStats = extendSeeded > 0 ? await runForOrg(builder, m.orgId, now) : { candidates: 0, created: 0, updated: 0, skippedNoOwner: 0, skippedGate: 0, skippedNoNew: 0 };
+      const extendStats = extendSeeded > 0 ? await runForOrg(builder, m.orgId, now) : { candidates: 0, created: 0, updated: 0, skippedNoOwner: 0, skippedGate: 0, skippedNoMethod: 0, skippedNoNew: 0, skippedCompilerUnavailable: 0 };
       log(`  extend: ${JSON.stringify(extendStats)}`);
 
       log('build: фаза idempotency (повтор без новых блоков → Δ=0) …');

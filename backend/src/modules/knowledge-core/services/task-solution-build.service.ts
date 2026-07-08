@@ -18,6 +18,7 @@ type BuildOutcome =
   | 'skippedGate'
   | 'skippedNoMethod'
   | 'skippedNoNew'
+  | 'skippedCompilerUnavailable'
   | 'error';
 
 export interface TaskSolutionBuildStats {
@@ -28,6 +29,7 @@ export interface TaskSolutionBuildStats {
   skippedGate: number;
   skippedNoMethod: number;
   skippedNoNew: number;
+  skippedCompilerUnavailable: number;
 }
 
 const DATA_CLASS_STRICTNESS: Record<DataClass, number> = {
@@ -96,6 +98,7 @@ export class TaskSolutionBuildService {
       skippedGate: 0,
       skippedNoMethod: 0,
       skippedNoNew: 0,
+      skippedCompilerUnavailable: 0,
     };
 
     for (const issueId of issueIds) {
@@ -119,6 +122,9 @@ export class TaskSolutionBuildService {
             break;
           case 'skippedNoNew':
             stats.skippedNoNew += 1;
+            break;
+          case 'skippedCompilerUnavailable':
+            stats.skippedCompilerUnavailable += 1;
             break;
           default:
             break;
@@ -195,7 +201,7 @@ export class TaskSolutionBuildService {
       const minChars = await this.cfg.getDynamic<number>(
         'taskSolution.minSignalChars',
         undefined,
-        40,
+        15,
       );
       const totalChars = blocks.reduce((sum, b) => sum + b.trustedAnswer.trim().length, 0);
       if (totalChars < minChars) return 'skippedGate';
@@ -260,10 +266,13 @@ export class TaskSolutionBuildService {
             { tenantId, dataClass, sourceRef: { type: 'issue', id: issueId } },
           )
         : null;
+
+      if (existing && !(compiled && compiled.ok)) return 'skippedCompilerUnavailable';
+
       const bodyMd =
         compiled && compiled.ok
           ? compiled.contentMd
-          : (existing?.solutionMd ?? blocks.map((b) => `- ${b.trustedAnswer}`).join('\n'));
+          : blocks.map((b) => `- ${b.trustedAnswer}`).join('\n');
 
       const taskDescription = (issue.descriptionStripped ?? issue.description ?? '').slice(0, 4000);
       const skillTags = this.union(

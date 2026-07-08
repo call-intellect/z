@@ -15,6 +15,7 @@ const CRITICAL = new Set([
   'created',
   'owner',
   'mustNotOwn',
+  'mustNotSubject',
   'count',
   'sourceIssueLinked',
   'subjectPersons',
@@ -38,6 +39,8 @@ function attributionFor(metric: string): string {
     case 'owner':
     case 'mustNotOwn':
       return 'A4-ownership (владелец=решавший)';
+    case 'mustNotSubject':
+      return 'A5-materializer (утечка рассказавшего в субъекты / cross-clone)';
     case 'subjectPersons':
       return 'A5-materializer (рост к клонам / multi-solver)';
     case 'count':
@@ -73,6 +76,10 @@ function matchOne(c: A5Case, obs: ScenarioObservation, embeddingsWritten: number
     }
     if (r.subjectPersons) {
       push('subjectPersons', r.subjectPersons, sol.subjectPersonNames, sameSet(r.subjectPersons, sol.subjectPersonNames));
+    }
+    if (r.mustNotSubject && r.mustNotSubject.length > 0) {
+      const leaked = r.mustNotSubject.filter((n) => sol.subjectPersonNames.includes(n));
+      push('mustNotSubject', `subjects∌[${r.mustNotSubject.join(',')}]`, sol.subjectPersonNames, leaked.length === 0);
     }
     if (r.sourceIssueLinked !== undefined) {
       const linked = sol.sourceIssueId === obs.issueId;

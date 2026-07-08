@@ -318,6 +318,76 @@ describe('TaskSolutionBuildService.buildOne — идемпотентность',
   });
 });
 
+describe('TaskSolutionBuildService.buildOne — защита дополнения от тихой потери', () => {
+  function primeExtension(prisma: any): void {
+    prisma.issue.findFirst.mockResolvedValue({
+      id: 'i1',
+      title: 'Настройка бэкапов',
+      description: null,
+      descriptionStripped: null,
+      assignees: [{ userId: 'u1' }],
+    });
+    prisma.person.findMany.mockResolvedValue([{ id: 'p1', userId: 'u1' }]);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ block_id: 'b1' }]);
+    prisma.ideaBlock.findMany.mockResolvedValue([block()]);
+    prisma.taskSolution.findUnique.mockResolvedValue({
+      id: 'ts-old',
+      version: 3,
+      currentVersionId: 'cv-old',
+      solutionMd: 'старое собранное решение',
+      skillTags: ['debug'],
+      sourceBlockIds: [],
+    });
+  }
+
+  it('компилятор выключен на дополнении → skippedCompilerUnavailable, версия НЕ бампится, блоки не потреблены', async () => {
+    const { service, prisma, docCompiler } = makeMocks();
+    primeExtension(prisma);
+    (docCompiler.isEnabled as any).mockReturnValue(false);
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('skippedCompilerUnavailable');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.taskSolution.update).not.toHaveBeenCalled();
+    expect(prisma.cardVersion.create).not.toHaveBeenCalled();
+  });
+
+  it('компилятор упал (ok=false) на дополнении → skippedCompilerUnavailable (defer, не молчаливая потеря)', async () => {
+    const { service, prisma, docCompiler } = makeMocks();
+    primeExtension(prisma);
+    (docCompiler.compile as any).mockResolvedValue({
+      contentMd: '',
+      steps: [],
+      changeReason: '',
+      signals: [],
+      ok: false,
+    });
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('skippedCompilerUnavailable');
+    expect(prisma.taskSolution.update).not.toHaveBeenCalled();
+  });
+
+  it('первичная сборка при выключенном компиляторе НЕ блокируется (fallback-буллеты, потери нет)', async () => {
+    const { service, prisma, docCompiler } = makeMocks();
+    prisma.issue.findFirst.mockResolvedValue({
+      id: 'i1',
+      title: 'Настройка бэкапов',
+      description: null,
+      descriptionStripped: null,
+      assignees: [{ userId: 'u1' }],
+    });
+    prisma.person.findMany.mockResolvedValue([{ id: 'p1', userId: 'u1' }]);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ block_id: 'b1' }]);
+    prisma.ideaBlock.findMany.mockResolvedValue([block()]);
+    prisma.taskSolution.findUnique.mockResolvedValue(null);
+    (docCompiler.isEnabled as any).mockReturnValue(false);
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('created');
+  });
+});
+
 type AssignRepeatGroup = (
   tenantId: string,
   solutionId: string,

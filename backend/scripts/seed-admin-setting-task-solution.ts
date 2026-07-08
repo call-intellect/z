@@ -36,12 +36,12 @@ const SEEDS: SettingSeed[] = [
   },
   {
     key: 'taskSolution.minSignalChars',
-    value: 40,
+    value: 15,
     category: 'ai',
     section: 'task_solution',
     severity: 'low',
     description:
-      'Порог содержательности «как решалось» (сумма символов блоков). Ниже → не материализуем. По умолчанию 40.',
+      'Грубый предфильтр пустого «как решалось» (сумма символов блоков). Ниже → skippedGate без LLM-вызова. Содержательность решает смысловой гейт (refineEnabled/hasConcreteMethod), не длина. По умолчанию 15.',
   },
   {
     key: 'taskSolution.lookbackHours',

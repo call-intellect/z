@@ -37,6 +37,7 @@ export interface A5Ruler {
   builtFrom?: string;
   count?: number;
   mustNotOwn?: string[];
+  mustNotSubject?: string[];
   repeatCandidateInstruction?: boolean;
   contentMustPreserve?: string[];
   contentMustContain?: string[];
@@ -65,7 +66,9 @@ export interface BuildPassStats {
   updated: number;
   skippedNoOwner: number;
   skippedGate: number;
+  skippedNoMethod: number;
   skippedNoNew: number;
+  skippedCompilerUnavailable: number;
 }
 
 export interface ObservedTaskSolution {

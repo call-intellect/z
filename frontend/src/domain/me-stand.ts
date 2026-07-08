@@ -1,3 +1,5 @@
+import type { TopIdeasResponseApi } from "@/api/ideas.api";
+
 export type VerdictState = "ok" | "warn" | "risk";
 export type TaskBucketReason = "overdue" | "stuck" | "overdue_and_stuck";
 export type LoadLevel = "idle" | "normal" | "overloaded";
@@ -129,6 +131,6 @@ export interface CompanyBlocker {
 }
 
 export interface CompanyIdeas {
-  top: unknown;
+  top: TopIdeasResponseApi;
   myIdeasThisMonth: number;
 }

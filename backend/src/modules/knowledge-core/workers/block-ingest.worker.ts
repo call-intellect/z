@@ -1654,6 +1654,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     } else {
       const speakerParticipantId = seg?.speakerParticipantId ?? null;
       const speakerName = seg?.speakers?.[0] ?? null;
+      const episodeKind = SOURCE_EPISODE_KIND_BY_TYPE[args.event.sourceType];
+      if (episodeKind === 'meeting' && !speakerParticipantId && !speakerName) {
+        this.logger.debug(
+          { blockId: args.blockId, sourceType: args.event.sourceType },
+          'block-ingest: обещание на встрече без говорящего — автора не проставляем (не вешаем на загрузившего)',
+        );
+        return;
+      }
       authorPersonId = await this.entities.resolveSubjectPersonId(args.event.tenantId, {
         speakerParticipantId,
         speakerName,

@@ -168,12 +168,14 @@ describe('TaskSolutionBuildService.buildOne — гейт содержатель�
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('материализует при hasConcreteMethod=false, если решение уже существует (update-путь не режем)', async () => {
+  it('гейтит дополнение без содержательного метода (D3): отписка поверх решения → skippedNoMethod, Δверсии=0', async () => {
     const { service, prisma, refiner } = makeMocks();
     primeCandidate(prisma);
     prisma.taskSolution.findUnique.mockResolvedValue({
       id: 'ts-old',
       version: 1,
+      ownerPersonId: 'p1',
+      personSubjectIds: ['p1'],
       sourceBlockIds: [],
       skillTags: [],
       solutionMd: 'старое',
@@ -182,7 +184,9 @@ describe('TaskSolutionBuildService.buildOne — гейт содержатель�
     refiner.extract.mockResolvedValue({ ok: true, hasConcreteMethod: false, solverNames: [] });
 
     const res = await buildOne(service)('t1', 'i1');
-    expect(res).toBe('updated');
+    expect(res).toBe('skippedNoMethod');
+    expect(prisma.taskSolution.update).not.toHaveBeenCalled();
+    expect(prisma.cardVersion.create).not.toHaveBeenCalled();
   });
 
   it('fallback refiner (ok=false) не гейтит — поведение как раньше', async () => {
@@ -216,9 +220,11 @@ describe('TaskSolutionBuildService.buildOne — рост субъектов (с�
     refiner.extract.mockResolvedValue({
       ok: true,
       hasConcreteMethod: true,
-      solverNames: ['Михаил'],
+      solverNames: ['Иван', 'Михаил'],
     });
-    entityResolver.resolvePersonByHint.mockResolvedValue('p2');
+    entityResolver.resolvePersonByHint.mockImplementation(async (_t: string, name: string) =>
+      name === 'Иван' ? 'p1' : name === 'Михаил' ? 'p2' : null,
+    );
 
     const res = await buildOne(service)('t1', 'i1');
     expect(res).toBe('created');
@@ -333,6 +339,8 @@ describe('TaskSolutionBuildService.buildOne — защита дополнени�
     prisma.taskSolution.findUnique.mockResolvedValue({
       id: 'ts-old',
       version: 3,
+      ownerPersonId: 'p1',
+      personSubjectIds: ['p1'],
       currentVersionId: 'cv-old',
       solutionMd: 'старое собранное решение',
       skillTags: ['debug'],
@@ -464,6 +472,131 @@ describe('TaskSolutionBuildService.assignRepeatGroup — кластеризац�
     const arg = prisma.taskSolution.updateMany.mock.calls[0][0];
     expect(arg.data.repeatGroupKey).toBe('grp_X');
     expect(arg.data.candidateInstruction).toBe(true);
+  });
+});
+
+describe('TaskSolutionBuildService.buildOne — вывод владельца (B1/B2/B3)', () => {
+  function prime(
+    prisma: any,
+    assignees: Array<{ userId: string }>,
+    persons: Array<{ id: string; userId: string }>,
+  ): void {
+    prisma.issue.findFirst.mockResolvedValue({
+      id: 'i1',
+      title: 'Задача',
+      description: null,
+      descriptionStripped: null,
+      assignees,
+    });
+    prisma.person.findMany.mockResolvedValue(persons);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ block_id: 'b1' }]);
+    prisma.ideaBlock.findMany.mockResolvedValue([block()]);
+    prisma.taskSolution.findUnique.mockResolvedValue(null);
+  }
+
+  it('B1: нет assignee + один решатель → владелец = решатель + ownerAudit', async () => {
+    const { service, prisma, refiner, entityResolver } = makeMocks();
+    prime(prisma, [], []);
+    refiner.extract.mockResolvedValue({ ok: true, hasConcreteMethod: true, solverNames: ['Иван'] });
+    entityResolver.resolvePersonByHint.mockResolvedValue('p-ivan');
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('created');
+    const data = prisma.taskSolution.create.mock.calls[0][0].data;
+    expect(data.ownerPersonId).toBe('p-ivan');
+    expect(data.ownerAudit).toEqual(
+      expect.objectContaining({ reason: 'solver-no-assignee', inferredOwnerPersonId: 'p-ivan' }),
+    );
+  });
+
+  it('B1: нет assignee + двое решателей → skippedNoOwner (не приписываем чужое)', async () => {
+    const { service, prisma, refiner, entityResolver } = makeMocks();
+    prime(prisma, [], []);
+    refiner.extract.mockResolvedValue({
+      ok: true,
+      hasConcreteMethod: true,
+      solverNames: ['Иван', 'Пётр'],
+    });
+    entityResolver.resolvePersonByHint.mockImplementation(async (_t: string, n: string) =>
+      n === 'Иван' ? 'p-ivan' : 'p-petr',
+    );
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('skippedNoOwner');
+    expect(prisma.taskSolution.create).not.toHaveBeenCalled();
+  });
+
+  it('B2: assignee-координатор ≠ единственный решатель → владелец = решатель + аудит расхождения', async () => {
+    const { service, prisma, refiner, entityResolver } = makeMocks();
+    prime(prisma, [{ userId: 'u-petr' }], [{ id: 'p-petr', userId: 'u-petr' }]);
+    refiner.extract.mockResolvedValue({ ok: true, hasConcreteMethod: true, solverNames: ['Иван'] });
+    entityResolver.resolvePersonByHint.mockResolvedValue('p-ivan');
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('created');
+    const data = prisma.taskSolution.create.mock.calls[0][0].data;
+    expect(data.ownerPersonId).toBe('p-ivan');
+    expect(data.ownerAudit).toEqual(
+      expect.objectContaining({
+        reason: 'assignee-solver-divergence',
+        assigneePersonId: 'p-petr',
+        inferredOwnerPersonId: 'p-ivan',
+      }),
+    );
+  });
+
+  it('B2 kill-switch OFF: владелец строго = assignee (без вывода), решатель — в субъектах', async () => {
+    const { service, prisma, refiner, entityResolver, cfg } = makeMocks();
+    prime(prisma, [{ userId: 'u-petr' }], [{ id: 'p-petr', userId: 'u-petr' }]);
+    cfg.getDynamic.mockImplementation(async (key: string, _e: unknown, def: unknown) =>
+      key === 'taskSolution.ownerInferenceEnabled' ? false : def,
+    );
+    refiner.extract.mockResolvedValue({ ok: true, hasConcreteMethod: true, solverNames: ['Иван'] });
+    entityResolver.resolvePersonByHint.mockResolvedValue('p-ivan');
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('created');
+    const data = prisma.taskSolution.create.mock.calls[0][0].data;
+    expect(data.ownerPersonId).toBe('p-petr');
+    expect(data.ownerAudit).toBeUndefined();
+    expect(data.personSubjectIds).toEqual(expect.arrayContaining(['p-petr', 'p-ivan']));
+  });
+
+  it('B3: несколько assignee, один — решатель → он владелец', async () => {
+    const { service, prisma, refiner, entityResolver } = makeMocks();
+    prime(
+      prisma,
+      [{ userId: 'u-a' }, { userId: 'u-b' }],
+      [
+        { id: 'p-b', userId: 'u-b' },
+        { id: 'p-a', userId: 'u-a' },
+      ],
+    );
+    refiner.extract.mockResolvedValue({ ok: true, hasConcreteMethod: true, solverNames: ['Борис'] });
+    entityResolver.resolvePersonByHint.mockResolvedValue('p-b');
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('created');
+    const data = prisma.taskSolution.create.mock.calls[0][0].data;
+    expect(data.ownerPersonId).toBe('p-b');
+  });
+
+  it('B3: несколько assignee, никто не решатель → детерминированный алфавитный tiebreak по id', async () => {
+    const { service, prisma, refiner } = makeMocks();
+    prime(
+      prisma,
+      [{ userId: 'u-a' }, { userId: 'u-b' }],
+      [
+        { id: 'p-b', userId: 'u-b' },
+        { id: 'p-a', userId: 'u-a' },
+      ],
+    );
+    refiner.extract.mockResolvedValue({ ok: true, hasConcreteMethod: true, solverNames: [] });
+
+    const res = await buildOne(service)('t1', 'i1');
+    expect(res).toBe('created');
+    const data = prisma.taskSolution.create.mock.calls[0][0].data;
+    expect(data.ownerPersonId).toBe('p-a');
   });
 });
 

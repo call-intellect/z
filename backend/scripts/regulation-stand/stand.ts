@@ -1,12 +1,13 @@
 import { assertNotProd, readConfig } from '../_lib/combat-harness';
 
+import { runE2e } from './e2e';
 import { runJudge } from './judge';
 import { matchAll } from './match';
 import { runReport } from './report';
 import { build, prepare } from './seed-reg-feed';
 
-type Mode = 'prepare' | 'build' | 'match' | 'judge' | 'report' | 'all';
-const MODES: readonly Mode[] = ['prepare', 'build', 'match', 'judge', 'report', 'all'];
+type Mode = 'prepare' | 'build' | 'match' | 'judge' | 'report' | 'all' | 'e2e';
+const MODES: readonly Mode[] = ['prepare', 'build', 'match', 'judge', 'report', 'all', 'e2e'];
 
 function log(s: string): void {
   process.stdout.write(`${s}\n`);
@@ -34,6 +35,9 @@ async function dispatch(mode: Mode, stamp: string, prevStamp?: string): Promise<
       matchAll(stamp);
       await runJudge(stamp);
       runReport(stamp, prevStamp);
+      break;
+    case 'e2e':
+      await runE2e(stamp);
       break;
   }
 }

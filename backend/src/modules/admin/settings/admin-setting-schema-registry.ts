@@ -515,6 +515,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['taskSolution.repeatThreshold', POSITIVE_INT],
   ['taskSolution.repeatSimilarity', UNIT_INTERVAL],
   ['taskSolution.refineEnabled', z.boolean()],
+  ['taskSolution.howSolvedSignalTypes', z.array(z.string()).min(1)],
+  ['taskSolution.ownerInferenceEnabled', z.boolean()],
+  ['taskSolution.maxPlaceholderRatio', UNIT_INTERVAL],
 
   ['conversational.telegramDigestHourLocal', z.number().int().min(0).max(23)],
 

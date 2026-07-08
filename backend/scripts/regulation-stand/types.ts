@@ -13,6 +13,7 @@ export interface A5Block {
 export interface A5RequiresIssue {
   title: string;
   assignee: string;
+  assignees?: string[];
   trivial?: boolean;
 }
 
@@ -86,6 +87,7 @@ export interface ObservedTaskSolution {
   candidateInstruction: boolean;
   version: number;
   hasEmbedding: boolean;
+  signals: string[];
 }
 
 export interface ScenarioObservation {
@@ -152,5 +154,6 @@ export interface JudgedScenario {
   votes: JudgeVote[];
   majorityGist: boolean;
   majorityOwner: boolean;
+  lostVotes: number;
   consensus: 'good' | 'flawed' | 'wrong' | 'no-quorum';
 }

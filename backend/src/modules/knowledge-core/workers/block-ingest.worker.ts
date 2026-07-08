@@ -952,12 +952,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const synthetic = this.buildSyntheticBlock(hint, payload);
       return synthetic ? [synthetic] : [];
     }
-    const overridden = [...blocks];
-    const first = overridden[0];
-    if (first) {
-      overridden[0] = { ...first, signalType: hint };
-    }
-    return overridden;
+    return blocks.map((b) => ({ ...b, signalType: hint }));
   }
 
   private buildSyntheticBlock(hint: SignalType, payload: unknown): ExtractedBlock | null {

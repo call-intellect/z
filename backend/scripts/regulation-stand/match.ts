@@ -99,7 +99,13 @@ function matchOne(c: A5Case, obs: ScenarioObservation, embeddingsWritten: number
     }
     if (r.repeatCandidateInstruction) {
       if (embeddingsWritten === 0) {
-        push('repeatCandidateInstruction', true, sol.candidateInstruction, true, 'N/A — эмбеддинги не записаны, репит-группа не тестируема', true);
+        push(
+          'repeatCandidateInstruction',
+          true,
+          sol.candidateInstruction,
+          false,
+          'FAIL — эмбеддинги не записаны (стаб-эмбеддер не сработал): репит-ось недоказуема, не маскируем под N/A',
+        );
       } else {
         const ok = sol.candidateInstruction === true && sol.repeatGroupKey !== null;
         push('repeatCandidateInstruction', true, { candidateInstruction: sol.candidateInstruction, repeatGroupKey: sol.repeatGroupKey }, ok);
@@ -113,10 +119,6 @@ function matchOne(c: A5Case, obs: ScenarioObservation, embeddingsWritten: number
   if (failed.length === 0) verdict = 'PASS';
   else if (criticalFail) verdict = 'FAIL';
   else verdict = 'PARTIAL';
-
-  const repeatNa =
-    r.repeatCandidateInstruction && embeddingsWritten === 0 && failed.length === 0;
-  if (repeatNa) verdict = 'N/A';
 
   const firstFail = criticalFail ?? failed[0];
   const attribution = firstFail ? attributionFor(firstFail.metric) : '—';

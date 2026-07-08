@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { type DataClass, Prisma } from '@prisma/client';
+import { type DataClass, Prisma, SignalType } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -9,7 +9,12 @@ import { EntityResolutionService } from './entity-resolution.service';
 import { StructuredDocumentCompilerService } from './structured-document-compiler.service';
 import { TaskSolutionRefinerService } from './task-solution-refiner.service';
 
-const HOW_SOLVED_SIGNAL_SQL = `'reasoning','rationale','decision_basis','methodology_step'`;
+const DEFAULT_HOW_SOLVED_SIGNAL_TYPES = [
+  'reasoning',
+  'rationale',
+  'decision_basis',
+  'methodology_step',
+] as const;
 
 type BuildOutcome =
   | 'created'
@@ -68,27 +73,8 @@ export class TaskSolutionBuildService {
     );
     const since = new Date(now.getTime() - lookbackHours * 3_600_000);
 
-    const detectionSql = `
-      SELECT DISTINCT re.payload->>'contextCardId' AS issue_id
-      FROM "IdeaBlock" ib
-      JOIN "IdeaBlockEvidence" ev ON ev."blockId" = ib.id AND ev."tenantId" = ib."tenantId"
-      JOIN "RawEvent" re ON re.id = ev."rawEventId"
-      WHERE ib."tenantId" = $1
-        AND ib."signalType" IN (${HOW_SOLVED_SIGNAL_SQL})
-        AND ib.status = 'canonical'
-        AND ib."createdAt" >= $2
-        AND re.payload->>'contextCardId' IS NOT NULL
-      LIMIT 2000
-    `;
-
-    const rows = await this.prisma.$queryRawUnsafe<Array<{ issue_id: string | null }>>(
-      detectionSql,
-      tenantId,
-      since,
-    );
-    const issueIds = [
-      ...new Set(rows.map((r) => r.issue_id).filter((v): v is string => !!v && v.length > 0)),
-    ];
+    const howSolvedTypes = await this.howSolvedSignalTypes();
+    const issueIds = await this.detectCandidateIssueIds(tenantId, since, howSolvedTypes);
 
     const stats: TaskSolutionBuildStats = {
       candidates: issueIds.length,
@@ -153,31 +139,13 @@ export class TaskSolutionBuildService {
           title: true,
           description: true,
           descriptionStripped: true,
-          assignees: { select: { userId: true } },
+          assignees: { select: { userId: true }, orderBy: { userId: 'asc' } },
         },
       });
       if (!issue) return 'skippedGate';
 
-      const ownerPersonId = await this.resolveOwnerPerson(tenantId, issue.assignees);
-      if (!ownerPersonId) return 'skippedNoOwner';
-
-      const blocksSql = `
-        SELECT DISTINCT ib.id AS block_id
-        FROM "IdeaBlock" ib
-        JOIN "IdeaBlockEvidence" ev ON ev."blockId" = ib.id AND ev."tenantId" = ib."tenantId"
-        JOIN "RawEvent" re ON re.id = ev."rawEventId"
-        WHERE ib."tenantId" = $1
-          AND ib."signalType" IN (${HOW_SOLVED_SIGNAL_SQL})
-          AND ib.status = 'canonical'
-          AND re.payload->>'contextCardId' = $2
-        LIMIT 500
-      `;
-      const blockRows = await this.prisma.$queryRawUnsafe<Array<{ block_id: string }>>(
-        blocksSql,
-        tenantId,
-        issueId,
-      );
-      const rawBlockIds = [...new Set(blockRows.map((r) => r.block_id).filter(Boolean))];
+      const howSolvedTypes = await this.howSolvedSignalTypes();
+      const rawBlockIds = await this.gatherSolutionBlockIds(tenantId, issueId, howSolvedTypes);
       if (rawBlockIds.length === 0) return 'skippedGate';
 
       const blocks = await this.prisma.ideaBlock.findMany({
@@ -213,20 +181,32 @@ export class TaskSolutionBuildService {
       const newBlockIds = blockIds.filter((id) => !existing?.sourceBlockIds.includes(id));
       if (existing && newBlockIds.length === 0) return 'skippedNoNew';
 
+      const newBlockIdSet = new Set(newBlockIds);
+      const refineBlocks = existing ? blocks.filter((b) => newBlockIdSet.has(b.id)) : blocks;
+
       const dataClass = this.mostSensitive(blocks.map((b) => b.dataClass));
       const now = new Date();
 
+      const assigneePersonIds = await this.resolveAssigneePersonIds(tenantId, issue.assignees);
       const refineEnabled = await this.cfg.getDynamic<boolean>(
         'taskSolution.refineEnabled',
         undefined,
         true,
       );
-      let subjectIds: string[] = [ownerPersonId];
+      const disambigContext = `${issue.title}\n${blocks
+        .map((b) => b.trustedAnswer)
+        .join('\n')}`.slice(0, 4000);
+
+      let solverNames: string[] = [];
+      let hasConcreteMethod = true;
+      let refineOk = false;
       if (refineEnabled) {
+        const firstAssigneeName =
+          assigneePersonIds.length > 0 ? await this.personName(tenantId, assigneePersonIds[0]!) : null;
         const refined = await this.refiner.extract({
           taskTitle: issue.title,
-          assigneeName: await this.personName(tenantId, ownerPersonId),
-          blocks: blocks.map((b) => ({
+          assigneeName: firstAssigneeName,
+          blocks: refineBlocks.map((b) => ({
             name: b.name,
             question: b.criticalQuestion,
             answer: b.trustedAnswer,
@@ -240,11 +220,61 @@ export class TaskSolutionBuildService {
           sourceRef: { type: 'issue', id: issueId },
           nowIso: now.toISOString(),
         });
-        if (refined.ok && !refined.hasConcreteMethod && !existing) return 'skippedNoMethod';
-        if (refined.ok) {
-          subjectIds = await this.resolveSubjects(tenantId, ownerPersonId, refined.solverNames);
+        refineOk = refined.ok;
+        hasConcreteMethod = refined.hasConcreteMethod;
+        solverNames = refined.solverNames;
+      }
+
+      if (refineOk && !hasConcreteMethod) return 'skippedNoMethod';
+
+      const solverPersonIds =
+        refineEnabled && solverNames.length > 0
+          ? await this.resolveSolverPersonIds(tenantId, solverNames, disambigContext)
+          : [];
+
+      let ownerPersonId: string | null;
+      let ownerAudit: Prisma.InputJsonValue | undefined;
+      if (existing) {
+        ownerPersonId = existing.ownerPersonId;
+      } else {
+        const ownerInferenceEnabled = await this.cfg.getDynamic<boolean>(
+          'taskSolution.ownerInferenceEnabled',
+          undefined,
+          true,
+        );
+        const assigneeOwner = this.pickAssigneeOwner(assigneePersonIds, solverPersonIds);
+        const singleSolver =
+          solverNames.length === 1 && solverPersonIds.length === 1 ? solverPersonIds[0]! : null;
+        if (assigneeOwner === null) {
+          if (ownerInferenceEnabled && singleSolver) {
+            ownerPersonId = singleSolver;
+            ownerAudit = this.buildOwnerAudit('solver-no-assignee', null, singleSolver, solverNames, now);
+          } else {
+            ownerPersonId = null;
+          }
+        } else if (
+          ownerInferenceEnabled &&
+          singleSolver &&
+          !assigneePersonIds.includes(singleSolver)
+        ) {
+          ownerPersonId = singleSolver;
+          ownerAudit = this.buildOwnerAudit(
+            'assignee-solver-divergence',
+            assigneeOwner,
+            singleSolver,
+            solverNames,
+            now,
+          );
+        } else {
+          ownerPersonId = assigneeOwner;
         }
       }
+      if (!ownerPersonId) return 'skippedNoOwner';
+
+      const subjectIds = this.union(
+        existing?.personSubjectIds ?? [],
+        this.union([ownerPersonId], solverPersonIds),
+      );
 
       const compiled = this.docCompiler.isEnabled()
         ? await this.docCompiler.compile(
@@ -306,6 +336,7 @@ export class TaskSolutionBuildService {
               dataClass,
               confidence: null,
               version: 1,
+              ...(ownerAudit !== undefined ? { ownerAudit } : {}),
             },
           });
           const cv = await tx.cardVersion.create({
@@ -352,7 +383,6 @@ export class TaskSolutionBuildService {
               sourceBlockIds: { set: sourceBlockIds },
               skillTags: { set: skillTags },
               personSubjectIds: { set: subjectIds },
-              ownerPersonId,
               dataClass,
               version: newVersion,
               currentVersionId: cv.id,
@@ -379,22 +409,140 @@ export class TaskSolutionBuildService {
     }
   }
 
+  private async howSolvedSignalTypes(): Promise<string[]> {
+    const raw = await this.cfg.getDynamic<string[]>(
+      'taskSolution.howSolvedSignalTypes',
+      undefined,
+      [...DEFAULT_HOW_SOLVED_SIGNAL_TYPES],
+    );
+    const valid = new Set<string>(Object.values(SignalType));
+    const filtered = Array.isArray(raw) ? raw.filter((t) => valid.has(t)) : [];
+    return filtered.length > 0 ? filtered : [...DEFAULT_HOW_SOLVED_SIGNAL_TYPES];
+  }
+
+  private async detectCandidateIssueIds(
+    tenantId: string,
+    since: Date,
+    howSolvedTypes: readonly string[],
+  ): Promise<string[]> {
+    const typePlaceholders = howSolvedTypes.map((_, i) => `$${i + 3}`).join(',');
+    const sql = `
+      SELECT DISTINCT issue_id FROM (
+        SELECT re.payload->>'contextCardId' AS issue_id
+        FROM "IdeaBlock" ib
+        JOIN "IdeaBlockEvidence" ev ON ev."blockId" = ib.id AND ev."tenantId" = ib."tenantId"
+        JOIN "RawEvent" re ON re.id = ev."rawEventId"
+        WHERE ib."tenantId" = $1
+          AND ib."signalType" IN (${typePlaceholders})
+          AND ib.status = 'canonical'
+          AND re.payload->>'contextCardId' IS NOT NULL
+          AND GREATEST(COALESCE(ev."sourceTimestamp", re."occurredAt"), re."occurredAt") >= $2
+        UNION
+        SELECT tcc."issueId" AS issue_id
+        FROM "TaskClosureCandidate" tcc
+        WHERE tcc."tenantId" = $1
+          AND tcc.status IN ('pending', 'accepted')
+          AND tcc."createdAt" >= $2
+      ) u
+      WHERE issue_id IS NOT NULL AND issue_id <> ''
+      LIMIT 2000
+    `;
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ issue_id: string | null }>>(
+      sql,
+      tenantId,
+      since,
+      ...howSolvedTypes,
+    );
+    return [
+      ...new Set(rows.map((r) => r.issue_id).filter((v): v is string => !!v && v.length > 0)),
+    ];
+  }
+
+  private async gatherSolutionBlockIds(
+    tenantId: string,
+    issueId: string,
+    howSolvedTypes: readonly string[],
+  ): Promise<string[]> {
+    const typePlaceholders = howSolvedTypes.map((_, i) => `$${i + 3}`).join(',');
+    const sql = `
+      SELECT DISTINCT block_id FROM (
+        SELECT ib.id AS block_id
+        FROM "IdeaBlock" ib
+        JOIN "IdeaBlockEvidence" ev ON ev."blockId" = ib.id AND ev."tenantId" = ib."tenantId"
+        JOIN "RawEvent" re ON re.id = ev."rawEventId"
+        WHERE ib."tenantId" = $1
+          AND ib."signalType" IN (${typePlaceholders})
+          AND ib.status = 'canonical'
+          AND re.payload->>'contextCardId' = $2
+        UNION
+        SELECT cib.id AS block_id
+        FROM "TaskClosureCandidate" tcc
+        JOIN "IdeaBlock" sib ON sib.id = tcc."sourceBlockId" AND sib."tenantId" = tcc."tenantId"
+        JOIN "IdeaBlock" cib ON cib.id = COALESCE(sib."mergedIntoId", sib.id) AND cib."tenantId" = tcc."tenantId"
+        WHERE tcc."tenantId" = $1
+          AND tcc."issueId" = $2
+          AND tcc.status IN ('pending', 'accepted')
+          AND cib.status = 'canonical'
+      ) u
+      LIMIT 500
+    `;
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ block_id: string }>>(
+      sql,
+      tenantId,
+      issueId,
+      ...howSolvedTypes,
+    );
+    return [...new Set(rows.map((r) => r.block_id).filter(Boolean))];
+  }
+
   async resolveOwnerPerson(
     tenantId: string,
     assignees: { userId: string | null }[],
+    solverPersonIds: readonly string[] = [],
   ): Promise<string | null> {
+    const personIds = await this.resolveAssigneePersonIds(tenantId, assignees);
+    return this.pickAssigneeOwner(personIds, solverPersonIds);
+  }
+
+  private async resolveAssigneePersonIds(
+    tenantId: string,
+    assignees: { userId: string | null }[],
+  ): Promise<string[]> {
     const userIds = [...new Set(assignees.map((a) => a.userId).filter((u): u is string => !!u))];
-    if (!userIds.length) return null;
+    if (!userIds.length) return [];
     const persons = await this.prisma.person.findMany({
       where: { tenantId, userId: { in: userIds }, deletedAt: null },
-      select: { id: true, userId: true },
+      select: { id: true },
+      orderBy: { id: 'asc' },
     });
-    if (!persons.length) return null;
-    for (const uid of userIds) {
-      const p = persons.find((x) => x.userId === uid);
-      if (p) return p.id;
-    }
-    return persons[0]!.id;
+    return [...new Set(persons.map((p) => p.id))];
+  }
+
+  private pickAssigneeOwner(
+    assigneePersonIds: readonly string[],
+    solverPersonIds: readonly string[],
+  ): string | null {
+    if (assigneePersonIds.length === 0) return null;
+    const sorted = [...assigneePersonIds].sort();
+    const solverSet = new Set(solverPersonIds);
+    const solverAssignee = sorted.find((id) => solverSet.has(id));
+    return solverAssignee ?? sorted[0]!;
+  }
+
+  private buildOwnerAudit(
+    reason: 'solver-no-assignee' | 'assignee-solver-divergence',
+    assigneePersonId: string | null,
+    inferredOwnerPersonId: string,
+    solverNames: readonly string[],
+    now: Date,
+  ): Prisma.InputJsonValue {
+    return {
+      reason,
+      assigneePersonId,
+      inferredOwnerPersonId,
+      solverNames: [...solverNames],
+      at: now.toISOString(),
+    };
   }
 
   private async personName(tenantId: string, personId: string): Promise<string | null> {
@@ -405,17 +553,24 @@ export class TaskSolutionBuildService {
     return p?.name ?? null;
   }
 
-  private async resolveSubjects(
+  private async resolveSolverPersonIds(
     tenantId: string,
-    ownerPersonId: string,
     solverNames: readonly string[],
+    context: string,
   ): Promise<string[]> {
-    const ids = new Set<string>([ownerPersonId]);
+    const ids = new Set<string>();
     for (const name of solverNames) {
       const pid = await this.entityResolver
-        .resolvePersonByHint(tenantId, name)
+        .resolvePersonByHint(tenantId, name, context)
         .catch(() => null);
-      if (pid) ids.add(pid);
+      if (pid) {
+        ids.add(pid);
+      } else {
+        this.logger.debug(
+          { tenantId, name },
+          'task-solution-build: со-решатель не разрезолвлен по имени — пропускаю',
+        );
+      }
     }
     return [...ids];
   }

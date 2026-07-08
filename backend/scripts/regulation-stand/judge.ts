@@ -59,9 +59,40 @@ function buildUser(c: A5Case, obs: ScenarioObservation): string {
   ].join('\n');
 }
 
-async function judgeOne(c: A5Case, obs: ScenarioObservation): Promise<JudgeVote[]> {
-  const votes: JudgeVote[] = [];
-  for (const lens of LENSES) {
+const MAX_JUDGE_ATTEMPTS = 3;
+
+function parseVote(argsRaw: string): Omit<JudgeVote, 'judge' | 'error'> | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(argsRaw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const verdict = parsed.verdict;
+  if (verdict !== 'good' && verdict !== 'flawed' && verdict !== 'wrong') return null;
+  if (
+    typeof parsed.gistCaptured !== 'boolean' ||
+    typeof parsed.ownerCorrect !== 'boolean' ||
+    typeof parsed.subjectsCorrect !== 'boolean'
+  ) {
+    return null;
+  }
+  return {
+    gistCaptured: parsed.gistCaptured,
+    ownerCorrect: parsed.ownerCorrect,
+    subjectsCorrect: parsed.subjectsCorrect,
+    verdict,
+    rationale: typeof parsed.rationale === 'string' ? parsed.rationale : '',
+  };
+}
+
+async function voteForLens(
+  c: A5Case,
+  obs: ScenarioObservation,
+  lens: { name: string; focus: string },
+): Promise<JudgeVote> {
+  let lastErr = 'исчерпаны попытки';
+  for (let attempt = 1; attempt <= MAX_JUDGE_ATTEMPTS; attempt += 1) {
     const res = await directLlmCall({
       provider: 'deepseek',
       model: JUDGE_MODEL,
@@ -77,35 +108,36 @@ async function judgeOne(c: A5Case, obs: ScenarioObservation): Promise<JudgeVote[
       schema: SCHEMA,
       schemaName: 'judge_task_solution',
       toolName: 'judge_task_solution',
-      maxTokens: 1600,
+      maxTokens: attempt === 1 ? 1600 : 2600,
     });
-    const argsRaw = res.toolCallArgs ?? extractJson(res.text);
-    if (res.error || !argsRaw) {
-      votes.push({
-        judge: lens.name,
-        gistCaptured: false,
-        ownerCorrect: false,
-        subjectsCorrect: false,
-        verdict: 'wrong',
-        rationale: '',
-        error: res.error ?? 'нет tool-call ответа',
-      });
+    if (res.error) {
+      lastErr = res.error;
       continue;
     }
-    try {
-      const parsed = JSON.parse(argsRaw) as Omit<JudgeVote, 'judge'>;
-      votes.push({ judge: lens.name, ...parsed, error: null });
-    } catch (e) {
-      votes.push({
-        judge: lens.name,
-        gistCaptured: false,
-        ownerCorrect: false,
-        subjectsCorrect: false,
-        verdict: 'wrong',
-        rationale: '',
-        error: `parse: ${e instanceof Error ? e.message : String(e)}`,
-      });
+    const argsRaw = res.toolCallArgs ?? extractJson(res.text);
+    if (!argsRaw) {
+      lastErr = 'нет tool-call ответа';
+      continue;
     }
+    const parsed = parseVote(argsRaw);
+    if (parsed) return { judge: lens.name, ...parsed, error: null };
+    lastErr = 'невалидная структура ответа судьи';
+  }
+  return {
+    judge: lens.name,
+    gistCaptured: false,
+    ownerCorrect: false,
+    subjectsCorrect: false,
+    verdict: 'wrong',
+    rationale: '',
+    error: lastErr,
+  };
+}
+
+async function judgeOne(c: A5Case, obs: ScenarioObservation): Promise<JudgeVote[]> {
+  const votes: JudgeVote[] = [];
+  for (const lens of LENSES) {
+    votes.push(await voteForLens(c, obs, lens));
   }
   return votes;
 }
@@ -118,17 +150,12 @@ function majority(bools: boolean[]): boolean {
 function consensus(votes: JudgeVote[]): JudgedScenario['consensus'] {
   const valid = votes.filter((v) => !v.error);
   if (valid.length < 2) return 'no-quorum';
-  const counts: Record<string, number> = { good: 0, flawed: 0, wrong: 0 };
-  for (const v of valid) counts[v.verdict] = (counts[v.verdict] ?? 0) + 1;
-  let best: JudgedScenario['consensus'] = 'flawed';
-  let bestN = -1;
-  for (const k of ['good', 'flawed', 'wrong'] as const) {
-    if (counts[k] > bestN) {
-      bestN = counts[k];
-      best = k;
-    }
-  }
-  return best;
+  const counts: Record<'good' | 'flawed' | 'wrong', number> = { good: 0, flawed: 0, wrong: 0 };
+  for (const v of valid) counts[v.verdict] += 1;
+  const max = Math.max(counts.good, counts.flawed, counts.wrong);
+  const leaders = (['good', 'flawed', 'wrong'] as const).filter((k) => counts[k] === max);
+  if (leaders.length !== 1) return 'no-quorum';
+  return leaders[0];
 }
 
 export async function runJudge(stamp: string): Promise<JudgedScenario[]> {
@@ -149,6 +176,7 @@ export async function runJudge(stamp: string): Promise<JudgedScenario[]> {
       votes,
       majorityGist: majority(votes.filter((v) => !v.error).map((v) => v.gistCaptured)),
       majorityOwner: majority(votes.filter((v) => !v.error).map((v) => v.ownerCorrect)),
+      lostVotes: votes.filter((v) => v.error).length,
       consensus: consensus(votes),
     });
   }

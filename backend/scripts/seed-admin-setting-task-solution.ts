@@ -79,6 +79,33 @@ const SEEDS: SettingSeed[] = [
     description:
       'Аварийный рубильник LLM-уточнения решения: гейт содержательности («само решилось» → не материализуем) + рост клонов соисполнителей (кто реально решал → в subjects). По умолчанию вкл (Ship-On). Выкл → материализация по длине сигнала + subjects=только владелец.',
   },
+  {
+    key: 'taskSolution.howSolvedSignalTypes',
+    value: ['reasoning', 'rationale', 'decision_basis', 'methodology_step'],
+    category: 'ai',
+    section: 'task_solution',
+    severity: 'low',
+    description:
+      'Типы сигналов «как решали» для probe/contextCardId-пути детекции (массив signalType). По умолчанию 4. Сигналы выполнения (task_completed/done_item) попадают в материал отдельно — только через матч блок↔задача (TaskClosureCandidate), где сам матч служит гейтом, а не через этот список.',
+  },
+  {
+    key: 'taskSolution.ownerInferenceEnabled',
+    value: true,
+    category: 'ai',
+    section: 'task_solution',
+    severity: 'medium',
+    description:
+      'Аварийный рубильник вывода владельца из текста, когда assignee задачи расходится с единственным решателем или отсутствует. По умолчанию вкл (Ship-On). Выкл → владелец строго = assignee задачи (без вывода из решателя).',
+  },
+  {
+    key: 'taskSolution.maxPlaceholderRatio',
+    value: 0.2,
+    category: 'ai',
+    section: 'task_solution',
+    severity: 'low',
+    description:
+      'Максимальная доля строк-плейсхолдеров «[требует уточнения]» в тексте решения (T-ось качества стенда). Выше порога → метрика качества текста FAIL. По умолчанию 0.2.',
+  },
 ];
 
 interface Counters {

@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { REPORT, RUNS_DIR } from './corpus';
 import { matchAll } from './match';
-import type { A5Match, A5Verdict, JudgedScenario } from './types';
+import type { A5Match, A5Verdict, JudgedScenario, RawRun } from './types';
 
 interface MetricAgg {
   label: string;
@@ -86,17 +86,60 @@ function judgeSection(judged: JudgedScenario[]): string {
   for (const j of judged) tally[j.consensus] += 1;
   const rows = judged.map(
     (j) =>
-      `| ${j.scenarioId} | ${j.consensus} | ${j.majorityGist ? '✓' : '✗'} | ${j.majorityOwner ? '✓' : '✗'} |`,
+      `| ${j.scenarioId} | ${j.consensus}${j.lostVotes > 0 ? ' ⚠' : ''} | ${j.majorityGist ? '✓' : '✗'} | ${j.majorityOwner ? '✓' : '✗'} | ${j.lostVotes || ''} |`,
   );
   const calls = judged.reduce((n, r) => n + r.votes.length, 0);
   const errs = judged.reduce((n, r) => n + r.votes.filter((v) => v.error).length, 0);
+  const withLost = judged.filter((j) => j.lostVotes > 0);
+  const lostNote =
+    withLost.length === 0
+      ? '> Потерянных голосов нет — кворум полный на всех сценариях.'
+      : `> ⚠ Потеряны голоса (после ретраев) на ${withLost.length} сценариях: ${withLost.map((j) => `${j.scenarioId} (${j.lostVotes})`).join(', ')}. Консенсус по ним считался урезанным кворумом; ничья good/flawed → no-quorum, не «good».`;
   return [
     `Консенсус: good ${tally.good} · flawed ${tally.flawed} · wrong ${tally.wrong} · no-quorum ${tally['no-quorum']}. LLM-вызовов ${calls} (ошибок ${errs}).`,
     '',
+    lostNote,
+    '',
     '> Судья оценивает КАЧЕСТВО уже созданного решения (суть/владелец/полнота), а не факт «надо ли было создавать». Ложную материализацию (`a5-no-answer`) ловит детерминированный слой (match), поэтому у судьи она может быть «good».',
     '',
-    '| сценарий | консенсус | суть (majority) | владелец (majority) |',
-    '|---|---|:---:|:---:|',
+    '| сценарий | консенсус | суть (majority) | владелец (majority) | потеряно голосов |',
+    '|---|---|:---:|:---:|:---:|',
+    ...rows,
+  ].join('\n');
+}
+
+function tAxisSection(raw: RawRun): string {
+  const rawThreshold = raw.config['taskSolution.maxPlaceholderRatio'];
+  const threshold = typeof rawThreshold === 'number' ? rawThreshold : 0.2;
+  const withSolution = raw.observations.filter((o) => o.solution);
+  if (withSolution.length === 0) return '_Нет собранных решений — T-ось не считается._';
+
+  const rows: string[] = [];
+  let totalRatio = 0;
+  let overN = 0;
+  for (const o of withSolution) {
+    const sol = o.solution!;
+    const lines = sol.solutionMd
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    const ph = lines.filter((l) => l.toLowerCase().includes('[требует уточнения')).length;
+    const ratio = lines.length > 0 ? ph / lines.length : 0;
+    totalRatio += ratio;
+    const over = ratio > threshold;
+    if (over) overN += 1;
+    rows.push(
+      `| ${o.scenarioId} | ${ph}/${lines.length} | ${(ratio * 100).toFixed(0)}%${over ? ' ⚠' : ''} | ${sol.signals.length} |`,
+    );
+  }
+  const avg = totalRatio / withSolution.length;
+  return [
+    `Порог доли строк-плейсхолдеров «[требует уточнения]»: ≤ ${(threshold * 100).toFixed(0)}% (крутилка \`taskSolution.maxPlaceholderRatio\`). Средняя доля: ${(avg * 100).toFixed(0)}%. Свыше порога: ${overN}/${withSolution.length}.`,
+    '',
+    '> T-ось меряет КАЧЕСТВО текста решения (вода/плейсхолдеры), а не корректность материализации. Рост плейсхолдеров роняет метрику, но не меняет вердикт корректности (тот считает детерминированный слой match).',
+    '',
+    '| сценарий | плейсхолдеров (строк) | доля | signals |',
+    '|---|---|---:|---:|',
     ...rows,
   ].join('\n');
 }
@@ -232,6 +275,11 @@ export function runReport(stamp: string, prevStamp?: string): string {
   lines.push(`| skippedGate (пусто, предфильтр длины) | ${raw.passStats.create.skippedGate} | ${raw.passStats.extend.skippedGate} | ${idem.skippedGate} |`);
   lines.push(`| skippedNoMethod (нет содержательного метода, смысл) | ${raw.passStats.create.skippedNoMethod} | ${raw.passStats.extend.skippedNoMethod} | ${idem.skippedNoMethod} |`);
   lines.push(`| skippedCompilerUnavailable (компилятор OFF/сбой на дополнении → defer) | ${raw.passStats.create.skippedCompilerUnavailable} | ${raw.passStats.extend.skippedCompilerUnavailable} | ${idem.skippedCompilerUnavailable} |`);
+  lines.push('');
+
+  lines.push('## T-ось — качество текста решения (плейсхолдеры · signals)');
+  lines.push('');
+  lines.push(tAxisSection(raw));
   lines.push('');
 
   lines.push('## Таблица диагнозов — атрибуция к агенту');

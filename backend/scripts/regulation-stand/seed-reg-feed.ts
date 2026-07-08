@@ -7,16 +7,20 @@ import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { PrismaClient } from '@prisma/client';
 
+import { KnowledgeEmbeddingService } from '../../src/modules/knowledge-core/services/embedding.service';
 import { TaskSolutionBuildService } from '../../src/modules/knowledge-core/services/task-solution-build.service';
 import { IssuesService } from '../../src/modules/tracker/services/issues.service';
 
 import { assertNotProd, readConfig, sleep } from '../_lib/combat-harness';
 import { createPrismaClient } from '../_lib/prisma';
 
+import { stubEmbed } from './stub-embedder';
+
 import { MANIFEST, RUNS_DIR, allRequiredPersons, loadA5Cases } from './corpus';
 import type {
   A5Block,
   A5Case,
+  A5RequiresIssue,
   BuildPassStats,
   ObservedTaskSolution,
   RawRun,
@@ -28,8 +32,11 @@ const KNOBS: Record<string, unknown> = {
   'taskSolution.lookbackHours': 48,
   'taskSolution.minSignalChars': 15,
   'taskSolution.repeatThreshold': 3,
-  'taskSolution.repeatSimilarity': 0.85,
+  'taskSolution.repeatSimilarity': 0.25,
   'taskSolution.refineEnabled': true,
+  'taskSolution.howSolvedSignalTypes': ['reasoning', 'rationale', 'decision_basis', 'methodology_step'],
+  'taskSolution.ownerInferenceEnabled': true,
+  'taskSolution.maxPlaceholderRatio': 0.2,
   'aiFeatures.docCompilerEnabled': true,
 };
 
@@ -267,20 +274,27 @@ async function seedBlock(
   return ideaBlock.id;
 }
 
+function issueAssigneeNames(ri: A5RequiresIssue): string[] {
+  if (ri.assignees && ri.assignees.length > 0) return ri.assignees;
+  return ri.assignee ? [ri.assignee] : [];
+}
+
 async function createIssue(
   issues: IssuesService,
   m: RegStandManifest,
   title: string,
-  assigneeName: string,
+  assigneeNames: string[],
 ): Promise<string> {
-  const assigneeUserId = m.people[assigneeName] ?? null;
+  const assigneeUserIds = [
+    ...new Set(assigneeNames.map((n) => m.people[n]).filter((u): u is string => !!u)),
+  ];
   const created = await issues.create(
     m.projectId,
     {
       title,
       descriptionStripped: title,
       priority: 'medium',
-      assigneeUserIds: assigneeUserId ? [assigneeUserId] : [],
+      assigneeUserIds,
       sortOrder: 0,
       labelIds: [],
       skipDedup: true,
@@ -339,6 +353,17 @@ async function observe(
           'SELECT (embedding IS NOT NULL) AS has FROM "task_solutions" WHERE id = $1',
           row.id,
         );
+        let signals: string[] = [];
+        if (row.currentVersionId) {
+          const cv = await prisma.cardVersion.findUnique({
+            where: { id: row.currentVersionId },
+            select: { payload: true },
+          });
+          const payload = cv?.payload as { signals?: unknown } | null;
+          if (payload && Array.isArray(payload.signals)) {
+            signals = payload.signals.filter((s): s is string => typeof s === 'string');
+          }
+        }
         solution = {
           id: row.id,
           title: row.title,
@@ -354,6 +379,7 @@ async function observe(
           candidateInstruction: row.candidateInstruction,
           version: row.version,
           hasEmbedding: emb[0]?.has ?? false,
+          signals,
         };
       }
     }
@@ -391,6 +417,10 @@ export async function build(stamp: string): Promise<RawRun> {
     const prisma = createPrismaClient();
     const builder = app.get(TaskSolutionBuildService, { strict: false });
     const issues = app.get(IssuesService, { strict: false });
+    const embedder = app.get(KnowledgeEmbeddingService, { strict: false }) as {
+      embedQuery: (text: string) => Promise<number[] | null>;
+    };
+    embedder.embedQuery = async (text: string) => stubEmbed(text);
     try {
       const now = new Date();
       const issueByScenario = new Map<string, string>();
@@ -401,7 +431,12 @@ export async function build(stamp: string): Promise<RawRun> {
         const s = c.scenario;
         let issueId: string | null = null;
         if (s.requiresIssue) {
-          issueId = await createIssue(issues, m, s.requiresIssue.title, s.requiresIssue.assignee);
+          issueId = await createIssue(
+            issues,
+            m,
+            s.requiresIssue.title,
+            issueAssigneeNames(s.requiresIssue),
+          );
           issueByScenario.set(s.id, issueId);
         }
         const firstBlocks = s.blocks.filter((b) => b.order <= 1);
@@ -416,7 +451,7 @@ export async function build(stamp: string): Promise<RawRun> {
 
       log('build: посев праймеров 429 (для репит-кластера) …');
       for (const p of PRIMERS) {
-        const iid = await createIssue(issues, m, p.title, p.assignee);
+        const iid = await createIssue(issues, m, p.title, [p.assignee]);
         await seedBlock(
           prisma,
           m.orgId,

@@ -386,7 +386,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-task-solution.ts',
-    hint: 'aiFeatures.taskSolutionEnabled (kill-switch) + taskSolution.{buildHourMsk,minSignalChars,lookbackHours,repeatThreshold,repeatSimilarity} (сущность «Решение задачи»)',
+    hint: 'aiFeatures.taskSolutionEnabled (kill-switch) + taskSolution.{buildHourMsk,minSignalChars,lookbackHours,repeatThreshold,repeatSimilarity,refineEnabled,howSolvedSignalTypes,ownerInferenceEnabled,maxPlaceholderRatio} (сущность «Решение задачи»)',
   },
 
   ...[

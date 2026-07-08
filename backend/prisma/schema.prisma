@@ -6380,6 +6380,7 @@ model TaskSolution {
   previewSourceRef        Json?
   dataClass               DataClass                   @default(internal)
   dataClassAudit          Json?
+  ownerAudit              Json?
   embedding               Unsupported("vector(768)")?
   lastConfirmedAt         DateTime?
   createdAt               DateTime                    @default(now())

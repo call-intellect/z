@@ -11,6 +11,7 @@ import {
   CompileOrgDocumentOutputSchema,
   buildCompileOrgDocumentSystemPrompt,
   buildCompileOrgDocumentUserMessage,
+  buildTaskSolutionSystemPrompt,
   type CompiledStep,
   type CompileOrgDocumentInput,
 } from '../prompts/structured-document-compiler.prompt';
@@ -65,7 +66,10 @@ export class StructuredDocumentCompilerService {
       ok: false,
     };
 
-    const rawSystem = buildCompileOrgDocumentSystemPrompt();
+    const rawSystem =
+      input.kind === 'task_solution'
+        ? buildTaskSolutionSystemPrompt()
+        : buildCompileOrgDocumentSystemPrompt();
     const rawUser = buildCompileOrgDocumentUserMessage(input);
     const { system, user } = applyInputGuards(rawSystem, rawUser, {
       injection: true,

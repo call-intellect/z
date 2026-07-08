@@ -35,13 +35,13 @@ const SEEDS: SettingSeed[] = [
       'Kill-switch (ON): вечернее письмо-отчёт «Твой день» — LLM пишет каждому сотруднику короткое личное письмо (что сделал / зависло / обещал / вклад) + 4 оси-статуса. Веером по одному на человека по его таймзоне (кэш общего префикса). OFF → письма не генерятся, /me/day-letter отдаёт пусто.',
   },
   {
-    key: 'operations.personal_day_narrative.evening_hour',
-    value: 20,
+    key: 'operations.personal_day_narrative.morning_hour',
+    value: 7,
     category: 'operations',
     section: 'workers',
     severity: 'low',
     description:
-      'Час локального времени сотрудника (0–23), в который генерится и рассылается вечернее письмо-отчёт «Твой день». По умолчанию 20.',
+      'Час локального времени сотрудника (0–23), в который УТРОМ генерится и рассылается письмо-отчёт «Твой день» про ВЧЕРАШНИЙ день. По умолчанию 7.',
   },
   {
     key: 'operations.self_signals.plan_not_closing_streak_days',

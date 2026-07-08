@@ -84,8 +84,10 @@ export class PersonalDayNarrativeService {
     tenantId: string;
     person: PersonDayNarrativeTarget;
     now: Date;
+    packageRef?: Date;
   }): Promise<PersonalDayNarrativeDto> {
-    const dateLocal = getLocalDate(args.now, args.person.timezone);
+    const ref = args.packageRef ?? args.now;
+    const dateLocal = getLocalDate(ref, args.person.timezone);
     const existing = await this.prisma.personalDayNarrative.findUnique({
       where: {
         tenantId_personId_dateLocal: {
@@ -103,16 +105,23 @@ export class PersonalDayNarrativeService {
     tenantId: string;
     person: PersonDayNarrativeTarget;
     now: Date;
+    packageRef?: Date;
   }): Promise<PersonalDayNarrativeDto> {
     const { tenantId, person, now } = args;
-    const dateLocal = getLocalDate(now, person.timezone);
-    const pkg = await this.buildPersonDayPackage({ tenantId, person, now });
+    const ref = args.packageRef ?? now;
+    const dateLocal = getLocalDate(ref, person.timezone);
+    const pkg = await this.buildPersonDayPackage({
+      tenantId,
+      person,
+      now,
+      packageRef: args.packageRef,
+    });
     const metrics = computePersonalDayMetrics(pkg);
 
     let verdict: PersonalDayVerdictDto | null = null;
     let letter: PersonalDayLetterSectionDto[] = [];
-    let bodyMarkdown: string | null = null;
-    let shortSummary: string | null = null;
+    let bodyMarkdown: string | null;
+    let shortSummary: string | null;
     let llmTaskRouteId: string | null = null;
 
     try {
@@ -200,10 +209,12 @@ export class PersonalDayNarrativeService {
     tenantId: string;
     person: PersonDayNarrativeTarget;
     now: Date;
+    packageRef?: Date;
   }): Promise<PersonDayPackage> {
     const { tenantId, person, now } = args;
-    const dateLocal = getLocalDate(now, person.timezone);
-    const { from: dayStart, to: dayEnd } = localDayWindowUtc(now, person.timezone);
+    const ref = args.packageRef ?? now;
+    const dateLocal = getLocalDate(ref, person.timezone);
+    const { from: dayStart, to: dayEnd } = localDayWindowUtc(ref, person.timezone);
     const userId = person.userId;
 
     const [

@@ -191,6 +191,14 @@ merge/extension/contradicts — дубль приходит ПОСЛЕ ориг�
   регламент как свой; клон без привязанных правил даёт `usedRegulationNames=[]` (честно), а не выдуманное имя из
   старого снимка. (Требует построить клон и снять трассу `usedRegulationNames` — мост к clone-stand; ось L.)
 
+**A5 Решения задач (`TaskSolution` — после реализации сущности, ТЗ 2026-07-07):**
+- `created_correctly` (создаётся при содержательном ответе; нет ответа/тривиальное → не плодим);
+- `one_per_task` (одна задача → одна сущность, идемпотентность суточной сборки);
+- `owner_is_solver` (**ключевой** — владелец=решавший, не упомянувший; ось A4);
+- `built_from_daily` (собирается и из дневных упоминаний, не только из опроса);
+- `dual_purpose` (клон по-прежнему кормится); `repeat_candidate` (повтор ×N → флаг кандидата в инструкцию, без авто-создания);
+- `not_a_solution` (общее рассуждение без привязки к задаче → НЕ TaskSolution, только клон).
+
 **Сквозные:** `final_card_count` vs эталон · `conflict_items` vs эталон · `idempotency` (второй прогон Δ=0) ·
 `versioning_integrity` (история версий полна) · `deprecation` (проигравший при merge).
 
@@ -264,10 +272,26 @@ A3 (content-loss / dup / structure) · pipeline (candidate-miss / route / infra)
 - [ ] baseline снят: scorecard по A1/A2/A3/**A4 владение** + confusion-матрицы + ловушки + финальные счётчики + идемпотентность;
 - [ ] **ось A4 проверена:** owner/subject-резолв, no_cross_clone_leak, ownership_carry, и **desync_no_fabrication**
   (смена носителя → старый снимок не выдумывает `usedRegulationNames`);
+- [x] **ось A5 (после реализации `TaskSolution`) — baseline снят 2026-07-07:** harness
+  `backend/scripts/regulation-stand/` (синтез-режим), 12 сценариев → **PASS 9 · FAIL 2 · N/A 1**.
+  Проверены: created_correctly · one_per_task · **owner_is_solver** (структурно, owner=`Issue.assignee`) ·
+  no_cross_clone_leak · built_from_daily · dual_purpose · not_a_solution · preservation. Провалы:
+  `a5-no-answer` (гейт по длине пропускает пустой ответ) · `a5-multi-solver` (соисполнитель не в
+  `personSubjectIds`). `repeat_candidate` — N/A (нет эмбеддингов локально). Отчёт —
+  `docs/testing/regulation-stand-report.md`. Оси A1–A4 — ещё не в harness;
 - [ ] провалы атрибутированы к агенту (A1/A2/A3/A4/pipeline); конфигурация прогона (флаги + модели) зафиксирована;
 - [ ] `typecheck/lint/build` зелёные по затронутому; прод не тронут; README `regulation-stand.md` написан;
 - [ ] хэндофф-промпт `regulation-stand-agent-prompt.md` готов (свежий агент берёт и запускает).
 
 ## Итог
-Реализовано: —/— (по фазам). Дальнейшее (после baseline) — петля фиксов по классам провалов (границы kind,
-over-merge, потеря контента), отдельным ТЗ.
+Реализовано частично: **ось A5 (Решения задач / TaskSolution)** — harness `backend/scripts/regulation-stand/`
+(режимы prepare/build/match/judge/report), синтез-режим (блоки how-solved воссозданы из корпуса как ground
+truth, запускается реальный `TaskSolutionBuildService`). Baseline 2026-07-07 (HEAD после Фазы 6 TaskSolution):
+**PASS 9 · FAIL 2 · N/A 1**, идемпотентность Δ=0. Два реальных дефекта материализатора:
+1. **no-answer гейт слаб** — материализация решается по длине сигнала (`minSignalChars=40`), а не по
+   содержательности: «Да фигня, само решилось» (45 симв) плодит пустое решение из `[требует уточнения]`.
+2. **multi-solver subject-growth** — `personSubjectIds` всегда = `[owner]`; соисполнитель (текст решения его
+   знает) не попадает в субъекты → его клон не растёт.
+
+Оси A1/A2/A3/A4 (экстрактор/арбитр/компилятор/владение регламентов) в harness ещё НЕ реализованы — остаются
+по фазам §7. Дальнейшее: (а) фиксы двух A5-дефектов отдельным ТЗ; (б) достройка A1–A4 harness.

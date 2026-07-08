@@ -1,0 +1,107 @@
+{
+  "meta": {
+    "purpose": "B5 (ТЗ task-solution-real-defects) — adversarial owner: сценарии, где владельца надо ВЫВЕСТИ, а не прочитать из assignee. Разбивает тавтологию owner_is_solver=100%.",
+    "date": "2026-07-08",
+    "mergedInto": "regulation-stand-corpus.json через loadA5Cases"
+  },
+  "scenarios": [
+    {
+      "id": "a5-b5-infer-no-assignee",
+      "cell": "A5.6",
+      "agentFocus": "task-solution",
+      "channel": "chat",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Флаки-тест в CI отваливается через раз",
+        "assignee": ""
+      },
+      "requiresPersons": ["Иван", "Дарья", "Михаил", "Сергей"],
+      "blocks": [
+        {
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Как чинили флаки-тест",
+          "criticalQuestion": "Как решили флаки-тест в CI?",
+          "trustedAnswer": "Иван нашёл гонку в общей фикстуре: тесты делили один клиент БД. Развёл фикстуры по describe, добавил beforeEach с чистой транзакцией и прогнал двести раз — ни одного падения.",
+          "evidenceQuotes": ["Иван развёл фикстуры по describe, чистая транзакция в beforeEach"],
+          "tags": ["ci", "flaky"],
+          "solverPerson": "Иван"
+        }
+      ]
+    },
+    {
+      "id": "a5-b5-two-solvers",
+      "cell": "A5.6",
+      "agentFocus": "task-solution",
+      "channel": "planerka",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Разбор аварии кластера ЦОД",
+        "assignee": ""
+      },
+      "requiresPersons": ["Иван", "Михаил", "Дарья", "Сергей"],
+      "blocks": [
+        {
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Как поднимали кластер",
+          "criticalQuestion": "Как решили аварию кластера?",
+          "trustedAnswer": "Разбирали вдвоём: Иван поднял сеть — пересобрал VLAN и маршруты, а Михаил починил стораджи — пересоздал том и синхронизировал реплики. К вечеру кластер поднялся.",
+          "evidenceQuotes": ["Иван поднял сеть, Михаил починил стораджи"],
+          "tags": ["цод", "авария"],
+          "solverPerson": "Иван",
+          "coSolvers": ["Иван", "Михаил"]
+        }
+      ]
+    },
+    {
+      "id": "a5-b5-divergence",
+      "cell": "A5.6",
+      "agentFocus": "task-solution",
+      "channel": "chat",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Починить оплату по вебхуку",
+        "assignee": "Дарья"
+      },
+      "requiresPersons": ["Иван", "Дарья", "Михаил", "Сергей"],
+      "blocks": [
+        {
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Как чинили оплату",
+          "criticalQuestion": "Как решили дублирование оплат?",
+          "trustedAnswer": "Задачу завела Дарья как координатор, но чинил Иван: нашёл, что вебхук не идемпотентен — при ретрае платёж дублировался. Иван добавил ключ идемпотентности и дедуп по нему, оплаты перестали задваиваться.",
+          "evidenceQuotes": ["чинил Иван: добавил ключ идемпотентности и дедуп"],
+          "tags": ["оплата", "идемпотентность"],
+          "solverPerson": "Иван"
+        }
+      ]
+    },
+    {
+      "id": "a5-b5-multi-assignee",
+      "cell": "A5.6",
+      "agentFocus": "task-solution",
+      "channel": "chat",
+      "trap": true,
+      "requiresIssue": {
+        "title": "Запуск нового биллинга",
+        "assignee": "Михаил",
+        "assignees": ["Михаил", "Дарья"]
+      },
+      "requiresPersons": ["Михаил", "Дарья", "Иван", "Сергей"],
+      "blocks": [
+        {
+          "order": 1,
+          "signalType": "methodology_step",
+          "name": "Как запускали биллинг",
+          "criticalQuestion": "Как решили запуск биллинга?",
+          "trustedAnswer": "Назначены вдвоём, но основную часть сделала Дарья: спроектировала тарифную сетку, написала расчёт пропорций и прогнала на исторических счетах — сходится до копейки.",
+          "evidenceQuotes": ["основную часть сделала Дарья: расчёт пропорций, прогон на исторических счетах"],
+          "tags": ["биллинг", "тарифы"],
+          "solverPerson": "Дарья"
+        }
+      ]
+    }
+  ]
+}

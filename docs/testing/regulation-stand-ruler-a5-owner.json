@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "purpose": "B5 (ТЗ task-solution-real-defects) — эталоны adversarial owner: владельца надо ВЫВЕСТИ.",
+    "date": "2026-07-08",
+    "mergedInto": "regulation-stand-ruler.json через loadA5Cases"
+  },
+  "rulers": {
+    "a5-b5-infer-no-assignee": {
+      "a5": {
+        "created": true,
+        "owner": "Иван",
+        "subjectPersons": ["Иван"],
+        "sourceIssueLinked": true,
+        "solutionGist": "развёл общие фикстуры по describe, чистая транзакция в beforeEach",
+        "note": "B1: задача без assignee, один явный решатель → владелец выведен из текста (Иван)"
+      }
+    },
+    "a5-b5-two-solvers": {
+      "a5": {
+        "created": false,
+        "note": "B1: без assignee, двое решателей → не приписываем одному → skippedNoOwner (лучше пропуск, чем чужая задача)"
+      }
+    },
+    "a5-b5-divergence": {
+      "a5": {
+        "created": true,
+        "owner": "Иван",
+        "subjectPersons": ["Иван"],
+        "mustNotOwn": ["Дарья"],
+        "mustNotSubject": ["Дарья"],
+        "sourceIssueLinked": true,
+        "solutionGist": "ключ идемпотентности + дедуп по нему на вебхуке оплаты",
+        "note": "B2: assignee=координатор Дарья ≠ единственный решатель Иван → владелец Иван (kill-switch ownerInferenceEnabled)"
+      }
+    },
+    "a5-b5-multi-assignee": {
+      "a5": {
+        "created": true,
+        "owner": "Дарья",
+        "subjectPersons": ["Дарья"],
+        "mustNotSubject": ["Михаил"],
+        "sourceIssueLinked": true,
+        "solutionGist": "тарифная сетка + расчёт пропорций, прогон на исторических счетах",
+        "note": "B3: несколько assignee (Михаил, Дарья), решала Дарья → она владелец детерминированно; со-assignee Михаил не растит клон"
+      }
+    }
+  }
+}

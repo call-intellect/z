@@ -361,6 +361,13 @@ describe('buildTasksPromptUnified — user', () => {
     expect(out.user).toContain('Дата встречи: 2026-05-24');
   });
 
+  it('companyAbout → секция «О компании» в user', () => {
+    const out = buildTasksPromptUnified(SAMPLE_INPUT, {
+      companyAbout: '## О компании\nНазвание: Ооо луа',
+    });
+    expect(out.user).toContain('## О компании');
+  });
+
   it('withFragmentBounds=true → подпись «timestamps в формате»', () => {
     const out = buildTasksPromptUnified(SAMPLE_INPUT, {
       withFragmentBounds: true,
@@ -510,5 +517,22 @@ describe('Legacy buildTasksStructuredPrompt (tasks-structured.ts) — обрат
     expect(out.user).not.toContain('Reply with valid JSON only');
     expect(out.user).toContain('Тип встречи: team');
     expect(out.user).toContain('Заголовок: Sample');
+  });
+
+  it('companyAbout + orgContext → секция «О компании» и контекст организации в user', () => {
+    const out = buildTasksStructuredPrompt({
+      meeting: { id: 'm-1', type: 'team', title: 'Sample' },
+      dialog: SAMPLE_INPUT.dialog,
+      companyAbout: '## О компании\nНазвание: Ооо луа',
+      orgContext: {
+        projects: [{ identifier: 'BACKEND', name: 'Платформа' }],
+        goals: [{ name: 'v2' }],
+        people: [{ name: 'Игорь', role: 'CTO' }],
+      },
+    });
+    expect(out.user).toContain('## О компании');
+    expect(out.user).toContain('Проекты организации');
+    expect(out.user).toContain('Активные цели');
+    expect(out.user).toContain('Сотрудники организации');
   });
 });

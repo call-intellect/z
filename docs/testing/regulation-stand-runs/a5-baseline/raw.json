@@ -1,0 +1,437 @@
+{
+  "stamp": "a5-baseline",
+  "orgId": "cmraza9800001risllm368j8v",
+  "headCommit": "91013a1f",
+  "createdAt": "2026-07-07T18:25:49.043Z",
+  "passStats": {
+    "create": {
+      "candidates": 13,
+      "created": 12,
+      "updated": 0,
+      "skippedNoOwner": 0,
+      "skippedGate": 1,
+      "skippedNoNew": 0
+    },
+    "extend": {
+      "candidates": 13,
+      "created": 0,
+      "updated": 2,
+      "skippedNoOwner": 0,
+      "skippedGate": 1,
+      "skippedNoNew": 10
+    },
+    "idempotency": {
+      "candidates": 13,
+      "created": 0,
+      "updated": 0,
+      "skippedNoOwner": 0,
+      "skippedGate": 1,
+      "skippedNoNew": 12
+    }
+  },
+  "embeddingsWritten": 0,
+  "observations": [
+    {
+      "scenarioId": "a5-create-from-probe",
+      "cell": "A5.1",
+      "trap": false,
+      "issueId": "cmrazaaj90000rmsln0vw72ez",
+      "assignee": "Михаил",
+      "solution": {
+        "id": "cmrazaetj002trmslxkds92pg",
+        "title": "Вебхуки Bitrix отваливаются по 429",
+        "ownerPersonId": "cmraza98n0006rislthb7wj3f",
+        "ownerPersonName": "Михаил",
+        "personSubjectIds": [
+          "cmraza98n0006rislthb7wj3f"
+        ],
+        "subjectPersonNames": [
+          "Михаил"
+        ],
+        "sourceIssueId": "cmrazaaj90000rmsln0vw72ez",
+        "sourceBlockIds": [
+          "cmrazaakz0006rmslaoea5lgg"
+        ],
+        "skillTags": [
+          "bitrix",
+          "429"
+        ],
+        "solutionMd": "# Решение задачи: Вебхуки Bitrix отваливаются по 429\n\n## 1. Контекст задачи\nВебхуки Bitrix отваливаются по ошибке 429. Задача — снизить количество таких ошибок при исходящих запросах.\n\n## 2. Как решалась задача\n1. Поставил лимитер на исходящие запросы, чтобы ограничить их частоту.\n2. Добавил очередь ретраев с бэкоффом, чтобы повторять запросы с задержкой.\n3. Прогнал решение на нагрузке 3×, чтобы проверить поведение под повышенной нагрузкой.\n\n## 3. Итог\nРешение собрано из лимитера и очереди ретраев с бэкоффом, проверено на нагрузке 3×. Итоговый эффект [требует уточнения: снизились ли 429 и как именно повело себя решение в работе].\n\n## 4. Что важно на будущее\nЛимитер и очередь ретраев с бэкоффом помогают при 429, но для дальнейшего использования важно отдельно фиксировать результат проверки: сколько стало 429, на какой нагрузке тестировали и нужны ли дополнительные ограничения [требует уточнения].",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 1,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaakz0006rmslaoea5lgg"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-daily-mentions",
+      "cell": "A5.2",
+      "trap": false,
+      "issueId": "cmrazaalf0009rmslzgaspuqj",
+      "assignee": "Дарья",
+      "solution": {
+        "id": "cmrazaixx0031rmslw4hn9eig",
+        "title": "Отчёт «Логистик Плюс» тормозит",
+        "ownerPersonId": "cmraza98q0009risl864unmab",
+        "ownerPersonName": "Дарья",
+        "personSubjectIds": [
+          "cmraza98q0009risl864unmab"
+        ],
+        "subjectPersonNames": [
+          "Дарья"
+        ],
+        "sourceIssueId": "cmrazaalf0009rmslzgaspuqj",
+        "sourceBlockIds": [
+          "cmrazaalv000ermslpb8tafk1"
+        ],
+        "skillTags": [
+          "отчёт",
+          "производительность"
+        ],
+        "solutionMd": "# Решение задачи: Отчёт «Логистик Плюс» тормозит\n\n## 1. Контекст задачи\nОтчёт «Логистик Плюс» работал медленно. Нужно было ускорить его выполнение.\n\n## 2. Как решалась — пошагово\n1. Дарья [требует уточнения: роль] сделала предагрегацию витрины.\n2. Дарья [требует уточнения: роль] добавила кеш на сутки.\n3. После этого отчёт стал мгновенно выполняться.\n\n## 3. Итог\nОтчёт начал работать мгновенно. Опроса не было.\n\n## 4. Что важно на будущее\n[требует уточнения: в материале нет данных о граблях, нюансах и условиях, при которых решение может потребовать пересмотра]",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 1,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaalv000ermslpb8tafk1"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-one-per-task",
+      "cell": "A5.3",
+      "trap": true,
+      "issueId": "cmrazaam4000hrmsllcqpfxdj",
+      "assignee": "Иван",
+      "solution": {
+        "id": "cmrazanvo003brmslmzfzjsfg",
+        "title": "Миграция клиента на новый тариф",
+        "ownerPersonId": "cmraza98t000crisljrz4s6n4",
+        "ownerPersonName": "Иван",
+        "personSubjectIds": [
+          "cmraza98t000crisljrz4s6n4"
+        ],
+        "subjectPersonNames": [
+          "Иван"
+        ],
+        "sourceIssueId": "cmrazaam4000hrmsllcqpfxdj",
+        "sourceBlockIds": [
+          "cmrazaamo000mrmslio52qfag",
+          "cmrazbu8k004hrmslpgz5k5ps",
+          "cmrazbu8z004krmsl1uaxrf3x"
+        ],
+        "skillTags": [
+          "миграция"
+        ],
+        "solutionMd": "# 1. Контекст задачи\nМиграция клиента на новый тариф. [изменено: было указано только про первый шаг; теперь в материале зафиксированы три шага: выгрузка текущих лимитов, пересчёт по новой сетке и согласование с клиентом, включение нового тарифа и проверка биллинга.] Полный контекст задачи в материале по-прежнему не описан.\n\n# 2. Как решалась — пошагово\n1. Иван [требует уточнения: роль] утром выгружает текущие лимиты клиента — чтобы зафиксировать исходные данные перед миграцией — результат шага: текущие лимиты клиента выгружены.\n2. Иван [требует уточнения: роль] днём пересчитывает по новой сетке и согласует с клиентом — чтобы согласовать новые параметры тарифа — результат шага: пересчёт выполнен и согласование с клиентом проведено.\n3. Иван [требует уточнения: роль] вечером включает новый тариф и проверяет биллинг — чтобы завершить миграцию и убедиться, что учёт работает корректно — результат шага: новый тариф включён, биллинг проверен.\n\n# 3. Итог\n[требует уточнения: в материале не сказано, чем закончилась миграция клиента на новый тариф в целом и был ли зафиксирован итоговый успешный результат]\n\n# 4. Что важно на будущее\n[изменено: теперь в материале есть три последовательных шага, но по-прежнему не описаны итоговое состояние миграции, возможные риски и нюансы при переносе клиента на новый тариф]\n",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 2,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaamo000mrmslio52qfag",
+        "cmrazbu8k004hrmslpgz5k5ps",
+        "cmrazbu8z004krmsl1uaxrf3x"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-no-answer",
+      "cell": "A5.4",
+      "trap": true,
+      "issueId": "cmrazaan4000ormslqx4tx9hu",
+      "assignee": "Михаил",
+      "solution": {
+        "id": "cmrazarsw003frmslquytw4ko",
+        "title": "Поправить опечатку в футере",
+        "ownerPersonId": "cmraza98n0006rislthb7wj3f",
+        "ownerPersonName": "Михаил",
+        "personSubjectIds": [
+          "cmraza98n0006rislthb7wj3f"
+        ],
+        "subjectPersonNames": [
+          "Михаил"
+        ],
+        "sourceIssueId": "cmrazaan4000ormslqx4tx9hu",
+        "sourceBlockIds": [
+          "cmrazaans000trmsl4uq7y5m0"
+        ],
+        "skillTags": [],
+        "solutionMd": "# Решение задачи: Поправить опечатку в футере\n\n## 1. Контекст задачи\nНужно было поправить опечатку в футере.\n\nСложность по материалу не описана: в накопленных блоках есть только ответ «Да фигня, само решилось, нечего рассказывать» и цитата «нечего рассказывать».\n\n## 2. Как решалась — пошагово\n1. [требует уточнения: что именно сделали для исправления опечатки в футере]\n2. [требует уточнения: кто выполнял исправление]\n3. [требует уточнения: в какой системе или на каком сайте было внесено изменение]\n\n## 3. Итог\nЗадача по материалу завершилась без описания конкретных действий: указано только, что вопрос «само решилось».\n\n## 4. Что важно на будущее\n[требует уточнения: в материале нет информации о том, как именно была исправлена опечатка, чтобы можно было зафиксировать полезный вывод на будущее]\n",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 1,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaans000trmsl4uq7y5m0"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-trivial-gated",
+      "cell": "A5.5",
+      "trap": true,
+      "issueId": "cmrazaao3000vrmsl63ihzalx",
+      "assignee": "Иван",
+      "solution": null,
+      "solutionCountForIssue": 0,
+      "sourceBlockIds": [
+        "cmrazaaol0010rmsltjf8hc20"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-ownership-solver",
+      "cell": "A5.6",
+      "trap": true,
+      "issueId": "cmrazaaos0012rmsla6l5lwg4",
+      "assignee": "Михаил",
+      "solution": {
+        "id": "cmrazawb0003lrmsltg6t41fi",
+        "title": "Настроить SSO",
+        "ownerPersonId": "cmraza98n0006rislthb7wj3f",
+        "ownerPersonName": "Михаил",
+        "personSubjectIds": [
+          "cmraza98n0006rislthb7wj3f"
+        ],
+        "subjectPersonNames": [
+          "Михаил"
+        ],
+        "sourceIssueId": "cmrazaaos0012rmsla6l5lwg4",
+        "sourceBlockIds": [
+          "cmrazaapd0018rmslm126ltux"
+        ],
+        "skillTags": [
+          "sso"
+        ],
+        "solutionMd": "# 1. Контекст задачи\nНужно было настроить SSO. По материалу известно только, что на планёрке Сергей сообщил о результате настройки.\n\n# 2. Как решалась — пошагово\n1. Михаил [требует уточнения: роль] поднял SAML.\n   - Почему: это было частью настройки SSO.\n   - Результат шага: SAML был поднят.\n2. Михаил [требует уточнения: роль] смапил группы.\n   - Почему: чтобы связать группы с настройкой SSO.\n   - Результат шага: группы были сопоставлены.\n3. Михаил [требует уточнения: роль] проверил вход.\n   - Почему: чтобы убедиться, что SSO работает.\n   - Результат шага: вход был проверен.\n\n# 3. Итог\nSSO настроен: поднят SAML, выполнен маппинг групп, вход проверен.\nСработало ли в полном объёме — [требует уточнения].\n\n# 4. Что важно на будущее\n- Фиксировать, кто именно и в какой роли выполнял настройку.\n- Отдельно сохранять результат проверки входа: что именно проверяли и был ли найден дефект.\n- Для последующих разборов полезно указывать, какие именно группы были смаплены и в какую систему выполнялся вход.\n",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 1,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaapd0018rmslm126ltux"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-repeat-candidate-instruction",
+      "cell": "A5.7",
+      "trap": true,
+      "issueId": "cmrazaaqd001armsl1p4nsv70",
+      "assignee": "Михаил",
+      "solution": {
+        "id": "cmrazb0y5003prmslexlht6qg",
+        "title": "Разбор инцидента 429 (снова)",
+        "ownerPersonId": "cmraza98n0006rislthb7wj3f",
+        "ownerPersonName": "Михаил",
+        "personSubjectIds": [
+          "cmraza98n0006rislthb7wj3f"
+        ],
+        "subjectPersonNames": [
+          "Михаил"
+        ],
+        "sourceIssueId": "cmrazaaqd001armsl1p4nsv70",
+        "sourceBlockIds": [
+          "cmrazaaqs001frmsl7v6737s6"
+        ],
+        "skillTags": [
+          "429",
+          "повтор"
+        ],
+        "solutionMd": "# 1. Контекст задачи\nВозник повторный инцидент с ошибкой 429 у другого клиента. Нужно было снова решить ту же задачу, что и раньше: ограничение запросов и устойчивость к повторам.\n\n# 2. Как решалась задача\n1. Применён лимитер [требует уточнения: какой именно и на каком уровне].\n2. Настроена очередь ретраев [требует уточнения: где именно и с какими параметрами].\n3. Добавлен бэкофф [требует уточнения: какой тип и какие интервалы].\n\n# 3. Итог\nРешение снова выполнено по той же схеме, что и в предыдущих случаях. По материалу видно, что этот подход уже применялся третий раз.\n\n# 4. Что важно на будущее\n- Схема решения повторяется, поэтому её стоит зафиксировать отдельно [требует уточнения: где хранится итоговый стандартный вариант].\n- Не описаны причина ошибки 429, конкретные настройки лимитера, очереди ретраев и бэкоффа.\n- Не указан проверенный результат после применения решения.\n",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 1,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaaqs001frmsl7v6737s6"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-dual-purpose",
+      "cell": "A5.8",
+      "trap": false,
+      "issueId": "cmrazaaqy001hrmslvwa7khr6",
+      "assignee": "Дарья",
+      "solution": {
+        "id": "cmrazb6gf003trmsl0hf5gwak",
+        "title": "Оптимизация запроса дашборда",
+        "ownerPersonId": "cmraza98q0009risl864unmab",
+        "ownerPersonName": "Дарья",
+        "personSubjectIds": [
+          "cmraza98q0009risl864unmab"
+        ],
+        "subjectPersonNames": [
+          "Дарья"
+        ],
+        "sourceIssueId": "cmrazaaqy001hrmslvwa7khr6",
+        "sourceBlockIds": [
+          "cmrazaare001lrmslfts6vg63"
+        ],
+        "skillTags": [
+          "sql",
+          "оптимизация"
+        ],
+        "solutionMd": "# Решение задачи: Оптимизация запроса дашборда\n\n## 1. Контекст задачи\nНужно было ускорить запрос дашборда. В исходном материале указано, что запрос работал медленно: около 4 секунд.\n\n## 2. Как решалась\n1. Дарья [требует уточнения: роль] вынесла тяжёлый джойн в матвью.\n   - Почему: чтобы убрать дорогую часть из основного запроса.\n   - Результат шага: запрос стал легче по выполнению.\n2. Дарья [требует уточнения: роль] добавила частичный индекс.\n   - Почему: чтобы ускорить доступ к нужным данным.\n   - Результат шага: время выполнения снизилось.\n3. Дарья [требует уточнения: роль] проверила итоговую скорость запроса.\n   - Почему: нужно было подтвердить эффект оптимизации.\n   - Результат шага: время упало с 4 секунд до 200 миллисекунд.\n\n## 3. Итог\nОптимизация сработала: после переноса тяжёлого джойна в матвью и добавления частичного индекса запрос дашборда ускорился с 4 секунд до 200 миллисекунд.\n\n## 4. Что важно на будущее\n- Для тяжёлых джойнов имеет смысл проверять перенос в матвью.\n- Частичный индекс может дать заметный эффект на времени выполнения.\n- Для подобных задач важно фиксировать исходное и итоговое время, чтобы можно было подтвердить результат.\n",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 1,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaare001lrmslfts6vg63"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-owner-not-mentioner",
+      "cell": "A5.6",
+      "trap": true,
+      "issueId": "cmrazaarh001ormsl1inqqzqn",
+      "assignee": "Иван",
+      "solution": {
+        "id": "cmrazbbj1003xrmsl401t19a9",
+        "title": "Починка вебхука оплаты",
+        "ownerPersonId": "cmraza98t000crisljrz4s6n4",
+        "ownerPersonName": "Иван",
+        "personSubjectIds": [
+          "cmraza98t000crisljrz4s6n4"
+        ],
+        "subjectPersonNames": [
+          "Иван"
+        ],
+        "sourceIssueId": "cmrazaarh001ormsl1inqqzqn",
+        "sourceBlockIds": [
+          "cmrazaarv001srmslilk53qm0"
+        ],
+        "skillTags": [
+          "вебхук",
+          "оплата"
+        ],
+        "solutionMd": "# 1. Контекст задачи\nНужно починить вебхук оплаты. По материалу известно только, что доработку выполнил Иван [требует уточнения: роль], а Дарья сообщила о результате в чате.\n\n[требует уточнения: что именно ломалось до починки и как проявлялась ошибка]\n\n# 2. Как решалась — пошагово\n1. Иван [требует уточнения: роль] добавляет идемпотентный ключ.\n   - Почему: [требует уточнения: цель добавления идемпотентного ключа не описана отдельно, но по материалу это часть починки вебхука оплаты].\n   - Результат шага: вебхук оплаты получает механизм идемпотентности.\n\n2. Иван [требует уточнения: роль] добавляет дедупликацию по `event_id`.\n   - Почему: чтобы обрабатывать повторяющиеся события без дублирования.\n   - Результат шага: повторные события по `event_id` не обрабатываются повторно.\n\n# 3. Итог\nДарья зафиксировала, что вебхук оплаты починен. В результате добавлены идемпотентный ключ и дедупликация по `event_id`.\n\n[требует уточнения: подтверждено ли это тестами, мониторингом или реальными платежами]\n\n# 4. Что важно на будущее\n- При починке вебхука оплаты нужно явно проверять идемпотентность обработки.\n- Нужно учитывать дедупликацию входящих событий по `event_id`.\n- [требует уточнения: какие именно сценарии повторной доставки событий нужно покрыть]\n\n# Связанные документы\n[требует уточнения: связанные документы не указаны в материале]",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 1,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaarv001srmslilk53qm0"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-extend-daily",
+      "cell": "A5.3",
+      "trap": true,
+      "issueId": "cmrazaas0001vrmslfzcfz0wn",
+      "assignee": "Иван",
+      "solution": {
+        "id": "cmrazbf1m0041rmslicfeylyk",
+        "title": "Настройка бэкапов",
+        "ownerPersonId": "cmraza98t000crisljrz4s6n4",
+        "ownerPersonName": "Иван",
+        "personSubjectIds": [
+          "cmraza98t000crisljrz4s6n4"
+        ],
+        "subjectPersonNames": [
+          "Иван"
+        ],
+        "sourceIssueId": "cmrazaas0001vrmslfzcfz0wn",
+        "sourceBlockIds": [
+          "cmrazaasg0020rmslnzjs844m",
+          "cmrazbu95004nrmslivdk1imy"
+        ],
+        "skillTags": [
+          "бэкап"
+        ],
+        "solutionMd": "# Решение задачи: Настройка бэкапов\n\n## 1. Контекст задачи\nНужно было настроить бэкапы [требует уточнения: какие именно данные и для какой системы].\n\n## 2. Как решалась — пошагово\n1. Иван [требует уточнения: роль] настроил ночной дамп.\n   - Что сделал: настроил ночной дамп.\n   - Почему: [требует уточнения].\n   - Результат шага: ночной дамп настроен.\n2. Иван [требует уточнения: роль] настроил выгрузку в S3.\n   - Что сделал: настроил выгрузку в S3.\n   - Почему: для хранения бэкапов вне основной системы.\n   - Результат шага: выгрузка в S3 настроена.\n3. Иван [требует уточнения: роль] добавил проверку восстановления раз в неделю.\n   - Что сделал: добавил проверку восстановления раз в неделю.\n   - Почему: [требует уточнения].\n   - Результат шага: проверка восстановления раз в неделю добавлена.\n\n## 3. Итог\nБэкапы настроены: ночной дамп и выгрузка в S3.\nДополнительно добавлена проверка восстановления раз в неделю.\nСработало ли решение: [требует уточнения].\n\n## 4. Что важно на будущее\n[требует уточнения: в материале нет информации о нюансах, рисках и граблях].",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 2,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaasg0020rmslnzjs844m",
+        "cmrazbu95004nrmslivdk1imy"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-no-issue-link",
+      "cell": "A5.1",
+      "trap": true,
+      "issueId": null,
+      "assignee": null,
+      "solution": null,
+      "solutionCountForIssue": 0,
+      "sourceBlockIds": [
+        "cmrazaask0023rmsla8z1c65z"
+      ],
+      "sourceBlocksStillCanonical": true
+    },
+    {
+      "scenarioId": "a5-multi-solver",
+      "cell": "A5.6",
+      "trap": true,
+      "issueId": "cmrazaasn0025rmsl9d0j01v6",
+      "assignee": "Иван",
+      "solution": {
+        "id": "cmrazbk8h0045rmsltg3z4ks1",
+        "title": "Запуск нового ЦОД",
+        "ownerPersonId": "cmraza98t000crisljrz4s6n4",
+        "ownerPersonName": "Иван",
+        "personSubjectIds": [
+          "cmraza98t000crisljrz4s6n4"
+        ],
+        "subjectPersonNames": [
+          "Иван"
+        ],
+        "sourceIssueId": "cmrazaasn0025rmsl9d0j01v6",
+        "sourceBlockIds": [
+          "cmrazaat4002armsltfhggd90"
+        ],
+        "skillTags": [
+          "цод"
+        ],
+        "solutionMd": "# Решение задачи: Запуск нового ЦОД\n\n## 1. Контекст задачи\nНужно было запустить новый ЦОД. В материале указано только, что запуск выполняли вдвоём: Иван и Михаил. Причина сложности и исходные ограничения [требует уточнения].\n\n## 2. Как решалась — пошагово\n1. Иван поднимает сеть → закрывает сетевую часть запуска → сеть готова.\n2. Михаил поднимает стораджи → закрывает часть со стораджами → стораджи готовы.\n3. Иван и Михаил вместе проверяют отказоустойчивость → подтверждают, что ЦОД работает устойчиво → отказоустойчивость проверена.\n\n## 3. Итог\nЗапуск ЦОД выполнен, сеть и стораджи подняты, отказоустойчивость проверена. Дополнительные детали результата в материале не приведены.\n\n## 4. Что важно на будущее\nПри запуске ЦОД распределение работ между Иваном и Михаилом уже показало себя как рабочее: сеть отдельно, стораджи отдельно, затем совместная проверка отказоустойчивости. Остальные нюансы запуска [требует уточнения].",
+        "repeatGroupKey": null,
+        "candidateInstruction": false,
+        "version": 1,
+        "hasEmbedding": false
+      },
+      "solutionCountForIssue": 1,
+      "sourceBlockIds": [
+        "cmrazaat4002armsltfhggd90"
+      ],
+      "sourceBlocksStillCanonical": true
+    }
+  ],
+  "config": {
+    "taskSolution.lookbackHours": 48,
+    "taskSolution.minSignalChars": 40,
+    "taskSolution.repeatThreshold": 3,
+    "taskSolution.repeatSimilarity": 0.85,
+    "aiFeatures.docCompilerEnabled": true
+  }
+}

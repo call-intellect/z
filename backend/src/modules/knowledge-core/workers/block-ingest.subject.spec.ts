@@ -413,3 +413,113 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
     expect(mocks.upsert).not.toHaveBeenCalled();
   });
 });
+
+interface CommitmentMocks {
+  ideaBlockUpdate: ReturnType<typeof vi.fn>;
+  resolveSubjectPersonId: ReturnType<typeof vi.fn>;
+  getDynamic: ReturnType<typeof vi.fn>;
+}
+
+function buildCommitmentWorker(opts: { resolvedPersonId: string | null; enabled?: boolean }): {
+  worker: BlockIngestWorker;
+  mocks: CommitmentMocks;
+} {
+  const ideaBlockUpdate = vi.fn(async () => ({}));
+  const prisma = { ideaBlock: { update: ideaBlockUpdate } } as unknown;
+
+  const resolveSubjectPersonId = vi.fn(async () => opts.resolvedPersonId);
+  const entities = { resolveSubjectPersonId } as unknown;
+
+  const getDynamic = vi.fn(async () => opts.enabled ?? true);
+  const cfg = { getDynamic } as unknown;
+
+  const worker = new BlockIngestWorker(
+    {} as never,
+    prisma as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    entities as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    cfg as never,
+    {} as never,
+  );
+  return { worker, mocks: { ideaBlockUpdate, resolveSubjectPersonId, getDynamic } };
+}
+
+function attributeCommitment(
+  worker: BlockIngestWorker,
+  args: {
+    event: unknown;
+    block: ExtractedBlock;
+    blockId: string;
+    segments: Segment[];
+    authorUserId: string | null;
+    authorEmail?: string | null;
+  },
+): Promise<void> {
+  return (
+    worker as unknown as { attributeCommitmentAuthor: (a: unknown) => Promise<void> }
+  ).attributeCommitmentAuthor(args);
+}
+
+const chatEvent = {
+  id: 'raw-3',
+  tenantId: 'tenant-1',
+  sourceType: 'chat',
+  occurredAt: new Date('2026-04-01T10:00:00.000Z'),
+  dataClass: 'internal',
+} as never;
+
+const commitmentSegment: Segment = {
+  startMs: 1000,
+  endMs: 3000,
+  speakers: [],
+  text: 'обещаю сделать',
+};
+
+describe('BlockIngestWorker — P1.5 переатрибуция автора обещания', () => {
+  it('(neg) meeting + сегмент без говорящего → автора не проставляем, resolve/update не зовём', async () => {
+    const { worker, mocks } = buildCommitmentWorker({ resolvedPersonId: 'p-uploader' });
+
+    await attributeCommitment(worker, {
+      event: meetingEvent,
+      block: buildBlock({ evidenceStartMs: 1500 }),
+      blockId: 'blk-meeting-1',
+      segments: [commitmentSegment],
+      authorUserId: 'u-uploader',
+      authorEmail: 'uploader@example.com',
+    });
+
+    expect(mocks.resolveSubjectPersonId).not.toHaveBeenCalled();
+    expect(mocks.ideaBlockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('(pos) chat + сегмент без говорящего, authorUserId задан → атрибуция по автору сообщения', async () => {
+    const { worker, mocks } = buildCommitmentWorker({ resolvedPersonId: 'p-chat-author' });
+
+    await attributeCommitment(worker, {
+      event: chatEvent,
+      block: buildBlock({ evidenceStartMs: 1500 }),
+      blockId: 'blk-chat-1',
+      segments: [commitmentSegment],
+      authorUserId: 'u-chat-author',
+      authorEmail: 'chat@example.com',
+    });
+
+    expect(mocks.resolveSubjectPersonId).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({ authorUserId: 'u-chat-author', speakerParticipantId: null, speakerName: null }),
+    );
+    expect(mocks.ideaBlockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ commitmentAuthorPersonId: 'p-chat-author' }),
+      }),
+    );
+  });
+});

@@ -24,9 +24,35 @@ interface AddMemberArgs {
 export class ConversationService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
+  async findExistingDm(
+    tenantId: string,
+    memberIds: [string, string],
+  ): Promise<{ id: string } | null> {
+    const [a, b] = memberIds;
+    return this.prisma.conversation.findFirst({
+      where: {
+        tenantId,
+        kind: 'dm',
+        AND: [
+          { members: { some: { userId: a } } },
+          { members: { some: { userId: b } } },
+          { members: { every: { userId: { in: [a, b] } } } },
+        ],
+      },
+      select: { id: true },
+    });
+  }
+
   async createConversation(args: CreateConversationArgs): Promise<Conversation> {
     const memberIds = Array.from(new Set([args.createdByUserId, ...args.memberUserIds]));
     await this.assertUsersInTenant(args.tenantId, memberIds);
+
+    if (args.kind === 'dm' && memberIds.length === 2) {
+      const existing = await this.findExistingDm(args.tenantId, [memberIds[0]!, memberIds[1]!]);
+      if (existing) {
+        return this.prisma.conversation.findUniqueOrThrow({ where: { id: existing.id } });
+      }
+    }
 
     return this.prisma.conversation.create({
       data: {

@@ -570,6 +570,11 @@ export class TypedConfigService {
         undefined,
         true,
       ),
+      taskSolutionEnabled: this.resolveSync<boolean>(
+        'aiFeatures.taskSolutionEnabled',
+        undefined,
+        true,
+      ),
       crossSourceDedupeThreshold: this.resolveSync<number>(
         'tasks.cross_source_dedupe_threshold',
         undefined,
@@ -1344,7 +1349,7 @@ export class TypedConfigService {
       summaryRebuildHours: this.resolveSync<number>(
         'companyProfile.summaryRebuildHours',
         undefined,
-        24,
+        168,
       ),
       summaryMinSourceBlocks: this.resolveSync<number>(
         'companyProfile.summaryMinSourceBlocks',

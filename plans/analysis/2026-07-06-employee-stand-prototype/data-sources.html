@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Источники данных — стенд сотрудника</title>
+<style>
+  :root{
+    --bg:#0b1310; --panel:#121e18; --panel2:#16241d; --ink:#eaf4ee; --text:#d3e2da; --muted:#8ba299; --faint:#61756c;
+    --border:#223129; --accent:#2bc99a; --accent2:#46d6ab;
+    --green:#2bc99a; --amber:#e0ad55; --red:#f0787c; --blue:#78add8;
+    --greensoft:#12271f; --ambersoft:#2a2110; --redsoft:#2c1616;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f7f5; --panel:#fff; --panel2:#f7faf8; --ink:#10201a; --text:#1d2b26; --muted:#5c6f68; --faint:#869790;
+    --border:#dde7e1; --accent:#0f9d76; --accent2:#0a7a5b;
+    --green:#0f9d76; --amber:#b7791f; --red:#d63d42; --blue:#3f76a8;
+    --greensoft:#e3f5ed; --ambersoft:#f7edd8; --redsoft:#fbe6e6;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .proto-nav{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:12px;height:46px;padding:0 18px;background:rgba(11,19,16,.9);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);}
+  :root[data-theme="light"] .proto-nav{background:rgba(255,255,255,.88);}
+  .pn-brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:var(--ink);}
+  .pn-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);}
+  .pn-links{display:flex;gap:3px;margin-left:4px;}
+  a.pn{padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;color:var(--muted);text-decoration:none;}
+  a.pn.active{background:var(--accent);color:#04140e;}
+  .pn-tbtn{margin-left:auto;padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;}
+
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px 100px;}
+  header.h{padding:46px 0 20px;}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent2);}
+  h1{font-size:clamp(26px,4vw,38px);font-weight:800;letter-spacing:-.02em;color:var(--ink);margin:12px 0 0;text-wrap:balance;}
+  .lede{font-size:17px;color:var(--muted);margin-top:14px;max-width:760px;}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:22px;font-size:13px;}
+  .legend .lg{display:inline-flex;align-items:center;gap:8px;}
+  .dot{width:11px;height:11px;border-radius:50%;flex:none;}
+  .dot.g{background:var(--green);} .dot.a{background:var(--amber);} .dot.r{background:var(--red);}
+  .legend b{color:var(--ink);}
+
+  .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px;}
+  .stat-row .s{border-radius:13px;padding:14px 16px;border:1px solid var(--border);}
+  .stat-row .s.g{background:var(--greensoft);border-color:color-mix(in oklab,var(--green) 25%,transparent);}
+  .stat-row .s.a{background:var(--ambersoft);border-color:color-mix(in oklab,var(--amber) 25%,transparent);}
+  .stat-row .s.r{background:var(--redsoft);border-color:color-mix(in oklab,var(--red) 25%,transparent);}
+  .stat-row .s .n{font-size:24px;font-weight:800;}
+  .stat-row .s.g .n{color:var(--green);} .stat-row .s.a .n{color:var(--amber);} .stat-row .s.r .n{color:var(--red);}
+  .stat-row .s .c{font-size:12.5px;color:var(--muted);margin-top:2px;}
+
+  .wgt{margin-top:34px;border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--panel);}
+  .wgt-h{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--panel2);}
+  .wgt-h .num{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent2);width:26px;height:26px;border-radius:7px;background:color-mix(in oklab,var(--accent) 14%,transparent);display:grid;place-items:center;flex:none;}
+  .wgt-h h3{font-size:17px;font-weight:700;color:var(--ink);margin:0;}
+  .wgt-h .what{font-size:12.5px;color:var(--muted);margin-left:auto;text-align:right;max-width:44%;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--panel2);}
+  td{padding:13px 14px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5;}
+  tr:last-child td{border-bottom:none;}
+  td.cell{font-weight:700;color:var(--ink);white-space:nowrap;}
+  td.src code, td.inp code{font-family:var(--mono);font-size:11.5px;background:var(--panel2);padding:1px 5px;border-radius:4px;color:var(--accent2);white-space:nowrap;}
+  td.src{color:var(--text);min-width:260px;}
+  td.inp{color:var(--muted);}
+  .st{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;}
+  .st.g{background:var(--greensoft);color:var(--green);} .st.a{background:var(--ambersoft);color:var(--amber);} .st.r{background:var(--redsoft);color:var(--red);}
+  .wrapscroll{overflow-x:auto;}
+  .note{font-size:12.5px;color:var(--muted);padding:12px 20px;border-top:1px dashed var(--border);background:var(--panel2);line-height:1.5;}
+  .note b{color:var(--ink);}
+  footer{margin-top:44px;padding-top:22px;border-top:1px solid var(--border);color:var(--faint);font-size:12.5px;}
+  @media(max-width:820px){.stat-row{grid-template-columns:1fr;} .wgt-h .what{display:none;}}
+</style>
+</head>
+<body>
+<div class="proto-nav">
+  <span class="pn-brand"><span class="pn-dot"></span>Стенд сотрудника</span>
+  <span class="pn-links">
+    <a class="pn" href="index.html">Прототип</a>
+    <a class="pn" href="report.html">Отчёт · 5 персон</a>
+    <a class="pn" href="blueprint.html">Блюпринт</a>
+    <a class="pn active" href="data-sources.html">Источники данных</a>
+  </span>
+  <button class="pn-tbtn" onclick="var r=document.documentElement;r.setAttribute('data-theme', r.getAttribute('data-theme')==='light'?'dark':'light')">🌓 Тема</button>
+</div>
+
+<div class="wrap">
+  <header class="h">
+    <div class="eyebrow">Откуда каждый виджет берёт данные</div>
+    <h1>Источники данных стенда сотрудника</h1>
+    <p class="lede">По каждой ячейке дашборда: что она даёт, из какой модели/эндпоинта берётся (с <code>file:line</code>), какие входные данные обрабатываются, и статус — готово / расширить / строить. Основано на разборе кода 7 агентами.</p>
+    <div class="legend">
+      <span class="lg"><span class="dot g"></span><b>Готово</b> — данные/эндпоинт уже есть, переиспользуем</span>
+      <span class="lg"><span class="dot a"></span><b>Расширить</b> — данные есть, нужен self-срез / фильтр / поле</span>
+      <span class="lg"><span class="dot r"></span><b>Строить</b> — источника нет, нужна новая модель/агент/эндпоинт</span>
+    </div>
+    <div class="stat-row">
+      <div class="s g"><div class="n">≈50%</div><div class="c">ячеек — на готовых данных (Issue, DailyCheckIn, probe, clone-respond, goalContribution)</div></div>
+      <div class="s a"><div class="n">≈35%</div><div class="c">нужен self-эндпоинт поверх существующего директорского сервиса (RBAC-обёртка)</div></div>
+      <div class="s r"><div class="n">≈15%</div><div class="c">строить: bucketed-эндпоинт, агент-нарратив, флаг methodCapturedAt, /me-ленты</div></div>
+    </div>
+  </header>
+
+  <!-- 1. ОБЛОЖКА-ОТЧЁТ -->
+  <div class="wgt">
+    <div class="wgt-h"><span class="num">1</span><h3>Обложка-отчёт «Твой день» (письмо Коры)</h3><span class="what">Один LLM-агент проходит по всем сотрудникам за раз и пишет короткое письмо каждому — как директорский daily-digest, но per-person</span></div>
+    <div class="wrapscroll"><table>
+      <thead><tr><th>Ячейка</th><th>Что даёт</th><th>Источник (file:line)</th><th>Входные данные / как считается</th><th>Статус</th></tr></thead>
+      <tbody>
+        <tr><td class="cell">Сам текст письма<br>(7 секций)</td><td class="src">«Своими словами» про день сотрудника: главное, что сделал, что зависло, что обещал, вклад, что мешает, взгляд-совет</td><td class="src">Нового агента НЕТ. Образец — директорский <code>daily-digest.prompt.ts:232</code> (<code>DAY_COMPANY_SYSTEM_PROMPT</code>) + <code>buildDayPackage</code> <code>daily-digest.service.ts:601</code></td><td class="inp">Строить <code>personal-day-narrative</code> taskType + per-person <code>buildPersonDayPackage</code>. Сейчас единственный LLM-выход брифа — <code>hint ≤120 симв</code> (<code>personal-brief-hint.prompt.ts</code>), это НЕ нарратив</td><td><span class="st r">строить</span></td></tr>
+        <tr><td class="cell">Секция «Что сделал вчера»</td><td class="src">Итог вчерашнего дня из отчёта сотрудника</td><td class="src"><code>DailyCheckIn</code> kind=evening: <code>donesJson/notDoneJson/rawResponseText</code> <code>schema:7415-7457</code></td><td class="inp">+ закрытые <code>Issue</code> за вчера через <code>IssueActivity</code> <code>schema:10151</code> / <code>collectMyTasks</code> <code>personal-daily-brief.service.ts:117</code></td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">Секция «Что зависло / просрочено»</td><td class="src">Задачи без движения и с истёкшим сроком</td><td class="src"><code>getStuckCrossProject</code> <code>execution-dashboard.service.ts:388</code> + <code>Issue.dueDate</code> <code>schema:9589</code></td><td class="inp">category≠completed И последняя <code>IssueActivity</code> &lt; now−staleDays (<code>dashboard.stuck.staleDaysThreshold</code>=5); фильтр по <code>assigneeUserId=self</code></td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">Секция «Что обещал»</td><td class="src">Твои обещания с просрочкой</td><td class="src"><code>IdeaBlock</code> signalType=<code>commitment</code>, <code>commitmentAuthorPersonId=self</code>, <code>commitmentDueDate</code> <code>schema:3489</code></td><td class="inp">просрочка = <code>commitmentDueDate &lt; now</code>. Берём из памяти, а не из таблицы задач (флага «из обещания» на Issue пока нет)</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">Секция «Твой вклад»</td><td class="src">Что двигаешь к цели компании</td><td class="src"><code>goalContributionNet</code> уже self в <code>/me/weekly-per-person</code> <code>weekly-per-person.service.ts:386</code></td><td class="inp">чистый вклад (pro−contra) закрытых задач в главную цель за окно недели</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">Секция «Что мешает»</td><td class="src">Твои блокеры</td><td class="src"><code>collectMyBlockers</code> <code>personal-daily-brief.service.ts:154</code>: <code>IdeaBlock</code> signalType blocker/knowledge_gap, <code>commitmentAuthorPersonId=self</code></td><td class="inp">+ <code>/me/knows-who</code> — кто эксперт по блокеру</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">«Главное сегодня» / «Взгляд Коры»</td><td class="src">Одна приоритетная вещь + совет</td><td class="src">Ранкер поверх задач: <code>dueDate × goalContributionNet × commitmentDueDate</code>; фразировка — LLM</td><td class="inp">детерминированная формула на готовых полях выбирает топ-1; LLM только формулирует</td><td><span class="st r">строить</span></td></tr>
+        <tr><td class="cell">4 оси-вердикт<br>(Задачи·Обещания·Загрузка·Вклад)</td><td class="src">Быстрый статус за 30 сек</td><td class="src">Задачи=counts букетов · Обещания=commitment overdue · Загрузка=<code>getLoadByPerson</code> <code>execution-dashboard.service.ts:479</code> · Вклад=<code>goalContributionNet</code></td><td class="inp">Загрузка: активные задачи, перегруз &gt;8 / idle ≤2 (крутилки <code>dashboard.load.*</code>); остальное — агрегаты из тех же источников</td><td><span class="st a">расширить</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><b>Голос сотрудника в письме:</b> его высказывания/идеи/риски из графа — <code>IdeaBlockEvidence.authorPersonId + sourceTimestamp</code> <code>schema:3592</code> (переиспользовать <code>collectEmployeeVoice</code> <code>daily-digest.service.ts:796</code>, добавив фильтр personId). <b>Встречи:</b> <code>Participant.personId→Meeting.aiResult.summaryFast</code> <code>schema:1501</code> — per-person запрос строить. <b>Хранение письма:</b> поле <code>narrative</code> в <code>PersonalDailyBrief</code> <code>schema:7565</code>. <b>Границы «дня»</b> — по <code>Person.timezone</code>, не MSK.</div>
+  </div>
+
+  <!-- 2. МОИ ЗАДАЧИ -->
+  <div class="wgt">
+    <div class="wgt-h"><span class="num">2</span><h3>Мои задачи — борд по состояниям (ядро, ~70%)</h3><span class="what">Всё = одна сущность Issue. Букеты машинно из IssueState.category + dueDate + журнала шагов</span></div>
+    <div class="wrapscroll"><table>
+      <thead><tr><th>Колонка / ячейка</th><th>Что даёт</th><th>Источник (file:line)</th><th>Входные данные / как считается</th><th>Статус</th></tr></thead>
+      <tbody>
+        <tr><td class="cell">ЗАВИСЛИ / ПРОСРОЧЕНО</td><td class="src">Задачи с истёкшим сроком + без движения &gt;N дней</td><td class="src"><code>Issue.dueDate</code> <code>schema:9589</code>, <code>lastOverdueDetectedAt</code> <code>schema:9596</code>; <code>getStuckCrossProject</code> <code>execution-dashboard.service.ts:388</code></td><td class="inp">просрочено = <code>dueDate&lt;now</code> AND <code>category NOT IN(completed,cancelled)</code>; зависло = нет <code>IssueActivity</code> ≥5 дней. assignee=self</td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">В РАБОТЕ</td><td class="src">Взятые задачи, где уже есть шаги</td><td class="src"><code>IssueState.category='started'</code> <code>schema:9425</code> + <code>IssueProgressUpdate</code> (журнал) <code>schema:9870</code></td><td class="inp">category=started AND есть ≥1 запись журнала. Журнал РЕАЛИЗОВАН + авто-драфт кроном <code>progress-auto-draft.cron.ts:56</code></td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">«загорится завтра»</td><td class="src">Предупреждение ДО просрочки</td><td class="src"><code>Issue.dueDate</code> в окне 24–48ч + отсутствие <code>IssueProgressUpdate</code></td><td class="inp">срок завтра И нет ни одного шага = «ты не начинал»</td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">СДЕЛАНО</td><td class="src">Закрытые задачи</td><td class="src"><code>IssueState.category='completed'</code> + <code>Issue.completedAt</code> <code>schema:9590</code></td><td class="inp">assignee=self AND completedAt за окно</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">СДЕЛАНО → «🎤 расскажи как делал»</td><td class="src">Захват метода для клона/памяти</td><td class="src">probe <code>maybeRaiseMethodCaptureProbe</code> <code>issues.service.ts:1266</code>; мостик ответ→клон <code>skill-signal-types.ts:4</code> — уже есть. Флага НЕТ</td><td class="inp">= completed AND <code>methodCapturedAt IS NULL</code> AND complexity≥<code>methodCaptureMinComplexity</code>. Флаг <code>Issue.methodCapturedAt</code> — строить</td><td><span class="st r">строить</span></td></tr>
+        <tr><td class="cell">БЕЗ СРОКА</td><td class="src">Задачи без даты — «проставь срок»</td><td class="src"><code>Issue.dueDate IS NULL</code> <code>schema:9589</code>; <code>SprintHint kind='no_due_date'</code> <code>schema:9486</code></td><td class="inp">dueDate=null AND not completed/cancelled</td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">Клик по задаче → шаги</td><td class="src">Трекер: журнал шагов + аудит</td><td class="src"><code>GET /issues/:id/progress-updates</code> <code>progress-updates.controller.ts:51</code> + <code>/activity</code> <code>issues.controller.ts:371</code></td><td class="inp"><code>IssueProgressUpdate</code>: health/что сделано/что дальше; <code>IssueActivity</code>: переходы статуса</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">«не отчитался за вчера»</td><td class="src">Напоминание сдать вечерний чек-ин</td><td class="src"><code>DailyCheckIn</code> kind=evening, <code>completedAt IS NULL</code> <code>schema:7440</code></td><td class="inp">строка существует И completedAt=null (НЕ показывать при отсутствии строки — выходной). Черновик = авто-драфт</td><td><span class="st a">расширить</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><b>Главный пробел:</b> готового <code>GET /me/tasks/buckets</code> нет — <code>GET /me/inbox</code> <code>me-inbox.controller.ts:32</code> отдаёт плоский список и не умеет «category NOT IN[...]», «dueDate IS NULL», «журнал none/some». Нужен один эндпоинт, отдающий 4 букета + счётчики. Поля и индекс (<code>@@index([tenantId,dueDate])</code> <code>schema:9705</code>) — есть.</div>
+  </div>
+
+  <!-- 3. ТРЕБУЕТ ТЕБЯ -->
+  <div class="wgt">
+    <div class="wgt-h"><span class="num">3</span><h3>Требует тебя (единый inbox)</h3><span class="what">Всё, что ждёт твоего действия — вопросы, решения-без-задачи, обещания, встречи</span></div>
+    <div class="wrapscroll"><table>
+      <thead><tr><th>Ячейка</th><th>Что даёт</th><th>Источник (file:line)</th><th>Входные данные / как считается</th><th>Статус</th></tr></thead>
+      <tbody>
+        <tr><td class="cell">«вопрос ждёт ответа»</td><td class="src">Открытые вопросы к тебе</td><td class="src"><code>ProbePendingProvider</code> <code>probe.provider.ts:20</code>: <code>Notification</code> eventType=<code>probe.question</code>, recipientUserId=self</td><td class="inp">responseStatus=pending; просрочка→urgent; deep-link на контекст</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">«решение без задачи»</td><td class="src">Решение принято, но не заведено в работу</td><td class="src"><code>Decision.impliesAction=true</code> AND <code>linkedTaskCount=0</code> <code>schema:6549</code></td><td class="inp">заведение уже автоматизировано <code>maybeEnqueueActionableTask</code> <code>specialist-3-3-decisions.service.ts:1493</code></td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">«ты обещал»</td><td class="src">Обещание с истёкшим сроком</td><td class="src"><code>IdeaBlock commitment</code>, <code>commitmentAuthorPersonId=self</code> <code>schema:3489</code></td><td class="inp">commitmentDueDate&lt;now; аффорданс «твоё слово раньше руководителя»</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">«встреча сегодня»</td><td class="src">Ближайшая встреча + вход в AI-отчёт</td><td class="src"><code>Participant.personId→Meeting</code> <code>schema:1501</code></td><td class="inp">встречи дня по участию; AI-отчёт — модуль meetings (готов)</td><td><span class="st a">расширить</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><b>Осторожно:</b> общий <code>pending-actions</code> (7 провайдеров) отдаёт intake-триаж <b>по всей орге</b> (<code>intake.provider.ts:27</code>) — для стенда сотрудника фильтровать по <code>suggestedAssigneeId=self</code>, иначе рядовой увидит очередь всей компании.</div>
+  </div>
+
+  <!-- 4. КОРА ЗА НОЧЬ -->
+  <div class="wgt">
+    <div class="wgt-h"><span class="num">4</span><h3>Кора сделала за тебя ночью (реципрокность)</h3><span class="what">Весь контент уже генерится в коде — нужна только сборка и позитивная подача</span></div>
+    <div class="wrapscroll"><table>
+      <thead><tr><th>Ячейка</th><th>Что даёт</th><th>Источник (file:line)</th><th>Входные данные / как считается</th><th>Статус</th></tr></thead>
+      <tbody>
+        <tr><td class="cell">«черновики отчётов готовы»</td><td class="src">Кора набросала шаги за тебя</td><td class="src"><code>ProgressAutoDraftCron</code> <code>progress-auto-draft.cron.ts:56</code> → <code>IssueProgressUpdate draftState='pending'</code></td><td class="inp">крон 7:00 из графа генерит черновик прогресса → проверить/подтвердить</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">«задачи вытащены из встречи»</td><td class="src">Авто-задачи из вчерашних разговоров</td><td class="src"><code>IntakeIssue</code> suggestedAssigneeId=self <code>schema:10239</code>; combo <code>specialists-combined.service.ts:1165</code>→<code>TaskDraftMaterializer:175</code></td><td class="inp">фильтр IntakeIssue по suggestedAssigneeId=self</td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">«клон ответил за тебя»</td><td class="src">Твой клон закрыл вопросы, пока тебя не было</td><td class="src"><code>clone-respond</code> РЕАЛИЗОВАН (в git-status)</td><td class="inp">строить счётчик атрибуции ответов клона к source-персоне (self) — <code>/me/clone-impact</code></td><td><span class="st r">строить</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">Агрегатор <code>/me/night-ledger</code> собирает эти 3 источника в одну ленту. Ничего нового <b>извлекать</b> не надо — только собрать готовое.</div>
+  </div>
+
+  <!-- 5. КОРА НА ТВОЕЙ СТОРОНЕ -->
+  <div class="wgt">
+    <div class="wgt-h"><span class="num">5</span><h3>Кора на твоей стороне (защитная полоса)</h3><span class="what">Директорские проверки по сотруднику — но показаны ему первым, приватно, с действием</span></div>
+    <div class="wrapscroll"><table>
+      <thead><tr><th>Ячейка</th><th>Что даёт</th><th>Источник (file:line)</th><th>Входные данные / как считается</th><th>Статус</th></tr></thead>
+      <tbody>
+        <tr><td class="cell">«перегруз — 9 задач»</td><td class="src">Защита от выгорания + предложение разгрузить</td><td class="src"><code>getLoadByPerson</code> <code>execution-dashboard.service.ts:479</code></td><td class="inp">активные задачи, перегруз &gt;8 / idle ≤2. Сейчас под RBAC директора → self-обёртка <code>/me/load</code></td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">«3 задачи зависли»</td><td class="src">Зависшее + кнопка снять/делегировать</td><td class="src"><code>getStuckCrossProject</code> <code>execution-dashboard.service.ts:388</code></td><td class="inp">фильтр по <code>assigneeUserId=self</code> (поле уже в ответе :461); self-обёртка <code>/me/stuck</code></td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">«план не закрывается 3 дня»</td><td class="src">Мягкий сигнал усталости (не «ты выгораешь»)</td><td class="src"><code>DailyCheckIn</code> план vs факт за 3 дня <code>schema:7403</code></td><td class="inp">поведенческие драйверы, НЕ mood-скор (<code>stripSentimentForRole</code> для self не нарушаем)</td><td><span class="st a">расширить</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><b>Ключ доверия:</b> всё это директор УЖЕ видит про сотрудника (<code>canViewOperationsDashboard</code> <code>rbac.service.ts:224</code>). Отдаём то же сотруднику про себя первым, каждый сигнал — с кнопкой действия. Self-обёртки по образцу <code>my-weekly-per-person.controller.ts:53</code>. <b>«Ты выгораешь»</b> из <code>people-at-risk</code> НЕ показываем (он by design прячет самого зрителя) — только драйверы + помощь.</div>
+  </div>
+
+  <!-- 6. ТЫ ДВИГАЕШЬ -->
+  <div class="wgt">
+    <div class="wgt-h"><span class="num">6</span><h3>Ты двигаешь (позитивное зеркало)</h3><span class="what">Единственный блок про вклад и рост — паритет с директорским вердиктом, причастность</span></div>
+    <div class="wrapscroll"><table>
+      <thead><tr><th>Ячейка</th><th>Что даёт</th><th>Источник (file:line)</th><th>Входные данные / как считается</th><th>Статус</th></tr></thead>
+      <tbody>
+        <tr><td class="cell">«+3 к цели за неделю»</td><td class="src">Твоя работа двигает компанию</td><td class="src"><code>goalContributionNet</code> уже self в <code>/me/weekly-per-person</code> <code>weekly-per-person.service.ts:386</code></td><td class="inp">только позитивная подача, СВОЯ нить, никогда рейтинг против команды</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">«клон ответил за тебя N раз»</td><td class="src">Видимая окупаемость клона (анти-саботаж захвата)</td><td class="src"><code>clone-respond</code> (реализован) → атрибуция к self</td><td class="inp"><code>/me/clone-impact</code>: счётчик вызовов клона, где source=self</td><td><span class="st r">строить</span></td></tr>
+        <tr><td class="cell">«эксперт по X»</td><td class="src">Рост профиля знаний — мотиватор</td><td class="src"><code>IdeaBlockEvidence.authorPersonId</code> <code>schema:3592</code> + <code>/me/knows-who</code></td><td class="inp">агрегат вклада self по Entity/Theme → «носитель знания по X»; <code>/me/expertise</code></td><td><span class="st r">строить</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- 7. БЛОКЕРЫ -->
+  <div class="wgt">
+    <div class="wgt-h"><span class="num">7</span><h3>Блокеры (в конце — твои выделены)</h3><span class="what">Лента как у руководителя, но с тегом «твой» на релевантных</span></div>
+    <div class="wrapscroll"><table>
+      <thead><tr><th>Ячейка</th><th>Что даёт</th><th>Источник (file:line)</th><th>Входные данные / как считается</th><th>Статус</th></tr></thead>
+      <tbody>
+        <tr><td class="cell">Блокер с тегом «твой»</td><td class="src">Что держит твои задачи</td><td class="src"><code>IdeaBlock</code> signalType=blocker, <code>commitmentAuthorPersonId=self</code> + <code>DailyCheckIn.blockersJson</code> по personId + <code>BlockerSynthesis.responsiblePersonId=self</code></td><td class="inp">блокеры, где ты автор/ответственный; кнопка «напомнить смежникам от твоего имени»</td><td><span class="st a">расширить</span></td></tr>
+        <tr><td class="cell">Блокер компании (для контекста)</td><td class="src">Общая картина, что мешает компании</td><td class="src"><code>fetchBlockers</code> <code>ops-dashboard.service.ts:455</code> (<code>DailyCheckIn.blockersJson</code>) + <code>BlockerSynthesis.listChronicForTenant</code> <code>blocker-synthesis.service.ts:251</code></td><td class="inp">директорский <code>/dashboard/operations/blockers</code> закрыт (owner/admin/coo, <code>controller:580</code>) → строить member <code>/me/company-blockers</code> с гейтом block-read (<code>policy.csv:84</code>)</td><td><span class="st r">строить</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- 8. ИДЕИ -->
+  <div class="wgt">
+    <div class="wgt-h"><span class="num">8</span><h3>Идеи (в конце — «ты молодец»)</h3><span class="what">Судьба твоих идей + идеи компании в твоей зоне</span></div>
+    <div class="wrapscroll"><table>
+      <thead><tr><th>Ячейка</th><th>Что даёт</th><th>Источник (file:line)</th><th>Входные данные / как считается</th><th>Статус</th></tr></thead>
+      <tbody>
+        <tr><td class="cell">Твоя идея + её судьба</td><td class="src">«принята / на обсуждении», поддержки</td><td class="src"><code>GET /me/ideas</code> (listMine, без гейта) <code>ideas.controller.ts:93</code></td><td class="inp"><code>Idea.status</code> + число поддержавших; доступно сотруднику всегда</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">«ты молодец — N идей за месяц»</td><td class="src">Признание вклада (причастность)</td><td class="src">count <code>/me/ideas</code> за окно месяца</td><td class="inp">простой агрегат по своим идеям</td><td><span class="st g">готово</span></td></tr>
+        <tr><td class="cell">Идея компании в твоей зоне</td><td class="src">Навести на мысль</td><td class="src"><code>getTop</code> <code>ideas.service.ts:131</code> (<code>/ideas/top</code> закрыт owner/admin/coo)</td><td class="inp">строить member <code>/me/company-ideas</code> с гейтом idea-read; в strict-орг обычный <code>/ideas</code> отдаёт только свои</td><td><span class="st r">строить</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- 9. ФУТЕР-КОНТРАКТ -->
+  <div class="wgt">
+    <div class="wgt-h"><span class="num">9</span><h3>Трастовый контракт (футер)</h3><span class="what">«Скрытых панелей нет»</span></div>
+    <div class="wrapscroll"><table>
+      <thead><tr><th>Ячейка</th><th>Что даёт</th><th>Источник (file:line)</th><th>Входные данные / как считается</th><th>Статус</th></tr></thead>
+      <tbody>
+        <tr><td class="cell">Строка контракта</td><td class="src">«Кора показывает тебе то же, что руководителю — про тебя, и первым»</td><td class="src">Чистый UI — данных не требует</td><td class="inp">снимает асимметрию «про меня знают то, чего я не вижу» = недоверие</td><td><span class="st g">готово</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <footer>
+    Основано на разборе кода 7 агентами (220 обращений к репозиторию). Все <code>file:line</code> — из реальной схемы <code>backend/prisma/schema.prisma</code> и модулей <code>tracker / operations / dashboard / pending-actions / ideas / clones</code>. Прототип и блюпринт — в навигации сверху.
+  </footer>
+</div>
+</body>
+</html>

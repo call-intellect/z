@@ -18,6 +18,7 @@ import {
   localDayBoundsUtc,
   localDayWindowUtc,
   startOfLocalDayUtc,
+  yesterdayLocalDate,
 } from './local-date';
 
 // Фиксированный момент: 18 июня 2026, 09:30 UTC.
@@ -135,6 +136,30 @@ describe('localDayWindowUtc — окно [00:00, +24ч) локального д�
     );
     expect(w.from.toISOString()).toBe('2026-06-17T17:00:00.000Z');
     expect(w.to.toISOString()).toBe('2026-06-18T17:00:00.000Z');
+  });
+});
+
+describe('yesterdayLocalDate — локальная дата вчерашнего дня', () => {
+  it('2026-07-08T05:00Z (лок. 08:00 МСК) → 2026-07-07', () => {
+    expect(yesterdayLocalDate(new Date('2026-07-08T05:00:00.000Z'), 'Europe/Moscow')).toBe(
+      '2026-07-07',
+    );
+  });
+
+  it('null → дефолт Moscow → 2026-07-07', () => {
+    expect(yesterdayLocalDate(new Date('2026-07-08T05:00:00.000Z'), null)).toBe('2026-07-07');
+  });
+
+  it('граница: 2026-07-08T21:00:30Z (лок. 00:00 09-го МСК) → 2026-07-08', () => {
+    expect(yesterdayLocalDate(new Date('2026-07-08T21:00:30.000Z'), 'Europe/Moscow')).toBe(
+      '2026-07-08',
+    );
+  });
+
+  it('граница: 2026-07-08T20:59:30Z (лок. 23:59 08-го МСК) → 2026-07-07', () => {
+    expect(yesterdayLocalDate(new Date('2026-07-08T20:59:30.000Z'), 'Europe/Moscow')).toBe(
+      '2026-07-07',
+    );
   });
 });
 

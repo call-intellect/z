@@ -43,6 +43,8 @@ export interface ParticipantPickerProps {
   placeholder?: string;
   disabled?: boolean;
   showChannels?: boolean;
+  onlyUsers?: boolean;
+  excludeUserIds?: string[];
 }
 
 function isSameParticipant(
@@ -89,6 +91,8 @@ export function ParticipantPicker({
   placeholder = "Найти коллегу или внешний контакт",
   disabled = false,
   showChannels = false,
+  onlyUsers = false,
+  excludeUserIds,
 }: ParticipantPickerProps): JSX.Element {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -112,7 +116,18 @@ export function ParticipantPicker({
     { revalidateOnFocus: false, dedupingInterval: 60_000 },
   );
 
-  const results = useMemo(() => data?.items ?? [], [data]);
+  const excludeKey = (excludeUserIds ?? []).join(",");
+  const results = useMemo(() => {
+    let items = data?.items ?? [];
+    if (onlyUsers) items = items.filter((r) => r.type === "user");
+    const exclude = excludeKey ? excludeKey.split(",") : [];
+    if (exclude.length > 0) {
+      items = items.filter(
+        (r) => r.type !== "user" || !exclude.includes(r.userId),
+      );
+    }
+    return items;
+  }, [data, onlyUsers, excludeKey]);
 
   const filteredResults = useMemo(
     () =>
@@ -123,13 +138,14 @@ export function ParticipantPicker({
   );
 
   const canQuickCreate = useMemo(() => {
+    if (onlyUsers) return false;
     if (debouncedQuery.length < 2) return false;
     if (quickCreating) return false;
     const qLower = debouncedQuery.toLowerCase();
     const exactInResults = results.some((r) => r.name.toLowerCase() === qLower);
     const exactInValue = value.some((v) => v.name.toLowerCase() === qLower);
     return !exactInResults && !exactInValue;
-  }, [debouncedQuery, quickCreating, results, value]);
+  }, [debouncedQuery, quickCreating, results, value, onlyUsers]);
 
   const addParticipant = useCallback(
     (next: ParticipantPickerValue) => {

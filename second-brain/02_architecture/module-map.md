@@ -254,6 +254,14 @@ LiveKit чистит атрибуты автоматически при disconne
 
 Подробности: [[knowledge-core|knowledge-core.md]].
 
+## TaskSolution — витрина «Решения задач» + суточная сборка (2026-07-07)
+
+**Источник:** ТЗ [`task-solution-entity`](../../plans/tz/2026-07-07-task-solution-entity.md). Модель — [[data-model]] §«TaskSolution». Материализует опыт решения конкретной задачи отдельной сущностью (клон не трогаем — Q2 двойное назначение).
+
+- **`backend/src/modules/task-solutions/`** — витрина (образец `regulations`): `@Controller('api/v1/task-solutions')` + `TenantGuard`, pure-Zod DTO + `ZodValidationPipe` + interface-DTO. RBAC переиспользует объект `'regulation'`; audit `TASK_SOLUTION_DELETE`/`TASK_SOLUTION_RESTORE`. Эндпоинты — [[../01_projects/api-layer]] §«Task Solutions», страница `/task-solutions` — [[../01_projects/frontend-pages]].
+- **`TaskSolutionBuildService`** (knowledge-core) — суточная сборка одной `TaskSolution` на задачу: детекция задач с новыми how-solved-сигналами (`reasoning`/`methodology_step`) за окно `taskSolution.lookbackHours` (48) через `RawEvent.payload.contextCardId=issue.id` (привязка блок↔задача НЕ прямая — через `IdeaBlockEvidence→RawEvent`); гейт содержательности `taskSolution.minSignalChars` (40); компиляция `solutionMd` через `structured-document-compiler` (новый вид `task_solution`); владелец = **исполнитель** задачи (assignee→Person, ось A4); upsert по `(tenantId, sourceIssueId)` + `CardVersion` + embedding; идемпотентно (нет новых блоков → Δ=0). **Повтор→кандидат (Q3):** после embedding cosine-KNN по `task_solutions` → группа ≥ `taskSolution.repeatThreshold` (3) при cosine ≥ `taskSolution.repeatSimilarity` (0.85) даёт общий `repeatGroupKey` + `candidateInstruction=true`, БЕЗ авто-создания инструкции.
+- **`TaskSolutionBuildCron`** — `@Cron('0 * * * *', Europe/Moscow)`, действует в час `taskSolution.buildHourMsk` (3); зарегистрирован в `ai/workers.module.ts`, `WorkerOrgGate` name `'task-solution-build'`, kill-switch `aiFeatures.taskSolutionEnabled` (ON). См. [[../01_projects/ai-jobs]], [[../01_projects/workers-queues]].
+
 ## Дельта Фаз 7–12 (closed 2026-05-10)
 
 ### `backend/src/modules/admin/` (Phase 7)
@@ -2708,6 +2716,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **WS** — расширен `tracker/gateways/tracker.gateway.ts` (`conversation.*` + staff-под-room для access-изоляции); `common/ws/redis-io.adapter.ts` (`@socket.io/redis-adapter`, свои pub/sub из cfg).
 - **Пересажено на ядро:** support (`support/*` → Conversation/Message+SupportTicket, 0 Issue-пути), чат задачи (`tracker` comments → Message под work_chat).
 - **Push:** `push/` расширен транспорт-агностичным `PushService` (PushToken apns/fcm/rustore/webpush). **Mobile:** `kora-mobile/` (Expo RN scaffold).
+- **Вход «Новое сообщение» (FE, 2026-07-07, messaging-new-conversation):** `frontend/src/ui/messaging/NewConversationDialog.tsx` — модалка с переключателем «Коллега»/«Внешний/клиент», подключена кнопкой в шапке `MessagesClient.tsx`. Коллега → `messagingApi.createConversation` (dm при одном / group при нескольких); внешний → `messagingApi.startExternal` (`POST /external-conversations`). Переиспользует `ParticipantPicker` (новые пропы `onlyUsers`/`excludeUserIds`). Backend: `ConversationService.findExistingDm` (дедуп личек) + backfill `scripts/backfill-company-channel.ts` (канал «Вся компания» для старых Org).
 
 ## Провайдеры эмбеддингов — CRUD + резолвер (2026-07-02)
 

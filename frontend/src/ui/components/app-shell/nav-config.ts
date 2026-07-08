@@ -36,6 +36,7 @@ import {
   UserRound,
   Users,
   Video,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -201,6 +202,12 @@ const WORK_SECTION: NavConfigSection = {
       label: "База знаний",
       icon: BookText,
       matchPrefix: "/regulations",
+    },
+    {
+      href: "/task-solutions",
+      label: "Решения задач",
+      icon: Wrench,
+      matchPrefix: "/task-solutions",
     },
     {
       href: "/goals",

@@ -300,6 +300,17 @@ DTO списков решений/регламентов/задач (2026-06-20,
 - `DELETE /api/v1/decisions/:id` + `POST /api/v1/decisions/:id/restore` (без `kind`) — симметрично для решений.
 - list-эндпоинты регламентов/решений принимают `deleted: true` (показ удалённых для restore; по умолчанию только действующие). Удалённые исчезают из всех остальных выдач (`deletedAt: null` во всех чтениях). Идемпотентно (повторный delete уже удалённого → `not_found`). См. [[../02_architecture/data-model]] §«Soft-delete карточек знаний».
 
+## Task Solutions (реестр «Решений задач», 2026-07-07)
+
+Модуль `task-solutions` (образец `regulations`): `@Controller('api/v1/task-solutions')` + `TenantGuard`, pure-Zod DTO + `ZodValidationPipe` + interface-DTO. RBAC переиспользует объект `'regulation'`. Сущность/модель — [[../02_architecture/data-model]] §«TaskSolution», ТЗ [`task-solution-entity`](../../plans/tz/2026-07-07-task-solution-entity.md).
+- `GET /api/v1/task-solutions` — список; фильтры `q` / `ownerPersonId` / `skill` / `status` / `candidateInstruction` / `deleted` + пагинация.
+- `GET /api/v1/task-solutions/summary` — агрегированные счётчики.
+- `GET /api/v1/task-solutions/:id` — карточка.
+- `GET /api/v1/task-solutions/:id/sources` — провенанс (задача + блоки-источники).
+- `GET /api/v1/task-solutions/:id/history` — история версий (`CardVersion`, `resourceType='task_solution'`).
+- `POST /api/v1/task-solutions/:id/confirm` — подтверждение (trustTier→human).
+- `DELETE /api/v1/task-solutions/:id` — soft-delete (`deletedAt`/`deletedById`, audit `TASK_SOLUTION_DELETE`); `POST /api/v1/task-solutions/:id/restore` — восстановить (audit `TASK_SOLUTION_RESTORE`).
+
 ## Curation (Слой 4)
 
 | Метод | Путь | Назначение | Доступ |

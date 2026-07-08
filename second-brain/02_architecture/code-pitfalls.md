@@ -824,4 +824,23 @@ guard разных типов, `migrateEntityRefs` ОБЯЗАН мигриров
 (`'noheader-v1'` = `EMBED_NO_HEADER_VERSION`); backfill `backfill-reembed-blocks-no-header.ts`
 (пере-эмбеддинг + REINDEX HNSW).
 
+## `schema.prisma` показывает `vector(768)`, а РЕАЛЬНАЯ размерность колонок — 1536 (2026-07-08)
+
+В `schema.prisma` все pgvector-колонки объявлены как `embedding Unsupported("vector(768)")?`
+(IdeaBlock, Issue, task_solutions, Person/Entity, SourceEpisode и т.д.). **Это фиктивная
+аннотация — Prisma НЕ управляет размерностью `Unsupported`-типов и её игнорирует.** Реальная
+размерность задаётся миграциями и рантаймом: все `migration.sql` создают `embedding vector(1536)`;
+`env.schema.ts` → `EMBEDDING_DIMENSIONS` default **1536** (`text-embedding-3-small`); весь код
+кастует `::vector(1536)` (`block-ingest.worker` toVectorLiteral, `issue-embed.worker`,
+`similar-issues` KNN, `task-solution-build.tryWriteEmbedding` — каст `::vector` без числа, но
+колонка 1536); интеграционный тест использует `Array(1536)`.
+
+**Правило:** любой код/скрипт/стаб, пишущий embedding, ОБЯЗАН отдавать **1536-мерный** вектор.
+768-мерный литерал уронит `::vector(1536)`-колонку по dimension-mismatch. Опаснее всего —
+best-effort пути в try/catch (`tryWriteEmbedding`): ошибка проглатывается, вектор НЕ пишется,
+`embeddingsWritten=0`, а зависящие фичи (KNN-дедуп, репит-кластер решений, closure-матч
+блок↔задача) тихо деградируют без явной ошибки. Не верь размерности из `schema.prisma` — смотри
+`migrations/*/migration.sql` или `EMBEDDING_DIMENSIONS`. (Всплыло на стенде A5: стаб-эмбеддер на
+768 → `embeddingsWritten=0` → ось повтора A5.7 FAIL, пока не переключил на 1536.)
+
 [[../index|← index]]

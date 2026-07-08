@@ -952,12 +952,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const synthetic = this.buildSyntheticBlock(hint, payload);
       return synthetic ? [synthetic] : [];
     }
-    const overridden = [...blocks];
-    const first = overridden[0];
-    if (first) {
-      overridden[0] = { ...first, signalType: hint };
-    }
-    return overridden;
+    return blocks.map((b) => ({ ...b, signalType: hint }));
   }
 
   private buildSyntheticBlock(hint: SignalType, payload: unknown): ExtractedBlock | null {
@@ -1659,6 +1654,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     } else {
       const speakerParticipantId = seg?.speakerParticipantId ?? null;
       const speakerName = seg?.speakers?.[0] ?? null;
+      const episodeKind = SOURCE_EPISODE_KIND_BY_TYPE[args.event.sourceType];
+      if (episodeKind === 'meeting' && !speakerParticipantId && !speakerName) {
+        this.logger.debug(
+          { blockId: args.blockId, sourceType: args.event.sourceType },
+          'block-ingest: обещание на встрече без говорящего — автора не проставляем (не вешаем на загрузившего)',
+        );
+        return;
+      }
       authorPersonId = await this.entities.resolveSubjectPersonId(args.event.tenantId, {
         speakerParticipantId,
         speakerName,

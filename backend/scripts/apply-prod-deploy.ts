@@ -381,7 +381,12 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-employee-stand.ts',
-    hint: 'me.tasks.doneWindowDays + operations.personal_day_narrative.{enabled,evening_hour} + operations.self_signals.plan_not_closing_streak_days + knowledge.expertise.self_{max_blocks_scanned,top_k} (стенд сотрудника)',
+    hint: 'me.tasks.doneWindowDays + operations.personal_day_narrative.{enabled,morning_hour} + operations.self_signals.plan_not_closing_streak_days + knowledge.expertise.self_{max_blocks_scanned,top_k} (стенд сотрудника)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-task-solution.ts',
+    hint: 'aiFeatures.taskSolutionEnabled (kill-switch) + taskSolution.{buildHourMsk,minSignalChars,lookbackHours,repeatThreshold,repeatSimilarity,refineEnabled,howSolvedSignalTypes,ownerInferenceEnabled,maxPlaceholderRatio} (сущность «Решение задачи»)',
   },
 
   ...[
@@ -492,6 +497,7 @@ const STEPS: Step[] = [
   },
   { phase: 'patch', script: 'scripts/patch-org-timezone-default.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-person-timezone-default.ts', skipBootstrap: true },
+  { phase: 'patch', script: 'scripts/patch-expire-retired-probe-backlog.ts', skipBootstrap: true },
   {
     phase: 'patch',
     script: 'scripts/patch-migrate-mvs-to-company-profile.ts',
@@ -705,6 +711,13 @@ const STEPS: Step[] = [
     script: 'scripts/patch-remove-phantom-admin-settings.ts',
     args: ['--apply'],
     hint: 'Удаляет осиротевшие AdminSetting-строки под 39 phantom-ключами (нет читателя, unregistered). Идемпотентно (повтор → 0). History сохранён.',
+    skipBootstrap: true,
+  },
+  { phase: 'patch', script: 'scripts/patch-company-summary-weekly.ts', skipBootstrap: true },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-personal-day-narrative-morning-hour.ts',
+    hint: 'крутилка evening_hour → morning_hour (default 7) для письма «Твой день»',
     skipBootstrap: true,
   },
 
@@ -985,6 +998,12 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-table-graphsync.ts',
     skipBootstrap: true,
     hint: 'smart-tables Ф4: проставить Table.graphSync системным таблицам из каталога + reconcile строк из графа (Goal/Experiment/IdeaBlock) по всем Org; идемпотентно',
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-company-channel.ts',
+    skipBootstrap: true,
+    hint: 'дожать обязательный канал «Вся компания» + членство всех активных сотрудников для существующих Org (messaging-new-conversation Ф2); ensureCompanyChannel upsert, идемпотентно (повтор → created:0)',
   },
 ];
 

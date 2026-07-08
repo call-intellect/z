@@ -190,6 +190,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
   ['aiFeatures.regulationMinMaterializeConfidence', UNIT_INTERVAL],
   ['aiFeatures.regulationConsolidatorEnabled', z.boolean()],
+  ['aiFeatures.taskSolutionEnabled', z.boolean()],
   ['aiFeatures.clientProtocolEnabled', z.boolean()],
   ['aiFeatures.analyzeWorkerRouterEnabled', z.boolean()],
 
@@ -508,6 +509,16 @@ const registry = new Map<string, ZodTypeAny>([
   ['taskClosure.candidateTtlDays', POSITIVE_INT],
   ['taskClosure.lexicalFallbackMinOverlap', UNIT_INTERVAL],
 
+  ['taskSolution.buildHourMsk', z.number().int().min(0).max(23)],
+  ['taskSolution.minSignalChars', NON_NEGATIVE_INT],
+  ['taskSolution.lookbackHours', POSITIVE_INT],
+  ['taskSolution.repeatThreshold', POSITIVE_INT],
+  ['taskSolution.repeatSimilarity', UNIT_INTERVAL],
+  ['taskSolution.refineEnabled', z.boolean()],
+  ['taskSolution.howSolvedSignalTypes', z.array(z.string()).min(1)],
+  ['taskSolution.ownerInferenceEnabled', z.boolean()],
+  ['taskSolution.maxPlaceholderRatio', UNIT_INTERVAL],
+
   ['conversational.telegramDigestHourLocal', z.number().int().min(0).max(23)],
 
   ['retention.defaultDays', POSITIVE_INT],
@@ -591,7 +602,7 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['me.tasks.doneWindowDays', z.number().int().min(1).max(90)],
   ['operations.personal_day_narrative.enabled', z.boolean()],
-  ['operations.personal_day_narrative.evening_hour', z.number().int().min(0).max(23)],
+  ['operations.personal_day_narrative.morning_hour', z.number().int().min(0).max(23)],
   ['operations.self_signals.plan_not_closing_streak_days', z.number().int().min(1).max(30)],
   ['knowledge.expertise.self_max_blocks_scanned', z.number().int().min(100).max(20_000)],
   ['knowledge.expertise.self_top_k', z.number().int().min(1).max(50)],

@@ -884,6 +884,27 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- TaskSolution — «Решение задачи» (память компании). HNSW индекс на
+--   task_solutions.embedding (vector_cosine_ops) для KNN cosine dedupe /
+--   repeat-detect (зеркало instructions/regulations card-эмбеддингов).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'task_solutions'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "task_solutions_embedding_hnsw_cosine_idx"
+      ON "task_solutions" USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 128)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Person dedup (ТЗ 2026-06-10 meeting-stuck-and-team-roster Ф2): частичный
 -- уникальный индекс по активному email внутри tenant — чтобы на один email в
 -- одной Org нельзя было завести две активные карточки (источник дублей в

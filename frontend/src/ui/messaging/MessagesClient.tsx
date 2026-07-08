@@ -7,6 +7,7 @@ import {
   Info,
   ListChecks,
   Loader2,
+  Plus,
   Search,
   Send,
   X,
@@ -46,6 +47,7 @@ import { Textarea } from "@/ui/shadcn/textarea";
 import { cn } from "@/ui/shadcn/lib/utils";
 
 import { MessageBubble } from "./MessageBubble";
+import { NewConversationDialog } from "./NewConversationDialog";
 
 interface TabConfig {
   key: string;
@@ -100,6 +102,7 @@ export function MessagesClient() {
     searchParams.get("conversation") ? "chat" : "list",
   );
   const [showContext, setShowContext] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
 
   const { total: unreadCount } = useUnreadMessageCount(currentOrgId);
 
@@ -138,6 +141,16 @@ export function MessagesClient() {
     setMobilePane("list");
   }, []);
 
+  const handleConversationCreated = useCallback(
+    async (conversationId: string) => {
+      setTab(TABS[0]!);
+      setFeedQuery("");
+      openThread(conversationId);
+      await mutate();
+    },
+    [mutate, openThread],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col md:h-[calc(100vh-var(--header-h))]">
       <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)_312px]">
@@ -160,6 +173,7 @@ export function MessagesClient() {
           loadMore={loadMore}
           activeId={activeId}
           onOpen={openThread}
+          onNewConversation={() => setNewOpen(true)}
           unreadCount={unreadCount}
           orgId={currentOrgId}
         />
@@ -185,6 +199,15 @@ export function MessagesClient() {
           />
         ) : null}
       </div>
+
+      <NewConversationDialog
+        orgId={currentOrgId}
+        currentUserId={user?.id ?? null}
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        onCreated={handleConversationCreated}
+        onListMutate={mutate}
+      />
 
       {showContext && activeThread ? (
         <div className="fixed inset-0 z-40 flex xl:hidden">
@@ -221,6 +244,7 @@ function ThreadList({
   loadMore,
   activeId,
   onOpen,
+  onNewConversation,
   unreadCount,
 }: {
   className?: string;
@@ -238,6 +262,7 @@ function ThreadList({
   loadMore: () => void;
   activeId: string | null;
   onOpen: (refId: string) => void;
+  onNewConversation: () => void;
   unreadCount: number;
   orgId: string | null;
 }) {
@@ -252,6 +277,14 @@ function ThreadList({
               {unreadCount}
             </span>
           ) : null}
+          <Button
+            size="sm"
+            className="ml-auto"
+            onClick={onNewConversation}
+          >
+            <Plus size={15} className="mr-1" />
+            Новое сообщение
+          </Button>
         </div>
         <div className="relative">
           <Search

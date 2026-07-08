@@ -41,6 +41,12 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 |---|---|
 | `/customers` | **Справочник клиентов** (`frontend/app/(authenticated)/customers/`, зеркало `/vendors`) — read-only master-list клиентов компании (`Customer`, фильтры/поиск/статус). Слой `src/api/customers.api.ts`. Пункт «Клиенты» в подгруппе «Справочник» сайдбара (`nav-config.ts`, рядом с «Поставщики»). ChatBox-пикер клиента в `/chats` переключён на клиентов Коры (`Customer`). |
 
+## Решения задач (2026-07-07, ТЗ task-solution-entity)
+
+| Путь | Что |
+|---|---|
+| `/task-solutions` | **Реестр «Решений задач»** (`frontend/app/(authenticated)/task-solutions/`, образец `/regulations`) — master-detail: список слева + карточка справа, фильтры (поиск / владелец / навык / статус / кандидат-в-инструкцию / удалённые). Карточка: название + описание задачи, «как решалась» (markdown `solutionMd`), владелец, deep-link на задачу (`/issues/:id`), источники (провенанс), история версий, действия confirm / delete / restore; бейдж «🔁 похожих ×N — оформить инструкцию» при `candidateInstruction`. Слои `src/api/task-solutions.api.ts` → `src/domain/task-solution.ts` → UI. Пункт навигации «Решения задач» (иконка `Wrench`) в `nav-config.ts` (`WORK_SECTION`). API — [[api-layer]] §«Task Solutions», модель — [[../02_architecture/data-model]] §«TaskSolution». |
+
 ## Просмотр диалогов ChatBox (2026-06-24, ТЗ chatbox-dialogs-viewer)
 
 | Путь | Что |

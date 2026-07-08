@@ -26,7 +26,7 @@ import {
 } from '../dto/personal-day-narrative.dto';
 import { PersonalDayNarrativeService } from '../services/personal-day-narrative.service';
 import { SelfPersonResolverService } from '../services/self-person-resolver.service';
-import { getLocalDate } from '../utils/local-date';
+import { yesterdayLocalDate } from '../utils/local-date';
 
 @ApiTags('me-day-letter')
 @Controller('api/v1/me')
@@ -48,7 +48,7 @@ export class MyDayNarrativeController {
   ): Promise<PersonalDayNarrativeDto> {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
-    const dateLocal = q.date ?? getLocalDate(new Date(), 'Europe/Moscow');
+    const dateLocal = q.date ?? yesterdayLocalDate(new Date(), 'Europe/Moscow');
 
     const personId = await this.resolveSelfPersonId(tenantId!, uid);
     if (!personId) return emptyPersonalDayNarrativeDto(dateLocal);

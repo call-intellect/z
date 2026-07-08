@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
+import { CompanyCapsuleService } from '../../ai/services/company-capsule.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
   withInjectionGuard,
@@ -369,6 +370,9 @@ export class BlockExtractionService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(CompanyCapsuleService)
+    private readonly capsule?: CompanyCapsuleService,
   ) {}
 
   /**
@@ -440,6 +444,10 @@ export class BlockExtractionService {
       ? skeleton
       : null;
 
+    const companyAbout = this.capsule
+      ? await this.capsule.load(args.tenantId, 'block_ingest')
+      : '';
+
     const seen = new Map<string, number>();
     const dedupKeys = new Set<string>();
     let overlapDedupCount = 0;
@@ -462,6 +470,7 @@ export class BlockExtractionService {
         segments: slice,
         dataClass: args.dataClass,
         skeleton: headerSkeleton,
+        companyAbout,
       });
       windowIdx += 1;
       if (win.failed) failedWindows += 1;
@@ -562,6 +571,7 @@ export class BlockExtractionService {
     segments: Segment[];
     dataClass?: DataClass;
     skeleton?: MeetingSkeleton | null;
+    companyAbout?: string | undefined;
   }): Promise<ExtractedWindow> {
     const callWindow = async (
       gleaningExclude?: { name: string; signalType: string }[],
@@ -576,6 +586,7 @@ export class BlockExtractionService {
         totalWindows: args.totalWindows,
         gleaningExclude,
         skeleton: args.skeleton ?? undefined,
+        companyAbout: args.companyAbout,
       });
       const guardOn = this.isPromptInjectionGuardEnabled();
       const guardedSystem = guardOn ? withInjectionGuard(system) : system;

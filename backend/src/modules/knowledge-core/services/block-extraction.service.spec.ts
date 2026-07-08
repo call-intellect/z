@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
+import type { CompanyCapsuleService } from '../../ai/services/company-capsule.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { BlockExtractionService } from './block-extraction.service';
@@ -84,6 +85,7 @@ function makeService(
     segments: Segment[];
   }) => Promise<MeetingSkeleton | null>,
   metrics?: Metrics,
+  capsule?: { load: ReturnType<typeof vi.fn> },
 ): BlockExtractionService {
   const llm = { call } as unknown as LlmRouterService;
   const skeletonService = {
@@ -94,6 +96,7 @@ function makeService(
     llm,
     skeletonService,
     metrics as unknown as BusinessMetricsService | undefined,
+    capsule as unknown as CompanyCapsuleService | undefined,
   );
 }
 
@@ -583,5 +586,36 @@ describe('BlockExtractionService.extractFull — метрики наблюден
     const svc = makeService(cfg, call);
 
     await expect(svc.extractFull(baseArgs(segments))).resolves.toBeDefined();
+  });
+});
+
+describe('BlockExtractionService.extractFull — капсула «О компании» (block_ingest)', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('capsule.load зван РОВНО ОДИН РАЗ на все окна/раунды, секция в первом userMessage', async () => {
+    const cfg = makeCfg({
+      windowSize: 2,
+      overlap: 0,
+      gleaningRounds: 1,
+      gleaningMinSegments: 2,
+    });
+    const segments = [
+      seg(0, 's0'),
+      seg(1000, 's1'),
+      seg(2000, 's2'),
+      seg(3000, 's3'),
+    ];
+    const call = vi.fn(async () => jsonOf({ blocks: [block('A', 0)] }));
+    const capsule = {
+      load: vi.fn(async () => '## О компании\nНазвание: Ооо луа'),
+    };
+    const svc = makeService(cfg, call, undefined, undefined, capsule);
+
+    await svc.extractFull(baseArgs(segments));
+
+    expect(capsule.load).toHaveBeenCalledTimes(1);
+    expect(capsule.load).toHaveBeenCalledWith('t1', 'block_ingest');
+    expect(call.mock.calls.length).toBeGreaterThan(1);
+    expect(userMsgAt(call, 0)).toContain('## О компании');
   });
 });

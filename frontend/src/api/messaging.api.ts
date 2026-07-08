@@ -44,6 +44,17 @@ export interface CreateConversationBody {
   memberUserIds: string[];
 }
 
+export interface StartExternalBody {
+  clientContact: { email?: string; phone?: string };
+  title?: string;
+  message?: string;
+}
+
+export interface StartExternalResponseApi {
+  conversationId: string;
+  inviteLink: string;
+}
+
 function buildThreadsQuery(params: ListThreadsParams): string {
   const qs = new URLSearchParams();
   qs.set("type", params.type);
@@ -109,6 +120,13 @@ export const messagingApi = {
   createConversation: (orgId: string, body: CreateConversationBody) =>
     apiClient.post<{ conversationId: string }>(
       `/api/v1/conversations`,
+      body,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  startExternal: (orgId: string, body: StartExternalBody) =>
+    apiClient.post<StartExternalResponseApi>(
+      `/api/v1/external-conversations`,
       body,
       { headers: orgHeaders(orgId) },
     ),

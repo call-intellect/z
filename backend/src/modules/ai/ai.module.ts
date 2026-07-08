@@ -12,6 +12,7 @@ import { BehaviorLlmRefineService } from './services/behavior-llm-refine';
 import { BehaviorMetricsCalculator } from './services/behavior-metrics-calculator';
 import { BudgetGuardService } from './services/budget-guard.service';
 import { CardRollupService } from './services/card-rollup.service';
+import { CompanyCapsuleService } from './services/company-capsule.service';
 import { DeepSeekService } from './services/deepseek.service';
 import { GrsaiService } from './services/grsai.service';
 import { KieService } from './services/kie.service';
@@ -69,6 +70,7 @@ import { VoxService } from './services/vox.service';
     TaskExtractionService,
     ParticipantContextService,
     OrgContextService,
+    CompanyCapsuleService,
     RegenerateService,
     CardRollupService,
     PromptResolverService,
@@ -89,6 +91,7 @@ import { VoxService } from './services/vox.service';
     TaskExtractionService,
     ParticipantContextService,
     OrgContextService,
+    CompanyCapsuleService,
     CardRollupService,
     PromptResolverService,
     BehaviorMetricsCalculator,

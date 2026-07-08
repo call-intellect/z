@@ -50,6 +50,7 @@ backend/tmp/
 .impeccable/
 .qwen/
 .claude/worktrees/
+.zcode/
 
 # Скриншоты/QA-снимки и аналитические артефакты сессий в корне (не для коммита — PII/мусор)
 /*.png

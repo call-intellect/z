@@ -1273,7 +1273,7 @@ async function embedBackfillFitsDeploy(): Promise<boolean> {
   // eslint-disable-next-line no-console
   console.log(
     `\n>>> [schema] backfill-embeddings-gemma-768 ПРОПУЩЕН: пустых эмбеддингов ~${count} ` +
-      `(> ${EMBED_BACKFILL_DEPLOY_MAX_ROWS}) — в деплой с таймаутом ${Math.round(STEP_TIMEOUT_MS / 1000)}s не влезет. ` +
+      `(> ${EMBED_BACKFILL_DEPLOY_MAX_ROWS}) — в деплой с таймаутом ${Math.round(DEFAULT_STEP_TIMEOUT_MS / 1000)}s не влезет. ` +
       `Прогони вручную до конца: docker compose exec backend bun run scripts/backfill-embeddings-gemma-768.ts ` +
       `(идемпотентен); малый хвост деплой докатит сам.`,
   );

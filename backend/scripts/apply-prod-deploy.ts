@@ -487,7 +487,6 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-backfill-entity-id-person.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-person-relationship.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-backfill-card-versions.ts', skipBootstrap: true },
-  { phase: 'patch', script: 'scripts/backfill-rule-summaries.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-document-use-cases-default.ts', skipBootstrap: true },
   {
     phase: 'patch',
@@ -1248,6 +1247,33 @@ async function ensureBaseline(): Promise<boolean> {
 
 const EMBEDDINGS_768_MIGRATION = '20260709000000_embeddings_dim_768';
 
+const EMBED_BACKFILL_DEPLOY_MAX_ROWS = Number(
+  process.env['DEPLOY_EMBED_BACKFILL_MAX_ROWS'] ?? 500,
+);
+
+async function embedBackfillFitsDeploy(): Promise<boolean> {
+  const url = process.env['DATABASE_URL'];
+  if (!url) return true;
+  const missing = await psqlScalar(
+    url,
+    'SELECT (SELECT count(*) FROM "IdeaBlock" WHERE embedding IS NULL) + ' +
+      '(SELECT count(*) FROM "Entity" WHERE embedding IS NULL) + ' +
+      '(SELECT count(*) FROM "SourceEpisode" WHERE embedding IS NULL) + ' +
+      '(SELECT count(*) FROM "Issue" WHERE embedding IS NULL)',
+  );
+  if (missing === null) return true;
+  const count = Number(missing);
+  if (!Number.isFinite(count) || count <= EMBED_BACKFILL_DEPLOY_MAX_ROWS) return true;
+  // eslint-disable-next-line no-console
+  console.log(
+    `\n>>> [schema] backfill-embeddings-gemma-768 ПРОПУЩЕН: пустых эмбеддингов ~${count} ` +
+      `(> ${EMBED_BACKFILL_DEPLOY_MAX_ROWS}) — в деплой с таймаутом ${Math.round(STEP_TIMEOUT_MS / 1000)}s не влезет. ` +
+      `Прогони вручную до конца: docker compose exec backend bun run scripts/backfill-embeddings-gemma-768.ts ` +
+      `(идемпотентен); малый хвост деплой докатит сам.`,
+  );
+  return false;
+}
+
 async function ensureEmbeddings768Resolved(): Promise<boolean> {
   const url = process.env['DATABASE_URL'];
   if (!url) return true;
@@ -1332,13 +1358,15 @@ async function runSchemaPhase(
   const preMigrate: Step[] = [
     { phase: 'migrate', script: 'scripts/migrate-task-to-issue.ts', args: ['--apply'] },
     { phase: 'backfill', script: 'scripts/backfill-collapse-legacy-task-duplicates.ts', args: ['--apply'] },
-    {
+  ];
+  if (await embedBackfillFitsDeploy()) {
+    preMigrate.push({
       phase: 'backfill',
       script: 'scripts/backfill-embeddings-gemma-768.ts',
-      hint: 'embeddinggemma 768 dim (TZ 2026-06-30) — после миграции vector(1536)→vector(768) обнуляет все эмбеддинги; backfill через LocalEmbeddingService. Идемпотентно (WHERE embedding IS NULL)',
+      hint: 'embeddinggemma 768 dim (TZ 2026-06-30) — хвост пустых эмбеддингов после миграции vector(1536)→vector(768). Идемпотентно (WHERE embedding IS NULL)',
       skipBootstrap: true,
-    },
-  ];
+    });
+  }
   for (const s of preMigrate) {
     const r = await runOne(s, false, verbose);
     if (!r.ok && !continueOnFail) return false;

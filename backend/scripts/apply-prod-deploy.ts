@@ -578,6 +578,12 @@ const STEPS: Step[] = [
   },
   {
     phase: 'patch',
+    script: 'scripts/patch-llm-provider-keys-from-env.ts',
+    hint: 'переносит API-ключи провайдеров из ENV в llm_providers.apiKeyEncrypted (AES-256-GCM), только где пусто — после удаления legacy ENV-пути диспатча (ChatBox 1748fe82) deepseek/grsai/ollama без DB-ключа не работают; openai-via-proxy намеренно не трогаем (его ключ = PROXY_PREFIX:OPENAI_API_KEY, ENV-фолбэк сервиса корректен)',
+    everyDeploy: true,
+  },
+  {
+    phase: 'patch',
     script: 'scripts/patch-check-legacy-ab-experiments.ts',
     hint: 'read-only: предупреждение об активных легаси route.experiment после вывода AdminExperimentsService из эксплуатации (ТЗ 2026-07-03 Фаза 2)',
     skipBootstrap: true,

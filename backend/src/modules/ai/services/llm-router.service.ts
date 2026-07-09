@@ -1580,19 +1580,15 @@ export class LlmRouterService implements OnModuleInit {
         taskType: params.taskType,
         attemptedClass: effectiveDataClass,
       });
-      this.logger.error(
+      this.logger.warn(
         {
           taskType: params.taskType,
           dataClass: effectiveDataClass,
           attempted: providers.map((p) => p.provider),
         },
-        'LlmRouter: no eligible provider for dataClass — block dispatch',
+        'LlmRouter: no eligible provider for dataClass — dispatch по всей цепочке (гейт не блокирует)',
       );
-      throw new NoEligibleProviderError(
-        params.taskType,
-        effectiveDataClass,
-        providers.map((p) => p.provider),
-      );
+      filtered.push(...providers);
     }
 
     // Pre-dispatch budget gate (ТЗ cost-safety Ф2 + llm-budget-downgrade-tier Ф2).

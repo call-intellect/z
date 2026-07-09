@@ -27,6 +27,12 @@ export class KieService {
     if (!model) {
       throw new LlmError('KIE: input.model обязателен (по нему выбирается формат API).');
     }
+    if (override && !override.apiKey) {
+      throw new LlmError(
+        'KIE: нет API-ключа в llm_providers — задай его в админке (ENV-фолбэк удалён)',
+        500,
+      );
+    }
     const baseUrl = (override?.baseUrl ?? this.baseUrl).replace(/\/+$/, '');
     const apiKey = override?.apiKey ?? this.apiKey;
     const format = this.detectFormat(model);

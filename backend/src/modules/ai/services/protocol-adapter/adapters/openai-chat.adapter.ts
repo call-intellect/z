@@ -42,7 +42,13 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
       defaultHeaders: provider.defaultHeaders,
       timeout: provider.timeoutMs ?? undefined,
     });
-    const model = input.model ?? provider.defaultModelKey ?? provider.defaultModel ?? 'gpt-4o-mini';
+    const model = input.model ?? provider.defaultModelKey ?? provider.defaultModel;
+    if (!model) {
+      throw new LlmError(
+        `openai-chat: provider=${provider.name} — модель не задана ни вызовом, ни маршрутом, ни «Моделью по умолчанию» провайдера в админке`,
+        500,
+      );
+    }
 
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const messages: Array<{ role: 'system' | 'user'; content: string }> = [

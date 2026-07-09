@@ -32,8 +32,14 @@ async function main(): Promise<void> {
       hasKey += 1;
       continue;
     }
-    const envName = ENV_KEY_BY_PROVIDER[p.name];
-    const envValue = envName ? process.env[envName]?.trim() : undefined;
+    let envName = ENV_KEY_BY_PROVIDER[p.name];
+    let envValue = envName ? process.env[envName]?.trim() : undefined;
+    if (p.name === 'openai-via-proxy') {
+      const prefix = process.env['PROXY_PREFIX']?.trim();
+      const openaiKey = process.env['OPENAI_API_KEY']?.trim();
+      envName = 'PROXY_PREFIX:OPENAI_API_KEY';
+      envValue = prefix && openaiKey ? `${prefix}:${openaiKey}` : undefined;
+    }
     if (!envName || !envValue) {
       noEnv += 1;
       console.log(

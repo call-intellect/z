@@ -300,17 +300,15 @@ describe('AnthropicService.complete: connection-override (Ф3)', () => {
     expect(result.text).toBe('');
   });
 
-  it('override.apiKey=null → fallback на ENV apiKey, baseUrl всё равно из override', async () => {
+  it('override.apiKey=null → LlmError «нет API-ключа в llm_providers» (ENV-фолбэк удалён)', async () => {
     const svc = new AnthropicService(makeCfg());
 
-    await svc.complete(
-      { system: { text: 's' }, user: 'u' },
-      { baseUrl: 'https://override.example/v1', apiKey: null },
-    );
-
-    const capturedOpts = lastSdkCtorOpts as { apiKey?: string; baseURL?: string };
-    expect(capturedOpts.baseURL).toBe('https://override.example/v1');
-    expect(capturedOpts.apiKey).toBe('sk-ant-test');
+    await expect(
+      svc.complete(
+        { system: { text: 's' }, user: 'u' },
+        { baseUrl: 'https://override.example/v1', apiKey: null },
+      ),
+    ).rejects.toThrow(/нет API-ключа в llm_providers/);
   });
 
   it('override отсутствует → используется конструкторский клиент, новый не создаётся', async () => {

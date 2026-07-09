@@ -29,9 +29,15 @@ export class OpenAiProxyService {
   }
 
   private buildClient(override: LlmConnectionOverride): OpenAI {
+    if (!override.apiKey) {
+      throw new LlmError(
+        'OpenAI-via-proxy: нет API-ключа в llm_providers — задай его в админке (формат PREFIX:KEY; ENV-фолбэк удалён)',
+        500,
+      );
+    }
     return new OpenAI({
       baseURL: override.baseUrl,
-      apiKey: override.apiKey ?? `${this.cfg.ai.proxy.prefix}:${this.cfg.ai.openai.apiKey}`,
+      apiKey: override.apiKey,
     });
   }
 

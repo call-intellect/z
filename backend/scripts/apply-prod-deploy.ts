@@ -579,7 +579,7 @@ const STEPS: Step[] = [
   {
     phase: 'patch',
     script: 'scripts/patch-llm-provider-keys-from-env.ts',
-    hint: 'переносит API-ключи провайдеров из ENV в llm_providers.apiKeyEncrypted (AES-256-GCM), только где пусто — после удаления legacy ENV-пути диспатча (ChatBox 1748fe82) deepseek/grsai/ollama без DB-ключа не работают; openai-via-proxy намеренно не трогаем (его ключ = PROXY_PREFIX:OPENAI_API_KEY, ENV-фолбэк сервиса корректен)',
+    hint: 'переносит API-ключи провайдеров из ENV в llm_providers.apiKeyEncrypted (AES-256-GCM), только где пусто — после удаления legacy ENV-пути диспатча (ChatBox 1748fe82) deepseek/grsai/ollama без DB-ключа не работают; openai-via-proxy переносится составным ключом PROXY_PREFIX:OPENAI_API_KEY',
     everyDeploy: true,
   },
   {

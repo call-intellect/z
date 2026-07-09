@@ -368,28 +368,14 @@ describe('KieService.complete — connection-override (Ф3)', () => {
     expect(headers.Authorization).toBe('Bearer override-key');
   });
 
-  it('override.apiKey=null → fallback на ENV apiKey, baseUrl из override', async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            choices: [{ message: { content: 'ok' } }],
-            usage: { prompt_tokens: 1, completion_tokens: 1 },
-          }),
-          { status: 200 },
-        ),
-    );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
+  it('override.apiKey=null → LlmError «нет API-ключа в llm_providers» (ENV-фолбэк удалён)', async () => {
     const svc = new KieService(makeCfg());
-    await svc.complete(
-      { system: { text: 's' }, user: 'u', model: 'gemini-3-pro' },
-      { baseUrl: 'https://override.kie.example', apiKey: null },
-    );
 
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(String(url)).toBe('https://override.kie.example/gemini-3-pro/v1/chat/completions');
-    const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer kie-test-key');
+    await expect(
+      svc.complete(
+        { system: { text: 's' }, user: 'u', model: 'gemini-3-pro' },
+        { baseUrl: 'https://override.kie.example', apiKey: null },
+      ),
+    ).rejects.toThrow(/нет API-ключа в llm_providers/);
   });
 });

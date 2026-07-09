@@ -101,17 +101,15 @@ describe('OpenAiProxyService.complete: connection-override (Ф4)', () => {
     expect(opts.apiKey).toBe('override-key');
   });
 
-  it('override.apiKey=null → fallback на ENV-дефолт с префиксом прокси', async () => {
+  it('override.apiKey=null → LlmError «нет API-ключа в llm_providers» (ENV-фолбэк удалён)', async () => {
     const svc = new OpenAiProxyService(makeCfg());
 
-    await svc.complete(
-      { system: { text: 's' }, user: 'u' },
-      { baseUrl: 'https://override.example/v1', apiKey: null },
-    );
-
-    const opts = lastCtorOpts as { apiKey?: string; baseURL?: string };
-    expect(opts.baseURL).toBe('https://override.example/v1');
-    expect(opts.apiKey).toBe('testprefix:env-openai-key');
+    await expect(
+      svc.complete(
+        { system: { text: 's' }, user: 'u' },
+        { baseUrl: 'https://override.example/v1', apiKey: null },
+      ),
+    ).rejects.toThrow(/нет API-ключа в llm_providers/);
   });
 
   it('override отсутствует → используется конструкторский клиент (ENV, как раньше)', async () => {

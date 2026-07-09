@@ -10,7 +10,7 @@ function makeDeps(overrides: Partial<ReembedNoHeaderDeps> = {}): ReembedNoHeader
   return {
     countPending: vi.fn(async () => 0),
     fetchPending: vi.fn(async () => [] as BlockRow[]),
-    embedBlocks: vi.fn(async (rows: BlockRow[]) => rows.map(() => Array(1536).fill(0.1))),
+    embedBlocks: vi.fn(async (rows: BlockRow[]) => rows.map(() => Array(768).fill(0.1))),
     writeBlock: vi.fn(async () => {}),
     reindex: vi.fn(async () => {}),
     ...overrides,

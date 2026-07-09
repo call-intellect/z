@@ -366,7 +366,7 @@ async function embedIssue(
   if (!vector || vector.length === 0) return false;
   const hash = createHash('sha256').update(text, 'utf8').digest('hex');
   await prisma.$executeRawUnsafe(
-    'UPDATE "Issue" SET embedding = $1::vector(1536), "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
+    'UPDATE "Issue" SET embedding = $1::vector, "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
     `[${vector.join(',')}]`,
     hash,
     issueId,

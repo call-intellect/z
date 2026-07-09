@@ -229,7 +229,6 @@ export class MeetingsController {
   }
 
   @Post(':id/participants/:pid/mute')
-  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async muteParticipant(
     @Param('id') meetingId: string,
@@ -241,7 +240,6 @@ export class MeetingsController {
   }
 
   @Post(':id/participants/:pid/unmute')
-  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async unmuteParticipant(
     @Param('id') meetingId: string,
@@ -253,7 +251,6 @@ export class MeetingsController {
   }
 
   @Post(':id/participants/:pid/kick')
-  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async kickParticipant(
     @Param('id') meetingId: string,
@@ -265,7 +262,6 @@ export class MeetingsController {
   }
 
   @Post(':id/participants/:pid/lower-hand')
-  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async lowerHand(
     @Param('id') meetingId: string,
@@ -277,7 +273,6 @@ export class MeetingsController {
   }
 
   @Post(':id/finish')
-  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async finish(
     @Param('id') meetingId: string,

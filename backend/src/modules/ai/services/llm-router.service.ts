@@ -1795,6 +1795,19 @@ export class LlmRouterService implements OnModuleInit {
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        // Конфигурационные ошибки (нет провайдеров в БД, defaultChain не настроена,
+        // реестр выключен) — пробрасываем наверх НЕ оборачивая в
+        // LlmRouterAllProvidersFailedError. Тогда BlockIngestWorker сможет их
+        // классифицировать и поставить RawEvent в 'deferred' для re-enqueue после
+        // появления провайдеров. Иначе retry бесполезен (конфиг не изменится).
+        if (
+          err instanceof NoEligibleProviderError ||
+          err instanceof LlmRouterDefaultChainInvalidError ||
+          message.includes('реестр протокольных адаптеров выключен') ||
+          message.includes('не найден в llm_providers')
+        ) {
+          throw err;
+        }
         errors.push({ provider: entry.provider, message });
         lastFailTier = effectiveTier;
         const isLast = i === filtered.length - 1;

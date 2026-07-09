@@ -92,6 +92,8 @@ export class ThemesController { ... }
 
 Webhook controllers (Telegram, Mango) НЕ гейтятся — внешние URLы должны работать. Gating только на создание Source.
 
+**SubscriptionGuard (DEMO/ACTIVE, отдельно от entitlements) — гейтит СОЗДАНИЕ, не управление in-flight встречей.** `@RequireSubscription` требует `tenantId` из `X-Org-Id`; комната встречи вызывает host-контролы без org-контекста → без снятия гейта гвард кидал `tenant_required` (403) и встреча зависала active (finish не доходил до `deleteRoom`, вебхуки не приходили, цепочка запись→транскрипт→отчёт не стартовала). Инвариант: закончить/управлять уже идущей встречей нужно уметь всегда (даже если подписка истекла в процессе). Поэтому под гейтом остаётся `POST /meetings` (создание), но НЕ `finish` / `mute` / `unmute` / `kick` / `lower-hand` / `recording start|stop`. Инцидент 2026-07-09, фикс — коммит `254186aa`.
+
 ## Quotas через Entitlements
 
 `QuotaService.checkAndIncrement({max})` теперь получает `max` через `EntitlementService.getQuota(tenantId, quotaKey)`. Покрыты:

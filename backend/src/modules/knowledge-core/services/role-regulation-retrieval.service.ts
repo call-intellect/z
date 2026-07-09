@@ -347,7 +347,7 @@ export class RoleRegulationRetrievalService {
     }
     if (!queryVec) return [];
 
-    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 768;
     const guard = buildVectorLiteral(queryVec, expectedDim);
     if (guard.literal === null) {
       this.logger.debug(

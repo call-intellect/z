@@ -39,7 +39,7 @@ export class ThemeWriteService {
     const embedding = await this.embeddings.embedQuery(phrase);
     if (embedding && embedding.length > 0) {
       await this.prisma.$executeRawUnsafe(
-        'UPDATE "Theme" SET embedding = $1::vector(1536) WHERE id = $2',
+        'UPDATE "Theme" SET embedding = $1::vector WHERE id = $2',
         toVectorLiteral(embedding),
         created.id,
       );

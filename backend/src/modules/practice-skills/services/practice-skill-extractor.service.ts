@@ -240,10 +240,10 @@ export class PracticeSkillExtractorService {
         derivedFromEpisodeCount: blocks.length,
       },
     });
-    if (triggerEmbedding && triggerEmbedding.length === 1536) {
+    if (triggerEmbedding && triggerEmbedding.length > 0) {
       try {
         await this.prisma.$executeRawUnsafe(
-          'UPDATE "practice_skills" SET "triggerEmbedding" = $1::vector(1536) WHERE id = $2',
+          'UPDATE "practice_skills" SET "triggerEmbedding" = $1::vector WHERE id = $2',
           `[${triggerEmbedding.join(',')}]`,
           created.id,
         );

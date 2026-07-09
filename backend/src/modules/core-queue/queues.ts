@@ -191,7 +191,7 @@ export const CORE_QUEUE_NAMES = {
    * Ф5 (TZ 2026-06-16 task-dedup) — пересчёт pgvector-embedding'а для Goal.
    * Consumer — `GoalEmbedWorker`. Аналог `core.issue-embed`: на job {tenantId,
    * goalId} считает sha256(name+description), при совпадении с `embeddingHash`
-   * — skip; иначе embed (text-embedding-3-small, 1536) + raw UPDATE
+   * — skip; иначе embed (модель из embedding-конфига) + raw UPDATE
    * `Goal.embedding/embeddingHash`. Нужен для семантического дедупа целей
    * (specialist-3-14 KNN по `Goal.embedding` вместо ILIKE по 2 словам).
    *

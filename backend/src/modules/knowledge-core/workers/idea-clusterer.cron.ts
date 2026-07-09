@@ -321,10 +321,10 @@ export class IdeaClustererCron {
 
   /**
    * Б8 [K10] — пересчёт `IdeaCluster.embedding` как покомпонентного среднего
-   * (centroid) эмбеддингов идей-участников. Размерность — vector(1536) (см.
+   * (centroid) эмбеддингов идей-участников. Размерность — по embedding-конфигу (см.
    * schema.prisma: Idea.embedding / IdeaCluster.embedding). Idea.embedding —
    * Unsupported-тип, его нельзя ни прочитать, ни записать через типизированный
-   * Prisma-клиент, поэтому читаем `::text` сырым SQL и пишем `::vector(1536)`
+   * Prisma-клиент, поэтому читаем `::text` сырым SQL и пишем `::vector`
    * сырым UPDATE (как сделано для Theme.embedding в theme-clusterer и для
    * ideas.embedding в specialist-3-6/block-ingest).
    *
@@ -357,7 +357,7 @@ export class IdeaClustererCron {
       const mean = meanVector(vectors);
       if (!mean) return;
       await this.prisma.$executeRawUnsafe(
-        'UPDATE "idea_clusters" SET "embedding" = $1::vector(1536) WHERE "id" = $2 AND "tenantId" = $3',
+        'UPDATE "idea_clusters" SET "embedding" = $1::vector WHERE "id" = $2 AND "tenantId" = $3',
         toVectorLiteral(mean),
         args.clusterId,
         args.tenantId,

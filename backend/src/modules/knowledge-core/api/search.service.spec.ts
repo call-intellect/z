@@ -16,7 +16,7 @@ function makeCfg(enforcement: 'off' | 'shadow' | 'enforce' = 'off'): TypedConfig
     knowledgeAccess: { enforcement },
     knowledgeCore: { searchCosineWeight: 0.7, searchBm25Weight: 0.3 },
     bitemporal: { enabled: false },
-    ai: { embeddings: { dimensions: 1536 } },
+    ai: { embeddings: { dimensions: 768 } },
     getDynamic: vi.fn(async (_k: string, _e: unknown, def: unknown) => def),
   } as unknown as TypedConfigService;
 }
@@ -188,9 +188,9 @@ describe('SearchService — Ф4 гейт доступа (knowledge-access)', () 
 });
 
 describe('SearchService — G2 guard размерности/чистоты query-вектора', () => {
-  const validVec = new Array(1536).fill(0).map((_, i) => i / 1536);
+  const validVec = new Array(768).fill(0).map((_, i) => i / 768);
 
-  it('валидный вектор 1536 → cosine в SQL (литерал как раньше)', async () => {
+  it('валидный вектор 768 → cosine в SQL (литерал как раньше)', async () => {
     const captured: { sql: string | null } = { sql: null };
     const prisma = buildFakePrisma(captured);
     const { resolver } = makeResolver();
@@ -208,7 +208,7 @@ describe('SearchService — G2 guard размерности/чистоты query
     expect(captured.sql).not.toBeNull();
     // cosine-ветка активна: оператор pgvector + cast + фильтр embedding NOT NULL.
     expect(captured.sql).toContain('<=>');
-    expect(captured.sql).toContain('::vector(1536)');
+    expect(captured.sql).toContain('::vector');
     expect(captured.sql).toContain('b.embedding IS NOT NULL');
   });
 

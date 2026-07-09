@@ -271,7 +271,7 @@ export class ChatV2RetrievalService {
     // переводим весь read-путь на recency/recall-safe fallback, не валя оператор
     // `<=>` (смена модели → другая размерность; битый вектор → NaN/Infinity).
     if (qvec) {
-      const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+      const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 768;
       const guard = buildVectorLiteral(qvec, expectedDim);
       if (guard.literal === null) {
         this.logger.warn(
@@ -708,7 +708,7 @@ export class ChatV2RetrievalService {
       return [];
     }
     if (!rawVec) return [];
-    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 768;
     if (buildVectorLiteral(rawVec, expectedDim).literal === null) return [];
     const qvec = rawVec;
 
@@ -740,7 +740,7 @@ export class ChatV2RetrievalService {
         WHERE "tenantId" = ${pTenant}
           AND status = 'active'
           AND embedding IS NOT NULL${branchClause}
-        ORDER BY embedding <=> ${pVec}::vector(1536)
+        ORDER BY embedding <=> ${pVec}::vector
         LIMIT ${pLimit}
         `,
         ...params,
@@ -835,7 +835,7 @@ export class ChatV2RetrievalService {
             WHERE b."tenantId" = ${pTenant}
               AND b.status = 'canonical'
               AND b.embedding IS NOT NULL
-            ORDER BY b.embedding <=> ${pVec}::vector(1536)
+            ORDER BY b.embedding <=> ${pVec}::vector
             LIMIT 5000
           `;
           const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
@@ -1151,13 +1151,13 @@ export class ChatV2RetrievalService {
       const pLimit = pushParam(limit);
       const sql = `
         SELECT b.id,
-               (1 - (b.embedding <=> ${pVec}::vector(1536))) AS score
+               (1 - (b.embedding <=> ${pVec}::vector)) AS score
         FROM "IdeaBlock" b
         WHERE b."tenantId" = ${pTenant}
           AND b.status = 'canonical'
           AND b.id = ANY(${pIds}::text[])
           AND b.embedding IS NOT NULL
-        ORDER BY b.embedding <=> ${pVec}::vector(1536)
+        ORDER BY b.embedding <=> ${pVec}::vector
         LIMIT ${pLimit}
       `;
       const rows = await this.prisma.$queryRawUnsafe<RankedRow[]>(sql, ...params);
@@ -1230,7 +1230,7 @@ export class ChatV2RetrievalService {
       // ORDER BY score DESC (вычисляемый алиас) — recall-safe, НЕ HNSW LIMIT.
       const sql = `
         SELECT b.id,
-               (1 - (b.embedding <=> ${pVec}::vector(1536))) AS score
+               (1 - (b.embedding <=> ${pVec}::vector)) AS score
         FROM "IdeaBlock" b
         WHERE b."tenantId" = ${pTenant}
           AND b.status = 'canonical'
@@ -1319,7 +1319,7 @@ export class ChatV2RetrievalService {
         : '';
     const sql = `
       SELECT b.id,
-             ((1 - (b.embedding <=> ${pVec}::vector(1536)))${boostExpr}) AS score
+             ((1 - (b.embedding <=> ${pVec}::vector))${boostExpr}) AS score
       FROM "IdeaBlock" b
       WHERE b."tenantId" = ${pTenant}
         AND b.status = 'canonical'

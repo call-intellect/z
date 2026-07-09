@@ -55,7 +55,7 @@ export class PromptFeedbackCollectorService {
         },
       });
 
-      if (embeddingVector && embeddingVector.length === 1536) {
+      if (embeddingVector && embeddingVector.length > 0) {
         try {
           await this.prisma.$executeRawUnsafe(
             `UPDATE "PromptFeedback" SET "inputEmbedding" = $1::vector WHERE "invocationId" = $2`,

@@ -355,7 +355,7 @@ export class EntityResolutionService {
       const [vec] = await this.embeddings.embedEntityNames([normalized]);
       if (vec) {
         await this.prisma.$executeRawUnsafe(
-          'UPDATE "Entity" SET embedding = $1::vector(1536) WHERE id = $2',
+          'UPDATE "Entity" SET embedding = $1::vector WHERE id = $2',
           this.toVectorLiteral(vec),
           created.id,
         );
@@ -471,7 +471,7 @@ export class EntityResolutionService {
     try {
       rows = await this.prisma.$queryRawUnsafe<Row[]>(
         `
-        SELECT id, embedding <=> $1::vector(1536) AS distance
+        SELECT id, embedding <=> $1::vector AS distance
         FROM "Entity"
         WHERE "tenantId" = $2
           AND "type"::text = $3
@@ -1108,13 +1108,13 @@ export class EntityResolutionService {
     try {
       rows = await this.prisma.$queryRawUnsafe<Row[]>(
         `
-        SELECT p.id AS id, 1 - (e.embedding <=> $1::vector(1536)) AS score
+        SELECT p.id AS id, 1 - (e.embedding <=> $1::vector) AS score
         FROM persons p
         JOIN "Entity" e ON e.id = p."entityId"
         WHERE p."tenantId" = $2
           AND p."deletedAt" IS NULL
           AND e.embedding IS NOT NULL
-        ORDER BY e.embedding <=> $1::vector(1536)
+        ORDER BY e.embedding <=> $1::vector
         LIMIT 5
         `,
         this.toVectorLiteral(vec),
@@ -1164,12 +1164,12 @@ export class EntityResolutionService {
       rows = await this.prisma.$queryRawUnsafe<Row[]>(
         `
         SELECT "canonicalName" AS "canonicalName",
-               1 - (embedding <=> $1::vector(1536)) AS score
+               1 - (embedding <=> $1::vector) AS score
         FROM "Entity"
         WHERE "tenantId" = $2
           AND "mergedIntoId" IS NULL
           AND embedding IS NOT NULL
-        ORDER BY embedding <=> $1::vector(1536)
+        ORDER BY embedding <=> $1::vector
         LIMIT ${limit}
         `,
         this.toVectorLiteral(vec),

@@ -220,7 +220,7 @@ export class EntityMergeService {
              e."createdAt", e."updatedAt",
              1 - (e.embedding <=> (
                SELECT embedding FROM "Entity" WHERE id = $2
-             )::vector(1536)) AS similarity
+             )::vector) AS similarity
       FROM "Entity" e
       WHERE e."tenantId" = $1
         AND e.id <> $2
@@ -229,7 +229,7 @@ export class EntityMergeService {
         AND e.type = (SELECT type FROM "Entity" WHERE id = $2)
       ORDER BY e.embedding <=> (
         SELECT embedding FROM "Entity" WHERE id = $2
-      )::vector(1536)
+      )::vector
       LIMIT 5
       `,
       args.tenantId,

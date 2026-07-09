@@ -53,7 +53,7 @@ describe('IssueEmbedWorker.process', () => {
       descriptionStripped: 'Auth flow breaks for new users',
       embeddingHash: null,
     });
-    const vec = new Array(1536).fill(0).map((_, i) => i / 1536);
+    const vec = new Array(768).fill(0).map((_, i) => i / 768);
     embedMock.mockResolvedValueOnce([vec]);
 
     await worker.process(
@@ -69,7 +69,7 @@ describe('IssueEmbedWorker.process', () => {
     expect(call).toBeDefined();
     if (!call) throw new Error('unreachable');
     expect(String(call[0])).toContain('UPDATE "Issue"');
-    expect(String(call[0])).toContain('vector(1536)');
+    expect(String(call[0])).toContain('vector');
     expect(String(call[1])).toMatch(/^\[/);
     expect(call[3]).toBe('iss1');
     expect(call[4]).toBe('t1');

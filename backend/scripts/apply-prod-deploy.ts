@@ -1246,6 +1246,60 @@ async function ensureBaseline(): Promise<boolean> {
   return true;
 }
 
+const EMBEDDINGS_768_MIGRATION = '20260709000000_embeddings_dim_768';
+
+async function ensureEmbeddings768Resolved(): Promise<boolean> {
+  const url = process.env['DATABASE_URL'];
+  if (!url) return true;
+  const recorded = await psqlScalar(
+    url,
+    `SELECT count(*) FROM public._prisma_migrations WHERE migration_name = '${EMBEDDINGS_768_MIGRATION}'`,
+  );
+  if (recorded === null || recorded !== '0') return true;
+  const dim = await psqlScalar(
+    url,
+    "SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a " +
+      'JOIN pg_class c ON a.attrelid = c.oid JOIN pg_namespace n ON c.relnamespace = n.oid ' +
+      "WHERE n.nspname = 'public' AND c.relname = 'IdeaBlock' AND a.attname = 'embedding'",
+  );
+  if (dim !== 'vector(768)') return true;
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `\n>>> [schema] колонки уже vector(768) (переведены скриптом до появления миграции), ` +
+      `${EMBEDDINGS_768_MIGRATION} не записана → resolve --applied. ` +
+      `Повторный ALTER ... USING NULL стёр бы уже набитый backfill эмбеддингов.`,
+  );
+  const resolve = Bun.spawn(
+    ['bunx', 'prisma', 'migrate', 'resolve', '--applied', EMBEDDINGS_768_MIGRATION],
+    {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: { ...process.env, DATABASE_URL: withPublicSearchPath(url) },
+    },
+  );
+  const out =
+    (await new Response(resolve.stdout).text()) + (await new Response(resolve.stderr).text());
+  // eslint-disable-next-line no-console
+  console.log(out.trim());
+  if ((await resolve.exited) !== 0) {
+    if (/P3008|already recorded as applied/i.test(out)) {
+      // eslint-disable-next-line no-console
+      console.log(`[schema] ${EMBEDDINGS_768_MIGRATION} уже отмечена applied (P3008) — продолжаем.`);
+      return true;
+    }
+    // eslint-disable-next-line no-console
+    console.error(
+      `[schema] ✗ resolve --applied ${EMBEDDINGS_768_MIGRATION} упал — останавливаемся, ` +
+        `иначе migrate deploy повторно обнулит embeddings.`,
+    );
+    return false;
+  }
+  // eslint-disable-next-line no-console
+  console.log(`[schema] ✓ ${EMBEDDINGS_768_MIGRATION} отмечена applied без выполнения.`);
+  return true;
+}
+
 async function runSchemaPhase(
   dryRun: boolean,
   continueOnFail: boolean,
@@ -1273,6 +1327,7 @@ async function runSchemaPhase(
   }
 
   if (!(await ensureBaseline())) return false;
+  if (!(await ensureEmbeddings768Resolved())) return false;
 
   const preMigrate: Step[] = [
     { phase: 'migrate', script: 'scripts/migrate-task-to-issue.ts', args: ['--apply'] },

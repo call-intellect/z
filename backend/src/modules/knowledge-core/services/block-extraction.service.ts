@@ -600,6 +600,7 @@ export class BlockExtractionService {
         tenantId: args.tenantId,
         systemPrompt: guardedSystem,
         userMessage: guardedUser,
+        maxTokens: this.cfg.knowledgeCore.blockIngestResponseMaxTokens,
         responseFormat: {
           type: 'json_schema',
           name: 'IdeaBlocks',

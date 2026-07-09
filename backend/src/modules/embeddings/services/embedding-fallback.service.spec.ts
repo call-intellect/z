@@ -18,6 +18,7 @@ import type { OpenAiProxyEmbeddingService } from './openai-proxy-embedding.servi
 function makeCfg(provider: 'openai-via-proxy' | 'local' = 'openai-via-proxy'): TypedConfigService {
   return {
     ai: { embeddings: { provider } },
+    getDynamic: async (_key: string, _env: unknown, def: unknown) => def,
   } as unknown as TypedConfigService;
 }
 

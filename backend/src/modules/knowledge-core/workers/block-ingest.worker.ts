@@ -1023,13 +1023,20 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     return text.length > 0 ? text : null;
   }
 
+  private tryGetChatSummary(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const v = (payload as { rollingSummary?: unknown }).rollingSummary;
+    const text = typeof v === 'string' ? v.trim() : '';
+    return text.length > 0 ? text : null;
+  }
+
   private resolveSourceSummaryText(
     kind: 'meeting' | 'document' | 'chat',
     payload: unknown,
   ): string | null {
     if (kind === 'meeting') return this.tryGetReportSummaryMarkdown(payload);
     if (kind === 'document') return this.tryGetDocumentSummary(payload);
-    return null;
+    return this.tryGetChatSummary(payload);
   }
 
   private buildSourceSummaryBlockTitle(
@@ -1160,7 +1167,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
 
     if (summaryVector && summaryVector.length > 0) {
       await this.prisma.$executeRawUnsafe(
-        'UPDATE "SourceEpisode" SET embedding = $1::vector(1536) WHERE "rawEventId" = $2 AND "tenantId" = $3',
+        'UPDATE "SourceEpisode" SET embedding = $1::vector WHERE "rawEventId" = $2 AND "tenantId" = $3',
         this.toVectorLiteral(summaryVector),
         rawEventId,
         tenantId,
@@ -1339,7 +1346,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         });
         if (embedding && embedding.length > 0) {
           await tx.$executeRawUnsafe(
-            'UPDATE "IdeaBlock" SET embedding = $1::vector(1536), "contextHeaderVersion" = $2 WHERE id = $3 AND "tenantId" = $4',
+            'UPDATE "IdeaBlock" SET embedding = $1::vector, "contextHeaderVersion" = $2 WHERE id = $3 AND "tenantId" = $4',
             this.toVectorLiteral(embedding),
             EMBED_NO_HEADER_VERSION,
             ideaBlock.id,

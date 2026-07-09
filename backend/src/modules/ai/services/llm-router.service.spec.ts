@@ -162,7 +162,11 @@ function build(opts: BuildOpts) {
   const usageRecord = vi.fn();
   const usage = { record: usageRecord } as unknown as AiUsageLogService;
   const incLlmRouterDispatch = vi.fn();
-  const metrics = { incLlmRouterDispatch } as unknown as BusinessMetricsService;
+  const incCoreDataClassViolation = vi.fn();
+  const metrics = {
+    incLlmRouterDispatch,
+    incCoreDataClassViolation,
+  } as unknown as BusinessMetricsService;
 
   const router = new LlmRouterService(
     prisma,
@@ -497,20 +501,20 @@ describe('LlmRouterService', () => {
       expect(out.modelUsed.startsWith('anthropic:')).toBe(true);
     });
 
-    it('dataClass=private: minimax (internal) единственный кандидат → NoEligibleProvider', async () => {
+    it('dataClass=private без покрывающего провайдера: гейт НЕ блокирует — dispatch по всей цепочке', async () => {
       const ctx = build({
         routes: [{ taskType: 'chapters', providers: ['minimax'], isActive: true }],
       });
       await ctx.router.refreshCache();
 
-      await expect(
-        ctx.router.call({
-          ...baseParams,
-          taskType: 'chapters' as LlmTaskType,
-          dataClass: 'private',
-        }),
-      ).rejects.toThrow();
-      expect(ctx.minimax.complete).not.toHaveBeenCalled();
+      const out = await ctx.router.call({
+        ...baseParams,
+        taskType: 'chapters' as LlmTaskType,
+        dataClass: 'private',
+      });
+
+      expect(ctx.minimax.complete).toHaveBeenCalledOnce();
+      expect(out.modelUsed.startsWith('minimax:')).toBe(true);
     });
 
     it('dataClass не задан (internal по умолчанию): порядок providers сохраняется как раньше', async () => {

@@ -5,7 +5,10 @@ import type { BusinessMetricsService } from '../../../common/metrics/business-me
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import type { AiUsageLogService } from './ai-usage-log.service';
-import { LlmRouterService } from './llm-router.service';
+import { LlmRouterService, type LlmTaskType } from './llm-router.service';
+import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
+import type { LlmProtocolAdapterRegistry } from './protocol-adapter/llm-protocol-adapter.registry';
+import type { ProviderInfoResolver } from './protocol-adapter/provider-info.resolver';
 
 function makePrisma(opts: {
   routes?: Array<Record<string, unknown>>;
@@ -184,14 +187,25 @@ describe('LlmRouterService — call dispatch error (Р4)', () => {
 describe('LlmRouterService — setRoute (Р2)', () => {
   it('валидный провайдер из БД проходит; неизвестный отбрасывается', async () => {
     const { prisma, routeFindMany } = makePrisma({ providers: [{ name: 'minimax' }] });
-    const createMock = vi.fn(async (args: { data: { providers: string[] } }) => ({
-      id: 'new',
-      taskType: args.data.taskType,
-      providers: args.data.providers,
-      isActive: args.data.isActive,
-      tenantId: null,
-    }));
-    (prisma as unknown as { llmTaskRoute: { findFirst: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> } }).llmTaskRoute = {
+    const createMock = vi.fn(
+      async (args: { data: { taskType: string; providers: string[]; isActive: boolean } }) => ({
+        id: 'new',
+        taskType: args.data.taskType,
+        providers: args.data.providers,
+        isActive: args.data.isActive,
+        tenantId: null,
+      }),
+    );
+    (
+      prisma as unknown as {
+        llmTaskRoute: {
+          findMany: ReturnType<typeof vi.fn>;
+          findFirst: ReturnType<typeof vi.fn>;
+          create: ReturnType<typeof vi.fn>;
+          update: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).llmTaskRoute = {
       findMany: routeFindMany,
       findFirst: vi.fn(async () => null),
       create: createMock,
@@ -222,5 +236,105 @@ describe('LlmRouterService — setRoute (Р2)', () => {
         isActive: true,
       }),
     ).rejects.toThrow(/пустой список валидных провайдеров/);
+  });
+});
+
+describe('LlmRouterService — гейт dataClass (B1)', () => {
+  function makeDispatchingRouter(capability: string) {
+    const { prisma } = makePrisma({
+      providers: [{ name: 'minimax' }],
+      routes: [
+        {
+          id: 'r1',
+          taskType: 'chapters',
+          tenantId: null,
+          tier: 'primary',
+          priority: 0,
+          providerName: 'minimax',
+          model: 'MiniMax-M2.5',
+          isActive: true,
+          editedByAdmin: false,
+          experiment: null,
+          updatedAt: new Date(),
+        },
+      ],
+    });
+
+    const adapterComplete = vi.fn(
+      async ({ input: _input }: { provider: { name: string }; input: LlmCompleteInput }) =>
+        ({
+          text: 'ok',
+          inputTokens: 10,
+          outputTokens: 2,
+          model: 'MiniMax-M2.5',
+          provider: 'minimax',
+        }) as LlmCompleteOutput,
+    );
+    const registry = {
+      resolve: () => ({ complete: adapterComplete }),
+    } as unknown as LlmProtocolAdapterRegistry;
+    const providerInfo = {
+      resolveByName: vi.fn(async (name: string) => ({
+        info: { name, baseUrl: 'https://test.local', apiKey: null, capability },
+        protocolKind: name,
+      })),
+    } as unknown as ProviderInfoResolver;
+
+    const incCoreDataClassViolation = vi.fn();
+    const metrics = {
+      incLlmRouterDispatch: vi.fn(),
+      incCoreDataClassViolation,
+    } as unknown as BusinessMetricsService;
+    const cfg = {
+      budget: { useProtocolAdapterRegistry: true },
+      llmRouter: { dispatchTimeoutMs: 300_000 },
+      getDynamic: vi.fn(async (_key: string, _env: unknown, def: unknown) => def),
+    } as unknown as TypedConfigService;
+
+    const router = new LlmRouterService(
+      prisma,
+      { record: vi.fn() } as unknown as AiUsageLogService,
+      metrics,
+      cfg,
+      registry,
+      providerInfo,
+    );
+    return { router, adapterComplete, incCoreDataClassViolation };
+  }
+
+  it('dataClass=private без покрывающего провайдера: гейт НЕ блокирует — dispatch по всей цепочке', async () => {
+    const ctx = makeDispatchingRouter('internal');
+    await ctx.router.refreshCache();
+
+    const out = await ctx.router.call({
+      systemPrompt: 'sys',
+      userMessage: 'u',
+      tenantId: null,
+      taskType: 'chapters' as LlmTaskType,
+      dataClass: 'private',
+    });
+
+    expect(ctx.adapterComplete).toHaveBeenCalledOnce();
+    expect(out.modelUsed.startsWith('minimax:')).toBe(true);
+    expect(ctx.incCoreDataClassViolation).toHaveBeenCalledWith({
+      taskType: 'chapters',
+      attemptedClass: 'private',
+    });
+  });
+
+  it('dataClass покрыт провайдером: нарушение не фиксируется', async () => {
+    const ctx = makeDispatchingRouter('private');
+    await ctx.router.refreshCache();
+
+    await ctx.router.call({
+      systemPrompt: 'sys',
+      userMessage: 'u',
+      tenantId: null,
+      taskType: 'chapters' as LlmTaskType,
+      dataClass: 'private',
+    });
+
+    expect(ctx.adapterComplete).toHaveBeenCalledOnce();
+    expect(ctx.incCoreDataClassViolation).not.toHaveBeenCalled();
   });
 });

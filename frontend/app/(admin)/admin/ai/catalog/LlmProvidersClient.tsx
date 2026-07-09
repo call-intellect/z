@@ -69,9 +69,9 @@ import {
 } from "./useCatalogRefresh";
 
 const PROTOCOL_LABELS: Record<LlmProtocolKind, string> = {
-  "openai-chat": "OpenAI Chat Completions",
-  "openai-responses": "OpenAI Responses API",
-  "anthropic-messages": "Anthropic Messages API",
+  "openai-chat": "OpenAI Chat Completions (/v1/chat/completions)",
+  "openai-responses": "OpenAI Responses (/v1/responses)",
+  "anthropic-messages": "Anthropic Messages (/v1/messages)",
   "ollama-native": "Ollama (OpenAI-совместимый)",
   "kie-native": "KIE (мультиформатный: claude-*/gpt-*/gemini-*)",
   "grsai-native": "GRSAI",
@@ -691,6 +691,69 @@ function ProviderFormDialog({
   );
   const [importing, setImporting] = useState(false);
 
+  const [existingModels, setExistingModels] = useState<
+    Array<{ id: string; modelKey: string }>
+  >([]);
+  const [pendingModels, setPendingModels] = useState<string[]>([]);
+  const [newModelKey, setNewModelKey] = useState("");
+  const [addingModel, setAddingModel] = useState(false);
+
+  useEffect(() => {
+    if (!provider) return;
+    let cancelled = false;
+    void adminLlmModelsApi
+      .list({ providerId: provider.id, includeInactive: true })
+      .then((res) => {
+        if (!cancelled) {
+          setExistingModels(
+            res.items.map((m) => ({ id: m.id, modelKey: m.modelKey })),
+          );
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  const handleAddModel = async () => {
+    const key = newModelKey.trim();
+    if (!key) return;
+    if (
+      pendingModels.includes(key) ||
+      existingModels.some((m) => m.modelKey === key)
+    ) {
+      toast.error("Такая модель уже есть в списке");
+      return;
+    }
+    if (!isEdit || !provider) {
+      setPendingModels((prev) => [...prev, key]);
+      setNewModelKey("");
+      return;
+    }
+    setAddingModel(true);
+    try {
+      const created = await adminLlmModelsApi.create({
+        providerId: provider.id,
+        modelKey: key,
+        displayName: key,
+        isActive: true,
+      });
+      setExistingModels((prev) => [
+        ...prev,
+        { id: created.id, modelKey: created.modelKey },
+      ]);
+      setNewModelKey("");
+      onModelsImported();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось добавить модель",
+      );
+    } finally {
+      setAddingModel(false);
+    }
+  };
+
   const discoveryDisabled = !isEdit || protocolKind === "anthropic-messages";
 
   const handleDiscover = async () => {
@@ -840,7 +903,28 @@ function ProviderFormDialog({
           ...commonFields,
         };
         if (apiKey.length > 0) body.apiKey = apiKey;
-        await adminLlmProvidersApi.create(body);
+        const created = await adminLlmProvidersApi.create(body);
+        if (pendingModels.length > 0) {
+          const failed: string[] = [];
+          for (const key of pendingModels) {
+            try {
+              await adminLlmModelsApi.create({
+                providerId: created.id,
+                modelKey: key,
+                displayName: key,
+                isActive: true,
+              });
+            } catch {
+              failed.push(key);
+            }
+          }
+          if (failed.length > 0) {
+            toast.error(`Модели не добавлены: ${failed.join(", ")}`);
+          }
+          if (failed.length < pendingModels.length) {
+            onModelsImported();
+          }
+        }
       }
       toast.success(isEdit ? "Провайдер сохранён" : "Провайдер создан");
       onSaved();
@@ -1102,6 +1186,73 @@ function ProviderFormDialog({
                 </ul>
               </div>
             )}
+          </Field>
+          <Field
+            label="Модели"
+            hint="Ключ модели — как в API провайдера. Для Anthropic-совместимых автополучение недоступно — добавляйте вручную."
+            tooltip="Модели этого провайдера в каталоге: их можно выбирать в маршрутах задач и заводить на них цены. При создании провайдера модели будут созданы вместе с ним."
+          >
+            <div className="space-y-2">
+              {(existingModels.length > 0 || pendingModels.length > 0) && (
+                <ul className="max-h-40 space-y-1 overflow-y-auto">
+                  {existingModels.map((m) => (
+                    <li key={m.id} className="flex items-center gap-2 text-xs">
+                      <span className="truncate font-mono text-fg-primary">
+                        {m.modelKey}
+                      </span>
+                      <Badge variant="secondary">в каталоге</Badge>
+                    </li>
+                  ))}
+                  {pendingModels.map((key) => (
+                    <li key={key} className="flex items-center gap-2 text-xs">
+                      <span className="truncate font-mono text-fg-primary">
+                        {key}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          setPendingModels((prev) =>
+                            prev.filter((k) => k !== key),
+                          )
+                        }
+                      >
+                        <Trash2 size={13} />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex gap-2">
+                <Input
+                  value={newModelKey}
+                  onChange={(e) => setNewModelKey(e.target.value)}
+                  placeholder="ключ модели, например MiniMax-M3"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleAddModel();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={addingModel || newModelKey.trim().length === 0}
+                  onClick={() => void handleAddModel()}
+                >
+                  <Plus size={13} />
+                  Добавить модель
+                </Button>
+              </div>
+              {pendingModels.length > 0 && !isEdit && (
+                <p className="text-[11px] text-fg-tertiary">
+                  Модели будут созданы в каталоге вместе с провайдером.
+                </p>
+              )}
+            </div>
           </Field>
           <Field
             label="Активен"

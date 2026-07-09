@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { ApiError } from "@/api/api-error";
 import { adminLlmModelsApi } from "@/api/admin-llm-models.api";
 import { adminLlmProvidersApi } from "@/api/admin-llm-providers.api";
+import { adminPricesApi } from "@/api/admin-prices.api";
 import {
   adminLlmProviderFromApi,
   type AdminLlmProviderDomain,
@@ -694,7 +695,15 @@ function ProviderFormDialog({
   const [existingModels, setExistingModels] = useState<
     Array<{ id: string; modelKey: string }>
   >([]);
-  const [pendingModels, setPendingModels] = useState<string[]>([]);
+  const [draftModels, setDraftModels] = useState<
+    Array<{
+      key: string;
+      selected: boolean;
+      priceInput: string;
+      priceOutput: string;
+    }>
+  >([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [newModelKey, setNewModelKey] = useState("");
   const [addingModel, setAddingModel] = useState(false);
 
@@ -720,14 +729,18 @@ function ProviderFormDialog({
     const key = newModelKey.trim();
     if (!key) return;
     if (
-      pendingModels.includes(key) ||
+      draftModels.some((m) => m.key === key) ||
       existingModels.some((m) => m.modelKey === key)
     ) {
       toast.error("Такая модель уже есть в списке");
       return;
     }
     if (!isEdit || !provider) {
-      setPendingModels((prev) => [...prev, key]);
+      setDraftModels((prev) => [
+        ...prev,
+        { key, selected: true, priceInput: "", priceOutput: "" },
+      ]);
+      if (!defaultModelKey.trim()) setDefaultModelKey(key);
       setNewModelKey("");
       return;
     }
@@ -751,6 +764,62 @@ function ProviderFormDialog({
       );
     } finally {
       setAddingModel(false);
+    }
+  };
+
+  const handlePreviewDiscover = async () => {
+    if (!baseUrl.trim()) {
+      toast.error("Сначала укажите адрес API (baseUrl)");
+      return;
+    }
+    let parsedHeaders: Record<string, string> | null | undefined;
+    try {
+      parsedHeaders = parseHeaders(headers);
+    } catch {
+      toast.error("Заголовки должны быть валидным JSON-объектом строк");
+      return;
+    }
+    const timeoutMsValue = timeoutMs.trim() ? Number(timeoutMs) : undefined;
+    setPreviewLoading(true);
+    try {
+      const res = await adminLlmProvidersApi.discoverModelsPreview({
+        baseUrl: baseUrl.trim(),
+        protocolKind,
+        ...(apiKey.length > 0 ? { apiKey } : {}),
+        ...(parsedHeaders ? { defaultHeaders: parsedHeaders } : {}),
+        ...(timeoutMsValue && Number.isInteger(timeoutMsValue) && timeoutMsValue > 0
+          ? { timeoutMs: timeoutMsValue }
+          : {}),
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      setDraftModels((prev) => {
+        const known = new Set(prev.map((m) => m.key));
+        const added = res.models
+          .filter((m) => !known.has(m.id))
+          .map((m) => ({
+            key: m.id,
+            selected: true,
+            priceInput: "",
+            priceOutput: "",
+          }));
+        return [...prev, ...added];
+      });
+      const firstModel = res.models[0]?.id;
+      if (!defaultModelKey.trim() && firstModel) setDefaultModelKey(firstModel);
+      toast.success(
+        `Подключение работает — найдено моделей: ${res.models.length}`,
+      );
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось получить список моделей",
+      );
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -898,30 +967,70 @@ function ProviderFormDialog({
           ...(apiKey.length > 0 ? { apiKey } : {}),
         });
       } else {
+        const toCreate = draftModels.filter((m) => m.selected);
+        for (const m of toCreate) {
+          const hasAnyPrice =
+            m.priceInput.trim().length > 0 || m.priceOutput.trim().length > 0;
+          if (!hasAnyPrice) continue;
+          const inp = Number(m.priceInput);
+          const out = Number(m.priceOutput);
+          if (
+            !m.priceInput.trim() ||
+            !m.priceOutput.trim() ||
+            !isFinite(inp) ||
+            inp < 0 ||
+            !isFinite(out) ||
+            out < 0
+          ) {
+            toast.error(
+              `Цена для ${m.key}: заполните вход И выход числами ≥ 0 (или оставьте оба поля пустыми)`,
+            );
+            setSubmitting(false);
+            return;
+          }
+        }
         const body: CreateLlmProviderRequest = {
           name,
           ...commonFields,
         };
         if (apiKey.length > 0) body.apiKey = apiKey;
         const created = await adminLlmProvidersApi.create(body);
-        if (pendingModels.length > 0) {
-          const failed: string[] = [];
-          for (const key of pendingModels) {
+        if (toCreate.length > 0) {
+          const failedModels: string[] = [];
+          const failedPrices: string[] = [];
+          for (const m of toCreate) {
             try {
               await adminLlmModelsApi.create({
                 providerId: created.id,
-                modelKey: key,
-                displayName: key,
+                modelKey: m.key,
+                displayName: m.key,
                 isActive: true,
               });
             } catch {
-              failed.push(key);
+              failedModels.push(m.key);
+              continue;
+            }
+            if (m.priceInput.trim().length === 0) continue;
+            try {
+              await adminPricesApi.set({
+                provider: name,
+                model: m.key,
+                inputCostPerMillionTokens: Number(m.priceInput),
+                outputCostPerMillionTokens: Number(m.priceOutput),
+              });
+            } catch {
+              failedPrices.push(m.key);
             }
           }
-          if (failed.length > 0) {
-            toast.error(`Модели не добавлены: ${failed.join(", ")}`);
+          if (failedModels.length > 0) {
+            toast.error(`Модели не добавлены: ${failedModels.join(", ")}`);
           }
-          if (failed.length < pendingModels.length) {
+          if (failedPrices.length > 0) {
+            toast.error(
+              `Цены не сохранены (задайте во вкладке «Цены»): ${failedPrices.join(", ")}`,
+            );
+          }
+          if (failedModels.length < toCreate.length) {
             onModelsImported();
           }
         }
@@ -1111,149 +1220,285 @@ function ProviderFormDialog({
               />
             </Field>
           </div>
-          <Field
-            label="Модель по умолчанию"
-            hint="Используется, когда модель не задали ни вызов, ни маршрут."
-            tooltip="Модель, которая используется, если ни сам вызов, ни маршрут не указали конкретную модель явно."
-          >
-            <div className="flex gap-2">
-              <Input
-                value={defaultModelKey}
-                onChange={(e) => setDefaultModelKey(e.target.value)}
-                placeholder="например, gpt-5-mini"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={discoveryDisabled || discovering}
-                onClick={() => void handleDiscover()}
-                title={
-                  protocolKind === "anthropic-messages"
-                    ? "Anthropic Messages API не поддерживает автополучение моделей"
-                    : !isEdit
-                      ? "Сначала сохраните провайдера"
-                      : undefined
-                }
-              >
-                {discovering ? "Получаем…" : "Получить"}
-              </Button>
-            </div>
-            {discoveredModels && (
-              <div className="mt-2 rounded-md border border-border-subtle p-2">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-fg-tertiary">
-                    Найдено моделей: {discoveredModels.length}. Нажмите на
-                    название, чтобы подставить её как модель по умолчанию.
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={importing}
-                    onClick={() => void handleImportSelected()}
-                  >
-                    {importing ? "Импортируем…" : "Импортировать выбранные"}
-                  </Button>
-                </div>
-                <ul className="max-h-48 space-y-1 overflow-y-auto">
-                  {discoveredModels.map((m) => (
-                    <li key={m.id} className="flex items-center gap-2 text-xs">
-                      <Checkbox
-                        checked={selectedModelIds.has(m.id)}
-                        disabled={m.alreadyInCatalog}
-                        onCheckedChange={(checked) => {
-                          setSelectedModelIds((prev) => {
-                            const next = new Set(prev);
-                            if (checked === true) next.add(m.id);
-                            else next.delete(m.id);
-                            return next;
-                          });
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="truncate font-mono text-fg-primary hover:underline"
-                        onClick={() => setDefaultModelKey(m.id)}
-                      >
-                        {m.id}
-                      </button>
-                      {m.alreadyInCatalog && (
-                        <Badge variant="secondary">уже в каталоге</Badge>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </Field>
-          <Field
-            label="Модели"
-            hint="Ключ модели — как в API провайдера. Для Anthropic-совместимых автополучение недоступно — добавляйте вручную."
-            tooltip="Модели этого провайдера в каталоге: их можно выбирать в маршрутах задач и заводить на них цены. При создании провайдера модели будут созданы вместе с ним."
-          >
-            <div className="space-y-2">
-              {(existingModels.length > 0 || pendingModels.length > 0) && (
-                <ul className="max-h-40 space-y-1 overflow-y-auto">
-                  {existingModels.map((m) => (
-                    <li key={m.id} className="flex items-center gap-2 text-xs">
-                      <span className="truncate font-mono text-fg-primary">
-                        {m.modelKey}
-                      </span>
-                      <Badge variant="secondary">в каталоге</Badge>
-                    </li>
-                  ))}
-                  {pendingModels.map((key) => (
-                    <li key={key} className="flex items-center gap-2 text-xs">
-                      <span className="truncate font-mono text-fg-primary">
-                        {key}
-                      </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() =>
-                          setPendingModels((prev) =>
-                            prev.filter((k) => k !== key),
-                          )
-                        }
-                      >
-                        <Trash2 size={13} />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+          {isEdit ? (
+            <Field
+              label="Модель по умолчанию"
+              hint="Используется, когда модель не задали ни вызов, ни маршрут."
+              tooltip="Модель, которая используется, если ни сам вызов, ни маршрут не указали конкретную модель явно."
+            >
               <div className="flex gap-2">
                 <Input
-                  value={newModelKey}
-                  onChange={(e) => setNewModelKey(e.target.value)}
-                  placeholder="ключ модели, например MiniMax-M3"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void handleAddModel();
-                    }
-                  }}
+                  value={defaultModelKey}
+                  onChange={(e) => setDefaultModelKey(e.target.value)}
+                  placeholder="например, gpt-5-mini"
                 />
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={addingModel || newModelKey.trim().length === 0}
-                  onClick={() => void handleAddModel()}
+                  disabled={discoveryDisabled || discovering}
+                  onClick={() => void handleDiscover()}
+                  title={
+                    protocolKind === "anthropic-messages"
+                      ? "Anthropic Messages API не поддерживает автополучение моделей"
+                      : undefined
+                  }
                 >
-                  <Plus size={13} />
-                  Добавить модель
+                  {discovering ? "Получаем…" : "Получить"}
                 </Button>
               </div>
-              {pendingModels.length > 0 && !isEdit && (
-                <p className="text-[11px] text-fg-tertiary">
-                  Модели будут созданы в каталоге вместе с провайдером.
-                </p>
+              {discoveredModels && (
+                <div className="mt-2 rounded-md border border-border-subtle p-2">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-fg-tertiary">
+                      Найдено моделей: {discoveredModels.length}. Нажмите на
+                      название, чтобы подставить её как модель по умолчанию.
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={importing}
+                      onClick={() => void handleImportSelected()}
+                    >
+                      {importing ? "Импортируем…" : "Импортировать выбранные"}
+                    </Button>
+                  </div>
+                  <ul className="max-h-48 space-y-1 overflow-y-auto">
+                    {discoveredModels.map((m) => (
+                      <li key={m.id} className="flex items-center gap-2 text-xs">
+                        <Checkbox
+                          checked={selectedModelIds.has(m.id)}
+                          disabled={m.alreadyInCatalog}
+                          onCheckedChange={(checked) => {
+                            setSelectedModelIds((prev) => {
+                              const next = new Set(prev);
+                              if (checked === true) next.add(m.id);
+                              else next.delete(m.id);
+                              return next;
+                            });
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="truncate font-mono text-fg-primary hover:underline"
+                          onClick={() => setDefaultModelKey(m.id)}
+                        >
+                          {m.id}
+                        </button>
+                        {m.alreadyInCatalog && (
+                          <Badge variant="secondary">уже в каталоге</Badge>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
-            </div>
-          </Field>
+            </Field>
+          ) : (
+            <Field
+              label="Модели и цены"
+              hint="Кнопка проверит адрес и ключ (GET /models) и получит список моделей — до сохранения провайдера."
+              tooltip="Запрос выполняется с введёнными адресом и ключом — это одновременно проверка подключения. Отмеченные модели будут созданы в каталоге вместе с провайдером; заполненные цены (USD за 1M токенов) сразу попадут в прайс."
+            >
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={
+                    previewLoading ||
+                    useProxy ||
+                    protocolKind === "anthropic-messages" ||
+                    baseUrl.trim().length === 0
+                  }
+                  onClick={() => void handlePreviewDiscover()}
+                >
+                  {previewLoading
+                    ? "Проверяем подключение…"
+                    : "Получить список доступных моделей"}
+                </Button>
+                {protocolKind === "anthropic-messages" && (
+                  <p className="text-[11px] text-fg-tertiary">
+                    Anthropic Messages API не отдаёт список моделей — добавьте
+                    модели вручную ниже.
+                  </p>
+                )}
+                {useProxy && (
+                  <p className="text-[11px] text-fg-tertiary">
+                    Через прокси предпросмотр недоступен — сохраните провайдера
+                    и получите модели в редактировании.
+                  </p>
+                )}
+                {draftModels.length > 0 && (
+                  <div className="rounded-md border border-border-subtle p-2">
+                    <div className="mb-1 grid grid-cols-[auto_1fr_90px_90px] items-center gap-2 text-[11px] text-fg-tertiary">
+                      <span className="w-4" />
+                      <span>Модель</span>
+                      <span>Вход $/1M</span>
+                      <span>Выход $/1M</span>
+                    </div>
+                    <div className="max-h-56 space-y-1 overflow-y-auto">
+                      {draftModels.map((m) => (
+                        <div
+                          key={m.key}
+                          className="grid grid-cols-[auto_1fr_90px_90px] items-center gap-2"
+                        >
+                          <Checkbox
+                            checked={m.selected}
+                            onCheckedChange={(checked) =>
+                              setDraftModels((prev) =>
+                                prev.map((x) =>
+                                  x.key === m.key
+                                    ? { ...x, selected: checked === true }
+                                    : x,
+                                ),
+                              )
+                            }
+                          />
+                          <span className="truncate font-mono text-xs text-fg-primary">
+                            {m.key}
+                          </span>
+                          <Input
+                            value={m.priceInput}
+                            disabled={!m.selected}
+                            onChange={(e) =>
+                              setDraftModels((prev) =>
+                                prev.map((x) =>
+                                  x.key === m.key
+                                    ? { ...x, priceInput: e.target.value }
+                                    : x,
+                                ),
+                              )
+                            }
+                            placeholder="—"
+                          />
+                          <Input
+                            value={m.priceOutput}
+                            disabled={!m.selected}
+                            onChange={(e) =>
+                              setDraftModels((prev) =>
+                                prev.map((x) =>
+                                  x.key === m.key
+                                    ? { ...x, priceOutput: e.target.value }
+                                    : x,
+                                ),
+                              )
+                            }
+                            placeholder="—"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Input
+                    value={newModelKey}
+                    onChange={(e) => setNewModelKey(e.target.value)}
+                    placeholder="ключ модели вручную, например MiniMax-M3"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void handleAddModel();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={addingModel || newModelKey.trim().length === 0}
+                    onClick={() => void handleAddModel()}
+                  >
+                    <Plus size={13} />
+                    Добавить модель
+                  </Button>
+                </div>
+                {draftModels.some((m) => m.selected) && (
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-fg-tertiary">
+                      Модель по умолчанию
+                    </span>
+                    <Select
+                      value={
+                        draftModels.some(
+                          (m) => m.selected && m.key === defaultModelKey,
+                        )
+                          ? defaultModelKey
+                          : ""
+                      }
+                      onValueChange={setDefaultModelKey}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="выберите модель" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {draftModels
+                          .filter((m) => m.selected)
+                          .map((m) => (
+                            <SelectItem key={m.key} value={m.key}>
+                              {m.key}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {draftModels.some((m) => m.selected) && (
+                  <p className="text-[11px] text-fg-tertiary">
+                    Отмеченные модели и заполненные цены будут созданы вместе с
+                    провайдером.
+                  </p>
+                )}
+              </div>
+            </Field>
+          )}
+          {isEdit && (
+            <Field
+              label="Модели"
+              hint="Ключ модели — как в API провайдера. Для Anthropic-совместимых автополучение недоступно — добавляйте вручную."
+              tooltip="Модели этого провайдера в каталоге: их можно выбирать в маршрутах задач и заводить на них цены."
+            >
+              <div className="space-y-2">
+                {existingModels.length > 0 && (
+                  <ul className="max-h-40 space-y-1 overflow-y-auto">
+                    {existingModels.map((m) => (
+                      <li key={m.id} className="flex items-center gap-2 text-xs">
+                        <span className="truncate font-mono text-fg-primary">
+                          {m.modelKey}
+                        </span>
+                        <Badge variant="secondary">в каталоге</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex gap-2">
+                  <Input
+                    value={newModelKey}
+                    onChange={(e) => setNewModelKey(e.target.value)}
+                    placeholder="ключ модели, например MiniMax-M3"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void handleAddModel();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={addingModel || newModelKey.trim().length === 0}
+                    onClick={() => void handleAddModel()}
+                  >
+                    <Plus size={13} />
+                    Добавить модель
+                  </Button>
+                </div>
+              </div>
+            </Field>
+          )}
           <Field
             label="Активен"
             tooltip="Определяет, участвует ли провайдер в маршрутизации запросов. Отключённый провайдер не будет выбран для новых вызовов."

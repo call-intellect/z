@@ -4,6 +4,8 @@ import type {
   AdminLlmProviderApi,
   AdminLlmProviderListApi,
   CreateLlmProviderRequest,
+  DiscoverModelsPreviewRequest,
+  DiscoverModelsPreviewResultApi,
   DiscoverModelsResultApi,
   RemovalImpactApi,
   SmokeTestResultApi,
@@ -55,5 +57,11 @@ export const adminLlmProvidersApi = {
     apiClient.post<DiscoverModelsResultApi>(
       `/api/v1/admin/llm-providers/${id}/models/discover`,
       {},
+    ),
+
+  discoverModelsPreview: (body: DiscoverModelsPreviewRequest) =>
+    apiClient.post<DiscoverModelsPreviewResultApi>(
+      "/api/v1/admin/llm-providers/models/discover-preview",
+      body,
     ),
 };

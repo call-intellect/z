@@ -499,6 +499,34 @@ export class AdminLlmProvidersService {
     });
   }
 
+  async discoverModelsPreview(params: {
+    baseUrl: string;
+    protocolKind: string;
+    apiKey?: string;
+    defaultHeaders?: Record<string, string>;
+    timeoutMs?: number;
+  }) {
+    if (params.protocolKind === 'anthropic-messages') {
+      return {
+        ok: false as const,
+        error:
+          'Anthropic Messages API не поддерживает автополучение моделей (нет GET /models) — добавьте модели вручную',
+      };
+    }
+    try {
+      const models = await discoverProviderModels({
+        baseUrl: params.baseUrl,
+        apiKey: params.apiKey ?? null,
+        defaultHeaders: params.defaultHeaders ?? null,
+        timeoutMs: params.timeoutMs ?? null,
+      });
+      return { ok: true as const, models: models.map((m) => ({ id: m.id })) };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false as const, error: message };
+    }
+  }
+
   async discoverModels(id: string) {
     const row = await this.getRow(id);
     if (row.protocolKind === 'anthropic-messages') {

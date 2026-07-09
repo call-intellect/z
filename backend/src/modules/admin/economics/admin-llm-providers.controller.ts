@@ -23,6 +23,8 @@ import { AdminLlmProvidersService } from './admin-llm-providers.service';
 import {
   CreateLlmProviderSchema,
   type CreateLlmProviderDto,
+  DiscoverModelsPreviewSchema,
+  type DiscoverModelsPreviewDto,
   ListLlmProvidersQuerySchema,
   type ListLlmProvidersQuery,
   RemoveProviderSchema,
@@ -68,8 +70,9 @@ export class AdminLlmProvidersController {
   setDefault(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(SetDefaultProviderSchema)) dto: SetDefaultProviderDto,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.svc.setDefaultProvider(id, dto.model);
+    return this.svc.setDefaultProvider(id, dto.model, user.id);
   }
 
   @Post()
@@ -102,6 +105,14 @@ export class AdminLlmProvidersController {
   async smoke(@Param('id') id: string) {
     const provider = await this.svc.getById(id);
     return this.smokeTest.testProvider(provider.name);
+  }
+
+  @Post('models/discover-preview')
+  discoverModelsPreview(
+    @Body(new ZodValidationPipe(DiscoverModelsPreviewSchema))
+    dto: DiscoverModelsPreviewDto,
+  ) {
+    return this.svc.discoverModelsPreview(dto);
   }
 
   @Post(':id/models/discover')

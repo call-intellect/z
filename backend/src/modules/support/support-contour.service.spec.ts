@@ -146,7 +146,7 @@ describe('SupportContourService', () => {
       await svc.seedContour([{ question: 'q', answer: 'a' }]);
 
       expect(prismaStub.$executeRawUnsafe).toHaveBeenCalledWith(
-        'UPDATE "IdeaBlock" SET embedding = $1::vector(1536) WHERE id = $2',
+        'UPDATE "IdeaBlock" SET embedding = $1::vector WHERE id = $2',
         '[0.1,0.2,0.3]',
         'blk-2',
       );

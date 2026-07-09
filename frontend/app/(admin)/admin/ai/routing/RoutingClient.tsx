@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Loader2, Search, Wand2 } from "lucide-react";
 import { toast } from "sonner";
@@ -8,20 +8,24 @@ import { toast } from "sonner";
 import { ApiError } from "@/api/api-error";
 import {
   AI_MODELS_GROUPS,
-  AI_MODELS_PROVIDERS,
   AI_MODELS_TIERS,
   adminAiModelsApi,
   type AiModelGroup,
-  type AiModelProvider,
   type AiModelTier,
   type BulkReassignAffectedApi,
   type BulkReassignScope,
 } from "@/api/admin-ai-models.api";
+import { adminLlmModelsApi } from "@/api/admin-llm-models.api";
+import { adminLlmProvidersApi } from "@/api/admin-llm-providers.api";
 import {
   mapTaskTypeRoute,
+  providerLabel,
   type TaskTypeRouteUi,
 } from "@/domain/admin-ai-model";
+import { adminLlmModelFromApi } from "@/domain/admin-llm-model";
+import { adminLlmProviderFromApi } from "@/domain/admin-llm-provider";
 import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { SearchSelect } from "@/ui/components/admin/SearchSelect";
 import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
 import {
@@ -203,6 +207,7 @@ export function RoutingClient() {
                         color="green"
                         label="primary"
                         entry={row.primary}
+                        effective={row.effectivePrimary}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -242,12 +247,36 @@ function TierBadge({
   color,
   label,
   entry,
+  effective,
 }: {
   color: "green" | "orange" | "gray";
   label: string;
   entry: TaskTypeRouteUi["primary"];
+  effective?: { providerName: string; model: string | null } | null;
 }) {
   if (!entry) {
+    if (effective) {
+      return (
+        <div className="flex flex-col gap-1">
+          <Badge
+            variant="outline"
+            className="w-fit border border-border-subtle bg-bg-subtle text-[10px] text-fg-secondary"
+          >
+            {label} · по умолчанию
+          </Badge>
+          <div className="text-xs">
+            <span className="font-medium text-fg-secondary">
+              {providerLabel(effective.providerName)}
+            </span>
+            {effective.model && (
+              <span className="ml-1 text-fg-tertiary">
+                / {effective.model}
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
     return <span className="text-xs text-fg-tertiary">— не задана —</span>;
   }
   const colorClass =
@@ -283,15 +312,42 @@ function BulkReassignDialog({
   onClose: () => void;
   onApplied: () => void;
 }) {
+  const providersQ = useAdminQuery(
+    "admin-llm-providers-for-bulk",
+    async () => {
+      const res = await adminLlmProvidersApi.list({ includeInactive: false });
+      return res.items.map(adminLlmProviderFromApi);
+    },
+    [],
+  );
+  const modelsQ = useAdminQuery(
+    "admin-llm-models-for-bulk",
+    async () => {
+      const res = await adminLlmModelsApi.list({ includeInactive: false });
+      return res.items.map(adminLlmModelFromApi);
+    },
+    [],
+  );
+
+  const providers = useMemo(() => providersQ.data ?? [], [providersQ.data]);
+  const models = useMemo(() => modelsQ.data ?? [], [modelsQ.data]);
+
+  const providerOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: Array<{ value: string; label: string }> = [];
+    for (const p of providers) {
+      if (seen.has(p.name)) continue;
+      seen.add(p.name);
+      opts.push({ value: p.name, label: p.displayName });
+    }
+    return opts;
+  }, [providers]);
+
   const [scope, setScope] = useState<BulkReassignScope>("unassigned");
   const [tier, setTier] = useState(ALL_TIERS);
-  const [fromProviderName, setFromProviderName] = useState<AiModelProvider>(
-    AI_MODELS_PROVIDERS[0],
-  );
-  const [toProviderName, setToProviderName] = useState<AiModelProvider>(
-    AI_MODELS_PROVIDERS[0],
-  );
-  const [toModel, setToModel] = useState("");
+  const [fromProviderName, setFromProviderName] = useState<string>("");
+  const [toProviderName, setToProviderName] = useState<string>("");
+  const [toModel, setToModel] = useState<string>("");
   const [reason, setReason] = useState("");
   const [affected, setAffected] = useState<BulkReassignAffectedApi[] | null>(
     null,
@@ -299,7 +355,52 @@ function BulkReassignDialog({
   const [previewing, setPreviewing] = useState(false);
   const [applying, setApplying] = useState(false);
 
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    if (providers.length === 0) return;
+    seededRef.current = true;
+    const first = providers[0];
+    setFromProviderName(first.name);
+    setToProviderName(first.name);
+  }, [providers]);
+
+  const toProvider = useMemo(
+    () => providers.find((p) => p.name === toProviderName) ?? null,
+    [providers, toProviderName],
+  );
+  const toModelOptions = useMemo(() => {
+    if (!toProvider) return [];
+    return models
+      .filter((m) => m.providerId === toProvider.id)
+      .map((m) => ({ value: m.modelKey, label: m.displayName }));
+  }, [models, toProvider]);
+
+  useEffect(() => {
+    if (toModelOptions.length === 0) {
+      setToModel("");
+      return;
+    }
+    const defaultKey = toProvider?.defaultModelKey ?? null;
+    const pick =
+      (defaultKey && toModelOptions.some((m) => m.value === defaultKey)
+        ? defaultKey
+        : null) ?? toModelOptions[0].value;
+    setToModel((prev) => (prev && toModelOptions.some((m) => m.value === prev) ? prev : pick));
+  }, [toModelOptions, toProvider]);
+
+  const handleToProviderChange = (next: string) => {
+    setToProviderName(next);
+    setAffected(null);
+  };
+
+  const handleFromProviderChange = (next: string) => {
+    setFromProviderName(next);
+    setAffected(null);
+  };
+
   const tierValue = tier === ALL_TIERS ? undefined : (tier as AiModelTier);
+  const catalogLoading = providersQ.isLoading || modelsQ.isLoading;
 
   const handlePreview = async () => {
     setPreviewing(true);
@@ -308,7 +409,9 @@ function BulkReassignDialog({
       const res = await adminAiModelsApi.previewBulkReassign({
         scope,
         ...(tierValue ? { tier: tierValue } : {}),
-        ...(scope === "provider" ? { fromProviderName } : {}),
+        ...(scope === "provider" && fromProviderName
+          ? { fromProviderName }
+          : {}),
       });
       setAffected(res.affected);
       if (res.affected.length === 0) {
@@ -324,8 +427,12 @@ function BulkReassignDialog({
   };
 
   const handleApply = async () => {
-    if (!toModel.trim()) {
-      toast.error("Укажите модель назначения");
+    if (!toProviderName) {
+      toast.error("Выберите провайдера назначения");
+      return;
+    }
+    if (!toModel) {
+      toast.error("Выберите модель назначения");
       return;
     }
     if (reason.trim().length < 3) {
@@ -337,9 +444,11 @@ function BulkReassignDialog({
       const res = await adminAiModelsApi.bulkReassign({
         scope,
         ...(tierValue ? { tier: tierValue } : {}),
-        ...(scope === "provider" ? { fromProviderName } : {}),
+        ...(scope === "provider" && fromProviderName
+          ? { fromProviderName }
+          : {}),
         toProviderName,
-        toModel: toModel.trim(),
+        toModel,
         reason: reason.trim(),
       });
       toast.success(`Переключено маршрутов: ${res.updated}`);
@@ -361,41 +470,27 @@ function BulkReassignDialog({
           <DialogDescription>
             Выставить провайдера/модель сразу на много (taskType, tier) —
             либо на все НЕ назначенные пары, либо на все пары, которые сейчас
-            занимает один конкретный провайдер. Сначала предпросмотр, потом
-            применение.
+            занимает один конкретный провайдер. Провайдеры и модели берутся из
+            каталога. Сначала предпросмотр, потом применение.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3">
-          <div className="grid gap-1.5">
-            <Label className="text-xs">Что выбираем</Label>
-            <Select
-              value={scope}
-              onValueChange={(v) => {
-                setScope(v as BulkReassignScope);
-                setAffected(null);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unassigned">
-                  Все НЕ назначенные (пустые) пары
-                </SelectItem>
-                <SelectItem value="provider">
-                  Все пары на конкретном провайдере
-                </SelectItem>
-              </SelectContent>
-            </Select>
+        {catalogLoading ? (
+          <div className="flex items-center gap-2 py-6 text-sm text-fg-secondary">
+            <Loader2 size={14} className="animate-spin" /> Загружаем каталог…
           </div>
-
-          {scope === "provider" && (
+        ) : providers.length === 0 ? (
+          <div className="rounded-md border border-dashed border-border-subtle p-4 text-sm text-fg-secondary">
+            В каталоге нет активных провайдеров. Сначала добавьте провайдера и
+            модели в разделе «Каталог».
+          </div>
+        ) : (
+          <div className="grid gap-3">
             <div className="grid gap-1.5">
-              <Label className="text-xs">С провайдера (сейчас занят)</Label>
+              <Label className="text-xs">Что выбираем</Label>
               <Select
-                value={fromProviderName}
+                value={scope}
                 onValueChange={(v) => {
-                  setFromProviderName(v as AiModelProvider);
+                  setScope(v as BulkReassignScope);
                   setAffected(null);
                 }}
               >
@@ -403,111 +498,121 @@ function BulkReassignDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {AI_MODELS_PROVIDERS.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {p}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="unassigned">
+                    Все НЕ назначенные (пустые) пары
+                  </SelectItem>
+                  <SelectItem value="provider">
+                    Все пары на конкретном провайдере
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          <div className="grid gap-1.5">
-            <Label className="text-xs">Тир</Label>
-            <Select
-              value={tier}
-              onValueChange={(v) => {
-                setTier(v);
-                setAffected(null);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_TIERS}>Все тиры</SelectItem>
-                {AI_MODELS_TIERS.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            {scope === "provider" && (
+              <SearchSelect
+                label="С провайдера (сейчас занят)"
+                options={providerOptions}
+                value={fromProviderName}
+                onChange={handleFromProviderChange}
+                placeholder="Выберите провайдера"
+                emptyText="Нет провайдеров"
+              />
+            )}
 
-          <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label className="text-xs">На провайдера</Label>
+              <Label className="text-xs">Тир</Label>
               <Select
-                value={toProviderName}
-                onValueChange={(v) => setToProviderName(v as AiModelProvider)}
+                value={tier}
+                onValueChange={(v) => {
+                  setTier(v);
+                  setAffected(null);
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {AI_MODELS_PROVIDERS.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {p}
+                  <SelectItem value={ALL_TIERS}>Все тиры</SelectItem>
+                  {AI_MODELS_TIERS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-1.5">
-              <Label className="text-xs">Модель</Label>
-              <Input
+
+            <div className="grid grid-cols-2 gap-3">
+              <SearchSelect
+                label="На провайдера"
+                options={providerOptions}
+                value={toProviderName}
+                onChange={handleToProviderChange}
+                placeholder="Выберите провайдера"
+                emptyText="Нет провайдеров"
+              />
+              <SearchSelect
+                label="Модель"
+                options={toModelOptions}
                 value={toModel}
-                onChange={(e) => setToModel(e.target.value)}
-                placeholder="например, deepseek-v4-pro"
+                onChange={(v) => {
+                  setToModel(v);
+                  setAffected(null);
+                }}
+                placeholder={
+                  toModelOptions.length === 0
+                    ? "нет моделей в каталоге"
+                    : "Выберите модель"
+                }
+                emptyText="У провайдера нет моделей в каталоге"
+                disabled={toModelOptions.length === 0}
+              />
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={previewing}
+              onClick={() => void handlePreview()}
+            >
+              {previewing ? "Считаем…" : "Предпросмотр"}
+            </Button>
+
+            {affected !== null && (
+              <div className="rounded-md border border-border-subtle bg-bg-subtle p-2">
+                <div className="mb-1 text-xs font-medium text-fg-primary">
+                  Затронет {affected.length}{" "}
+                  {affected.length === 1 ? "маршрут" : "маршрутов"}
+                </div>
+                {affected.length > 0 && (
+                  <ul className="max-h-40 space-y-0.5 overflow-y-auto text-[11px] text-fg-secondary">
+                    {affected.slice(0, 200).map((a) => (
+                      <li key={`${a.taskType}::${a.tier}`} className="font-mono">
+                        {a.taskType} / {a.tier}
+                        {a.currentProviderName
+                          ? ` (сейчас: ${a.currentProviderName}${a.currentModel ? `/${a.currentModel}` : ""})`
+                          : " (сейчас: не задан)"}
+                      </li>
+                    ))}
+                    {affected.length > 200 && (
+                      <li>… и ещё {affected.length - 200}</li>
+                    )}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Причина изменения</Label>
+              <Textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={2}
+                placeholder="Зачем это делаем — попадёт в audit-лог"
               />
             </div>
           </div>
-
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={previewing}
-            onClick={() => void handlePreview()}
-          >
-            {previewing ? "Считаем…" : "Предпросмотр"}
-          </Button>
-
-          {affected !== null && (
-            <div className="rounded-md border border-border-subtle bg-bg-subtle p-2">
-              <div className="mb-1 text-xs font-medium text-fg-primary">
-                Затронет {affected.length}{" "}
-                {affected.length === 1 ? "маршрут" : "маршрутов"}
-              </div>
-              {affected.length > 0 && (
-                <ul className="max-h-40 space-y-0.5 overflow-y-auto text-[11px] text-fg-secondary">
-                  {affected.slice(0, 200).map((a) => (
-                    <li key={`${a.taskType}::${a.tier}`} className="font-mono">
-                      {a.taskType} / {a.tier}
-                      {a.currentProviderName
-                        ? ` (сейчас: ${a.currentProviderName}${a.currentModel ? `/${a.currentModel}` : ""})`
-                        : " (сейчас: не задан)"}
-                    </li>
-                  ))}
-                  {affected.length > 200 && (
-                    <li>… и ещё {affected.length - 200}</li>
-                  )}
-                </ul>
-              )}
-            </div>
-          )}
-
-          <div className="grid gap-1.5">
-            <Label className="text-xs">Причина изменения</Label>
-            <Textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={2}
-              placeholder="Зачем это делаем — попадёт в audit-лог"
-            />
-          </div>
-        </div>
+        )}
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose} disabled={applying}>
             Отмена
@@ -515,7 +620,14 @@ function BulkReassignDialog({
           <Button
             size="sm"
             variant="destructive"
-            disabled={applying || affected === null || affected.length === 0}
+            disabled={
+              applying ||
+              catalogLoading ||
+              providers.length === 0 ||
+              !toModel ||
+              affected === null ||
+              affected.length === 0
+            }
             onClick={() => void handleApply()}
           >
             {applying ? "Применяем…" : "Применить"}

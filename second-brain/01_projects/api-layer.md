@@ -565,6 +565,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | DELETE | `/admin/llm-providers/:id` | soft-delete; тот же гард `provider_in_use_by_routes` |
 | POST | `/admin/llm-providers/:id/smoke-test` | пробный вызов через `ProviderSmokeTestCron.testProvider` |
 | **POST** | **`/admin/llm-providers/:id/models/discover`** | **(2026-07-02)** `GET {effectiveBaseUrl}/models` (OpenAI-формат) → `{ok,models:[{id,alreadyInCatalog}]}`; `anthropic-messages` → 400 `discovery_not_supported` (нет `/models` в Anthropic API) |
+| **POST** | **`/admin/llm-providers/models/discover-preview`** | **(2026-07-09)** discovery по сырым `{baseUrl, protocolKind, apiKey?, defaultHeaders?, timeoutMs?}` БЕЗ сохранённого провайдера → `{ok,models:[{id}]}` / `{ok:false,error}`; используется формой создания провайдера («одно окно»: проверка подключения → модели → цены); `anthropic-messages` → `{ok:false}` |
 | GET/POST/PATCH/DELETE | `/admin/llm-models*` | CRUD моделей (`providerId`+`modelKey`) |
 | GET | `/admin/llm-models/:id/price-history` | история цен модели |
 

@@ -22,6 +22,14 @@ updated: 2026-06-05
 - Дописываешь fallback-цепочку.
 - Сомневаешься, какой канал выбрать для конкретной задачи.
 
+## ⚡ Обновление 2026-07-09 — block-ingest через MiniMax (Anthropic-протокол), верифицировано E2E на dev
+
+- Провайдер `minimax` переведён на `protocolKind='anthropic-messages'`, `baseUrl=https://api.minimax.io/anthropic` (dev; на прод — вместе с выкатом ветки ChatBox, см. prod-deploy-log). Причина: OpenAI-эндпоинт MiniMax НЕ принуждает вывод к `response_format: json_schema` — см. [code-pitfalls EMB2](../02_architecture/code-pitfalls.md).
+- Маршрут `block-ingest`: primary `minimax`/`MiniMax-M3`, secondary `llm-kora-team`/`gemma4:e4b`. Gemma structured output не поддерживает вовсе — secondary только на случай недоступности MiniMax (её ответ отбраковывается Zod-парсером без падения события).
+- Для strict-валидаторов JSON-схем union-типы `type: ['X','null']` запрещены — только `anyOf: [{...}, {type:'null'}]` (MiniMax отвечает 400 на union).
+- Embeddings: актуальная модель — `embeddinggemma:latest` через `llm.korateam.ru/v1` (**768 dim**, провайдер `local` в `embedding_providers`, TZ 2026-06-30). Упоминания «только text-embedding-3-small (1536)» ниже по файлу — историческое состояние до миграции.
+- Цена MiniMax-M3 в админке не заведена — `costUsd=0` в `AiUsageLog` (реестр не-сделанного, 2026-07-09).
+
 ## Verified-таблица (последний прогон от 2026-05-24)
 
 > Колонка **«В LlmRouter»** показывает, подключён ли канал к `LlmTaskRoute` /

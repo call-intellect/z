@@ -69,12 +69,12 @@ export class SubjectMemoryService {
     >(
       `
       SELECT id, kind, "ruleText", confidence::float AS confidence,
-             (1 - (embedding <=> $1::vector(1536))) AS similarity
+             (1 - (embedding <=> $1::vector)) AS similarity
       FROM "subject_memory"
       WHERE "tenantId" = $2
         AND status IN ('active', 'canary')
         AND embedding IS NOT NULL
-      ORDER BY embedding <=> $1::vector(1536) ASC
+      ORDER BY embedding <=> $1::vector ASC
       LIMIT 1
       `,
       vecLiteral,
@@ -123,12 +123,12 @@ export class SubjectMemoryService {
       Array<{ ruleText: string; similarity: number | string }>
     >(
       `
-      SELECT "ruleText", (1 - (embedding <=> $1::vector(1536))) AS similarity
+      SELECT "ruleText", (1 - (embedding <=> $1::vector)) AS similarity
       FROM "subject_memory"
       WHERE "tenantId" = $2
         AND status IN ('active', 'canary')
         AND embedding IS NOT NULL
-      ORDER BY embedding <=> $1::vector(1536) ASC
+      ORDER BY embedding <=> $1::vector ASC
       LIMIT $3
       `,
       vecLiteral,
@@ -241,13 +241,13 @@ export class SubjectMemoryService {
       const rows = await tx.$queryRawUnsafe<MatchCandidateRow[]>(
         `
         SELECT id, "occurredAt", "confirmCount",
-               (1 - (embedding <=> $1::vector(1536))) AS similarity
+               (1 - (embedding <=> $1::vector)) AS similarity
         FROM "subject_memory"
         WHERE "tenantId" = $2
           AND kind::text = $3
           AND status IN ('shadow', 'canary', 'active')
           AND embedding IS NOT NULL
-        ORDER BY embedding <=> $1::vector(1536) ASC
+        ORDER BY embedding <=> $1::vector ASC
         LIMIT 1
         `,
         vecLiteral,
@@ -283,7 +283,7 @@ export class SubjectMemoryService {
             },
           });
           await tx.$executeRawUnsafe(
-            'UPDATE "subject_memory" SET embedding = $1::vector(1536) WHERE id = $2',
+            'UPDATE "subject_memory" SET embedding = $1::vector WHERE id = $2',
             vecLiteral,
             created.id,
           );
@@ -314,7 +314,7 @@ export class SubjectMemoryService {
         },
       });
       await tx.$executeRawUnsafe(
-        'UPDATE "subject_memory" SET embedding = $1::vector(1536) WHERE id = $2',
+        'UPDATE "subject_memory" SET embedding = $1::vector WHERE id = $2',
         vecLiteral,
         created.id,
       );
@@ -364,7 +364,7 @@ export class SubjectMemoryService {
           AND status = 'pending'
           AND "questionEmbedding" IS NOT NULL
           AND ($4::text = '' OR id <> $4::text)
-          AND (1 - ("questionEmbedding" <=> $1::vector(1536))) >= $3::float
+          AND (1 - ("questionEmbedding" <=> $1::vector)) >= $3::float
         `,
         vecLiteral,
         args.tenantId,

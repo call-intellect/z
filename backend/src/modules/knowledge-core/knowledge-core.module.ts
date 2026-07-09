@@ -79,6 +79,7 @@ import { ThemeClassificationService } from './services/theme-classification.serv
 import { ThemeFillService } from './services/theme-fill.service';
 import { ThemeWriteService } from './services/theme-write.service';
 import { ConfidenceCalibrationCron } from './workers/confidence-calibration.cron';
+import { RawEventDeferredRecoveryService } from './services/raw-event-deferred-recovery.service';
 import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
 import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.cron';
 import { ExecutablePersonaTriggerWatcherCron } from './workers/executable-persona-trigger-watcher.cron';
@@ -157,6 +158,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     ReasoningChainService,
     ProjectionRebuilderService,
     ProvenanceService,
+    RawEventDeferredRecoveryService,
     SpecialistsCombinedService,
     SprintHelperService,
     SprintReviewService,

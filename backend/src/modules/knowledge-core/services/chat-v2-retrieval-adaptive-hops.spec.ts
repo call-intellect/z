@@ -28,7 +28,7 @@ describe('ChatV2RetrievalService — адаптивный 2-й block-link hop', 
   });
 
   it('graphHops=2 + непустой 1-й hop → expandViaGraph вызван ДВАЖДЫ', async () => {
-    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0.01));
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(768).fill(0.01));
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1' }]);
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1', score: 0.9 }]);
     const spy = vi
@@ -48,7 +48,7 @@ describe('ChatV2RetrievalService — адаптивный 2-й block-link hop', 
   });
 
   it('graphHops=1 → expandViaGraph вызван ОДИН раз', async () => {
-    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0.01));
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(768).fill(0.01));
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1' }]);
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1', score: 0.9 }]);
     const spy = vi
@@ -68,7 +68,7 @@ describe('ChatV2RetrievalService — адаптивный 2-й block-link hop', 
   });
 
   it('graphHops=2, но 1-й hop пуст → expandViaGraph вызван ОДИН раз', async () => {
-    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0.01));
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(768).fill(0.01));
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1' }]);
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1', score: 0.9 }]);
     const spy = vi

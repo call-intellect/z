@@ -140,12 +140,15 @@ const ProxySchema = z.object({
 const EmbeddingsSchema = z.object({
   EMBEDDING_PROVIDER: z
     .enum(['openai-via-proxy', 'local', 'openai-direct'])
-    .default('openai-via-proxy'),
-  EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
-  EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1536),
+    .default('local'),
+  EMBEDDING_MODEL: z.string().min(1).default('embeddinggemma:latest'),
+  EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(768),
   OPENAI_PROXY_API_KEY: z.string().optional(),
   OPENAI_PROXY_EMBEDDINGS_URL: z.string().url().default('https://proxy.agent-lia.ru/v1/embeddings'),
-  EMBEDDING_FALLBACK_LOCAL_URL: z.string().url().optional(),
+  EMBEDDING_FALLBACK_LOCAL_URL: z
+    .string()
+    .url()
+    .default('https://llm.korateam.ru/v1'),
   EMBEDDING_LOCAL_API_KEY: z.string().optional(),
   EMBEDDING_BATCH_SIZE: z.coerce.number().int().positive().default(100),
   EMBEDDING_CHUNK_TARGET_TOKENS: z.coerce.number().int().positive().default(400),

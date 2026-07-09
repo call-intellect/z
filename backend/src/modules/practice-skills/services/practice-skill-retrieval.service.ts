@@ -50,7 +50,7 @@ export class PracticeSkillRetrievalService {
     // Класс G2 — guard pgvector-литерала query-вектора. При reject (смена модели
     // → другая размерность; битый вектор → NaN/Infinity) деградируем на [] (как
     // при embed-failure выше), не валя оператор `<=>`.
-    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 768;
     const guard = buildVectorLiteral(queryVec, expectedDim);
     if (guard.literal === null) {
       this.logger.debug(

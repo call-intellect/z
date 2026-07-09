@@ -8,11 +8,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { AiUsageLogService } from './ai-usage-log.service';
-import { AnthropicService } from './anthropic.service';
 import { BudgetGuardService } from './budget-guard.service';
-import { DeepSeekService } from './deepseek.service';
-import { GrsaiService } from './grsai.service';
-import { KieService } from './kie.service';
 import { LlmInvalidOutputError } from './llm.types';
 import type {
   LlmCompleteInput,
@@ -22,10 +18,7 @@ import type {
   LlmTool,
   LlmToolCall,
 } from './llm.types';
-import { MinimaxService } from './minimax.service';
 import { calcCostUsd, MODEL_PRICES } from './model-prices';
-import { OllamaService } from './ollama.service';
-import { OpenAiProxyService } from './openai-proxy.service';
 import { LlmProtocolAdapterRegistry } from './protocol-adapter/llm-protocol-adapter.registry';
 import { ProviderInfoResolver } from './protocol-adapter/provider-info.resolver';
 
@@ -947,53 +940,20 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
 ] as const;
 
 /**
- * Имя провайдера, как оно хранится в `LlmTaskRoute.providers` (JSON-массив).
- * Для каждого провайдера в свитче ниже — соответствующий сервис.
+ * Имя провайдера. Источник правды — таблица `llm_providers` (поле `name`);
+ * валидация маршрутов/цепочек идёт против живых имён из БД (см. `loadKnownProviders`),
+ * а не против хардкод-списка. Это позволяет добавлять провайдеров через админку
+ * без правки кода.
  */
-export type LlmProviderName =
-  | 'anthropic'
-  | 'minimax'
-  | 'openai-via-proxy'
-  | 'deepseek'
-  | 'ollama'
-  | 'kie'
-  | 'grsai';
+export type LlmProviderName = string;
 
-const ALL_PROVIDERS: LlmProviderName[] = [
-  'anthropic',
-  'minimax',
-  'openai-via-proxy',
-  'deepseek',
-  'ollama',
-  'kie',
-  'grsai',
-];
-
-/**
- * Фаза 11 knowledge-core: per-provider capability map.
- *   - maxDataClass — самый «строгий» класс данных, который провайдер согласен
- *     обрабатывать. public < internal < sensitive < private.
- *   - localOnly — провайдер живёт локально (никогда не уходит наружу).
- *
- * `anthropic` — прямой Anthropic API; для нас это «sensitive» (договор).
- *   Если ANTHROPIC_USE_PROXY=true — фактически идёт через сторонний прокси,
- *   но capability в текущем MVP мы не понижаем (отслеживается ENV-флагом).
- * `ollama` — локальный, формально может обрабатывать private.
- *
- * Карта намеренно жёсткая — config-driven вариант (через БД) — vNext.
- */
-const PROVIDER_CAPABILITY: Record<
-  LlmProviderName,
-  { maxDataClass: DataClass; localOnly: boolean }
-> = {
-  anthropic: { maxDataClass: 'sensitive', localOnly: false },
-  minimax: { maxDataClass: 'internal', localOnly: false },
-  'openai-via-proxy': { maxDataClass: 'private', localOnly: false },
-  deepseek: { maxDataClass: 'private', localOnly: false },
-  ollama: { maxDataClass: 'private', localOnly: true },
-  kie: { maxDataClass: 'private', localOnly: false },
-  grsai: { maxDataClass: 'internal', localOnly: false },
-};
+  /**
+   * Раньше был `DEFAULT_FALLBACK_CHAIN` с хардкод-списком [deepseek, openai-via-proxy, kie].
+   * Удалён: БД — единственный источник правды о провайдерах. Если
+   * `llm.router.defaultChain` пуст / невалиден / содержит неизвестного
+   * провайдера — `resolveDefaultChain` бросает `LlmRouterDefaultChainInvalidError`
+   * (а не молча едет на заглушках). Окружение без сидов должно шуметь.
+   */
 
 /**
  * Порядок DataClass: public < internal < sensitive < private.
@@ -1030,12 +990,6 @@ export function maxDataClass(classes: Array<DataClass | null | undefined>): Data
   }
   return best;
 }
-
-const DEFAULT_FALLBACK_CHAIN: ProviderEntry[] = [
-  { provider: 'deepseek', tier: 'primary' },
-  { provider: 'openai-via-proxy', tier: 'secondary' },
-  { provider: 'kie', model: 'gemini-3.1-pro', tier: 'tertiary' },
-];
 
 /**
  * Порядок tier'ов в цепочке fallback'а. primary всегда сначала, tertiary — последний.
@@ -1195,6 +1149,25 @@ export class NoEligibleProviderError extends Error {
 }
 
 /**
+ * БД — единственный источник правды о провайдерах. Если `llm.router.defaultChain`
+ * пуст / невалиден / содержит неизвестного провайдера — нет молчаливого
+ * code-fallback (раньше был хардкод-список [deepseek, openai-via-proxy, kie]):
+ * бросаем понятную ошибку, чтобы окружение без сидов шумело, а не молча ехало
+ * на заглушках.
+ */
+export class LlmRouterDefaultChainInvalidError extends Error {
+  readonly code = 'llm_router_default_chain_invalid';
+  constructor(reason: string) {
+    super(
+      `LlmRouter: дефолт-цепочка llm.router.defaultChain невалидна (${reason}). ` +
+        `Заполните её в админке /admin/ai/catalog или засейте дефолт-провайдеров через ` +
+        `seed-default-llm-providers-and-models.`,
+    );
+    this.name = 'LlmRouterDefaultChainInvalidError';
+  }
+}
+
+/**
  * ТЗ LLM cost-safety Ф2: hard-cap бюджета тенанта превышен и enforce включён.
  * Бросается ДО dispatch к любому провайдеру. При observe (флаг выключен)
  * не бросается — только метрика + warn-лог.
@@ -1238,6 +1211,13 @@ export class LlmRouterService implements OnModuleInit {
    */
   private allRoutes: LlmTaskRoute[] = [];
   /**
+   * Живые имена провайдеров из `llm_providers` (deletedAt=null). Источник правды
+   * для валидации маршрутов/цепочек — вместо хардкод-списка. Обновляется в
+   * `refreshCache()` (раз/мин + после мутаций); лениво подгружается в
+   * `loadKnownProviders()` при первом обращении.
+   */
+  private knownProviderNames = new Set<string>();
+  /**
    * ТЗ 2026-07-03 — активные (status='running', глобальные, tenantId=null)
    * A/B-эксперименты моделей `LlmModelExperiment`, ключ — `taskType`.
    * Обновляется тем же `refreshCache()` циклом, что и `routes`.
@@ -1264,19 +1244,13 @@ export class LlmRouterService implements OnModuleInit {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AnthropicService) private readonly anthropic: AnthropicService,
-    @Inject(MinimaxService) private readonly minimax: MinimaxService,
-    @Inject(OpenAiProxyService) private readonly openai: OpenAiProxyService,
-    @Inject(DeepSeekService) private readonly deepseek: DeepSeekService,
-    @Inject(OllamaService) private readonly ollama: OllamaService,
-    @Inject(KieService) private readonly kie: KieService,
-    @Inject(GrsaiService) private readonly grsai: GrsaiService,
     @Inject(AiUsageLogService) private readonly usage: AiUsageLogService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
-    // SBA α-10 wave 3 — Adapter Registry (feature-flag). Optional, чтобы тесты
-    // без DI на регистре продолжали работать.
+    // Реестр протокольных адаптеров + config. Optional только для legacy-тестов
+    // без полной DI; в рантайме обязательны (dispatch бросит ошибку если
+    // USE_PROTOCOL_ADAPTER_REGISTRY=false или зависимости не заинжекчены).
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
@@ -1327,6 +1301,18 @@ export class LlmRouterService implements OnModuleInit {
   async refreshCache(): Promise<void> {
     const all = await this.prisma.llmTaskRoute.findMany();
     this.allRoutes = all;
+    const previousKnownNames = new Set(this.knownProviderNames);
+    await this.loadKnownProviders();
+    if (previousKnownNames.size === 0 && this.knownProviderNames.size > 0) {
+      this.logger.log(
+        { count: this.knownProviderNames.size, names: [...this.knownProviderNames] },
+        'llm.providers.appeared: переход 0→>0, эмитим событие для RawEventDeferredRecoveryService',
+      );
+      this.events?.emit('llm.providers.appeared', {
+        names: [...this.knownProviderNames],
+        ts: Date.now(),
+      });
+    }
     const map = new Map<LlmTaskType, ProviderEntry[]>();
 
     // Фаза A.4 — нормализованные записи (tier NOT NULL) имеют приоритет.
@@ -1351,9 +1337,12 @@ export class LlmRouterService implements OnModuleInit {
           if (ta !== tb) return ta - tb;
           return a.priority - b.priority;
         })
-        .filter((r) => (ALL_PROVIDERS as string[]).includes(r.providerName ?? ''))
+        .filter(
+          (r): r is typeof r & { providerName: string } =>
+            !!r.providerName && this.knownProviderNames.has(r.providerName),
+        )
         .map((r) => ({
-          provider: r.providerName as LlmProviderName,
+          provider: r.providerName,
           ...(r.model ? { model: r.model } : {}),
           tier: r.tier as LlmRouteTier,
         }));
@@ -1368,7 +1357,7 @@ export class LlmRouterService implements OnModuleInit {
       if (r.tenantId !== null) continue;
       if (r.tier != null) continue; // нормализованные уже учли выше
       if (map.has(r.taskType as LlmTaskType)) continue; // tier-цепочка уже задана
-      const providers = parseProviders(r.providers);
+      const providers = parseProviders(r.providers, this.knownProviderNames);
       if (providers.length === 0) continue;
       map.set(r.taskType as LlmTaskType, providers);
     }
@@ -1441,6 +1430,26 @@ export class LlmRouterService implements OnModuleInit {
   }
 
   /**
+   * Подгрузить множество живых имён провайдеров из `llm_providers`. Источник
+   * правды для валидации маршрутов/цепочек — заменяет бывший хардкод `ALL_PROVIDERS`.
+   * Идемпотентен; вызывается из `refreshCache()` и лениво из `setRoute()` /
+   * `resolveDefaultChain()` (первый запрос до первого cron-тика).
+   */
+  private async loadKnownProviders(): Promise<void> {
+    try {
+      const rows = await this.prisma.llmProvider.findMany({
+        where: { deletedAt: null },
+        select: { name: true },
+      });
+      this.knownProviderNames = new Set(rows.map((r) => r.name));
+    } catch (err) {
+      this.logger.warn(
+        `loadKnownProviders: не удалось прочитать llm_providers (${err instanceof Error ? err.message : String(err)}) — валидация маршрутов пойдёт против пустого множества`,
+      );
+    }
+  }
+
+  /**
    * Agents v2 Фаза C2 — деpolicyrministic-hash A/B routing.
    * Возвращает candidate если invocation попадает в первые
    * `abTrafficShare * 100` процентов hash-bucket'а. Иначе undefined.
@@ -1485,11 +1494,13 @@ export class LlmRouterService implements OnModuleInit {
     providers: LlmProviderName[];
     isActive: boolean;
   }): Promise<LlmTaskRoute> {
-    const valid = args.providers.filter((p) =>
-      (ALL_PROVIDERS as string[]).includes(p),
-    ) as LlmProviderName[];
+    await this.loadKnownProviders();
+    const valid = args.providers.filter((p) => this.knownProviderNames.has(p));
     if (valid.length === 0) {
-      throw new Error(`setRoute: пустой список валидных провайдеров для ${args.taskType}`);
+      throw new Error(
+        `setRoute: пустой список валидных провайдеров для ${args.taskType} ` +
+          `(ни один не найден в llm_providers). Доступны: ${[...this.knownProviderNames].join(', ') || '(пусто)'}.`,
+      );
     }
     const existing = await this.prisma.llmTaskRoute.findFirst({
       where: { taskType: args.taskType, tenantId: null },
@@ -1555,8 +1566,7 @@ export class LlmRouterService implements OnModuleInit {
         : { ...params, systemPrompt: effectiveSystemPrompt };
 
     // Фаза 11: фильтр по dataClass. Ф3 (2026-07-02): capability читается из
-    // ProviderInfoResolver (DB) при включённом реестре (Б12), с фолбэком на
-    // хардкод-карту PROVIDER_CAPABILITY — см. resolveProviderCapability().
+    // ProviderInfoResolver (DB `llm_providers.capability`) — см. resolveProviderCapability().
     const filtered: ProviderEntry[] = [];
     for (const entry of providers) {
       const cap = await this.resolveProviderCapability(entry.provider);
@@ -1781,6 +1791,19 @@ export class LlmRouterService implements OnModuleInit {
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        // Конфигурационные ошибки (нет провайдеров в БД, defaultChain не настроена,
+        // реестр выключен) — пробрасываем наверх НЕ оборачивая в
+        // LlmRouterAllProvidersFailedError. Тогда BlockIngestWorker сможет их
+        // классифицировать и поставить RawEvent в 'deferred' для re-enqueue после
+        // появления провайдеров. Иначе retry бесполезен (конфиг не изменится).
+        if (
+          err instanceof NoEligibleProviderError ||
+          err instanceof LlmRouterDefaultChainInvalidError ||
+          message.includes('реестр протокольных адаптеров выключен') ||
+          message.includes('не найден в llm_providers')
+        ) {
+          throw err;
+        }
         errors.push({ provider: entry.provider, message });
         lastFailTier = effectiveTier;
         const isLast = i === filtered.length - 1;
@@ -1811,7 +1834,7 @@ export class LlmRouterService implements OnModuleInit {
             agentType: this.taskTypeToAgentType(params.taskType),
             jobId: params.jobId ?? null,
             model: entry.model ?? params.model ?? 'unknown',
-            provider: this.providerNameToUsageProvider(entry.provider),
+            provider: entry.provider,
             inputTokens: 0,
             outputTokens: 0,
             costUsd: 0,
@@ -1898,7 +1921,7 @@ export class LlmRouterService implements OnModuleInit {
         `experiment ${params.taskType}: group=${picked.group} → ${picked.provider}:${picked.model}`,
       );
       return {
-        providers: [{ provider: picked.provider as LlmProviderName, model: picked.model }],
+        providers: [{ provider: picked.provider, model: picked.model }],
         experimentGroup: picked.group,
       };
     }
@@ -1911,48 +1934,43 @@ export class LlmRouterService implements OnModuleInit {
 
   /**
    * Ф6 (2026-07-02, Б11): дефолт-цепочка резолвится из крутилки
-   * `llm.router.defaultChain` (AdminSetting), code-fallback — `DEFAULT_FALLBACK_CHAIN`.
+   * `llm.router.defaultChain` (AdminSetting). Хардкод-fallback удалён — БД
+   * единственный источник правды. Невалидная/пустая цепочка → throw
+   * `LlmRouterDefaultChainInvalidError` (окружение без сидов должно шуметь).
    */
   private async resolveDefaultChain(): Promise<ProviderEntry[]> {
-    if (!this.cfg) return DEFAULT_FALLBACK_CHAIN;
-    const codeFallback = DEFAULT_FALLBACK_CHAIN.map((e) => ({
-      provider: e.provider,
-      model: e.model ?? null,
-    }));
-    try {
-      const raw = await this.cfg.getDynamic<Array<{ provider: string; model?: string | null }>>(
-        'llm.router.defaultChain',
-        undefined,
-        codeFallback,
-      );
-      if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_FALLBACK_CHAIN;
-      const tiers: LlmRouteTier[] = ['primary', 'secondary', 'tertiary'];
-      const parsed: ProviderEntry[] = [];
-      for (let i = 0; i < raw.length; i++) {
-        const item = raw[i];
-        if (
-          !item ||
-          typeof item.provider !== 'string' ||
-          !(ALL_PROVIDERS as string[]).includes(item.provider)
-        ) {
-          this.logger.warn(
-            `llm.router.defaultChain: невалидная запись #${i} — использую code-fallback`,
-          );
-          return DEFAULT_FALLBACK_CHAIN;
-        }
-        parsed.push({
-          provider: item.provider as LlmProviderName,
-          ...(item.model ? { model: item.model } : {}),
-          tier: tiers[i] ?? 'tertiary',
-        });
-      }
-      return parsed;
-    } catch (err) {
-      this.logger.warn(
-        `llm.router.defaultChain: getDynamic сбой (${err instanceof Error ? err.message : String(err)}) — code-fallback`,
-      );
-      return DEFAULT_FALLBACK_CHAIN;
+    if (!this.cfg) {
+      throw new LlmRouterDefaultChainInvalidError('cfg не заинжекчен');
     }
+    const raw = await this.cfg.getDynamic<Array<{ provider: string; model?: string | null }>>(
+      'llm.router.defaultChain',
+      undefined,
+      [],
+    );
+    if (!Array.isArray(raw) || raw.length === 0) {
+      throw new LlmRouterDefaultChainInvalidError('значение пустое или не массив');
+    }
+    await this.loadKnownProviders();
+    const tiers: LlmRouteTier[] = ['primary', 'secondary', 'tertiary'];
+    const parsed: ProviderEntry[] = [];
+    for (let i = 0; i < raw.length; i++) {
+      const item = raw[i];
+      if (
+        !item ||
+        typeof item.provider !== 'string' ||
+        !this.knownProviderNames.has(item.provider)
+      ) {
+        throw new LlmRouterDefaultChainInvalidError(
+          `запись #${i} ссылается на провайдера '${item && typeof item === 'object' ? item.provider : '(invalid)'}' который не найден в llm_providers`,
+        );
+      }
+      parsed.push({
+        provider: item.provider,
+        ...(item.model ? { model: item.model } : {}),
+        tier: tiers[i] ?? 'tertiary',
+      });
+    }
+    return parsed;
   }
 
   /**
@@ -1969,47 +1987,51 @@ export class LlmRouterService implements OnModuleInit {
   }
 
   /**
-   * Б12: capability провайдера — из ProviderInfoResolver (DB), с фолбэком на
-   * хардкод-карту PROVIDER_CAPABILITY, если реестр выключен, DB-строки нет,
-   * или resolveByName упал (best-effort — не блокируем dispatch).
+   * Б12: capability провайдера — из ProviderInfoResolver (DB `llm_providers.capability`).
+   * При выключенном реестре / отсутствии строки / ошибке — дефолт `internal`
+   * (безопасный середняк: не public, не private). Без хардкод-карты провайдеров.
    */
   private async resolveProviderCapability(
     provider: LlmProviderName,
-  ): Promise<{ maxDataClass: DataClass; localOnly: boolean }> {
-    const fallback = PROVIDER_CAPABILITY[provider];
-    if (!this.isRegistryActive()) return fallback;
+  ): Promise<{ maxDataClass: DataClass }> {
+    if (!this.isRegistryActive()) return { maxDataClass: 'internal' };
     try {
       const resolved = await this.providerInfo!.resolveByName(provider);
       const cap = resolved?.info.capability;
       if (cap === 'public' || cap === 'internal' || cap === 'sensitive' || cap === 'private') {
-        return { maxDataClass: cap, localOnly: fallback.localOnly };
+        return { maxDataClass: cap };
       }
     } catch {
-      /* фолбэк на хардкод — best-effort, не блокируем вызов */
+      /* best-effort — не блокируем вызов, дефолт ниже */
     }
-    return fallback;
+    return { maxDataClass: 'internal' };
   }
 
   private async dispatch(entry: ProviderEntry, params: LlmCallParams): Promise<LlmCompleteOutput> {
-    // SBA α-10 wave 3 — Feature-flag USE_PROTOCOL_ADAPTER_REGISTRY.
-    // false (default, production safety) → legacy switch ниже.
-    // true → LlmProtocolAdapterRegistry резолвит protocolKind из LlmProvider/ENV.
-    const useRegistry = this.isRegistryActive();
+    // Ф3 (2026-07-02): единственный путь — LlmProtocolAdapterRegistry резолвит
+    // protocolKind из llm_providers и вызывает соответствующий адаптер.
+    // Legacy-switch по 7 хардкод-сервисам удалён: любой провайдер, добавленный
+    // в llm_providers с protocolKind из зарегистрированных, работает без правки кода.
+    if (!this.isRegistryActive()) {
+      throw new Error(
+        `LlmRouter: реестр протокольных адаптеров выключен (USE_PROTOCOL_ADAPTER_REGISTRY=false). ` +
+          `Включите реестр и заведите провайдера в llm_providers.`,
+      );
+    }
     // Ф5 (2026-07-02): резолв provider info ДО построения input, чтобы
     // defaultModelKey (DB) мог участвовать в выборе модели — переиспользуем
     // `resolved` дальше, повторный resolveByName() не нужен.
-    const resolved = useRegistry ? await this.providerInfo!.resolveByName(entry.provider) : null;
-    if (useRegistry && !resolved) {
-      this.logger.warn(
-        `LlmRouter: ProviderInfoResolver не нашёл провайдера ${entry.provider}; fallback на legacy switch`,
+    const resolved = await this.providerInfo!.resolveByName(entry.provider);
+    if (!resolved) {
+      throw new Error(
+        `LlmRouter: провайдер '${entry.provider}' не найден в llm_providers (deletedAt=null). ` +
+          `Добавьте его через админку /admin/ai/catalog или seed-default-llm-providers-and-models.`,
       );
     }
     // Приоритет: явный override через params.model → модель из route entry →
-    // дефолт-модель провайдера из БД (Ф5, defaultModelKey) → дефолт
-    // легаси-сервиса (ниже, если ни один из трёх не задан — input.model не
-    // передаётся вовсе).
+    // дефолт-модель провайдера из БД (Ф5, defaultModelKey).
     const effectiveModel =
-      params.model ?? entry.model ?? resolved?.info.defaultModelKey ?? undefined;
+      params.model ?? entry.model ?? resolved.info.defaultModelKey ?? undefined;
     const input: LlmCompleteInput = {
       system: { text: params.systemPrompt, cacheControl: 'ephemeral' },
       user: params.userMessage,
@@ -2018,34 +2040,11 @@ export class LlmRouterService implements OnModuleInit {
       ...(params.responseFormat !== undefined ? { responseFormat: params.responseFormat } : {}),
       ...(params.reasoningEffort !== undefined ? { reasoningEffort: params.reasoningEffort } : {}),
       // ТЗ 2026-05-25: function-calling. Если воркер передал tools — пробрасываем
-      // напрямую в провайдера. DeepSeek/OpenAI добавят `tool_choice='auto'`
-      // автоматически (см. DeepSeekService.buildParams / OpenAiProxyService).
+      // напрямую в провайдера.
       ...(params.tools && params.tools.length > 0 ? { tools: params.tools } : {}),
     };
-    if (useRegistry && resolved) {
-      const adapter = this.adapterRegistry!.resolve(resolved.protocolKind);
-      return adapter.complete({ provider: resolved.info, input });
-    }
-    switch (entry.provider) {
-      case 'anthropic':
-        return this.anthropic.complete(input);
-      case 'minimax':
-        return this.minimax.complete(input);
-      case 'openai-via-proxy':
-        return this.openai.complete(input);
-      case 'deepseek':
-        return this.deepseek.complete(input);
-      case 'ollama':
-        return this.ollama.complete(input);
-      case 'kie':
-        return this.kie.complete(input);
-      case 'grsai':
-        return this.grsai.complete(input);
-      default: {
-        const _exhaustive: never = entry.provider;
-        throw new Error(`LlmRouter: неизвестный провайдер ${String(_exhaustive)}`);
-      }
-    }
+    const adapter = this.adapterRegistry!.resolve(resolved.protocolKind);
+    return adapter.complete({ provider: resolved.info, input });
   }
 
   /**
@@ -2137,13 +2136,6 @@ export class LlmRouterService implements OnModuleInit {
         return 'custom';
     }
   }
-
-  private providerNameToUsageProvider(
-    p: LlmProviderName,
-  ): 'anthropic' | 'minimax' | 'openai-via-proxy' | 'deepseek' | 'ollama' | 'kie' | 'grsai' {
-    return p;
-  }
-
   /**
    * Превью промпта для AiUsageLog (Z-Admin Фаза 7).
    * Конкатенация system + user с метками. Truncate до 8KB делает AiUsageLogService.
@@ -2169,7 +2161,7 @@ export class LlmRouterService implements OnModuleInit {
  *
  * Парсим в строгий список валидных provider+model.
  */
-function parseProviders(raw: unknown): ProviderEntry[] {
+function parseProviders(raw: unknown, knownProviderNames: Set<string>): ProviderEntry[] {
   if (!raw) return [];
   let arr: unknown;
   if (Array.isArray(raw)) {
@@ -2186,17 +2178,17 @@ function parseProviders(raw: unknown): ProviderEntry[] {
   const result: ProviderEntry[] = [];
   for (const item of arr as unknown[]) {
     if (typeof item === 'string') {
-      if ((ALL_PROVIDERS as string[]).includes(item)) {
-        result.push({ provider: item as LlmProviderName });
+      if (knownProviderNames.has(item)) {
+        result.push({ provider: item });
       }
       continue;
     }
     if (typeof item === 'object' && item !== null) {
       const providerRaw = (item as { provider?: unknown }).provider;
       const modelRaw = (item as { model?: unknown }).model;
-      if (typeof providerRaw === 'string' && (ALL_PROVIDERS as string[]).includes(providerRaw)) {
+      if (typeof providerRaw === 'string' && knownProviderNames.has(providerRaw)) {
         result.push({
-          provider: providerRaw as LlmProviderName,
+          provider: providerRaw,
           ...(typeof modelRaw === 'string' && modelRaw.length > 0 ? { model: modelRaw } : {}),
         });
       }

@@ -23,7 +23,7 @@ describe('EntityResolutionService.resolveEntityHintsByEmbedding', () => {
     ];
     const queryRawUnsafe = vi.fn().mockResolvedValue(rows);
     const prisma = { $queryRawUnsafe: queryRawUnsafe } as unknown as PrismaService;
-    const embed = makeEmbed(new Array<number>(1536).fill(0.1));
+    const embed = makeEmbed(new Array<number>(768).fill(0.1));
 
     const svc = new EntityResolutionService(prisma, embed);
 
@@ -33,7 +33,7 @@ describe('EntityResolutionService.resolveEntityHintsByEmbedding', () => {
     expect(result).not.toContain('Слабое');
 
     const sqlArg = queryRawUnsafe.mock.calls[0]?.[0] as string;
-    expect(sqlArg).toContain('embedding <=> $1::vector(1536)');
+    expect(sqlArg).toContain('embedding <=> $1::vector');
     expect(sqlArg).toContain('"mergedIntoId" IS NULL');
     expect(sqlArg).toContain('LIMIT');
   });
@@ -46,7 +46,7 @@ describe('EntityResolutionService.resolveEntityHintsByEmbedding', () => {
     const prisma = {
       $queryRawUnsafe: vi.fn().mockResolvedValue(rows),
     } as unknown as PrismaService;
-    const svc = new EntityResolutionService(prisma, makeEmbed(new Array<number>(1536).fill(0.1)));
+    const svc = new EntityResolutionService(prisma, makeEmbed(new Array<number>(768).fill(0.1)));
 
     const result = await svc.resolveEntityHintsByEmbedding('t', 'логистика', 10, 0.35);
 
@@ -84,7 +84,7 @@ describe('EntityResolutionService.resolveEntityHintsByEmbedding', () => {
     const prisma = {
       $queryRawUnsafe: vi.fn().mockRejectedValue(new Error('pgvector KO')),
     } as unknown as PrismaService;
-    const svc = new EntityResolutionService(prisma, makeEmbed(new Array<number>(1536).fill(0.1)));
+    const svc = new EntityResolutionService(prisma, makeEmbed(new Array<number>(768).fill(0.1)));
     const warnSpy = vi
       .spyOn((svc as unknown as { logger: { warn: () => void } }).logger, 'warn')
       .mockImplementation(() => undefined);

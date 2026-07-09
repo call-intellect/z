@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
@@ -236,6 +237,46 @@ describe('AdminAiModelsService', () => {
     expect(summary?.group).toBe('ai-pipeline');
     const block = items.find((i) => i.taskType === 'block-ingest');
     expect(block?.group).toBe('knowledge-core');
+  });
+
+  it('list() отдаёт effectivePrimary из llm.router.defaultChain только для taskType без явного primary', async () => {
+    const ctx = build([
+      {
+        id: 'r1',
+        taskType: 'summary',
+        tenantId: null,
+        tier: 'primary',
+        priority: 0,
+        providerName: 'deepseek',
+        model: 'deepseek-v4-pro',
+        editedByAdmin: false,
+      },
+    ]);
+    const cfg = {
+      getDynamic: vi.fn(async () => [
+        { provider: 'anthropic', model: 'claude-x' },
+      ]),
+    } as unknown as TypedConfigService;
+    const svcWithCfg = new AdminAiModelsService(
+      ctx.prisma,
+      ctx.router,
+      ctx.metrics,
+      undefined,
+      cfg,
+    );
+
+    const items = await svcWithCfg.list({});
+
+    const summary = items.find((i) => i.taskType === 'summary');
+    expect(summary?.primary).not.toBeNull();
+    expect(summary?.effectivePrimary).toBeNull();
+
+    const taskWithoutPrimary = items.find((i) => i.primary === null);
+    expect(taskWithoutPrimary).toBeDefined();
+    expect(taskWithoutPrimary?.effectivePrimary).toEqual({
+      providerName: 'anthropic',
+      model: 'claude-x',
+    });
   });
 
   it('switchPrimary(splitPercent=100) — мгновенно переключает primary + audit-запись', async () => {

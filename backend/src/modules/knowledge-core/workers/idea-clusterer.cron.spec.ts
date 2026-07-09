@@ -145,7 +145,7 @@ function makeCron(args: {
 }
 
 describe('IdeaClustererCron — Б8: embedding кластера = mean(участников)', () => {
-  it('на CREATE кластера пишет embedding сырым UPDATE ::vector(1536)', async () => {
+  it('на CREATE кластера пишет embedding сырым UPDATE ::vector', async () => {
     const { cron, clusterCreateSpy, executeRawSpy } = makeCron({
       ideas: [makeIdea({ id: 'a' }), makeIdea({ id: 'b' })],
       minSupporters: 2,
@@ -154,12 +154,12 @@ describe('IdeaClustererCron — Б8: embedding кластера = mean(учас�
     await cron.sweep();
 
     expect(clusterCreateSpy).toHaveBeenCalledTimes(1);
-    // embedding записан raw-UPDATE'ом по idea_clusters с приведением ::vector(1536)
+    // embedding записан raw-UPDATE'ом по idea_clusters с приведением ::vector
     const call = executeRawSpy.mock.calls.find(
       ([sql]) =>
         typeof sql === 'string' &&
         sql.includes('idea_clusters') &&
-        sql.includes('::vector(1536)'),
+        sql.includes('::vector'),
     );
     expect(call).toBeDefined();
     // первый параметр — векторный литерал mean'а ([0.1,0.2,0.3] для всех)
@@ -179,7 +179,7 @@ describe('IdeaClustererCron — Б8: embedding кластера = mean(учас�
       ([sql]) =>
         typeof sql === 'string' &&
         sql.includes('idea_clusters') &&
-        sql.includes('::vector(1536)'),
+        sql.includes('::vector'),
     );
     expect(call).toBeDefined();
     // целевой clusterId передан в UPDATE

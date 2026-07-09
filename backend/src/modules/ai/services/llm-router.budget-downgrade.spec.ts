@@ -5,16 +5,11 @@ import type { BusinessMetricsService } from '../../../common/metrics/business-me
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import type { AiUsageLogService } from './ai-usage-log.service';
-import type { AnthropicService } from './anthropic.service';
 import type { BudgetGuardService } from './budget-guard.service';
-import type { DeepSeekService } from './deepseek.service';
-import type { GrsaiService } from './grsai.service';
-import type { KieService } from './kie.service';
 import { LlmBudgetExceededError, LlmRouterService, type LlmTaskType } from './llm-router.service';
-import type { LlmCompleteOutput } from './llm.types';
-import type { MinimaxService } from './minimax.service';
-import type { OllamaService } from './ollama.service';
-import type { OpenAiProxyService } from './openai-proxy.service';
+import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
+import type { LlmProtocolAdapterRegistry } from './protocol-adapter/llm-protocol-adapter.registry';
+import type { ProviderInfoResolver } from './protocol-adapter/provider-info.resolver';
 
 function makeOutput(provider: LlmCompleteOutput['provider'], model = 'm-test'): LlmCompleteOutput {
   return {
@@ -73,33 +68,66 @@ interface BuildOpts {
 function build(opts: BuildOpts) {
   const findMany = vi.fn(async () => opts.rows);
   const priceFindFirst = vi.fn(async () => null);
+
+  const deepseek = {
+    complete: opts.deepseek ?? vi.fn(async () => makeOutput('deepseek', 'deepseek-v4-flash')),
+  };
+  const openai = {
+    complete: opts.openai ?? vi.fn(async () => makeOutput('openai-via-proxy', 'gpt-5.5-pro')),
+  };
+  const ollama = {
+    complete: opts.ollama ?? vi.fn(async () => makeOutput('ollama', 'qwen3.5:9b')),
+  };
+  const minimax = {
+    complete: opts.minimax ?? vi.fn(async () => makeOutput('minimax', 'MiniMax-M2.5')),
+  };
+  const anthropic = {
+    complete: opts.anthropic ?? vi.fn(async () => makeOutput('anthropic', 'claude-sonnet-4-6')),
+  };
+  const kie = { complete: opts.kie ?? vi.fn(async () => makeOutput('kie', 'gemini-3-pro')) };
+  const grsai = { complete: opts.grsai ?? vi.fn(async () => makeOutput('grsai', 'gemini-3.1-pro')) };
+
+  const byProviderName: Record<string, { complete: ReturnType<typeof vi.fn> }> = {
+    deepseek,
+    'openai-via-proxy': openai,
+    ollama,
+    minimax,
+    anthropic,
+    kie,
+    grsai,
+  };
+
   const prisma = {
     llmTaskRoute: { findMany, findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     llmModelPrice: { findFirst: priceFindFirst },
     llmModelExperiment: { findMany: vi.fn(async () => []) },
+    llmProvider: {
+      findMany: vi.fn(async () => Object.keys(byProviderName).map((name) => ({ name }))),
+      count: vi.fn(async () => Object.keys(byProviderName).length),
+    },
   } as unknown as PrismaService;
 
-  const deepseek = {
-    complete: opts.deepseek ?? vi.fn(async () => makeOutput('deepseek', 'deepseek-v4-flash')),
-  } as unknown as DeepSeekService;
-  const openai = {
-    complete: opts.openai ?? vi.fn(async () => makeOutput('openai-via-proxy', 'gpt-5.5-pro')),
-  } as unknown as OpenAiProxyService;
-  const ollama = {
-    complete: opts.ollama ?? vi.fn(async () => makeOutput('ollama', 'qwen3.5:9b')),
-  } as unknown as OllamaService;
-  const minimax = {
-    complete: opts.minimax ?? vi.fn(async () => makeOutput('minimax', 'MiniMax-M2.5')),
-  } as unknown as MinimaxService;
-  const anthropic = {
-    complete: opts.anthropic ?? vi.fn(async () => makeOutput('anthropic', 'claude-sonnet-4-6')),
-  } as unknown as AnthropicService;
-  const kie = {
-    complete: opts.kie ?? vi.fn(async () => makeOutput('kie', 'gemini-3-pro')),
-  } as unknown as KieService;
-  const grsai = {
-    complete: opts.grsai ?? vi.fn(async () => makeOutput('grsai', 'gemini-3.1-pro')),
-  } as unknown as GrsaiService;
+  const adapter = {
+    complete: async ({
+      provider,
+      input,
+    }: {
+      provider: { name: string };
+      input: LlmCompleteInput;
+    }) => {
+      const complete = byProviderName[provider.name]!.complete as unknown as (
+        i: LlmCompleteInput,
+      ) => Promise<LlmCompleteOutput>;
+      return complete(input);
+    },
+  };
+  const registry = { resolve: () => adapter } as unknown as LlmProtocolAdapterRegistry;
+  const providerInfo = {
+    resolveByName: vi.fn(async (name: string) => ({
+      info: { name, baseUrl: 'https://test.local', apiKey: null },
+      protocolKind: name,
+    })),
+  } as unknown as ProviderInfoResolver;
 
   const usageRecord = vi.fn();
   const usage = { record: usageRecord } as unknown as AiUsageLogService;
@@ -116,7 +144,11 @@ function build(opts: BuildOpts) {
     if (key === 'llm.budget.enforce_enabled') return opts.enforce ?? false;
     return def;
   });
-  const cfg = { getDynamic } as unknown as TypedConfigService;
+  const cfg = {
+    getDynamic,
+    budget: { useProtocolAdapterRegistry: true },
+    llmRouter: { dispatchTimeoutMs: 300_000 },
+  } as unknown as TypedConfigService;
 
   const sequence = opts.bevSequence ?? [];
   let callIdx = 0;
@@ -130,19 +162,12 @@ function build(opts: BuildOpts) {
 
   const router = new LlmRouterService(
     prisma,
-    anthropic,
-    minimax,
-    openai,
-    deepseek,
-    ollama,
-    kie,
-    grsai,
     usage,
     metrics,
     cfg,
-    undefined as never,
-    undefined as never,
-    undefined as never,
+    registry,
+    providerInfo,
+    undefined,
     budgetGuard,
   );
   return {

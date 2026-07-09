@@ -20,7 +20,7 @@ import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
  * GoalEmbedWorker — consumer очереди `core.goal-embed`
  * (Ф5, TZ 2026-06-16 task-dedup). Зеркало `IssueEmbedWorker`.
  *
- * Производит pgvector(1536)-embedding для `Goal.name + description` с помощью
+ * Производит pgvector-embedding для `Goal.name + description` с помощью
  * `EmbeddingFallbackService` (OpenAI-via-proxy → local fallback). Нужен для
  * семантического дедупа целей (specialist-3-14 KNN по `Goal.embedding` вместо
  * ILIKE по 2 словам).
@@ -147,9 +147,9 @@ export class GoalEmbedWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     // UPDATE с tenant-предохранителем. Не пересоздаём строку — только embedding+hash.
-    // Лит. вид pgvector: '[1.2,3.4,...]'::vector(1536).
+    // Лит. вид pgvector: '[1.2,3.4,...]'::vector.
     await this.prisma.$executeRawUnsafe(
-      'UPDATE "Goal" SET embedding = $1::vector(1536), "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
+      'UPDATE "Goal" SET embedding = $1::vector, "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
       toVectorLiteral(vector),
       newHash,
       goalId,

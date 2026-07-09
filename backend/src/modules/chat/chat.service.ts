@@ -894,7 +894,7 @@ export class ChatService {
    * pgvector cosine similarity search. `embedding <=> $vec::vector` — это
    * cosine distance (0 = идентично).
    *
-   * Используем Prisma raw query, так как `Unsupported("vector(1536)")` не имеет
+   * Используем Prisma raw query, так как `Unsupported("vector(768)")` не имеет
    * native API.
    */
   private async searchSimilarChunks(
@@ -905,7 +905,7 @@ export class ChatService {
     // Класс G2 — guard pgvector-литерала query-вектора. При reject (смена модели
     // → другая размерность; битый вектор → NaN/Infinity) деградируем на []
     // (LLM ответит без cross-meeting контекста), не валя оператор `<=>` 500-кой.
-    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 768;
     const guard = buildVectorLiteral(queryEmbedding, expectedDim);
     if (guard.literal === null) {
       this.logger.warn(
@@ -973,7 +973,7 @@ export class ChatService {
     limit: number,
   ): Promise<CrossMeetingChunk[]> {
     // Класс G2 — guard pgvector-литерала query-вектора (см. searchSimilarChunks).
-    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 768;
     const guard = buildVectorLiteral(queryEmbedding, expectedDim);
     if (guard.literal === null) {
       this.logger.warn(

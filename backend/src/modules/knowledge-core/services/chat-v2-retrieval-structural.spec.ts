@@ -112,7 +112,7 @@ describe('ChatV2RetrievalService — структурный фильтр (роу
   });
 
   it('активный структурный фильтр → rankByStructuralFilter SQL + граф ПРОПУЩЕН', async () => {
-    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0));
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(768).fill(0));
     prismaStub.ideaBlock.findMany.mockResolvedValueOnce([{ id: 'b1' }, { id: 'b2' }]);
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1', score: 0.9 }]);
     prismaStub.ideaBlockLink.findMany.mockResolvedValue([]);
@@ -139,7 +139,7 @@ describe('ChatV2RetrievalService — структурный фильтр (роу
   });
 
   it('негатив по дате: предикат окна и границы wired (исключение out-of-window — Ф5 интеграция)', async () => {
-    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0));
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(768).fill(0));
     prismaStub.ideaBlock.findMany.mockResolvedValueOnce([{ id: 'b1' }]);
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([]);
 
@@ -166,10 +166,10 @@ describe('ChatV2RetrievalService — структурный фильтр (роу
     expect(params).toContain(to);
   });
 
-  it('G2 guard: валидный 1536-вектор → cosine-путь (rankByCosineOrRecency через $queryRawUnsafe с `embedding <=>`)', async () => {
+  it('G2 guard: валидный 768-вектор → cosine-путь (rankByCosineOrRecency через $queryRawUnsafe с `embedding <=>`)', async () => {
     // Валидный вектор ровно EMBEDDING_DIMENSIONS — guard пропускает, литерал
     // строится как раньше, recall работает.
-    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0.01));
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(768).fill(0.01));
     prismaStub.ideaBlock.findMany.mockResolvedValueOnce([
       { id: 'b1' },
       { id: 'b2' },
@@ -196,7 +196,7 @@ describe('ChatV2RetrievalService — структурный фильтр (роу
   });
 
   it('G2 guard: вектор неверной размерности → graceful degrade на recency (cosine SQL НЕ вызван, не 500)', async () => {
-    // Размерность 3 ≠ 1536 → guard отвергает qvec → весь read-путь как при
+    // Размерность 3 ≠ 768 → guard отвергает qvec → весь read-путь как при
     // embed-failure: collectPool recency-findMany + rankByCosineOrRecency recency.
     embeddingsStub.embedQuery.mockResolvedValue([0.1, 0.2, 0.3]);
     prismaStub.ideaBlock.findMany
@@ -222,7 +222,7 @@ describe('ChatV2RetrievalService — структурный фильтр (роу
   });
 
   it('G2 guard: вектор с NaN → graceful degrade на recency (cosine SQL НЕ вызван, не 500)', async () => {
-    const bad = new Array(1536).fill(0.01);
+    const bad = new Array(768).fill(0.01);
     bad[5] = Number.NaN;
     embeddingsStub.embedQuery.mockResolvedValue(bad);
     prismaStub.ideaBlock.findMany

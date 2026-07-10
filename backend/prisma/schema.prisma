@@ -397,6 +397,12 @@ enum RawEventProcessingStatus {
   received
   ingested
   failed
+  /// Deferred-retry: BlockIngestWorker поймал LlmRouterDefaultChainInvalidError
+  /// или NoEligibleProviderError (провайдеров нет в llm_providers / defaultChain
+  /// не настроен). Job завершается `completed` (НЕ failed), RawEvent
+  /// re-енкеится по событию `llm.providers.appeared` из
+  /// RawEventDeferredRecoveryService.
+  deferred
 }
 
 /// Онбординг v2 (2026-05-29) — роль пользователя в компании (Экран 1 Блока A).

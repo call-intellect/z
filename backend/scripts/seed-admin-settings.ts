@@ -857,6 +857,12 @@ function buildSettings(): SettingSeed[] {
     ],
     ['embeddings.batchSize', envInt('EMBEDDING_BATCH_SIZE', 32), 'medium', 'Размер батча'],
     [
+      'embeddings.providerRetryAttempts',
+      2,
+      'medium',
+      'Сколько раз повторить запрос к embedding-провайдеру при сетевой ошибке, прежде чем перейти к следующему в цепочке (1–5). Лечит разовые таймауты/обрывы сокета.',
+    ],
+    [
       'embeddings.chunkTargetTokens',
       envInt('EMBEDDING_CHUNK_TARGET_TOKENS', 600),
       'medium',

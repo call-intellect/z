@@ -213,7 +213,7 @@ export class SupportContourService {
     const vec = await this.embeddings.embedQuery(`${question} ${answer}`);
     if (vec && vec.length > 0) {
       await this.prisma.$executeRawUnsafe(
-        'UPDATE "IdeaBlock" SET embedding = $1::vector(1536) WHERE id = $2',
+        'UPDATE "IdeaBlock" SET embedding = $1::vector WHERE id = $2',
         `[${vec.join(',')}]`,
         block.id,
       );

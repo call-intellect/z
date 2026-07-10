@@ -14,12 +14,13 @@ export type ProviderInTierUi = ProviderInTierApi & {
 
 export type TaskTypeRouteUi = Omit<
   TaskTypeRouteApi,
-  "chain" | "primary" | "secondary" | "tertiary"
+  "chain" | "primary" | "secondary" | "tertiary" | "effectivePrimary"
 > & {
   primary: ProviderInTierUi | null;
   secondary: ProviderInTierUi | null;
   tertiary: ProviderInTierUi | null;
   chain: ProviderInTierUi[];
+  effectivePrimary: { providerName: string; model: string | null } | null;
   groupLabel: string;
 };
 
@@ -88,6 +89,7 @@ export function mapTaskTypeRoute(api: TaskTypeRouteApi): TaskTypeRouteUi {
     secondary: api.secondary ? mapProviderInTier(api.secondary) : null,
     tertiary: api.tertiary ? mapProviderInTier(api.tertiary) : null,
     chain: api.chain.map(mapProviderInTier),
+    effectivePrimary: api.effectivePrimary ?? null,
   };
 }
 

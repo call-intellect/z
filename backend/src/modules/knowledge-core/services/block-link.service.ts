@@ -101,7 +101,7 @@ export class BlockLinkService {
              b."createdAt", b."updatedAt",
              1 - (b.embedding <=> (
                SELECT embedding FROM "IdeaBlock" WHERE id = $2
-             )::vector(1536)) AS similarity
+             )::vector) AS similarity
       FROM "IdeaBlock" b
       WHERE b."tenantId" = $1
         AND b.status = 'canonical'
@@ -110,7 +110,7 @@ export class BlockLinkService {
         AND b."mergedIntoId" IS NULL
       ORDER BY b.embedding <=> (
         SELECT embedding FROM "IdeaBlock" WHERE id = $2
-      )::vector(1536)
+      )::vector
       LIMIT $3
       `,
       args.tenantId,

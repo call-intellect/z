@@ -41,7 +41,7 @@ describe('ChatV2RetrievalService — Б26 [K3] детерминированны�
   });
 
   it('org + qvec (без структурного фильтра) → HNSW pgvector ORDER BY embedding <=> qvec', async () => {
-    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0.01));
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(768).fill(0.01));
     // 1-й $queryRawUnsafe = pool HNSW; 2-й = rankByCosineOrRecency.
     prismaStub.$queryRawUnsafe
       .mockResolvedValueOnce([{ id: 'b1' }, { id: 'b2' }])

@@ -20,7 +20,7 @@ describe('backfillGoalEmbeddings', () => {
   beforeEach(() => {
     queryRawMock = vi.fn();
     executeRawMock = vi.fn(async () => 1);
-    embedMock = vi.fn(async () => [new Array(1536).fill(0.1)]);
+    embedMock = vi.fn(async () => [new Array(768).fill(0.1)]);
     prisma = {
       $queryRawUnsafe: queryRawMock,
       $executeRawUnsafe: executeRawMock,

@@ -78,24 +78,33 @@
 
 ## Команды разработки
 
-Рантайм — **Bun** для dev/build, **Node 20** для prod-runner. Команды запускаются из `backend/` или `frontend/`. Полная таблица — в [backend/README.md](backend/README.md).
+Рантайм — **Bun** и в dev, и в проде (prod-runner — `oven/bun:1.3-alpine`, `CMD ["bun", "dist/main.js"]`; Node 20 в `engines` — только нижняя граница совместимости). Команды запускаются из `backend/` или `frontend/`. Полная таблица — в [backend/README.md](backend/README.md).
+
+**Весь dev-стек одной командой** (из корня): `bun run dev` ([scripts/dev.ts](scripts/dev.ts)) — поднимает docker-зависимости, ждёт TCP-готовности Redis, стартует backend + frontend. Варианты: `bun run dev:local` (без docker) · `bun run dev:backend` / `dev:frontend` (по отдельности) · `bun run make-local-env`.
 
 **Локальные зависимости** (из корня): `docker compose -f docker-compose.dev.yml up -d` (Postgres+pgvector :55435, Redis :56381, MinIO :59000/:59001). LiveKit для dev — `bun run livekit` (Linux-only, `network_mode: host`). Прод-деплой — единый корневой `docker-compose.yml` (`docker compose up -d --build backend`, порты через `.env`); медиа-стек отдельно — `infra/livekit/docker-compose.yml`.
 
 **Backend** (`cd backend`, слушает :3000, Swagger `/api/docs`, health `/health`, метрики `/metrics`):
 - Первый запуск: `bun install && bun run prisma:migrate && bun run prisma:generate` (+ опц. `bun run prisma:seed`). `prisma:push` — только для черновых локальных проб, не коммитится.
 - Dev: `bun run dev` — HTTP **и** BullMQ-воркеры/cron в одном процессе (workers/cron **in-process** через `WorkersModule` в `AppModule`; отдельного worker-процесса и `worker:dev` нет)
-- Проверка: `bun run typecheck` · `bun run lint` · `bun run build`
+- Проверка: `bun run typecheck` · `bun run lint` · `bun run build` · `bun run lint:input-guards`
 - Тесты (vitest): `bun run test:unit` / `test:integration` / `test:e2e`. Один файл: `bunx vitest run src/путь/файл.spec.ts`; по имени: `bunx vitest run -t "имя теста"`
+- Golden-тесты knowledge-core ([backend/tests/golden/](backend/tests/golden/)): `bun run golden:knowledge-core`; перезапись снапшотов — `bun run golden:knowledge-core:update`. Узкий интеграционный прогон ядра — `bun run test:integration:knowledge-core`.
 - pgvector-индексы (HNSW + GIN, не в schema.prisma): `bun run apply-postgres-init`
+- Состояние миграций на среде: `bun run prisma:migrate:status`; применение без генерации файла — `bun run prisma:migrate:deploy`
 
-**Frontend** (`cd frontend`, :3001): `bun run dev` · `bun run typecheck` · `bun run lint` · `bun run build` · `bun run test:unit`
+**Frontend** (`cd frontend`, :3001): `bun run dev` · `bun run typecheck` · `bun run lint` · `bun run build` (`next build --webpack`, не turbopack) · `bun run test:unit`
 
 **Prisma (с 2026-06-05 — версионируемые миграции, см. skill `prisma-db-push-rules`): ЛЮБОЕ изменение в БД = файл миграции.** Изменение схемы → `bun run prisma:migrate -- --name <описание>` (= `migrate dev`: генерит файл в `prisma/migrations/` + применяет локально), ревью SQL, коммит миграции вместе с кодом. На прод применяется **автоматически** на каждом `docker compose up -d` через `prisma migrate deploy` (зашит в `apply-prod-deploy.ts --with-schema`, migrate-контейнер); первичный baseline существующей БД делает `ensureBaseline()` сам (hands-free: авто-бэкап + `migrate resolve --applied 0_init`, без diff-reconcile — схема Z разделена с `postgres-init.sql`). `bun run prisma:push` (`db push`) — **только** для черновых локальных проб, которые НЕ коммитятся. После любой правки моделей — `bun run prisma:generate`. ENV — только через `TypedConfigService` / `env.schema.ts`, никаких `process.env.*` в коде.
 
 ## Архитектура кода
 
-Корень: `backend/` (NestJS) + `frontend/` (Next.js 14 App Router) + `infra/` (LiveKit/gepa/postgres/loadtest) + `second-brain/` (источник правды) + `plans/` (анализ · архитектура · ТЗ) + `docs/`.
+Корень: `backend/` (NestJS) + `frontend/` (Next.js 16 App Router, React 19, Tailwind 4 — основной кабинет) + `infra/` (LiveKit/gepa/postgres/loadtest) + `second-brain/` (источник правды) + `plans/` (анализ · архитектура · ТЗ) + `docs/`.
+
+Рядом живут три отдельных приложения — **не путать с `frontend/`**:
+- `kora-mobile/` — мобильное приложение (Expo 56 + expo-router). Свои `typecheck` / `lint`, запуск через `expo start`.
+- `kora-landing/kora-landing/` — публичный лендинг (отдельный Next.js, `@react-three/fiber`), вложен на два уровня и имеет **собственный `CLAUDE.md`** — читай его перед правкой лендинга.
+- `deploy/` — nginx-конфиги прода; `scripts/` (корень) — оркестрация локального dev-стека.
 
 **Backend** (`backend/src/`):
 - `main.ts` — HTTP-приложение + BullMQ-воркеры/cron **in-process** (через `WorkersModule` в `AppModule`, поверх Redis); глобальный префикс API `/api/v1`. Отдельного worker-процесса нет.
@@ -104,7 +113,7 @@
 - **knowledge-core — ядро продукта.** Pipeline `ingest → IdeaBlock + Entity → IdeaBlockLink/EntityLink (граф) → Theme (кластеры)`, всё через BullMQ-воркеры и `@Cron`. Карта модулей и потоков: [second-brain/02_architecture/module-map.md](second-brain/02_architecture/module-map.md), детали: [second-brain/02_architecture/knowledge-core.md](second-brain/02_architecture/knowledge-core.md).
 - **Multi-tenancy:** `orgs` + `rbac` (Casbin-совместимый, `policies/policy.csv`). `TenantGuard` достаёт `tenantId` из `X-Org-Id`/`:orgId`. Любой knowledge-запрос требует `tenantId`.
 - **LLM:** `ai/services/llm-router.service.ts` маршрутизирует по `taskType` к провайдерам (фильтр по `dataClass`); промпты редактируются из админки (registry с code-fallback). ASR + Claude — через внутренний proxy.
-- **Данные:** одна Prisma-схема `backend/prisma/schema.prisma` (~1.7к строк, pgvector для embeddings). One-off скрипты — `backend/scripts/*` (seed/patch/smoke/backfill).
+- **Данные:** одна Prisma-схема `backend/prisma/schema.prisma` (~13к строк, pgvector для embeddings) — целиком не читается, ищи модель точечно. One-off скрипты — `backend/scripts/*` (seed/patch/smoke/backfill).
 
 **Frontend** (`frontend/`): слоистая модель **ApiDto → DomainModel → UiModel** (см. skill `frontend-rules`):
 - `src/api/*.api.ts` — вызовы через единый `api-client.ts` (ApiDto); `src/domain/*.ts` — мапперы в DomainModel; `src/ui` — компоненты; `src/contexts` — `auth` / `entitlement` / `toast`; `src/hooks`; data-fetching — SWR.

@@ -296,7 +296,7 @@ export class AutoRuleExtractorService {
   private async upsertRuleEmbedding(ruleId: string, ruleText: string): Promise<void> {
     if (!this.embeddings) return;
     const [vec] = await this.embeddings.embed([ruleText.slice(0, 1000)]);
-    if (!vec || vec.length !== 1536) return;
+    if (!vec || vec.length === 0) return;
     await this.prisma.$executeRawUnsafe(
       `UPDATE "PromptRule" SET "embedding" = $1::vector WHERE id = $2`,
       `[${vec.join(',')}]`,

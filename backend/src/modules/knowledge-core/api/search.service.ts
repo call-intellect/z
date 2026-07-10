@@ -293,12 +293,12 @@ export class SearchService {
     const pWcos = pushParam(args.cosineWeight);
     const pWbm = pushParam(args.bm25Weight);
 
-    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 768;
     const vecLiteral = args.qvec
       ? buildVectorLiteral(args.qvec, expectedDim)
       : { literal: null, rejectReason: null as null | string };
     const cosineSelect = vecLiteral.literal
-      ? `(1 - (b.embedding <=> ${pushParam(vecLiteral.literal)}::vector(1536)))`
+      ? `(1 - (b.embedding <=> ${pushParam(vecLiteral.literal)}::vector))`
       : '0::float';
 
     const filters: string[] = [`b."tenantId" = ${pTenant}`, `b.status = 'canonical'`];
@@ -362,7 +362,7 @@ export class SearchService {
     // graceful degrade: WARN + ветка без cosine (BM25/пустой recall), чтобы
     // pgvector-оператор `<=>` не валил `/search` 500-кой (смена модели → другая
     // размерность; битый вектор → NaN/Infinity).
-    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 768;
     const vecLiteral = args.qvec
       ? buildVectorLiteral(args.qvec, expectedDim)
       : { literal: null, rejectReason: null as null | string };
@@ -377,7 +377,7 @@ export class SearchService {
       );
     }
     const cosineSelect = vecLiteral.literal
-      ? `(1 - (b.embedding <=> ${pushParam(vecLiteral.literal)}::vector(1536)))`
+      ? `(1 - (b.embedding <=> ${pushParam(vecLiteral.literal)}::vector))`
       : '0::float';
 
     const filters: string[] = [`b."tenantId" = ${pTenant}`, `b.status = 'canonical'`];

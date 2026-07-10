@@ -58,6 +58,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.blockIngestWindowOverlapSegments', NON_NEGATIVE_INT],
   ['knowledge.blockIngestGleaningRounds', z.number().int().min(0).max(3)],
   ['knowledge.blockIngestGleaningMinSegments', POSITIVE_INT],
+  ['knowledge.blockIngestResponseMaxTokens', z.number().int().min(1024).max(65536)],
   ['knowledge.skeletonMinSegments', POSITIVE_INT],
   ['knowledge.document_summary_input_chars', z.number().int().min(500).max(60000)],
   ['knowledge.segment_max_tokens', z.number().int().min(200).max(2000)],
@@ -215,6 +216,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['embeddings.dimensions', POSITIVE_INT],
   ['embeddings.fallbackLocalUrl', z.string()],
   ['embeddings.batchSize', POSITIVE_INT],
+  ['embeddings.providerRetryAttempts', z.number().int().min(1).max(5)],
   ['embeddings.chunkTargetTokens', POSITIVE_INT],
   ['embeddings.chunkOverlapTokens', NON_NEGATIVE_INT],
 

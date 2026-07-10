@@ -26,7 +26,7 @@ export class DeepSeekService {
   ) {
     this.client = new OpenAI({
       baseURL: this.cfg.ai.deepseek.baseUrl,
-      apiKey: this.cfg.ai.deepseek.apiKey,
+      apiKey: this.cfg.ai.deepseek.apiKey || 'no-key',
     });
     this.defaultModel = this.cfg.ai.deepseek.defaultModel;
   }

@@ -19,7 +19,7 @@ function makeDeps(overrides: Partial<ReembedDeps> = {}): ReembedDeps {
       meetingDateIso: null,
     })),
     headerEnabled: vi.fn(async () => true),
-    embed: vi.fn(async (texts: string[]) => texts.map(() => Array(1536).fill(0.1))),
+    embed: vi.fn(async (texts: string[]) => texts.map(() => Array(768).fill(0.1))),
     writeBlock: vi.fn(async () => {}),
     reindex: vi.fn(async () => {}),
     ...overrides,

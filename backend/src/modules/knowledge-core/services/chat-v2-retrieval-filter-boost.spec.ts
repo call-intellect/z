@@ -28,7 +28,7 @@ describe('ChatV2RetrievalService — структурный фильтр как 
   });
 
   it('boost-режим + entityIds → boost-SQL (CASE WHEN, ORDER BY score DESC), без WHERE-cutoff по entity', async () => {
-    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0.01));
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(768).fill(0.01));
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1' }, { id: 'b2' }]);
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1', score: 1.2 }]);
     prismaStub.ideaBlockLink.findMany.mockResolvedValue([]);
@@ -60,7 +60,7 @@ describe('ChatV2RetrievalService — структурный фильтр как 
   });
 
   it('hard-режим (filterMode:hard) + entityIds → rankByStructuralFilter (WHERE-cutoff), без CASE WHEN', async () => {
-    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0));
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(768).fill(0));
     prismaStub.ideaBlock.findMany.mockResolvedValueOnce([{ id: 'b1' }, { id: 'b2' }]);
     prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1', score: 0.9 }]);
     prismaStub.ideaBlockLink.findMany.mockResolvedValue([]);

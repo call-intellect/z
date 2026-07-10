@@ -49,7 +49,7 @@ NestJS 10 + Prisma 5 + PostgreSQL + Redis + BullMQ + LiveKit Server SDK + S3 + A
 
 ## ENV / Конфигурация
 
-Все ENV-переменные описаны в `src/common/config/env.schema.ts` (Zod-схема) и читаются через `TypedConfigService`. Шаблон значений — в `../​.env.example` (корневой) и `.env.example` (этот каталог).
+Все ENV-переменные описаны в `src/common/config/env.schema.ts` (Zod-схема) и читаются через `TypedConfigService`. Единый шаблон значений — `../​.env.example` в корне репозитория (`cp ../.env.example ../.env`); никаких локальных `backend/.env`.
 
 Tracker-модуль (Sprint 1):
 
@@ -63,6 +63,6 @@ Tracker-модуль (Sprint 1):
 
 ## Правила
 
-- Только `prisma db push`, никогда `prisma migrate*` — см. `.claude/skills/prisma-db-push-rules`.
+- Prisma — версионируемые миграции: `bun run prisma:migrate -- --name <описание>` → ревью SQL → коммит. `db push` — только для черновых локальных проб. См. правило #6 в `../AGENTS.md`.
 - Все ENV — через `TypedConfigService`, никаких `process.env.*` вне `env.schema.ts`.
 - LiveKit-токены генерирует только backend.

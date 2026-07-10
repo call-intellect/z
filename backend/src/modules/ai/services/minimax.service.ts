@@ -27,8 +27,14 @@ export class MinimaxService {
   }
 
   private buildClient(override: LlmConnectionOverride): Anthropic {
+    if (!override.apiKey) {
+      throw new LlmError(
+        'MiniMax: нет API-ключа в llm_providers — задай его в админке (ENV-фолбэк удалён)',
+        500,
+      );
+    }
     return new Anthropic({
-      apiKey: override.apiKey ?? this.cfg.ai.minimax.apiKey,
+      apiKey: override.apiKey,
       baseURL: override.baseUrl,
     });
   }

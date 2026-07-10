@@ -14,6 +14,7 @@ import {
   type LlmTaskRouteChange,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ALL_LLM_TASK_TYPES, LlmRouterService } from '../../ai/services/llm-router.service';
@@ -86,6 +87,10 @@ export interface TaskTypeRouteView {
   secondary: ProviderInTierView | null;
   tertiary: ProviderInTierView | null;
   chain: ProviderInTierView[];
+  effectivePrimary: {
+    providerName: string;
+    model: string | null;
+  } | null;
 }
 
 export interface TaskTypeMetricsView {
@@ -124,6 +129,9 @@ export class AdminAiModelsService {
     @Optional()
     @Inject(CurrencyRateService)
     private readonly currencyRate?: CurrencyRateService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
 
   async list(filters: { group?: string; search?: string }): Promise<TaskTypeRouteView[]> {
@@ -138,10 +146,12 @@ export class AdminAiModelsService {
       byTask.set(r.taskType, list);
     }
 
+    const defaultChain = await this.readDefaultChain();
+
     const result: TaskTypeRouteView[] = [];
     for (const tt of ALL_LLM_TASK_TYPES) {
       const records = byTask.get(tt) ?? [];
-      const view = this.buildTaskView(tt, records);
+      const view = this.buildTaskView(tt, records, defaultChain);
       if (filters.group && view.group !== filters.group) continue;
       if (filters.search && !tt.toLowerCase().includes(filters.search.toLowerCase())) continue;
       result.push(view);
@@ -155,7 +165,19 @@ export class AdminAiModelsService {
       where: { tenantId: null, taskType, tier: { not: null } },
       orderBy: [{ tier: 'asc' }, { priority: 'asc' }],
     });
-    return this.buildTaskView(taskType, records);
+    const defaultChain = await this.readDefaultChain();
+    return this.buildTaskView(taskType, records, defaultChain);
+  }
+
+  private async readDefaultChain(): Promise<Array<{ provider: string; model?: string | null }>> {
+    const chain = await this.cfg
+      ?.getDynamic<Array<{ provider: string; model?: string | null }>>(
+        'llm.router.defaultChain',
+        undefined,
+        [],
+      )
+      .catch(() => []);
+    return Array.isArray(chain) ? chain : [];
   }
 
   async switchPrimary(
@@ -782,7 +804,11 @@ export class AdminAiModelsService {
     return { experiment: exp, control, variant };
   }
 
-  private buildTaskView(taskType: string, records: LlmTaskRoute[]): TaskTypeRouteView {
+  private buildTaskView(
+    taskType: string,
+    records: LlmTaskRoute[],
+    defaultChain: Array<{ provider: string; model?: string | null }> = [],
+  ): TaskTypeRouteView {
     const group = TASK_TYPE_GROUP[taskType] ?? 'unknown';
     const sorted = records.slice().sort((a, b) => {
       const ta = TIERS_ORDER.indexOf(a.tier as LlmRouteTier);
@@ -799,13 +825,25 @@ export class AdminAiModelsService {
       editedByAdmin: r.editedByAdmin,
     });
     const chain = sorted.map(toView);
+    const primary = chain.find((c) => c.tier === 'primary') ?? null;
+    let effectivePrimary: { providerName: string; model: string | null } | null = null;
+    if (!primary) {
+      const head = defaultChain[0];
+      if (head?.provider) {
+        effectivePrimary = {
+          providerName: head.provider,
+          model: head.model ?? null,
+        };
+      }
+    }
     return {
       taskType,
       group,
-      primary: chain.find((c) => c.tier === 'primary') ?? null,
+      primary,
       secondary: chain.find((c) => c.tier === 'secondary') ?? null,
       tertiary: chain.find((c) => c.tier === 'tertiary') ?? null,
       chain,
+      effectivePrimary,
     };
   }
 

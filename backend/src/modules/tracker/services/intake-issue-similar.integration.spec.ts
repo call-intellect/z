@@ -26,8 +26,8 @@ interface Ctx {
 const ctx: Ctx = { dbReady: false, pgvectorReady: false };
 
 function vecLiteral(head: number[]): string {
-  const dims = new Array<number>(1536).fill(0);
-  for (let i = 0; i < head.length && i < 1536; i += 1) dims[i] = head[i]!;
+  const dims = new Array<number>(768).fill(0);
+  for (let i = 0; i < head.length && i < 768; i += 1) dims[i] = head[i]!;
   return `[${dims.join(',')}]`;
 }
 
@@ -52,7 +52,7 @@ async function seedIntakeIssue(
     },
   });
   await prisma.$executeRawUnsafe(
-    'UPDATE "IntakeIssue" SET embedding = $1::vector(1536) WHERE id = $2 AND "tenantId" = $3',
+    'UPDATE "IntakeIssue" SET embedding = $1::vector WHERE id = $2 AND "tenantId" = $3',
     vecLiteral(args.embeddingHead),
     args.id,
     args.tenantId,

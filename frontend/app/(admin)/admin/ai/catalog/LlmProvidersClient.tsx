@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Info,
@@ -19,12 +20,14 @@ import { toast } from "sonner";
 import { ApiError } from "@/api/api-error";
 import { adminLlmModelsApi } from "@/api/admin-llm-models.api";
 import { adminLlmProvidersApi } from "@/api/admin-llm-providers.api";
+import { adminPricesApi } from "@/api/admin-prices.api";
 import {
   adminLlmProviderFromApi,
   type AdminLlmProviderDomain,
   type CreateLlmProviderRequest,
   type LlmProtocolKind,
   type LlmProviderCapability,
+  type ProviderConnectionMetaApi,
   type RemovalImpactApi,
 } from "@/domain/admin-llm-provider";
 import { Badge } from "@/ui/shadcn/badge";
@@ -69,9 +72,9 @@ import {
 } from "./useCatalogRefresh";
 
 const PROTOCOL_LABELS: Record<LlmProtocolKind, string> = {
-  "openai-chat": "OpenAI Chat Completions",
-  "openai-responses": "OpenAI Responses API",
-  "anthropic-messages": "Anthropic Messages API",
+  "openai-chat": "OpenAI Chat Completions (/v1/chat/completions)",
+  "openai-responses": "OpenAI Responses (/v1/responses)",
+  "anthropic-messages": "Anthropic Messages (/v1/messages)",
   "ollama-native": "Ollama (OpenAI-совместимый)",
   "kie-native": "KIE (мультиформатный: claude-*/gpt-*/gemini-*)",
   "grsai-native": "GRSAI",
@@ -101,6 +104,93 @@ const CAPABILITY_ORDER: LlmProviderCapability[] = [
   "sensitive",
   "private",
 ];
+
+type ProtocolConnectionGuide = {
+  baseUrlPlaceholder: string;
+  baseUrlHint: string;
+  buildRequestUrl: (base: string) => string;
+};
+
+const PROTOCOL_CONNECTION_GUIDES: Record<
+  LlmProtocolKind,
+  ProtocolConnectionGuide
+> = {
+  "openai-chat": {
+    baseUrlPlaceholder: "https://api.openai.com/v1",
+    baseUrlHint: "Адрес до /v1 включительно — путь /chat/completions добавится сам.",
+    buildRequestUrl: (base) => `${base}/chat/completions`,
+  },
+  "openai-responses": {
+    baseUrlPlaceholder: "https://api.openai.com/v1",
+    baseUrlHint: "Адрес до /v1 включительно — путь /responses добавится сам.",
+    buildRequestUrl: (base) => `${base}/responses`,
+  },
+  "anthropic-messages": {
+    baseUrlPlaceholder: "https://api.anthropic.com",
+    baseUrlHint: "Адрес БЕЗ /v1 — путь /v1/messages добавится сам.",
+    buildRequestUrl: (base) => `${base}/v1/messages`,
+  },
+  "ollama-native": {
+    baseUrlPlaceholder: "http://localhost:11434/v1",
+    baseUrlHint: "OpenAI-совместимый адрес до /v1 — путь /chat/completions добавится сам.",
+    buildRequestUrl: (base) => `${base}/chat/completions`,
+  },
+  "kie-native": {
+    baseUrlPlaceholder: "https://api.kie.ai",
+    baseUrlHint: "Корень API — путь /<модель>/v1/… строится по вызываемой модели.",
+    buildRequestUrl: (base) => `${base}/<модель>/v1/chat/completions`,
+  },
+  "grsai-native": {
+    baseUrlPlaceholder: "https://grsaiapi.com",
+    baseUrlHint: "Если адрес без /v1 — система допишет его сама.",
+    buildRequestUrl: (base) =>
+      `${base.endsWith("/v1") ? base : `${base}/v1`}/chat/completions`,
+  },
+  "custom-http": {
+    baseUrlPlaceholder: "https://api.example.com/complete",
+    baseUrlHint: "Запрос уходит ровно на этот адрес, без дополнительных путей.",
+    buildRequestUrl: (base) => base,
+  },
+};
+
+const PROTOCOLS_APPENDING_OWN_PATH = new Set<LlmProtocolKind>([
+  "anthropic-messages",
+  "kie-native",
+]);
+
+const PROXY_ROOT_ROUTE = "__root__";
+
+const PROXY_ROUTE_PRESETS: Array<{
+  label: string;
+  value: string;
+  upstream: string;
+}> = [
+  { label: "OpenAI", value: "", upstream: "https://api.openai.com/v1" },
+  { label: "Anthropic", value: "anthropic", upstream: "https://api.anthropic.com" },
+  { label: "grsai", value: "grsai", upstream: "https://grsaiapi.com" },
+  { label: "KIE", value: "kie", upstream: "https://api.kie.ai" },
+];
+
+function trimTrailingSlashes(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+function proxyRootFromBase(proxyBaseUrl: string): string {
+  return proxyBaseUrl.replace(/\/v1\/?$/, "");
+}
+
+function effectiveProxyBaseUrl(
+  proxyBaseUrl: string,
+  proxyPath: string,
+  protocolKind: LlmProtocolKind,
+): string {
+  const path = proxyPath.trim();
+  const root = proxyRootFromBase(proxyBaseUrl);
+  if (PROTOCOLS_APPENDING_OWN_PATH.has(protocolKind)) {
+    return path ? `${root}/${path}` : root;
+  }
+  return path ? `${root}/${path}/v1` : proxyBaseUrl;
+}
 
 function protocolLabel(kind: string): string {
   return PROTOCOL_LABELS[kind as LlmProtocolKind] ?? kind;
@@ -680,6 +770,55 @@ function ProviderFormDialog({
       : "",
   );
   const [submitting, setSubmitting] = useState(false);
+  const [smokeRunning, setSmokeRunning] = useState(false);
+  const [connectionMeta, setConnectionMeta] =
+    useState<ProviderConnectionMetaApi | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void adminLlmProvidersApi
+      .connectionMeta()
+      .then((m) => {
+        if (!cancelled) setConnectionMeta(m);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const guide = PROTOCOL_CONNECTION_GUIDES[protocolKind];
+  const effectiveBase = useProxy
+    ? connectionMeta?.proxyBaseUrl
+      ? trimTrailingSlashes(
+          effectiveProxyBaseUrl(
+            connectionMeta.proxyBaseUrl,
+            proxyPath,
+            protocolKind,
+          ),
+        )
+      : null
+    : baseUrl.trim()
+      ? trimTrailingSlashes(baseUrl.trim())
+      : null;
+  const requestPreview = effectiveBase
+    ? guide.buildRequestUrl(effectiveBase)
+    : null;
+  const anthropicProxyPathMissing =
+    useProxy &&
+    protocolKind === "anthropic-messages" &&
+    proxyPath.trim().length === 0;
+  const proxyKeyPrefixMask = connectionMeta?.proxyKeyPrefixMask ?? null;
+  const proxyRootLabel = connectionMeta?.proxyBaseUrl
+    ? proxyRootFromBase(connectionMeta.proxyBaseUrl)
+    : "адрес-прокси";
+  const apiKeyHint = useProxy
+    ? `${isEdit ? "Пусто — оставить текущий ключ. " : ""}Сюда — только ключ самого провайдера (например sk-…). Префикс прокси${
+        proxyKeyPrefixMask ? ` «${proxyKeyPrefixMask}»` : ""
+      } вписывать НЕ нужно — система добавит его сама (видно в «Куда пойдёт запрос»).`
+    : isEdit
+      ? "Оставьте пустым, чтобы не менять текущий ключ."
+      : "Необязательно для self-hosted без авторизации (например, Ollama).";
 
   const [discovering, setDiscovering] = useState(false);
   const [discoveredModels, setDiscoveredModels] = useState<Array<{
@@ -690,6 +829,140 @@ function ProviderFormDialog({
     new Set(),
   );
   const [importing, setImporting] = useState(false);
+
+  const [existingModels, setExistingModels] = useState<
+    Array<{ id: string; modelKey: string }>
+  >([]);
+  const [draftModels, setDraftModels] = useState<
+    Array<{
+      key: string;
+      selected: boolean;
+      priceInput: string;
+      priceOutput: string;
+    }>
+  >([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [newModelKey, setNewModelKey] = useState("");
+  const [addingModel, setAddingModel] = useState(false);
+
+  useEffect(() => {
+    if (!provider) return;
+    let cancelled = false;
+    void adminLlmModelsApi
+      .list({ providerId: provider.id, includeInactive: true })
+      .then((res) => {
+        if (!cancelled) {
+          setExistingModels(
+            res.items.map((m) => ({ id: m.id, modelKey: m.modelKey })),
+          );
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  const handleAddModel = async () => {
+    const key = newModelKey.trim();
+    if (!key) return;
+    if (
+      draftModels.some((m) => m.key === key) ||
+      existingModels.some((m) => m.modelKey === key)
+    ) {
+      toast.error("Такая модель уже есть в списке");
+      return;
+    }
+    if (!isEdit || !provider) {
+      setDraftModels((prev) => [
+        ...prev,
+        { key, selected: true, priceInput: "", priceOutput: "" },
+      ]);
+      if (!defaultModelKey.trim()) setDefaultModelKey(key);
+      setNewModelKey("");
+      return;
+    }
+    setAddingModel(true);
+    try {
+      const created = await adminLlmModelsApi.create({
+        providerId: provider.id,
+        modelKey: key,
+        displayName: key,
+        isActive: true,
+      });
+      setExistingModels((prev) => [
+        ...prev,
+        { id: created.id, modelKey: created.modelKey },
+      ]);
+      setNewModelKey("");
+      onModelsImported();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось добавить модель",
+      );
+    } finally {
+      setAddingModel(false);
+    }
+  };
+
+  const handlePreviewDiscover = async () => {
+    if (!useProxy && !baseUrl.trim()) {
+      toast.error("Сначала укажите адрес API (baseUrl)");
+      return;
+    }
+    let parsedHeaders: Record<string, string> | null | undefined;
+    try {
+      parsedHeaders = parseHeaders(headers);
+    } catch {
+      toast.error("Заголовки должны быть валидным JSON-объектом строк");
+      return;
+    }
+    const timeoutMsValue = timeoutMs.trim() ? Number(timeoutMs) : undefined;
+    setPreviewLoading(true);
+    try {
+      const res = await adminLlmProvidersApi.discoverModelsPreview({
+        ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
+        protocolKind,
+        ...(apiKey.length > 0 ? { apiKey } : {}),
+        ...(parsedHeaders ? { defaultHeaders: parsedHeaders } : {}),
+        ...(timeoutMsValue && Number.isInteger(timeoutMsValue) && timeoutMsValue > 0
+          ? { timeoutMs: timeoutMsValue }
+          : {}),
+        ...(useProxy
+          ? { useProxy: true, proxyPath: proxyPath.trim() || null }
+          : {}),
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      setDraftModels((prev) => {
+        const known = new Set(prev.map((m) => m.key));
+        const added = res.models
+          .filter((m) => !known.has(m.id))
+          .map((m) => ({
+            key: m.id,
+            selected: true,
+            priceInput: "",
+            priceOutput: "",
+          }));
+        return [...prev, ...added];
+      });
+      const firstModel = res.models[0]?.id;
+      if (!defaultModelKey.trim() && firstModel) setDefaultModelKey(firstModel);
+      toast.success(
+        `Подключение работает — найдено моделей: ${res.models.length}`,
+      );
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось получить список моделей",
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   const discoveryDisabled = !isEdit || protocolKind === "anthropic-messages";
 
@@ -755,32 +1028,51 @@ function ProviderFormDialog({
     }
   };
 
-  const handleSubmit = async () => {
+  const performSave = async (): Promise<string | null> => {
     if (!isEdit && !/^[a-z0-9-]+$/.test(name)) {
       toast.error("Идентификатор: только строчные латинские буквы, цифры и дефис");
-      return;
+      return null;
     }
     if (!displayName.trim()) {
       toast.error("Укажите отображаемое имя");
-      return;
+      return null;
     }
-    if (!baseUrl.trim()) {
-      toast.error("Укажите адрес API");
-      return;
+    const storedBaseUrl =
+      baseUrl.trim() ||
+      (useProxy
+        ? (PROXY_ROUTE_PRESETS.find((p) => p.value === proxyPath.trim())
+            ?.upstream ??
+          (connectionMeta?.proxyBaseUrl
+            ? trimTrailingSlashes(
+                effectiveProxyBaseUrl(
+                  connectionMeta.proxyBaseUrl,
+                  proxyPath,
+                  protocolKind,
+                ),
+              )
+            : ""))
+        : "");
+    if (!storedBaseUrl) {
+      toast.error(
+        useProxy
+          ? "Не удалось определить адрес провайдера — выберите маршрут на прокси"
+          : "Укажите адрес API провайдера",
+      );
+      return null;
     }
     let parsedHeaders: Record<string, string> | null | undefined;
     try {
       parsedHeaders = parseHeaders(headers);
     } catch {
       toast.error("HTTP-заголовки: некорректный JSON (объект строка→строка)");
-      return;
+      return null;
     }
     let timeoutMsValue: number | null = null;
     if (timeoutMs.trim().length > 0) {
       const t = Number(timeoutMs);
       if (!Number.isInteger(t) || t <= 0) {
         toast.error("Таймаут — целое число мс > 0");
-        return;
+        return null;
       }
       timeoutMsValue = t;
     }
@@ -789,7 +1081,7 @@ function ProviderFormDialog({
       const r = Number(globalRps);
       if (!Number.isInteger(r) || r <= 0) {
         toast.error("Лимит rps — целое число > 0");
-        return;
+        return null;
       }
       globalRpsValue = r;
     }
@@ -798,11 +1090,11 @@ function ProviderFormDialog({
       const c = Number(subscriptionMonthlyCostUsd);
       if (!subscriptionMonthlyCostUsd.trim() || !isFinite(c) || c < 0) {
         toast.error("Сумма подписки в месяц — число ≥ 0");
-        return;
+        return null;
       }
       if (!subscriptionStartedAt) {
         toast.error("Укажите дату начала подписки");
-        return;
+        return null;
       }
       subscriptionMonthlyCostValue = c;
     }
@@ -811,7 +1103,7 @@ function ProviderFormDialog({
     try {
       const commonFields = {
         displayName: displayName.trim(),
-        baseUrl: baseUrl.trim(),
+        baseUrl: storedBaseUrl,
         protocolKind,
         capability,
         isActive,
@@ -834,21 +1126,116 @@ function ProviderFormDialog({
           ...commonFields,
           ...(apiKey.length > 0 ? { apiKey } : {}),
         });
+        return provider.id;
       } else {
+        const toCreate = draftModels.filter((m) => m.selected);
+        for (const m of toCreate) {
+          const hasAnyPrice =
+            m.priceInput.trim().length > 0 || m.priceOutput.trim().length > 0;
+          if (!hasAnyPrice) continue;
+          const inp = Number(m.priceInput);
+          const out = Number(m.priceOutput);
+          if (
+            !m.priceInput.trim() ||
+            !m.priceOutput.trim() ||
+            !isFinite(inp) ||
+            inp < 0 ||
+            !isFinite(out) ||
+            out < 0
+          ) {
+            toast.error(
+              `Цена для ${m.key}: заполните вход И выход числами ≥ 0 (или оставьте оба поля пустыми)`,
+            );
+            return null;
+          }
+        }
         const body: CreateLlmProviderRequest = {
           name,
           ...commonFields,
         };
         if (apiKey.length > 0) body.apiKey = apiKey;
-        await adminLlmProvidersApi.create(body);
+        const created = await adminLlmProvidersApi.create(body);
+        if (toCreate.length > 0) {
+          const failedModels: string[] = [];
+          const failedPrices: string[] = [];
+          for (const m of toCreate) {
+            try {
+              await adminLlmModelsApi.create({
+                providerId: created.id,
+                modelKey: m.key,
+                displayName: m.key,
+                isActive: true,
+              });
+            } catch {
+              failedModels.push(m.key);
+              continue;
+            }
+            if (m.priceInput.trim().length === 0) continue;
+            try {
+              await adminPricesApi.set({
+                provider: name,
+                model: m.key,
+                inputCostPerMillionTokens: Number(m.priceInput),
+                outputCostPerMillionTokens: Number(m.priceOutput),
+              });
+            } catch {
+              failedPrices.push(m.key);
+            }
+          }
+          if (failedModels.length > 0) {
+            toast.error(`Модели не добавлены: ${failedModels.join(", ")}`);
+          }
+          if (failedPrices.length > 0) {
+            toast.error(
+              `Цены не сохранены (задайте во вкладке «Цены»): ${failedPrices.join(", ")}`,
+            );
+          }
+          if (failedModels.length < toCreate.length) {
+            onModelsImported();
+          }
+        }
+        return created.id;
       }
-      toast.success(isEdit ? "Провайдер сохранён" : "Провайдер создан");
-      onSaved();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Не удалось сохранить");
+      return null;
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = async () => {
+    const savedId = await performSave();
+    if (!savedId) return;
+    toast.success(isEdit ? "Провайдер сохранён" : "Провайдер создан");
+    onSaved();
+  };
+
+  const handleSubmitAndSmoke = async () => {
+    const savedId = await performSave();
+    if (!savedId) return;
+    toast.success(isEdit ? "Провайдер сохранён" : "Провайдер создан");
+    setSmokeRunning(true);
+    try {
+      const r = await adminLlmProvidersApi.smokeTest(savedId);
+      if (r.success) {
+        toast.success(
+          `Подключение работает — тестовый вызов прошёл за ${r.durationSeconds.toFixed(2)} с`,
+        );
+      } else {
+        toast.error(
+          `Подключение не работает — ${r.error ?? "неизвестная ошибка"}`,
+        );
+      }
+      notifyCatalogChange("smoke");
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось выполнить проверку подключения",
+      );
+    } finally {
+      setSmokeRunning(false);
+    }
+    onSaved();
   };
 
   return (
@@ -859,8 +1246,9 @@ function ProviderFormDialog({
             {isEdit ? "Редактировать провайдера" : "Новый провайдер LLM"}
           </DialogTitle>
           <DialogDescription>
-            Адрес API и ключ хранятся зашифрованными. Ключ не отображается — при
-            редактировании оставьте поле пустым, чтобы не менять его.
+            Подключение, ключ и модели провайдера. Кнопка «Сохранить и
+            проверить» сразу выполнит тестовый вызов и покажет, работает ли
+            подключение.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -888,22 +1276,22 @@ function ProviderFormDialog({
             />
           </Field>
           <Field
-            label="Адрес API (baseUrl)"
-            tooltip="Базовый адрес API провайдера — куда система отправляет запросы (endpoint)."
-          >
-            <Input
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.example.com/v1"
-            />
-          </Field>
-          <Field
             label="Тип протокола"
-            tooltip="Формат протокола: как система формирует запрос и разбирает ответ этого провайдера (openai-chat / openai-responses / anthropic-messages / ollama-native / kie-native / grsai-native / custom-http)."
+            tooltip="Формат запросов и ответов провайдера. От протокола зависит, какой путь добавится к адресу — итог виден в предпросмотре «Куда пойдёт запрос»."
           >
             <Select
               value={protocolKind}
-              onValueChange={(v) => setProtocolKind(v as LlmProtocolKind)}
+              onValueChange={(v) => {
+                const kind = v as LlmProtocolKind;
+                setProtocolKind(kind);
+                if (
+                  kind === "anthropic-messages" &&
+                  useProxy &&
+                  proxyPath.trim().length === 0
+                ) {
+                  setProxyPath("anthropic");
+                }
+              }}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -916,6 +1304,187 @@ function ProviderFormDialog({
                 ))}
               </SelectContent>
             </Select>
+          </Field>
+          <div className="space-y-3 rounded-md border border-border-subtle p-3">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs">Подключение</Label>
+                <TooltipProvider delayDuration={150}>
+                  <Tooltip>
+                    <TooltipTrigger
+                      type="button"
+                      tabIndex={-1}
+                      className="text-fg-tertiary"
+                    >
+                      <Info size={13} />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      Внутренний прокси задан на сервере (PROXY_BASE_URL /
+                      PROXY_PREFIX) и нужен для провайдеров, недоступных с
+                      сервера напрямую. Пока прокси включён, прямой адрес API
+                      не используется.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <p className="text-[11px] text-fg-tertiary">
+                Как система ходит к API провайдера — напрямую или через
+                внутренний прокси.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-1 rounded-md bg-bg-subtle p-1">
+              <button
+                type="button"
+                onClick={() => setUseProxy(false)}
+                className={
+                  useProxy
+                    ? "rounded px-2 py-1.5 text-xs text-fg-tertiary transition-colors hover:text-fg-primary"
+                    : "rounded border border-border-subtle bg-bg-card px-2 py-1.5 text-xs font-medium text-fg-primary"
+                }
+              >
+                Напрямую
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUseProxy(true);
+                  if (
+                    protocolKind === "anthropic-messages" &&
+                    proxyPath.trim().length === 0
+                  ) {
+                    setProxyPath("anthropic");
+                  }
+                }}
+                className={
+                  useProxy
+                    ? "rounded border border-border-subtle bg-bg-card px-2 py-1.5 text-xs font-medium text-fg-primary"
+                    : "rounded px-2 py-1.5 text-xs text-fg-tertiary transition-colors hover:text-fg-primary"
+                }
+              >
+                Через прокси
+              </button>
+            </div>
+            {useProxy && (
+              <Field
+                label="Провайдер на прокси"
+                tooltip="Технически это слаг пути на прокси (proxyPath): пусто — корневой /v1 (OpenAI), «anthropic» — api.anthropic.com, «grsai» — grsaiapi.com, «kie» — api.kie.ai. Итоговый адрес виден ниже в «Куда пойдёт запрос»."
+              >
+                <Select
+                  value={proxyPath.trim() === "" ? PROXY_ROOT_ROUTE : proxyPath.trim()}
+                  onValueChange={(v) => {
+                    const slug = v === PROXY_ROOT_ROUTE ? "" : v;
+                    setProxyPath(slug);
+                    const preset = PROXY_ROUTE_PRESETS.find(
+                      (p) => p.value === slug,
+                    );
+                    if (preset && !baseUrl.trim()) setBaseUrl(preset.upstream);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROXY_ROUTE_PRESETS.map((p) => (
+                      <SelectItem
+                        key={p.label}
+                        value={p.value === "" ? PROXY_ROOT_ROUTE : p.value}
+                      >
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                    {proxyPath.trim() !== "" &&
+                      !PROXY_ROUTE_PRESETS.some(
+                        (p) => p.value === proxyPath.trim(),
+                      ) && (
+                        <SelectItem value={proxyPath.trim()}>
+                          {proxyPath.trim()} (нестандартный маршрут)
+                        </SelectItem>
+                      )}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+            {!useProxy && (
+              <Field
+                label="Адрес API (baseUrl)"
+                hint={guide.baseUrlHint}
+                tooltip="Базовый адрес API провайдера. Итоговый путь запроса зависит от протокола — см. предпросмотр ниже."
+              >
+                <Input
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={guide.baseUrlPlaceholder}
+                />
+              </Field>
+            )}
+            <div className="space-y-1 rounded-md bg-bg-subtle px-3 py-2">
+              <span className="text-[11px] text-fg-tertiary">
+                Куда пойдёт запрос:
+              </span>
+              {requestPreview ? (
+                <div className="break-all font-mono text-xs text-fg-primary">
+                  POST {requestPreview}
+                </div>
+              ) : (
+                <div className="text-xs text-fg-tertiary">
+                  {useProxy
+                    ? "адрес прокси загружается…"
+                    : "укажите адрес API — здесь появится итоговый URL"}
+                </div>
+              )}
+              {useProxy && (
+                <>
+                  <span className="text-[11px] text-fg-tertiary">
+                    С каким ключом (префикс прокси система добавит сама):
+                  </span>
+                  <div className="break-all font-mono text-xs text-fg-primary">
+                    {protocolKind === "anthropic-messages"
+                      ? "x-api-key:"
+                      : "Authorization: Bearer"}{" "}
+                    {proxyKeyPrefixMask ?? "префикс"}:
+                    {"<ключ из поля «API-ключ»>"}
+                  </div>
+                </>
+              )}
+            </div>
+            {anthropicProxyPathMissing && (
+              <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
+                <AlertTriangle
+                  size={14}
+                  className="mt-0.5 shrink-0 text-warning"
+                />
+                <p className="text-[11px] text-fg-secondary">
+                  Для Anthropic укажите маршрут на прокси (обычно «anthropic»):
+                  корневой маршрут /v1 ведёт на OpenAI, и запрос вернёт 404.
+                  Ключ через прокси уходит в заголовке x-api-key — прокси
+                  должен быть развёрнут с поддержкой anthropic-маршрута.
+                </p>
+              </div>
+            )}
+            {useProxy && (
+              <p className="text-[11px] text-fg-tertiary">
+                Адрес прокси и секретный префикс задаются на сервере бэкенда —
+                ENV PROXY_BASE_URL и PROXY_PREFIX. В этой форме они не хранятся
+                и не редактируются.
+              </p>
+            )}
+          </div>
+          <Field
+            label="API-ключ"
+            hint={apiKeyHint}
+            tooltip="Хранится в зашифрованном виде (AES-256-GCM) и после сохранения не отображается. Можно оставить пустым для self-hosted провайдеров без авторизации (например, Ollama)."
+          >
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={
+                isEdit
+                  ? "оставьте пустым, чтобы не менять"
+                  : "ключ провайдера, например sk-…"
+              }
+              autoComplete="new-password"
+            />
           </Field>
           <Field
             label="Класс данных (capability)"
@@ -937,70 +1506,6 @@ function ProviderFormDialog({
               </SelectContent>
             </Select>
           </Field>
-          <Field
-            label="API-ключ"
-            hint={
-              isEdit
-                ? "Оставьте пустым, чтобы не менять текущий ключ."
-                : "Необязательно для self-hosted без авторизации."
-            }
-            tooltip="Хранится в зашифрованном виде (AES-256-GCM). Можно оставить пустым для self-hosted провайдеров без авторизации (например, Ollama)."
-          >
-            <Input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={isEdit ? "оставьте пустым, чтобы не менять" : ""}
-              autoComplete="new-password"
-            />
-          </Field>
-          <div className="rounded-md border border-border-subtle p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-xs">
-                    {useProxy ? "Через прокси" : "Напрямую"}
-                  </Label>
-                  <TooltipProvider delayDuration={150}>
-                    <Tooltip>
-                      <TooltipTrigger
-                        type="button"
-                        tabIndex={-1}
-                        className="text-fg-tertiary"
-                      >
-                        <Info size={13} />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        Ходить к провайдеру через внутренний прокси: итоговый
-                        адрес строится из PROXY_BASE_URL и пути на прокси, а
-                        ключ передаётся с префиксом PROXY_PREFIX.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <p className="text-[11px] text-fg-tertiary">
-                  Ходить к провайдеру через внутренний прокси вместо прямого
-                  подключения.
-                </p>
-              </div>
-              <Switch checked={useProxy} onCheckedChange={setUseProxy} />
-            </div>
-            {useProxy && (
-              <div className="mt-3">
-                <Field
-                  label="Путь на прокси (proxyPath)"
-                  hint="Слаг пути на прокси, например 'grsai'. Пусто — корневой прокси (для OpenAI)."
-                  tooltip="Слаг пути на прокси — добавляется к адресу прокси, например «grsai» → адрес-прокси/grsai/v1. Пусто — используется корневой upstream-прокси (для OpenAI)."
-                >
-                  <Input
-                    value={proxyPath}
-                    onChange={(e) => setProxyPath(e.target.value)}
-                    placeholder="необязательно"
-                  />
-                </Field>
-              </div>
-            )}
-          </div>
           <div className="grid grid-cols-2 gap-3">
             <Field
               label="Таймаут (мс)"
@@ -1027,82 +1532,278 @@ function ProviderFormDialog({
               />
             </Field>
           </div>
-          <Field
-            label="Модель по умолчанию"
-            hint="Используется, когда модель не задали ни вызов, ни маршрут."
-            tooltip="Модель, которая используется, если ни сам вызов, ни маршрут не указали конкретную модель явно."
-          >
-            <div className="flex gap-2">
-              <Input
-                value={defaultModelKey}
-                onChange={(e) => setDefaultModelKey(e.target.value)}
-                placeholder="например, gpt-5-mini"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={discoveryDisabled || discovering}
-                onClick={() => void handleDiscover()}
-                title={
-                  protocolKind === "anthropic-messages"
-                    ? "Anthropic Messages API не поддерживает автополучение моделей"
-                    : !isEdit
-                      ? "Сначала сохраните провайдера"
+          {isEdit ? (
+            <Field
+              label="Модель по умолчанию"
+              hint="Используется, когда модель не задали ни вызов, ни маршрут."
+              tooltip="Модель, которая используется, если ни сам вызов, ни маршрут не указали конкретную модель явно."
+            >
+              <div className="flex gap-2">
+                <Input
+                  value={defaultModelKey}
+                  onChange={(e) => setDefaultModelKey(e.target.value)}
+                  placeholder="например, gpt-5-mini"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={discoveryDisabled || discovering}
+                  onClick={() => void handleDiscover()}
+                  title={
+                    protocolKind === "anthropic-messages"
+                      ? "Anthropic Messages API не поддерживает автополучение моделей"
                       : undefined
-                }
-              >
-                {discovering ? "Получаем…" : "Получить"}
-              </Button>
-            </div>
-            {discoveredModels && (
-              <div className="mt-2 rounded-md border border-border-subtle p-2">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-fg-tertiary">
-                    Найдено моделей: {discoveredModels.length}. Нажмите на
-                    название, чтобы подставить её как модель по умолчанию.
-                  </span>
+                  }
+                >
+                  {discovering ? "Получаем…" : "Получить"}
+                </Button>
+              </div>
+              {discoveredModels && (
+                <div className="mt-2 rounded-md border border-border-subtle p-2">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-fg-tertiary">
+                      Найдено моделей: {discoveredModels.length}. Нажмите на
+                      название, чтобы подставить её как модель по умолчанию.
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={importing}
+                      onClick={() => void handleImportSelected()}
+                    >
+                      {importing ? "Импортируем…" : "Импортировать выбранные"}
+                    </Button>
+                  </div>
+                  <ul className="max-h-48 space-y-1 overflow-y-auto">
+                    {discoveredModels.map((m) => (
+                      <li key={m.id} className="flex items-center gap-2 text-xs">
+                        <Checkbox
+                          checked={selectedModelIds.has(m.id)}
+                          disabled={m.alreadyInCatalog}
+                          onCheckedChange={(checked) => {
+                            setSelectedModelIds((prev) => {
+                              const next = new Set(prev);
+                              if (checked === true) next.add(m.id);
+                              else next.delete(m.id);
+                              return next;
+                            });
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="truncate font-mono text-fg-primary hover:underline"
+                          onClick={() => setDefaultModelKey(m.id)}
+                        >
+                          {m.id}
+                        </button>
+                        {m.alreadyInCatalog && (
+                          <Badge variant="secondary">уже в каталоге</Badge>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Field>
+          ) : (
+            <Field
+              label="Модели и цены"
+              hint="Кнопка проверит адрес и ключ (GET /models) и получит список моделей — до сохранения провайдера."
+              tooltip="Запрос выполняется с введёнными адресом и ключом — это одновременно проверка подключения. Отмеченные модели будут созданы в каталоге вместе с провайдером; заполненные цены (USD за 1M токенов) сразу попадут в прайс."
+            >
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={
+                    previewLoading ||
+                    protocolKind === "anthropic-messages" ||
+                    (!useProxy && baseUrl.trim().length === 0)
+                  }
+                  onClick={() => void handlePreviewDiscover()}
+                >
+                  {previewLoading
+                    ? "Проверяем подключение…"
+                    : "Получить список доступных моделей"}
+                </Button>
+                {protocolKind === "anthropic-messages" && (
+                  <p className="text-[11px] text-fg-tertiary">
+                    Автополучение моделей для anthropic-messages не
+                    поддерживается — добавьте модели вручную ниже.
+                  </p>
+                )}
+                {draftModels.length > 0 && (
+                  <div className="rounded-md border border-border-subtle p-2">
+                    <div className="mb-1 grid grid-cols-[auto_1fr_90px_90px] items-center gap-2 text-[11px] text-fg-tertiary">
+                      <span className="w-4" />
+                      <span>Модель</span>
+                      <span>Вход $/1M</span>
+                      <span>Выход $/1M</span>
+                    </div>
+                    <div className="max-h-56 space-y-1 overflow-y-auto">
+                      {draftModels.map((m) => (
+                        <div
+                          key={m.key}
+                          className="grid grid-cols-[auto_1fr_90px_90px] items-center gap-2"
+                        >
+                          <Checkbox
+                            checked={m.selected}
+                            onCheckedChange={(checked) =>
+                              setDraftModels((prev) =>
+                                prev.map((x) =>
+                                  x.key === m.key
+                                    ? { ...x, selected: checked === true }
+                                    : x,
+                                ),
+                              )
+                            }
+                          />
+                          <span className="truncate font-mono text-xs text-fg-primary">
+                            {m.key}
+                          </span>
+                          <Input
+                            value={m.priceInput}
+                            disabled={!m.selected}
+                            onChange={(e) =>
+                              setDraftModels((prev) =>
+                                prev.map((x) =>
+                                  x.key === m.key
+                                    ? { ...x, priceInput: e.target.value }
+                                    : x,
+                                ),
+                              )
+                            }
+                            placeholder="—"
+                          />
+                          <Input
+                            value={m.priceOutput}
+                            disabled={!m.selected}
+                            onChange={(e) =>
+                              setDraftModels((prev) =>
+                                prev.map((x) =>
+                                  x.key === m.key
+                                    ? { ...x, priceOutput: e.target.value }
+                                    : x,
+                                ),
+                              )
+                            }
+                            placeholder="—"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Input
+                    value={newModelKey}
+                    onChange={(e) => setNewModelKey(e.target.value)}
+                    placeholder="ключ модели вручную, например MiniMax-M3"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void handleAddModel();
+                      }
+                    }}
+                  />
                   <Button
                     type="button"
                     size="sm"
-                    variant="ghost"
-                    disabled={importing}
-                    onClick={() => void handleImportSelected()}
+                    variant="outline"
+                    disabled={addingModel || newModelKey.trim().length === 0}
+                    onClick={() => void handleAddModel()}
                   >
-                    {importing ? "Импортируем…" : "Импортировать выбранные"}
+                    <Plus size={13} />
+                    Добавить модель
                   </Button>
                 </div>
-                <ul className="max-h-48 space-y-1 overflow-y-auto">
-                  {discoveredModels.map((m) => (
-                    <li key={m.id} className="flex items-center gap-2 text-xs">
-                      <Checkbox
-                        checked={selectedModelIds.has(m.id)}
-                        disabled={m.alreadyInCatalog}
-                        onCheckedChange={(checked) => {
-                          setSelectedModelIds((prev) => {
-                            const next = new Set(prev);
-                            if (checked === true) next.add(m.id);
-                            else next.delete(m.id);
-                            return next;
-                          });
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="truncate font-mono text-fg-primary hover:underline"
-                        onClick={() => setDefaultModelKey(m.id)}
-                      >
-                        {m.id}
-                      </button>
-                      {m.alreadyInCatalog && (
-                        <Badge variant="secondary">уже в каталоге</Badge>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                {draftModels.some((m) => m.selected) && (
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-fg-tertiary">
+                      Модель по умолчанию
+                    </span>
+                    <Select
+                      value={
+                        draftModels.some(
+                          (m) => m.selected && m.key === defaultModelKey,
+                        )
+                          ? defaultModelKey
+                          : ""
+                      }
+                      onValueChange={setDefaultModelKey}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="выберите модель" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {draftModels
+                          .filter((m) => m.selected)
+                          .map((m) => (
+                            <SelectItem key={m.key} value={m.key}>
+                              {m.key}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {draftModels.some((m) => m.selected) && (
+                  <p className="text-[11px] text-fg-tertiary">
+                    Отмеченные модели и заполненные цены будут созданы вместе с
+                    провайдером.
+                  </p>
+                )}
               </div>
-            )}
-          </Field>
+            </Field>
+          )}
+          {isEdit && (
+            <Field
+              label="Модели"
+              hint="Ключ модели — как в API провайдера. Для Anthropic-совместимых автополучение недоступно — добавляйте вручную."
+              tooltip="Модели этого провайдера в каталоге: их можно выбирать в маршрутах задач и заводить на них цены."
+            >
+              <div className="space-y-2">
+                {existingModels.length > 0 && (
+                  <ul className="max-h-40 space-y-1 overflow-y-auto">
+                    {existingModels.map((m) => (
+                      <li key={m.id} className="flex items-center gap-2 text-xs">
+                        <span className="truncate font-mono text-fg-primary">
+                          {m.modelKey}
+                        </span>
+                        <Badge variant="secondary">в каталоге</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex gap-2">
+                  <Input
+                    value={newModelKey}
+                    onChange={(e) => setNewModelKey(e.target.value)}
+                    placeholder="ключ модели, например MiniMax-M3"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void handleAddModel();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={addingModel || newModelKey.trim().length === 0}
+                    onClick={() => void handleAddModel()}
+                  >
+                    <Plus size={13} />
+                    Добавить модель
+                  </Button>
+                </div>
+              </div>
+            </Field>
+          )}
           <Field
             label="Активен"
             tooltip="Определяет, участвует ли провайдер в маршрутизации запросов. Отключённый провайдер не будет выбран для новых вызовов."
@@ -1173,16 +1874,25 @@ function ProviderFormDialog({
             variant="outline"
             size="sm"
             onClick={onClose}
-            disabled={submitting}
+            disabled={submitting || smokeRunning}
           >
             Отмена
           </Button>
           <Button
+            variant="outline"
             size="sm"
             onClick={() => void handleSubmit()}
-            disabled={submitting}
+            disabled={submitting || smokeRunning}
           >
             {submitting ? "Сохраняем…" : "Сохранить"}
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => void handleSubmitAndSmoke()}
+            disabled={submitting || smokeRunning}
+          >
+            <Zap size={13} />
+            {smokeRunning ? "Проверяем…" : "Сохранить и проверить"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -36,6 +36,22 @@ type: architecture
 
 **Обновление 2026-07-02 (унификация phantom-ключей):** вскрыт худший случай рассинхрона — FE-крутилка писала `AdminSetting.key`, которого бэк НЕ читает (39 phantom-ключей: `knowledge.*` snake vs camelCase реестра, 4 cron-крутилки на литерале `@Cron`, мёртвая `betaOps.commitmentFollowupLocalHour`, целая страница `daySignals.*`). Крутилка сохранялась (`set()` для незарегистрированного ключа лишь warn + всё равно пишет строку), но поведение бэка не менялось. Половина TC6 закрыта: **guard-тест `backend/src/modules/admin/settings/admin-setting-fe-keys.guard.spec.ts`** сверяет `feKeys ⊆ registeredSettingKeys()` (fs-скан всех `*SettingsClient.tsx`) и падает на CI при появлении FE-ключа вне реестра. Вторая половина (FE держит свою копию Zod вместо чтения `/schema/:key`) — ИДЕАЛ, ждёт в `04_не-сделано` (TC6-Опция 2). До неё: **при добавлении FE-крутилки ключ обязан быть в `admin-setting-schema-registry.ts`, min/max/int/enum держи в синхроне руками** (FE может быть строже — подмножество безопасно, но не шире реестра).
 
+## Embeddings / pgvector
+
+### EMB1. Размерность вектора в raw SQL не хардкодить: только `::vector`
+
+Миграция `20260709000000_embeddings_dim_768` перевела 27 колонок на `vector(768)`, но по коду остались 53 каста `::vector(1536)` (INSERT/UPDATE и KNN `<=>`) и 3 гейта `length === 1536` (prompt-feedback, autorule, practice-skills). Итог: все записи эмбеддингов молча падали (`22000: expected 1536 dimensions, not 768`) либо пропускались — `IdeaBlock.embedding` оставался NULL при «зелёном» пайплайне. Правила: в raw SQL всегда безразмерный каст `$1::vector` (размерность энфорсит колонка); гейты по длине — `length > 0`; фолбэк ожидаемой размерности — `cfg.ai.embeddings.dimensions` (768), не литерал. Закрыто свипом 2026-07-09 (`fcc595f5`, `332f7324`).
+
+### EMB2. MiniMax `/v1/chat/completions` НЕ принуждает вывод к json_schema
+
+OpenAI-совместимый эндпоинт MiniMax валидирует схему синтаксически (400 на union-типы `type: ['string','null']` — в схемах использовать только `anyOf: [{...}, {type:'null'}]`), но сгенерированный ответ схеме не подчиняется — модель отдаёт собственную структуру в markdown-fence. Structured output у MiniMax работает через **Anthropic-совместимый эндпоинт** `https://api.minimax.io/anthropic`: протокол `anthropic-messages` конвертирует `json_schema` в форс-tool с `input_schema` (`buildAnthropicToolBindings`), ответ — строгий JSON из tool input. Выбор пути — только `llm_providers.protocolKind` в админке, не код.
+
+## Dev-стек
+
+### DEV1. `bun run dev` (scripts/dev.ts) запускает backend БЕЗ `--watch`
+
+`backend/package.json:dev` — это `bun --watch src/main.ts`, но корневой оркестратор `scripts/dev.ts` стартует `bun src/main.ts` без watch: правки backend-кода в работающий стек НЕ подхватываются. После изменения кода — рестарт стека (`pkill -f "bun scripts/dev.ts"` → `bun run dev`). Проверка, что новый код в бою: свежая строка `Nest application successfully started` с новым PID в логе.
+
 ## LiveKit / Egress
 
 ### 1. Egress — потрескивание в записи (Feb 2026)

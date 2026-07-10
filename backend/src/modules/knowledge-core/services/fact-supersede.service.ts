@@ -253,7 +253,7 @@ export class FactSupersedeService {
              ev."sourceTimestamp" AS source_timestamp,
              1 - (b.embedding <=> (
                SELECT embedding FROM "IdeaBlock" WHERE id = $2
-             )::vector(1536)) AS similarity
+             )::vector) AS similarity
       FROM "IdeaBlock" b
       LEFT JOIN LATERAL (
         SELECT e."sourceTimestamp"
@@ -272,7 +272,7 @@ export class FactSupersedeService {
         AND b."mergedIntoId" IS NULL
       ORDER BY b.embedding <=> (
         SELECT embedding FROM "IdeaBlock" WHERE id = $2
-      )::vector(1536)
+      )::vector
       LIMIT $4
       `,
       args.tenantId,

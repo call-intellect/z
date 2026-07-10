@@ -487,7 +487,6 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-backfill-entity-id-person.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-person-relationship.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-backfill-card-versions.ts', skipBootstrap: true },
-  { phase: 'patch', script: 'scripts/backfill-rule-summaries.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-document-use-cases-default.ts', skipBootstrap: true },
   {
     phase: 'patch',
@@ -575,6 +574,12 @@ const STEPS: Step[] = [
     script: 'scripts/patch-llm-routes-analyze-worker-1to1.ts',
     hint: 'форсирует 1:1-легаси-совместимую цепочку (deepseek-v4-pro→minimax→openai-via-proxy gpt-5-mini) для summary/report-by-type/follow-up/custom-prompt/client-meeting-split — миграция analyze.worker на LlmRouterService (ТЗ 2026-07-03), временно, до отдельного решения владельца об экономии на дешёвых моделях',
     skipBootstrap: true,
+    everyDeploy: true,
+  },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-llm-provider-keys-from-env.ts',
+    hint: 'переносит API-ключи провайдеров из ENV в llm_providers.apiKeyEncrypted (AES-256-GCM), только где пусто — после удаления legacy ENV-пути диспатча (ChatBox 1748fe82) deepseek/grsai/ollama без DB-ключа не работают; openai-via-proxy переносится составным ключом PROXY_PREFIX:OPENAI_API_KEY',
     everyDeploy: true,
   },
   {
@@ -1246,6 +1251,87 @@ async function ensureBaseline(): Promise<boolean> {
   return true;
 }
 
+const EMBEDDINGS_768_MIGRATION = '20260709000000_embeddings_dim_768';
+
+const EMBED_BACKFILL_DEPLOY_MAX_ROWS = Number(
+  process.env['DEPLOY_EMBED_BACKFILL_MAX_ROWS'] ?? 500,
+);
+
+async function embedBackfillFitsDeploy(): Promise<boolean> {
+  const url = process.env['DATABASE_URL'];
+  if (!url) return true;
+  const missing = await psqlScalar(
+    url,
+    'SELECT (SELECT count(*) FROM "IdeaBlock" WHERE embedding IS NULL) + ' +
+      '(SELECT count(*) FROM "Entity" WHERE embedding IS NULL) + ' +
+      '(SELECT count(*) FROM "SourceEpisode" WHERE embedding IS NULL) + ' +
+      '(SELECT count(*) FROM "Issue" WHERE embedding IS NULL)',
+  );
+  if (missing === null) return true;
+  const count = Number(missing);
+  if (!Number.isFinite(count) || count <= EMBED_BACKFILL_DEPLOY_MAX_ROWS) return true;
+  // eslint-disable-next-line no-console
+  console.log(
+    `\n>>> [schema] backfill-embeddings-gemma-768 ПРОПУЩЕН: пустых эмбеддингов ~${count} ` +
+      `(> ${EMBED_BACKFILL_DEPLOY_MAX_ROWS}) — в деплой с таймаутом ${Math.round(DEFAULT_STEP_TIMEOUT_MS / 1000)}s не влезет. ` +
+      `Прогони вручную до конца: docker compose exec backend bun run scripts/backfill-embeddings-gemma-768.ts ` +
+      `(идемпотентен); малый хвост деплой докатит сам.`,
+  );
+  return false;
+}
+
+async function ensureEmbeddings768Resolved(): Promise<boolean> {
+  const url = process.env['DATABASE_URL'];
+  if (!url) return true;
+  const recorded = await psqlScalar(
+    url,
+    `SELECT count(*) FROM public._prisma_migrations WHERE migration_name = '${EMBEDDINGS_768_MIGRATION}'`,
+  );
+  if (recorded === null || recorded !== '0') return true;
+  const dim = await psqlScalar(
+    url,
+    "SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a " +
+      'JOIN pg_class c ON a.attrelid = c.oid JOIN pg_namespace n ON c.relnamespace = n.oid ' +
+      "WHERE n.nspname = 'public' AND c.relname = 'IdeaBlock' AND a.attname = 'embedding'",
+  );
+  if (dim !== 'vector(768)') return true;
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `\n>>> [schema] колонки уже vector(768) (переведены скриптом до появления миграции), ` +
+      `${EMBEDDINGS_768_MIGRATION} не записана → resolve --applied. ` +
+      `Повторный ALTER ... USING NULL стёр бы уже набитый backfill эмбеддингов.`,
+  );
+  const resolve = Bun.spawn(
+    ['bunx', 'prisma', 'migrate', 'resolve', '--applied', EMBEDDINGS_768_MIGRATION],
+    {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: { ...process.env, DATABASE_URL: withPublicSearchPath(url) },
+    },
+  );
+  const out =
+    (await new Response(resolve.stdout).text()) + (await new Response(resolve.stderr).text());
+  // eslint-disable-next-line no-console
+  console.log(out.trim());
+  if ((await resolve.exited) !== 0) {
+    if (/P3008|already recorded as applied/i.test(out)) {
+      // eslint-disable-next-line no-console
+      console.log(`[schema] ${EMBEDDINGS_768_MIGRATION} уже отмечена applied (P3008) — продолжаем.`);
+      return true;
+    }
+    // eslint-disable-next-line no-console
+    console.error(
+      `[schema] ✗ resolve --applied ${EMBEDDINGS_768_MIGRATION} упал — останавливаемся, ` +
+        `иначе migrate deploy повторно обнулит embeddings.`,
+    );
+    return false;
+  }
+  // eslint-disable-next-line no-console
+  console.log(`[schema] ✓ ${EMBEDDINGS_768_MIGRATION} отмечена applied без выполнения.`);
+  return true;
+}
+
 async function runSchemaPhase(
   dryRun: boolean,
   continueOnFail: boolean,
@@ -1273,17 +1359,20 @@ async function runSchemaPhase(
   }
 
   if (!(await ensureBaseline())) return false;
+  if (!(await ensureEmbeddings768Resolved())) return false;
 
   const preMigrate: Step[] = [
     { phase: 'migrate', script: 'scripts/migrate-task-to-issue.ts', args: ['--apply'] },
     { phase: 'backfill', script: 'scripts/backfill-collapse-legacy-task-duplicates.ts', args: ['--apply'] },
-    {
+  ];
+  if (await embedBackfillFitsDeploy()) {
+    preMigrate.push({
       phase: 'backfill',
       script: 'scripts/backfill-embeddings-gemma-768.ts',
-      hint: 'embeddinggemma 768 dim (TZ 2026-06-30) — после миграции vector(1536)→vector(768) обнуляет все эмбеддинги; backfill через LocalEmbeddingService. Идемпотентно (WHERE embedding IS NULL)',
+      hint: 'embeddinggemma 768 dim (TZ 2026-06-30) — хвост пустых эмбеддингов после миграции vector(1536)→vector(768). Идемпотентно (WHERE embedding IS NULL)',
       skipBootstrap: true,
-    },
-  ];
+    });
+  }
   for (const s of preMigrate) {
     const r = await runOne(s, false, verbose);
     if (!r.ok && !continueOnFail) return false;

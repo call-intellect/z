@@ -232,13 +232,13 @@ export class SkillRoutingService {
       `
       SELECT sp."personId" AS "personId",
              st.statement AS statement,
-             (1 - (st.embedding <=> $1::vector(1536))) AS similarity
+             (1 - (st.embedding <=> $1::vector)) AS similarity
       FROM "skill_traits" st
       JOIN "skill_profiles" sp ON sp.id = st."profileId"
       WHERE sp."tenantId" = $2
         AND st.status = 'active'
         AND st.embedding IS NOT NULL
-      ORDER BY st.embedding <=> $1::vector(1536) ASC
+      ORDER BY st.embedding <=> $1::vector ASC
       LIMIT $3
       `,
       vecLiteral,

@@ -135,6 +135,25 @@ export type DiscoverModelsResultApi =
   | { ok: true; models: Array<{ id: string; alreadyInCatalog: boolean }> }
   | { ok: false; error: string };
 
+export type DiscoverModelsPreviewRequest = {
+  baseUrl?: string;
+  protocolKind: string;
+  apiKey?: string;
+  defaultHeaders?: Record<string, string>;
+  timeoutMs?: number;
+  useProxy?: boolean;
+  proxyPath?: string | null;
+};
+
+export type ProviderConnectionMetaApi = {
+  proxyBaseUrl: string | null;
+  proxyKeyPrefixMask: string | null;
+};
+
+export type DiscoverModelsPreviewResultApi =
+  | { ok: true; models: Array<{ id: string }> }
+  | { ok: false; error: string };
+
 export type RemovalImpactApi = {
   providerName: string;
   isDefault: boolean;

@@ -95,7 +95,7 @@ function makePrisma(args?: { knnIds?: string[]; skills?: PracticeSkill[] }): Moc
 
 describe('PracticeSkillRetrievalService', () => {
   it('1) enabled=false → возвращает [] без embed-вызовов', async () => {
-    const embedder = makeEmbedder(new Array(1536).fill(0.01));
+    const embedder = makeEmbedder(new Array(768).fill(0.01));
     const prisma = makePrisma();
     const svc = new PracticeSkillRetrievalService(
       prisma as unknown as PrismaService,
@@ -115,7 +115,7 @@ describe('PracticeSkillRetrievalService', () => {
   });
 
   it('2) KNN ничего не нашёл → []', async () => {
-    const embedder = makeEmbedder(new Array(1536).fill(0.01));
+    const embedder = makeEmbedder(new Array(768).fill(0.01));
     const prisma = makePrisma({ knnIds: [], skills: [] });
     const svc = new PracticeSkillRetrievalService(
       prisma as unknown as PrismaService,
@@ -155,7 +155,7 @@ describe('PracticeSkillRetrievalService', () => {
   });
 
   it('2-G2b) вектор с NaN → [] (KNN SQL не вызван, не 500)', async () => {
-    const bad = new Array(1536).fill(0.01);
+    const bad = new Array(768).fill(0.01);
     bad[7] = Number.NaN;
     const embedder = makeEmbedder(bad);
     const prisma = makePrisma({ knnIds: ['s1'], skills: [skill('s1')] });
@@ -178,7 +178,7 @@ describe('PracticeSkillRetrievalService', () => {
 
   it('3) active skill → всегда включается', async () => {
     const s = skill('s1', { status: 'active', trafficShare: 0.0 });
-    const embedder = makeEmbedder(new Array(1536).fill(0.01));
+    const embedder = makeEmbedder(new Array(768).fill(0.01));
     const prisma = makePrisma({ knnIds: ['s1'], skills: [s] });
     const metrics = makeMetrics();
     const svc = new PracticeSkillRetrievalService(
@@ -202,7 +202,7 @@ describe('PracticeSkillRetrievalService', () => {
 
   it('4) shadow + trafficShare=1.0 → всегда включается', async () => {
     const s = skill('s1', { status: 'shadow', trafficShare: 1.0 });
-    const embedder = makeEmbedder(new Array(1536).fill(0.01));
+    const embedder = makeEmbedder(new Array(768).fill(0.01));
     const prisma = makePrisma({ knnIds: ['s1'], skills: [s] });
     const svc = new PracticeSkillRetrievalService(
       prisma as unknown as PrismaService,
@@ -222,7 +222,7 @@ describe('PracticeSkillRetrievalService', () => {
 
   it('5) shadow + trafficShare=0.0 → исключается', async () => {
     const s = skill('s1', { status: 'shadow', trafficShare: 0.0 });
-    const embedder = makeEmbedder(new Array(1536).fill(0.01));
+    const embedder = makeEmbedder(new Array(768).fill(0.01));
     const prisma = makePrisma({ knnIds: ['s1'], skills: [s] });
     const svc = new PracticeSkillRetrievalService(
       prisma as unknown as PrismaService,
@@ -243,7 +243,7 @@ describe('PracticeSkillRetrievalService', () => {
   it('6) pinned выходит в начало', async () => {
     const s1 = skill('s1', { status: 'active', pinned: false });
     const s2 = skill('s2', { status: 'active', pinned: true });
-    const embedder = makeEmbedder(new Array(1536).fill(0.01));
+    const embedder = makeEmbedder(new Array(768).fill(0.01));
     const prisma = makePrisma({
       knnIds: ['s1', 's2'],
       skills: [s1, s2],

@@ -7,6 +7,10 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { CompanyCapsuleService } from '../../ai/services/company-capsule.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
+  LlmRouterDefaultChainInvalidError,
+  NoEligibleProviderError,
+} from '../../ai/services/llm-router.service';
+import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
@@ -596,6 +600,7 @@ export class BlockExtractionService {
         tenantId: args.tenantId,
         systemPrompt: guardedSystem,
         userMessage: guardedUser,
+        maxTokens: this.cfg.knowledgeCore.blockIngestResponseMaxTokens,
         responseFormat: {
           type: 'json_schema',
           name: 'IdeaBlocks',
@@ -618,12 +623,26 @@ export class BlockExtractionService {
           'block-ingest: invalid JSON по схеме, повтор',
         );
       } catch (err) {
+        // Конфигурационные ошибки (нет провайдеров в БД, defaultChain не настроена,
+        // реестр выключен) — пробрасываем наверх БЕЗ внутреннего retry-цикла (2
+        // попытки тут бесполезны: конфиг не изменится). Worker увидит реальную
+        // ошибку и поставит RawEvent в 'deferred' для re-enqueue после появления
+        // провайдеров.
+        const message = err instanceof Error ? err.message : String(err);
+        if (
+          err instanceof NoEligibleProviderError ||
+          err instanceof LlmRouterDefaultChainInvalidError ||
+          message.includes('реестр протокольных адаптеров выключен') ||
+          message.includes('не найден в llm_providers')
+        ) {
+          throw err;
+        }
         this.logger.warn(
           {
             rawEventId: args.rawEventId,
             windowIndex: args.windowIndex,
             attempt,
-            err: err instanceof Error ? err.message : String(err),
+            err: message,
           },
           'block-ingest: LLM call упал, повтор',
         );

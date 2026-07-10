@@ -22,7 +22,6 @@ export class RecordingsController {
   constructor(@Inject(RecordingsService) private readonly recordings: RecordingsService) {}
 
   @Post('start')
-  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async start(
     @Param('id') meetingId: string,
@@ -33,7 +32,6 @@ export class RecordingsController {
   }
 
   @Post('stop')
-  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async stop(
     @Param('id') meetingId: string,

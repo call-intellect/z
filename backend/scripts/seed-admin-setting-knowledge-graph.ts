@@ -17,6 +17,15 @@ interface SettingSeed {
 
 const SEEDS: SettingSeed[] = [
   {
+    key: 'knowledge.blockIngestResponseMaxTokens',
+    value: 8192,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Лимит токенов ответа LLM на одно окно block-ingest (extraction блоков знания). У размышляющих моделей thinking входит в этот бюджет: слишком маленький лимит обрезает JSON и окно теряется. По умолчанию 8192.',
+  },
+  {
     key: 'knowledge.segment_max_tokens',
     value: 600,
     category: 'ai',

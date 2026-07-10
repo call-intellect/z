@@ -125,7 +125,7 @@ export class IssueEmbedWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.prisma.$executeRawUnsafe(
-      'UPDATE "Issue" SET embedding = $1::vector(1536), "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
+      'UPDATE "Issue" SET embedding = $1::vector, "embeddingHash" = $2 WHERE id = $3 AND "tenantId" = $4',
       toVectorLiteral(vector),
       newHash,
       issueId,

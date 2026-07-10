@@ -9,15 +9,23 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
         "additionalProperties": false,
         "properties": {
           "commitmentDueDateGuess": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "commitmentRecipientNameGuess": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "confidence": {
@@ -106,24 +114,31 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "string",
           },
           "roleHint": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "role_relevant": {
             "type": "boolean",
           },
           "sideHint": {
-            "enum": [
-              "our",
-              "client",
-              "unknown",
-              null,
-            ],
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "enum": [
+                  "our",
+                  "client",
+                  "unknown",
+                ],
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "signalType": {
@@ -229,11 +244,15 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
           "type": "integer",
         },
         "speakerCoveragePercent": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": [
-            "number",
-            "null",
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number",
+            },
+            {
+              "type": "null",
+            },
           ],
         },
         "transcriptTruncated": {
@@ -257,28 +276,44 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "number",
           },
           "decidedAt": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "decidedByPersonHint": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "rationale": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "sourceBlockIndex": {
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null",
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "text": {
@@ -343,9 +378,13 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "number",
           },
           "description": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "name": {
@@ -353,16 +392,24 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "string",
           },
           "sourceBlockIndex": {
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null",
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "target": {
-            "type": [
-              "number",
-              "null",
+            "anyOf": [
+              {
+                "type": "number",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "unit": {
@@ -419,10 +466,14 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "string",
           },
           "sourceBlockIndex": {
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null",
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
         },
@@ -447,9 +498,13 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "number",
           },
           "description": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "name": {
@@ -457,22 +512,34 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "string",
           },
           "ownerRoleHint": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "sourceBlockIndex": {
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null",
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "triggerDescription": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
         },
@@ -509,10 +576,14 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "string",
           },
           "sourceBlockIndex": {
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null",
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
         },
@@ -540,9 +611,13 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "number",
           },
           "externalUrl": {
-            "type": [
-              "string",
-              "null",
+            "anyOf": [
+              {
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
           "kind": {
@@ -561,10 +636,14 @@ exports[`block-ingest — snapshot сборки промта > JSON Schema ст�
             "type": "string",
           },
           "sourceBlockIndex": {
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null",
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer",
+              },
+              {
+                "type": "null",
+              },
             ],
           },
         },

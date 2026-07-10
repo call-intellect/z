@@ -5,17 +5,34 @@ import type { BusinessMetricsService } from '../../../common/metrics/business-me
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import type { AiUsageLogService } from './ai-usage-log.service';
-import type { AnthropicService } from './anthropic.service';
 import { buildSystemBlocks, buildUserContent } from './anthropic.service';
 import type { DeepSeekService } from './deepseek.service';
-import type { GrsaiService } from './grsai.service';
-import type { KieService } from './kie.service';
 import { LlmFallbackService } from './llm-fallback.service';
 import { LlmRouterService, type LlmTaskType } from './llm-router.service';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import type { MinimaxService } from './minimax.service';
-import type { OllamaService } from './ollama.service';
 import type { OpenAiProxyService } from './openai-proxy.service';
+import type { LlmProtocolAdapterRegistry } from './protocol-adapter/llm-protocol-adapter.registry';
+import type { ProviderInfoResolver } from './protocol-adapter/provider-info.resolver';
+
+function makeRegistryHarness(complete: (input: LlmCompleteInput) => Promise<LlmCompleteOutput>) {
+  const adapter = {
+    complete: vi.fn(async ({ input }: { input: LlmCompleteInput }) => complete(input)),
+  };
+  const registry = { resolve: () => adapter } as unknown as LlmProtocolAdapterRegistry;
+  const providerInfo = {
+    resolveByName: vi.fn(async (name: string) => ({
+      info: { name, baseUrl: 'https://test.local', apiKey: 'k' },
+      protocolKind: 'anthropic-messages' as const,
+    })),
+  } as unknown as ProviderInfoResolver;
+  const cfg = {
+    budget: { useProtocolAdapterRegistry: true },
+    llmRouter: { dispatchTimeoutMs: 300_000 },
+    getDynamic: vi.fn(async (_key: string, _env: unknown, def: unknown) => def),
+  } as unknown as TypedConfigService;
+  return { adapter, registry, providerInfo, cfg };
+}
 
 describe('prompt caching: buildUserContent / buildSystemBlocks', () => {
   it('buildUserContent: string → string (legacy)', () => {
@@ -62,7 +79,7 @@ describe('prompt caching: buildUserContent / buildSystemBlocks', () => {
 describe('LlmRouterService.dispatch: cacheControl на system всегда выставляется', () => {
   it('даже если caller передал systemPrompt как строку — провайдер получает {cacheControl: "ephemeral"}', async () => {
     let capturedInput: LlmCompleteInput | null = null;
-    const anthropicComplete = vi.fn(async (input: LlmCompleteInput) => {
+    const { adapter, registry, providerInfo, cfg } = makeRegistryHarness(async (input) => {
       capturedInput = input;
       return {
         text: 'ok',
@@ -96,6 +113,10 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
       },
       llmModelPrice: { findFirst: vi.fn(async () => null) },
       llmModelExperiment: { findMany: vi.fn(async () => []) },
+      llmProvider: {
+        findMany: vi.fn(async () => [{ name: 'anthropic' }]),
+        count: vi.fn(async () => 1),
+      },
     } as unknown as PrismaService;
 
     const usageRecord = vi.fn();
@@ -105,18 +126,7 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
       incCoreLlmNoProvider: vi.fn(),
     } as unknown as BusinessMetricsService;
 
-    const router = new LlmRouterService(
-      prisma,
-      { complete: anthropicComplete } as unknown as AnthropicService,
-      { complete: vi.fn() } as unknown as MinimaxService,
-      { complete: vi.fn() } as unknown as OpenAiProxyService,
-      { complete: vi.fn() } as unknown as DeepSeekService,
-      { complete: vi.fn() } as unknown as OllamaService,
-      { complete: vi.fn() } as unknown as KieService,
-      { complete: vi.fn() } as unknown as GrsaiService,
-      usage,
-      metrics,
-    );
+    const router = new LlmRouterService(prisma, usage, metrics, cfg, registry, providerInfo);
     await router.refreshCache();
 
     await router.call({
@@ -126,14 +136,14 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
       tenantId: null,
     });
 
-    expect(anthropicComplete).toHaveBeenCalledOnce();
+    expect(adapter.complete).toHaveBeenCalledOnce();
     expect(capturedInput).not.toBeNull();
     expect(capturedInput!.system.cacheControl).toBe('ephemeral');
   });
 
   it('cachedTokens и cacheCreationTokens пробрасываются в AiUsageLogService.record', async () => {
     const usageRecord = vi.fn();
-    const anthropicComplete = vi.fn(async () => ({
+    const { registry, providerInfo, cfg } = makeRegistryHarness(async () => ({
       text: 'ok',
       inputTokens: 1000,
       outputTokens: 100,
@@ -164,22 +174,22 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
       },
       llmModelPrice: { findFirst: vi.fn(async () => null) },
       llmModelExperiment: { findMany: vi.fn(async () => []) },
+      llmProvider: {
+        findMany: vi.fn(async () => [{ name: 'anthropic' }]),
+        count: vi.fn(async () => 1),
+      },
     } as unknown as PrismaService;
 
     const router = new LlmRouterService(
       prisma,
-      { complete: anthropicComplete } as unknown as AnthropicService,
-      { complete: vi.fn() } as unknown as MinimaxService,
-      { complete: vi.fn() } as unknown as OpenAiProxyService,
-      { complete: vi.fn() } as unknown as DeepSeekService,
-      { complete: vi.fn() } as unknown as OllamaService,
-      { complete: vi.fn() } as unknown as KieService,
-      { complete: vi.fn() } as unknown as GrsaiService,
       { record: usageRecord } as unknown as AiUsageLogService,
       {
         incLlmRouterDispatch: vi.fn(),
         incCoreLlmNoProvider: vi.fn(),
       } as unknown as BusinessMetricsService,
+      cfg,
+      registry,
+      providerInfo,
     );
     await router.refreshCache();
 

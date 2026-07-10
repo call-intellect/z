@@ -17,7 +17,6 @@ import type { BusinessMetricsService } from '../../src/common/metrics/business-m
 import type { PrismaService } from '../../src/common/prisma/prisma.service';
 import type { AiUsageLogService } from '../../src/modules/ai/services/ai-usage-log.service';
 import type { AnthropicService } from '../../src/modules/ai/services/anthropic.service';
-import type { DeepSeekService } from '../../src/modules/ai/services/deepseek.service';
 import type { GrsaiService } from '../../src/modules/ai/services/grsai.service';
 import type { KieService } from '../../src/modules/ai/services/kie.service';
 import { LlmRouterService, type LlmTaskType } from '../../src/modules/ai/services/llm-router.service';
@@ -107,7 +106,6 @@ describe('LlmProvider из БД с реальным шифрованием → L
     const anthropicSvc = { complete: vi.fn() } as unknown as AnthropicService;
     const minimaxSvc = { complete: vi.fn() } as unknown as MinimaxService;
     const openaiSvc = { complete: vi.fn() } as unknown as OpenAiProxyService;
-    const deepseekSvc = { complete: vi.fn() } as unknown as DeepSeekService;
     const ollamaSvc = { complete: vi.fn() } as unknown as OllamaService;
     const kieSvc = { complete: vi.fn() } as unknown as KieService;
     const grsaiSvc = { complete: vi.fn() } as unknown as GrsaiService;
@@ -147,7 +145,11 @@ describe('LlmProvider из БД с реальным шифрованием → L
       },
       llmModelPrice: { findFirst: vi.fn(async () => null) },
       llmModelExperiment: { findMany: vi.fn(async () => []) },
-      llmProvider: { findUnique },
+      llmProvider: {
+        findUnique,
+        findMany: vi.fn(async () => [{ name: 'deepseek' }]),
+        count: vi.fn(async () => 1),
+      },
     } as unknown as PrismaService;
 
     const usageRecord = vi.fn();
@@ -164,13 +166,6 @@ describe('LlmProvider из БД с реальным шифрованием → L
 
     const router = new LlmRouterService(
       prismaForRouter,
-      anthropicSvc,
-      minimaxSvc,
-      openaiSvc,
-      deepseekSvc,
-      ollamaSvc,
-      kieSvc,
-      grsaiSvc,
       usage,
       metrics,
       cfgForRouter,
@@ -187,10 +182,6 @@ describe('LlmProvider из БД с реальным шифрованием → L
       taskType: 'chat-v2' as LlmTaskType,
     });
 
-    // Легаси DeepSeekService НЕ вызван — openai-chat адаптер строит клиент сам.
-    expect(deepseekSvc.complete).not.toHaveBeenCalled();
-
-    // Реально расшифрованный ключ и DB baseUrl дошли до HTTP-клиента — не ENV.
     const ctorOpts = captured.opts as { baseURL?: string; apiKey?: string } | null;
     if (ctorOpts === null) throw new Error('OpenAI-клиент не был сконструирован');
     expect(ctorOpts.apiKey).toBe(plaintextApiKey);

@@ -79,7 +79,7 @@ const S3Schema = z.object({
 });
 
 const AnthropicSchema = z.object({
-  ANTHROPIC_API_KEY: z.string().min(1),
+  ANTHROPIC_API_KEY: z.string().default(''),
   ANTHROPIC_MODEL: z.string().min(1).default('claude-sonnet-4-6'),
   ANTHROPIC_USE_PROXY: zBool(false),
   ANTHROPIC_PROXY_URL: z.string().url().default('https://proxy.agent-lia.ru'),
@@ -92,7 +92,7 @@ const LlmRouterSchema = z.object({
 
 const VoxSchema = z.object({
   VOX_API_URL: z.string().url().default('https://vox.agent-lia.ru'),
-  VOX_API_TOKEN: z.string().min(1),
+  VOX_API_TOKEN: z.string().default(''),
   VOX_MODEL: z.string().min(1).default('v3_rnnt'),
   VOX_LANGUAGE: z.string().min(1).default('ru'),
   VOX_PUNCTUATION_MODE: z.string().min(1).default('pro'),
@@ -101,12 +101,12 @@ const VoxSchema = z.object({
 });
 
 const OpenAiSchema = z.object({
-  OPENAI_API_KEY: z.string().min(1),
+  OPENAI_API_KEY: z.string().default(''),
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
 });
 
 const DeepSeekSchema = z.object({
-  DEEPSEEK_API_KEY: z.string().min(1),
+  DEEPSEEK_API_KEY: z.string().default(''),
   DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com/v1'),
   DEEPSEEK_DEFAULT_MODEL: z.string().min(1).default('deepseek-v4-flash'),
   LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(false),
@@ -118,17 +118,17 @@ const OllamaSchema = z.object({
 });
 
 const MiniMaxSchema = z.object({
-  MINIMAX_API_KEY: z.string().min(1),
+  MINIMAX_API_KEY: z.string().default(''),
   MINIMAX_BASE_URL: z.string().url().default('https://api.minimax.io/anthropic'),
 });
 
 const GrsAiSchema = z.object({
-  GRSAI_API_KEY: z.string().min(1),
+  GRSAI_API_KEY: z.string().default(''),
   GRSAI_BASE_URL: z.string().url().default('https://grsaiapi.com'),
 });
 
 const KieSchema = z.object({
-  KIE_API_KEY: z.string().min(1),
+  KIE_API_KEY: z.string().default(''),
   KIE_BASE_URL: z.string().url().default('https://api.kie.ai'),
 });
 
@@ -140,12 +140,15 @@ const ProxySchema = z.object({
 const EmbeddingsSchema = z.object({
   EMBEDDING_PROVIDER: z
     .enum(['openai-via-proxy', 'local', 'openai-direct'])
-    .default('openai-via-proxy'),
-  EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
-  EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1536),
+    .default('local'),
+  EMBEDDING_MODEL: z.string().min(1).default('embeddinggemma:latest'),
+  EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(768),
   OPENAI_PROXY_API_KEY: z.string().optional(),
   OPENAI_PROXY_EMBEDDINGS_URL: z.string().url().default('https://proxy.agent-lia.ru/v1/embeddings'),
-  EMBEDDING_FALLBACK_LOCAL_URL: z.string().url().optional(),
+  EMBEDDING_FALLBACK_LOCAL_URL: z
+    .string()
+    .url()
+    .default('https://llm.korateam.ru/v1'),
   EMBEDDING_LOCAL_API_KEY: z.string().optional(),
   EMBEDDING_BATCH_SIZE: z.coerce.number().int().positive().default(100),
   EMBEDDING_CHUNK_TARGET_TOKENS: z.coerce.number().int().positive().default(400),

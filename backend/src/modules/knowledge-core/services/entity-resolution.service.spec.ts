@@ -33,9 +33,9 @@ beforeAll(async () => {
 
   const embed = {
     embedEntityNames: vi.fn(async (names: string[]) =>
-      names.map(() => new Array<number>(1536).fill(0)),
+      names.map(() => new Array<number>(768).fill(0)),
     ),
-    embedQuery: vi.fn(async () => new Array<number>(1536).fill(0)),
+    embedQuery: vi.fn(async () => new Array<number>(768).fill(0)),
   } as unknown as KnowledgeEmbeddingService;
 
   ctx.svc = new EntityResolutionService(prisma as unknown as PrismaService, embed);
@@ -603,7 +603,7 @@ describe('EntityResolutionService.resolvePersonByHint — cross-source identity 
       $queryRawUnsafe: opts.queryRawUnsafe ?? vi.fn(async () => []),
     } as unknown as PrismaService;
     const embed = {
-      embedQuery: opts.embedQuery ?? vi.fn(async () => new Array<number>(1536).fill(0)),
+      embedQuery: opts.embedQuery ?? vi.fn(async () => new Array<number>(768).fill(0)),
     } as unknown as KnowledgeEmbeddingService;
     const cfg = {
       getDynamic: opts.cfgGetDynamic ?? vi.fn(async () => 0.9),
@@ -626,7 +626,7 @@ describe('EntityResolutionService.resolvePersonByHint — cross-source identity 
     const aliasFindUnique = vi.fn(async () => ({ personId: 'p-cached' }));
     const personFindFirst = vi.fn(async () => ({ id: 'p-cached' }));
     const queryRawUnsafe = vi.fn(async () => [{ id: 'p-x', score: 0.99 }]);
-    const embedQuery = vi.fn(async () => new Array<number>(1536).fill(0));
+    const embedQuery = vi.fn(async () => new Array<number>(768).fill(0));
     const svc = buildSvc({
       persons: [{ id: 'p-cached', name: 'Анастасия Иванова' }],
       aliasFindUnique,
@@ -886,7 +886,7 @@ describe('EntityResolutionService.resolvePersonByEmbedding — Ф1 FROM persons 
 
     const entId = `${PREFIX}-emb-person-ent`;
     const personId = `${PREFIX}-emb-person`;
-    const vec = new Array<number>(1536).fill(0.1);
+    const vec = new Array<number>(768).fill(0.1);
     const vecLiteral = `[${vec.join(',')}]`;
 
     await prisma.entity.create({

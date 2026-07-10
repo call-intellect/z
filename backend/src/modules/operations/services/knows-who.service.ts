@@ -126,7 +126,7 @@ export class KnowsWhoService {
       // вектор-driven (BM25-fallback нет), поэтому graceful degrade при reject =
       // вернуть [] (как при embed-failure выше), не валя оператор `<=>`
       // 500-кой (смена модели → другая размерность; битый вектор → NaN/Infinity).
-      const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+      const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 768;
       const guard = buildVectorLiteral(queryVec, expectedDim);
       if (guard.literal === null) {
         this.logger.warn(

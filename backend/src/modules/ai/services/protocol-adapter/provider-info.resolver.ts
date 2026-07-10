@@ -4,6 +4,7 @@ import { TypedConfigService } from '../../../../common/config/index';
 import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 
+import { resolveEffectiveConnection } from './effective-connection.util';
 import type { ProtocolAdapterProviderInfo, ProtocolKind } from './protocol-adapter.types';
 
 interface ProviderCacheEntry {
@@ -72,27 +73,24 @@ export class ProviderInfoResolver {
     }
 
     if (row) {
-      // Ф3 — резолв эффективного подключения (единственная реализация; см.
-      // раздел «Резолв эффективного подключения» ТЗ 2026-07-02): прокси-тумблер
-      // провайдера перекрывает baseUrl/apiKey, ключ префиксуется PROXY_PREFIX.
-      const proxyRoot = this.cfg.ai.proxy.baseUrl.replace(/\/v1\/?$/, '');
-      const effectiveBaseUrl = !row.useProxy
-        ? row.baseUrl
-        : row.proxyPath
-          ? `${proxyRoot}/${row.proxyPath}/v1`
-          : this.cfg.ai.proxy.baseUrl;
       const decryptedApiKey =
         row.apiKeyEncrypted && this.crypto.isEncrypted(row.apiKeyEncrypted)
           ? this.crypto.decrypt(row.apiKeyEncrypted)
           : row.apiKeyEncrypted;
-      const effectiveApiKey =
-        row.useProxy && decryptedApiKey
-          ? `${this.cfg.ai.proxy.prefix}:${decryptedApiKey}`
-          : decryptedApiKey;
+      const effective = resolveEffectiveConnection(
+        {
+          baseUrl: row.baseUrl,
+          apiKey: decryptedApiKey,
+          useProxy: row.useProxy,
+          proxyPath: row.proxyPath,
+          protocolKind: row.protocolKind,
+        },
+        this.cfg.ai.proxy,
+      );
       const info: ProtocolAdapterProviderInfo = {
         name: row.name,
-        baseUrl: effectiveBaseUrl,
-        apiKey: effectiveApiKey,
+        baseUrl: effective.baseUrl,
+        apiKey: effective.apiKey,
         capability: row.capability,
         timeoutMs: row.timeoutMs,
         defaultModelKey: row.defaultModelKey,
@@ -114,9 +112,6 @@ export class ProviderInfoResolver {
       return { info, protocolKind: entry.protocolKind };
     }
 
-    // Провайдер не найден в llm_providers. ENV-fallback удалён: источник правды
-    // единственный — БД. Окружение без сидов должно шуметь (dispatch бросит
-    // ошибку «провайдер не найден»), а не молча ехать на ENV-заглушках.
     return null;
   }
 

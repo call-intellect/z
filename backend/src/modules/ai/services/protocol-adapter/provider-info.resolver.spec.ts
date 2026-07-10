@@ -79,6 +79,27 @@ describe('ProviderInfoResolver.resolveByName — DB-строка (Ф3 — Рез
     expect(result?.info.apiKey).toBe('myFeedproxy3128:plainkey');
   });
 
+  it('anthropic-messages, useProxy=true, proxyPath="anthropic" → без /v1 в конце (SDK добавит /v1/messages сам)', async () => {
+    const findUnique = vi.fn(async () => ({
+      name: 'anthropic',
+      baseUrl: 'https://api.anthropic.com',
+      apiKeyEncrypted: 'gcm:v1:ciphertext',
+      protocolKind: 'anthropic-messages',
+      defaultHeaders: null,
+      useProxy: true,
+      proxyPath: 'anthropic',
+      timeoutMs: null,
+      capability: 'sensitive',
+    }));
+    const prisma = { llmProvider: { findUnique } } as unknown as PrismaService;
+    const resolver = new ProviderInfoResolver(prisma, makeCfg(), makeCrypto('sk-ant-plain'));
+
+    const result = await resolver.resolveByName('anthropic');
+
+    expect(result?.info.baseUrl).toBe('https://proxy.agent-lia.ru/anthropic');
+    expect(result?.info.apiKey).toBe('myFeedproxy3128:sk-ant-plain');
+  });
+
   it('useProxy=false → baseUrl/apiKey ровно из строки, без префикса', async () => {
     const findUnique = vi.fn(async () => ({
       name: 'kie',

@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Info,
@@ -26,6 +27,7 @@ import {
   type CreateLlmProviderRequest,
   type LlmProtocolKind,
   type LlmProviderCapability,
+  type ProviderConnectionMetaApi,
   type RemovalImpactApi,
 } from "@/domain/admin-llm-provider";
 import { Badge } from "@/ui/shadcn/badge";
@@ -102,6 +104,80 @@ const CAPABILITY_ORDER: LlmProviderCapability[] = [
   "sensitive",
   "private",
 ];
+
+type ProtocolConnectionGuide = {
+  baseUrlPlaceholder: string;
+  baseUrlHint: string;
+  buildRequestUrl: (base: string) => string;
+};
+
+const PROTOCOL_CONNECTION_GUIDES: Record<
+  LlmProtocolKind,
+  ProtocolConnectionGuide
+> = {
+  "openai-chat": {
+    baseUrlPlaceholder: "https://api.openai.com/v1",
+    baseUrlHint: "Адрес до /v1 включительно — путь /chat/completions добавится сам.",
+    buildRequestUrl: (base) => `${base}/chat/completions`,
+  },
+  "openai-responses": {
+    baseUrlPlaceholder: "https://api.openai.com/v1",
+    baseUrlHint: "Адрес до /v1 включительно — путь /responses добавится сам.",
+    buildRequestUrl: (base) => `${base}/responses`,
+  },
+  "anthropic-messages": {
+    baseUrlPlaceholder: "https://api.anthropic.com",
+    baseUrlHint: "Адрес БЕЗ /v1 — путь /v1/messages добавится сам.",
+    buildRequestUrl: (base) => `${base}/v1/messages`,
+  },
+  "ollama-native": {
+    baseUrlPlaceholder: "http://localhost:11434/v1",
+    baseUrlHint: "OpenAI-совместимый адрес до /v1 — путь /chat/completions добавится сам.",
+    buildRequestUrl: (base) => `${base}/chat/completions`,
+  },
+  "kie-native": {
+    baseUrlPlaceholder: "https://api.kie.ai",
+    baseUrlHint: "Корень API — путь /<модель>/v1/… строится по вызываемой модели.",
+    buildRequestUrl: (base) => `${base}/<модель>/v1/chat/completions`,
+  },
+  "grsai-native": {
+    baseUrlPlaceholder: "https://grsaiapi.com",
+    baseUrlHint: "Если адрес без /v1 — система допишет его сама.",
+    buildRequestUrl: (base) =>
+      `${base.endsWith("/v1") ? base : `${base}/v1`}/chat/completions`,
+  },
+  "custom-http": {
+    baseUrlPlaceholder: "https://api.example.com/complete",
+    baseUrlHint: "Запрос уходит ровно на этот адрес, без дополнительных путей.",
+    buildRequestUrl: (base) => base,
+  },
+};
+
+const PROTOCOLS_APPENDING_OWN_PATH = new Set<LlmProtocolKind>([
+  "anthropic-messages",
+  "kie-native",
+]);
+
+function trimTrailingSlashes(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+function proxyRootFromBase(proxyBaseUrl: string): string {
+  return proxyBaseUrl.replace(/\/v1\/?$/, "");
+}
+
+function effectiveProxyBaseUrl(
+  proxyBaseUrl: string,
+  proxyPath: string,
+  protocolKind: LlmProtocolKind,
+): string {
+  const path = proxyPath.trim();
+  const root = proxyRootFromBase(proxyBaseUrl);
+  if (PROTOCOLS_APPENDING_OWN_PATH.has(protocolKind)) {
+    return path ? `${root}/${path}` : root;
+  }
+  return path ? `${root}/${path}/v1` : proxyBaseUrl;
+}
 
 function protocolLabel(kind: string): string {
   return PROTOCOL_LABELS[kind as LlmProtocolKind] ?? kind;
@@ -681,6 +757,55 @@ function ProviderFormDialog({
       : "",
   );
   const [submitting, setSubmitting] = useState(false);
+  const [smokeRunning, setSmokeRunning] = useState(false);
+  const [connectionMeta, setConnectionMeta] =
+    useState<ProviderConnectionMetaApi | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void adminLlmProvidersApi
+      .connectionMeta()
+      .then((m) => {
+        if (!cancelled) setConnectionMeta(m);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const guide = PROTOCOL_CONNECTION_GUIDES[protocolKind];
+  const effectiveBase = useProxy
+    ? connectionMeta?.proxyBaseUrl
+      ? trimTrailingSlashes(
+          effectiveProxyBaseUrl(
+            connectionMeta.proxyBaseUrl,
+            proxyPath,
+            protocolKind,
+          ),
+        )
+      : null
+    : baseUrl.trim()
+      ? trimTrailingSlashes(baseUrl.trim())
+      : null;
+  const requestPreview = effectiveBase
+    ? guide.buildRequestUrl(effectiveBase)
+    : null;
+  const anthropicProxyPathMissing =
+    useProxy &&
+    protocolKind === "anthropic-messages" &&
+    proxyPath.trim().length === 0;
+  const proxyKeyPrefixMask = connectionMeta?.proxyKeyPrefixMask ?? null;
+  const proxyRootLabel = connectionMeta?.proxyBaseUrl
+    ? proxyRootFromBase(connectionMeta.proxyBaseUrl)
+    : "адрес-прокси";
+  const apiKeyHint = useProxy
+    ? `${isEdit ? "Пусто — оставить текущий ключ. " : ""}Вводите обычный ключ провайдера без префикса прокси — префикс${
+        proxyKeyPrefixMask ? ` «${proxyKeyPrefixMask}»` : ""
+      } добавится автоматически при каждом запросе.`
+    : isEdit
+      ? "Оставьте пустым, чтобы не менять текущий ключ."
+      : "Необязательно для self-hosted без авторизации (например, Ollama).";
 
   const [discovering, setDiscovering] = useState(false);
   const [discoveredModels, setDiscoveredModels] = useState<Array<{
@@ -790,6 +915,9 @@ function ProviderFormDialog({
         ...(timeoutMsValue && Number.isInteger(timeoutMsValue) && timeoutMsValue > 0
           ? { timeoutMs: timeoutMsValue }
           : {}),
+        ...(useProxy
+          ? { useProxy: true, proxyPath: proxyPath.trim() || null }
+          : {}),
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -887,32 +1015,32 @@ function ProviderFormDialog({
     }
   };
 
-  const handleSubmit = async () => {
+  const performSave = async (): Promise<string | null> => {
     if (!isEdit && !/^[a-z0-9-]+$/.test(name)) {
       toast.error("Идентификатор: только строчные латинские буквы, цифры и дефис");
-      return;
+      return null;
     }
     if (!displayName.trim()) {
       toast.error("Укажите отображаемое имя");
-      return;
+      return null;
     }
     if (!baseUrl.trim()) {
-      toast.error("Укажите адрес API");
-      return;
+      toast.error("Укажите прямой адрес API провайдера");
+      return null;
     }
     let parsedHeaders: Record<string, string> | null | undefined;
     try {
       parsedHeaders = parseHeaders(headers);
     } catch {
       toast.error("HTTP-заголовки: некорректный JSON (объект строка→строка)");
-      return;
+      return null;
     }
     let timeoutMsValue: number | null = null;
     if (timeoutMs.trim().length > 0) {
       const t = Number(timeoutMs);
       if (!Number.isInteger(t) || t <= 0) {
         toast.error("Таймаут — целое число мс > 0");
-        return;
+        return null;
       }
       timeoutMsValue = t;
     }
@@ -921,7 +1049,7 @@ function ProviderFormDialog({
       const r = Number(globalRps);
       if (!Number.isInteger(r) || r <= 0) {
         toast.error("Лимит rps — целое число > 0");
-        return;
+        return null;
       }
       globalRpsValue = r;
     }
@@ -930,11 +1058,11 @@ function ProviderFormDialog({
       const c = Number(subscriptionMonthlyCostUsd);
       if (!subscriptionMonthlyCostUsd.trim() || !isFinite(c) || c < 0) {
         toast.error("Сумма подписки в месяц — число ≥ 0");
-        return;
+        return null;
       }
       if (!subscriptionStartedAt) {
         toast.error("Укажите дату начала подписки");
-        return;
+        return null;
       }
       subscriptionMonthlyCostValue = c;
     }
@@ -966,6 +1094,7 @@ function ProviderFormDialog({
           ...commonFields,
           ...(apiKey.length > 0 ? { apiKey } : {}),
         });
+        return provider.id;
       } else {
         const toCreate = draftModels.filter((m) => m.selected);
         for (const m of toCreate) {
@@ -985,8 +1114,7 @@ function ProviderFormDialog({
             toast.error(
               `Цена для ${m.key}: заполните вход И выход числами ≥ 0 (или оставьте оба поля пустыми)`,
             );
-            setSubmitting(false);
-            return;
+            return null;
           }
         }
         const body: CreateLlmProviderRequest = {
@@ -1034,14 +1162,48 @@ function ProviderFormDialog({
             onModelsImported();
           }
         }
+        return created.id;
       }
-      toast.success(isEdit ? "Провайдер сохранён" : "Провайдер создан");
-      onSaved();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Не удалось сохранить");
+      return null;
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = async () => {
+    const savedId = await performSave();
+    if (!savedId) return;
+    toast.success(isEdit ? "Провайдер сохранён" : "Провайдер создан");
+    onSaved();
+  };
+
+  const handleSubmitAndSmoke = async () => {
+    const savedId = await performSave();
+    if (!savedId) return;
+    toast.success(isEdit ? "Провайдер сохранён" : "Провайдер создан");
+    setSmokeRunning(true);
+    try {
+      const r = await adminLlmProvidersApi.smokeTest(savedId);
+      if (r.success) {
+        toast.success(
+          `Подключение работает — тестовый вызов прошёл за ${r.durationSeconds.toFixed(2)} с`,
+        );
+      } else {
+        toast.error(
+          `Подключение не работает — ${r.error ?? "неизвестная ошибка"}`,
+        );
+      }
+      notifyCatalogChange("smoke");
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось выполнить проверку подключения",
+      );
+    } finally {
+      setSmokeRunning(false);
+    }
+    onSaved();
   };
 
   return (
@@ -1052,8 +1214,9 @@ function ProviderFormDialog({
             {isEdit ? "Редактировать провайдера" : "Новый провайдер LLM"}
           </DialogTitle>
           <DialogDescription>
-            Адрес API и ключ хранятся зашифрованными. Ключ не отображается — при
-            редактировании оставьте поле пустым, чтобы не менять его.
+            Подключение, ключ и модели провайдера. Кнопка «Сохранить и
+            проверить» сразу выполнит тестовый вызов и покажет, работает ли
+            подключение.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -1081,22 +1244,22 @@ function ProviderFormDialog({
             />
           </Field>
           <Field
-            label="Адрес API (baseUrl)"
-            tooltip="Базовый адрес API провайдера — куда система отправляет запросы (endpoint)."
-          >
-            <Input
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.example.com/v1"
-            />
-          </Field>
-          <Field
             label="Тип протокола"
-            tooltip="Формат протокола: как система формирует запрос и разбирает ответ этого провайдера (openai-chat / openai-responses / anthropic-messages / ollama-native / kie-native / grsai-native / custom-http)."
+            tooltip="Формат запросов и ответов провайдера. От протокола зависит, какой путь добавится к адресу — итог виден в предпросмотре «Куда пойдёт запрос»."
           >
             <Select
               value={protocolKind}
-              onValueChange={(v) => setProtocolKind(v as LlmProtocolKind)}
+              onValueChange={(v) => {
+                const kind = v as LlmProtocolKind;
+                setProtocolKind(kind);
+                if (
+                  kind === "anthropic-messages" &&
+                  useProxy &&
+                  proxyPath.trim().length === 0
+                ) {
+                  setProxyPath("anthropic");
+                }
+              }}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -1109,6 +1272,146 @@ function ProviderFormDialog({
                 ))}
               </SelectContent>
             </Select>
+          </Field>
+          <div className="space-y-3 rounded-md border border-border-subtle p-3">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs">Подключение</Label>
+                <TooltipProvider delayDuration={150}>
+                  <Tooltip>
+                    <TooltipTrigger
+                      type="button"
+                      tabIndex={-1}
+                      className="text-fg-tertiary"
+                    >
+                      <Info size={13} />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      Внутренний прокси задан на сервере (PROXY_BASE_URL /
+                      PROXY_PREFIX) и нужен для провайдеров, недоступных с
+                      сервера напрямую. Пока прокси включён, прямой адрес API
+                      не используется.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <p className="text-[11px] text-fg-tertiary">
+                Как система ходит к API провайдера — напрямую или через
+                внутренний прокси.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-1 rounded-md bg-bg-subtle p-1">
+              <button
+                type="button"
+                onClick={() => setUseProxy(false)}
+                className={
+                  useProxy
+                    ? "rounded px-2 py-1.5 text-xs text-fg-tertiary transition-colors hover:text-fg-primary"
+                    : "rounded border border-border-subtle bg-bg-card px-2 py-1.5 text-xs font-medium text-fg-primary"
+                }
+              >
+                Напрямую
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUseProxy(true);
+                  if (
+                    protocolKind === "anthropic-messages" &&
+                    proxyPath.trim().length === 0
+                  ) {
+                    setProxyPath("anthropic");
+                  }
+                }}
+                className={
+                  useProxy
+                    ? "rounded border border-border-subtle bg-bg-card px-2 py-1.5 text-xs font-medium text-fg-primary"
+                    : "rounded px-2 py-1.5 text-xs text-fg-tertiary transition-colors hover:text-fg-primary"
+                }
+              >
+                Через прокси
+              </button>
+            </div>
+            {useProxy && (
+              <Field
+                label="Маршрут на прокси (proxyPath)"
+                hint={`Пусто — корневой маршрут ${proxyRootLabel}/v1 (OpenAI). «grsai» → ${proxyRootLabel}/grsai/v1, «anthropic» → ${proxyRootLabel}/anthropic.`}
+                tooltip="Слаг после адреса прокси — выбирает upstream-провайдера на стороне прокси. Итоговый адрес виден в предпросмотре ниже."
+              >
+                <Input
+                  value={proxyPath}
+                  onChange={(e) => setProxyPath(e.target.value)}
+                  placeholder="например, grsai"
+                />
+              </Field>
+            )}
+            <Field
+              label={
+                useProxy
+                  ? "Прямой адрес API (при прокси не используется)"
+                  : "Адрес API (baseUrl)"
+              }
+              hint={
+                useProxy
+                  ? "Хранится на случай возврата к прямому подключению — запросы туда сейчас не идут."
+                  : guide.baseUrlHint
+              }
+              tooltip="Базовый адрес API провайдера. Итоговый путь запроса зависит от протокола — см. предпросмотр ниже."
+            >
+              <Input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder={guide.baseUrlPlaceholder}
+                className={useProxy ? "opacity-60" : undefined}
+              />
+            </Field>
+            <div className="rounded-md bg-bg-subtle px-3 py-2">
+              <span className="text-[11px] text-fg-tertiary">
+                Куда пойдёт запрос:
+              </span>
+              {requestPreview ? (
+                <div className="break-all font-mono text-xs text-fg-primary">
+                  POST {requestPreview}
+                </div>
+              ) : (
+                <div className="text-xs text-fg-tertiary">
+                  {useProxy
+                    ? "адрес прокси загружается…"
+                    : "укажите адрес API — здесь появится итоговый URL"}
+                </div>
+              )}
+            </div>
+            {anthropicProxyPathMissing && (
+              <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
+                <AlertTriangle
+                  size={14}
+                  className="mt-0.5 shrink-0 text-warning"
+                />
+                <p className="text-[11px] text-fg-secondary">
+                  Для Anthropic укажите маршрут на прокси (обычно «anthropic»):
+                  корневой маршрут /v1 ведёт на OpenAI, и запрос вернёт 404.
+                  Ключ через прокси уходит в заголовке x-api-key — прокси
+                  должен быть развёрнут с поддержкой anthropic-маршрута.
+                </p>
+              </div>
+            )}
+          </div>
+          <Field
+            label="API-ключ"
+            hint={apiKeyHint}
+            tooltip="Хранится в зашифрованном виде (AES-256-GCM) и после сохранения не отображается. Можно оставить пустым для self-hosted провайдеров без авторизации (например, Ollama)."
+          >
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={
+                isEdit
+                  ? "оставьте пустым, чтобы не менять"
+                  : "ключ провайдера, например sk-…"
+              }
+              autoComplete="new-password"
+            />
           </Field>
           <Field
             label="Класс данных (capability)"
@@ -1130,70 +1433,6 @@ function ProviderFormDialog({
               </SelectContent>
             </Select>
           </Field>
-          <Field
-            label="API-ключ"
-            hint={
-              isEdit
-                ? "Оставьте пустым, чтобы не менять текущий ключ."
-                : "Необязательно для self-hosted без авторизации."
-            }
-            tooltip="Хранится в зашифрованном виде (AES-256-GCM). Можно оставить пустым для self-hosted провайдеров без авторизации (например, Ollama)."
-          >
-            <Input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={isEdit ? "оставьте пустым, чтобы не менять" : ""}
-              autoComplete="new-password"
-            />
-          </Field>
-          <div className="rounded-md border border-border-subtle p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-xs">
-                    {useProxy ? "Через прокси" : "Напрямую"}
-                  </Label>
-                  <TooltipProvider delayDuration={150}>
-                    <Tooltip>
-                      <TooltipTrigger
-                        type="button"
-                        tabIndex={-1}
-                        className="text-fg-tertiary"
-                      >
-                        <Info size={13} />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        Ходить к провайдеру через внутренний прокси: итоговый
-                        адрес строится из PROXY_BASE_URL и пути на прокси, а
-                        ключ передаётся с префиксом PROXY_PREFIX.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <p className="text-[11px] text-fg-tertiary">
-                  Ходить к провайдеру через внутренний прокси вместо прямого
-                  подключения.
-                </p>
-              </div>
-              <Switch checked={useProxy} onCheckedChange={setUseProxy} />
-            </div>
-            {useProxy && (
-              <div className="mt-3">
-                <Field
-                  label="Путь на прокси (proxyPath)"
-                  hint="Слаг пути на прокси, например 'grsai'. Пусто — корневой прокси (для OpenAI)."
-                  tooltip="Слаг пути на прокси — добавляется к адресу прокси, например «grsai» → адрес-прокси/grsai/v1. Пусто — используется корневой upstream-прокси (для OpenAI)."
-                >
-                  <Input
-                    value={proxyPath}
-                    onChange={(e) => setProxyPath(e.target.value)}
-                    placeholder="необязательно"
-                  />
-                </Field>
-              </div>
-            )}
-          </div>
           <div className="grid grid-cols-2 gap-3">
             <Field
               label="Таймаут (мс)"
@@ -1308,7 +1547,6 @@ function ProviderFormDialog({
                   className="w-full"
                   disabled={
                     previewLoading ||
-                    useProxy ||
                     protocolKind === "anthropic-messages" ||
                     baseUrl.trim().length === 0
                   }
@@ -1320,14 +1558,8 @@ function ProviderFormDialog({
                 </Button>
                 {protocolKind === "anthropic-messages" && (
                   <p className="text-[11px] text-fg-tertiary">
-                    Anthropic Messages API не отдаёт список моделей — добавьте
-                    модели вручную ниже.
-                  </p>
-                )}
-                {useProxy && (
-                  <p className="text-[11px] text-fg-tertiary">
-                    Через прокси предпросмотр недоступен — сохраните провайдера
-                    и получите модели в редактировании.
+                    Автополучение моделей для anthropic-messages не
+                    поддерживается — добавьте модели вручную ниже.
                   </p>
                 )}
                 {draftModels.length > 0 && (
@@ -1569,16 +1801,25 @@ function ProviderFormDialog({
             variant="outline"
             size="sm"
             onClick={onClose}
-            disabled={submitting}
+            disabled={submitting || smokeRunning}
           >
             Отмена
           </Button>
           <Button
+            variant="outline"
             size="sm"
             onClick={() => void handleSubmit()}
-            disabled={submitting}
+            disabled={submitting || smokeRunning}
           >
             {submitting ? "Сохраняем…" : "Сохранить"}
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => void handleSubmitAndSmoke()}
+            disabled={submitting || smokeRunning}
+          >
+            <Zap size={13} />
+            {smokeRunning ? "Проверяем…" : "Сохранить и проверить"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -57,7 +57,7 @@ describe('ProviderSmokeTestCron', () => {
     });
     resolve.mockReturnValueOnce({
       complete: vi.fn(async () => ({
-        text: 'OK',
+        text: 'SMOKE OK',
         inputTokens: 1,
         outputTokens: 1,
         model: 'x',
@@ -107,13 +107,13 @@ describe('ProviderSmokeTestCron', () => {
     });
   });
 
-  it('проба запрашивает maxTokens >= 16 (SMOKE_MAX_TOKENS=64)', async () => {
+  it('проба запрашивает maxTokens >= 16 (SMOKE_MAX_TOKENS=512)', async () => {
     resolveByName.mockResolvedValueOnce({
       info: { name: 'deepseek', baseUrl: 'http://x', apiKey: 'k' },
       protocolKind: 'openai-chat',
     });
     const complete = vi.fn(async () => ({
-      text: 'OK',
+      text: 'SMOKE OK',
       inputTokens: 1,
       outputTokens: 1,
       model: 'x',
@@ -131,7 +131,7 @@ describe('ProviderSmokeTestCron', () => {
     await cron.testProvider('deepseek');
     expect(complete).toHaveBeenCalledWith(
       expect.objectContaining({
-        input: expect.objectContaining({ maxTokens: 64 }),
+        input: expect.objectContaining({ maxTokens: 512 }),
       }),
     );
     const completeCalls = complete.mock.calls as unknown as Array<
@@ -189,7 +189,7 @@ describe('ProviderSmokeTestCron', () => {
     });
     resolve.mockReturnValue({
       complete: vi.fn(async () => ({
-        text: 'OK',
+        text: 'SMOKE OK',
         inputTokens: 1,
         outputTokens: 1,
         model: 'x',

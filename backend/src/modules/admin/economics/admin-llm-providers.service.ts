@@ -13,6 +13,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { CryptoService } from '../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { resolveEffectiveConnection } from '../../ai/services/protocol-adapter/effective-connection.util';
 import { ProviderInfoResolver } from '../../ai/services/protocol-adapter/provider-info.resolver';
 import { AdminSettingsService } from '../settings/admin-settings.service';
 
@@ -499,24 +500,54 @@ export class AdminLlmProvidersService {
     });
   }
 
+  connectionMeta() {
+    const proxy = this.cfg?.ai.proxy;
+    return {
+      proxyBaseUrl: proxy?.baseUrl ?? null,
+      proxyKeyPrefixMask: proxy?.prefix ? maskSecretPrefix(proxy.prefix) : null,
+    };
+  }
+
   async discoverModelsPreview(params: {
     baseUrl: string;
     protocolKind: string;
     apiKey?: string;
     defaultHeaders?: Record<string, string>;
     timeoutMs?: number;
+    useProxy?: boolean;
+    proxyPath?: string | null;
   }) {
     if (params.protocolKind === 'anthropic-messages') {
       return {
         ok: false as const,
         error:
-          'Anthropic Messages API не поддерживает автополучение моделей (нет GET /models) — добавьте модели вручную',
+          'Автополучение моделей для протокола anthropic-messages не поддерживается — добавьте модели вручную',
       };
     }
+    const proxy = this.cfg?.ai.proxy;
+    if (params.useProxy && !proxy) {
+      return {
+        ok: false as const,
+        error: 'Прокси не сконфигурирован на сервере (PROXY_BASE_URL / PROXY_PREFIX)',
+      };
+    }
+    const effective =
+      params.useProxy && proxy
+        ? resolveEffectiveConnection(
+            {
+              baseUrl: params.baseUrl,
+              apiKey: params.apiKey ?? null,
+              useProxy: true,
+              proxyPath: params.proxyPath ?? null,
+              protocolKind: params.protocolKind,
+            },
+            proxy,
+          )
+        : { baseUrl: params.baseUrl, apiKey: params.apiKey ?? null };
     try {
       const models = await discoverProviderModels({
-        baseUrl: params.baseUrl,
-        apiKey: params.apiKey ?? null,
+        baseUrl: effective.baseUrl,
+        apiKey: effective.apiKey,
         defaultHeaders: params.defaultHeaders ?? null,
         timeoutMs: params.timeoutMs ?? null,
       });
@@ -534,7 +565,8 @@ export class AdminLlmProvidersService {
         ok: false,
         error: {
           code: 'discovery_not_supported',
-          message: 'Anthropic Messages API не поддерживает discovery моделей (нет GET /models)',
+          message:
+            'Автополучение моделей для протокола anthropic-messages не поддерживается — добавьте модели вручную',
         },
       });
     }
@@ -633,6 +665,10 @@ export class AdminLlmProvidersService {
       updatedAt: row.updatedAt.toISOString(),
     };
   }
+}
+
+function maskSecretPrefix(value: string): string {
+  return value.length <= 4 ? `${value.slice(0, 1)}…` : `${value.slice(0, 4)}…`;
 }
 
 function dedupeByProvider<T extends { provider?: string }>(

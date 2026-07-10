@@ -141,6 +141,13 @@ export type DiscoverModelsPreviewRequest = {
   apiKey?: string;
   defaultHeaders?: Record<string, string>;
   timeoutMs?: number;
+  useProxy?: boolean;
+  proxyPath?: string | null;
+};
+
+export type ProviderConnectionMetaApi = {
+  proxyBaseUrl: string | null;
+  proxyKeyPrefixMask: string | null;
 };
 
 export type DiscoverModelsPreviewResultApi =

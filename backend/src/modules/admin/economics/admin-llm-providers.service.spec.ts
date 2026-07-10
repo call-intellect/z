@@ -359,6 +359,104 @@ describe('AdminLlmProvidersService', () => {
     });
   });
 
+  describe('connectionMeta', () => {
+    const cfgWithProxy = {
+      getDynamic,
+      ai: { proxy: { baseUrl: 'https://proxy.agent-lia.ru/v1', prefix: 'myFeedproxy3128' } },
+    } as unknown as ConstructorParameters<typeof AdminLlmProvidersService>[3];
+
+    it('(a) отдаёт адрес прокси и маску префикса (первые 4 символа + …)', () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+
+      expect(withCfg.connectionMeta()).toEqual({
+        proxyBaseUrl: 'https://proxy.agent-lia.ru/v1',
+        proxyKeyPrefixMask: 'myFe…',
+      });
+    });
+
+    it('(b) без cfg → оба поля null', () => {
+      expect(svc.connectionMeta()).toEqual({ proxyBaseUrl: null, proxyKeyPrefixMask: null });
+    });
+  });
+
+  describe('discoverModelsPreview через прокси', () => {
+    const cfgWithProxy = {
+      getDynamic,
+      ai: { proxy: { baseUrl: 'https://proxy.agent-lia.ru/v1', prefix: 'myFeedproxy3128' } },
+    } as unknown as ConstructorParameters<typeof AdminLlmProvidersService>[3];
+
+    it('(a) useProxy=true, proxyPath=null → GET на адрес прокси с ключом с префиксом', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+      vi.mocked(discoverProviderModels).mockResolvedValueOnce([{ id: 'gpt-5-mini' }]);
+
+      const res = await withCfg.discoverModelsPreview({
+        baseUrl: 'https://api.openai.com/v1',
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+        useProxy: true,
+        proxyPath: null,
+      });
+
+      expect(discoverProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://proxy.agent-lia.ru/v1',
+          apiKey: 'myFeedproxy3128:sk-x',
+        }),
+      );
+      expect(res).toEqual({ ok: true, models: [{ id: 'gpt-5-mini' }] });
+    });
+
+    it('(b) useProxy=true, proxyPath="grsai" → корень прокси + слаг + /v1', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+      vi.mocked(discoverProviderModels).mockResolvedValueOnce([]);
+
+      await withCfg.discoverModelsPreview({
+        baseUrl: 'https://grsaiapi.com',
+        protocolKind: 'grsai-native',
+        apiKey: 'sk-x',
+        useProxy: true,
+        proxyPath: 'grsai',
+      });
+
+      expect(discoverProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://proxy.agent-lia.ru/grsai/v1',
+          apiKey: 'myFeedproxy3128:sk-x',
+        }),
+      );
+    });
+
+    it('(c) useProxy=false → baseUrl/apiKey из формы без изменений', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+      vi.mocked(discoverProviderModels).mockResolvedValueOnce([]);
+
+      await withCfg.discoverModelsPreview({
+        baseUrl: 'https://api.deepseek.com/v1',
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+      });
+
+      expect(discoverProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({ baseUrl: 'https://api.deepseek.com/v1', apiKey: 'sk-x' }),
+      );
+    });
+
+    it('(d) useProxy=true без cfg → {ok:false} с понятной ошибкой, без сетевого вызова', async () => {
+      const res = await svc.discoverModelsPreview({
+        baseUrl: 'https://api.openai.com/v1',
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+        useProxy: true,
+      });
+
+      expect(res).toEqual({
+        ok: false,
+        error: 'Прокси не сконфигурирован на сервере (PROXY_BASE_URL / PROXY_PREFIX)',
+      });
+      expect(discoverProviderModels).not.toHaveBeenCalled();
+    });
+  });
+
   describe('setDefaultProvider (Ф2026-07-06 llm-provider-default-fallback, Фаза 1)', () => {
     it('(a) назначить А дефолтом, потом Б → транзакция каждый раз сбрасывает старый флаг и ставит новый + модель', async () => {
       findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pA', name: 'anthropic' }));

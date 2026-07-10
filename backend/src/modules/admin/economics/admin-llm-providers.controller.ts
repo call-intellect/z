@@ -56,6 +56,11 @@ export class AdminLlmProvidersController {
     return this.svc.list({ includeInactive: q.includeInactive });
   }
 
+  @Get('connection-meta')
+  connectionMeta() {
+    return this.svc.connectionMeta();
+  }
+
   @Get(':id')
   getById(@Param('id') id: string) {
     return this.svc.getById(id);

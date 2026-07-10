@@ -41,6 +41,8 @@ export const DiscoverModelsPreviewSchema = z.object({
   apiKey: z.string().max(500).optional(),
   defaultHeaders: z.record(z.string(), z.string()).optional(),
   timeoutMs: z.number().int().positive().max(120_000).optional(),
+  useProxy: z.boolean().optional(),
+  proxyPath: z.string().max(120).nullable().optional(),
 });
 export type DiscoverModelsPreviewDto = z.infer<typeof DiscoverModelsPreviewSchema>;
 

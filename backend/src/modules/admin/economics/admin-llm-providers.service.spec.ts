@@ -456,6 +456,41 @@ describe('AdminLlmProvidersService', () => {
       });
       expect(discoverProviderModels).not.toHaveBeenCalled();
     });
+
+    it('(e) useProxy=true БЕЗ baseUrl → работает (адрес строится от прокси)', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+      vi.mocked(discoverProviderModels).mockResolvedValueOnce([{ id: 'gpt-5-mini' }]);
+
+      const res = await withCfg.discoverModelsPreview({
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+        useProxy: true,
+        proxyPath: null,
+      });
+
+      expect(discoverProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://proxy.agent-lia.ru/v1',
+          apiKey: 'myFeedproxy3128:sk-x',
+        }),
+      );
+      expect(res).toEqual({ ok: true, models: [{ id: 'gpt-5-mini' }] });
+    });
+
+    it('(f) useProxy=false БЕЗ baseUrl → {ok:false} с просьбой указать адрес', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+
+      const res = await withCfg.discoverModelsPreview({
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+      });
+
+      expect(res).toEqual({
+        ok: false,
+        error: 'Укажите адрес API (baseUrl) — без прокси он обязателен',
+      });
+      expect(discoverProviderModels).not.toHaveBeenCalled();
+    });
   });
 
   describe('setDefaultProvider (Ф2026-07-06 llm-provider-default-fallback, Фаза 1)', () => {

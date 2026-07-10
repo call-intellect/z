@@ -525,7 +525,7 @@ export class AdminLlmProvidersService {
   }
 
   async discoverModelsPreview(params: {
-    baseUrl: string;
+    baseUrl?: string;
     protocolKind: string;
     apiKey?: string;
     defaultHeaders?: Record<string, string>;
@@ -547,11 +547,17 @@ export class AdminLlmProvidersService {
         error: 'Прокси не сконфигурирован на сервере (PROXY_BASE_URL / PROXY_PREFIX)',
       };
     }
+    if (!params.useProxy && !params.baseUrl) {
+      return {
+        ok: false as const,
+        error: 'Укажите адрес API (baseUrl) — без прокси он обязателен',
+      };
+    }
     const effective =
       params.useProxy && proxy
         ? resolveEffectiveConnection(
             {
-              baseUrl: params.baseUrl,
+              baseUrl: params.baseUrl ?? '',
               apiKey: params.apiKey ?? null,
               useProxy: true,
               proxyPath: params.proxyPath ?? null,
@@ -559,7 +565,7 @@ export class AdminLlmProvidersService {
             },
             proxy,
           )
-        : { baseUrl: params.baseUrl, apiKey: params.apiKey ?? null };
+        : { baseUrl: params.baseUrl as string, apiKey: params.apiKey ?? null };
     try {
       const models = await discoverProviderModels({
         baseUrl: effective.baseUrl,

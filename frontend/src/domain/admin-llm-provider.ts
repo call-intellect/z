@@ -136,7 +136,7 @@ export type DiscoverModelsResultApi =
   | { ok: false; error: string };
 
 export type DiscoverModelsPreviewRequest = {
-  baseUrl: string;
+  baseUrl?: string;
   protocolKind: string;
   apiKey?: string;
   defaultHeaders?: Record<string, string>;

@@ -158,11 +158,17 @@ const PROTOCOLS_APPENDING_OWN_PATH = new Set<LlmProtocolKind>([
   "kie-native",
 ]);
 
-const PROXY_ROUTE_PRESETS: Array<{ label: string; value: string }> = [
-  { label: "OpenAI — корень", value: "" },
-  { label: "anthropic", value: "anthropic" },
-  { label: "grsai", value: "grsai" },
-  { label: "kie", value: "kie" },
+const PROXY_ROOT_ROUTE = "__root__";
+
+const PROXY_ROUTE_PRESETS: Array<{
+  label: string;
+  value: string;
+  upstream: string;
+}> = [
+  { label: "OpenAI", value: "", upstream: "https://api.openai.com/v1" },
+  { label: "Anthropic", value: "anthropic", upstream: "https://api.anthropic.com" },
+  { label: "grsai", value: "grsai", upstream: "https://grsaiapi.com" },
+  { label: "KIE", value: "kie", upstream: "https://api.kie.ai" },
 ];
 
 function trimTrailingSlashes(url: string): string {
@@ -900,7 +906,7 @@ function ProviderFormDialog({
   };
 
   const handlePreviewDiscover = async () => {
-    if (!baseUrl.trim()) {
+    if (!useProxy && !baseUrl.trim()) {
       toast.error("Сначала укажите адрес API (baseUrl)");
       return;
     }
@@ -915,7 +921,7 @@ function ProviderFormDialog({
     setPreviewLoading(true);
     try {
       const res = await adminLlmProvidersApi.discoverModelsPreview({
-        baseUrl: baseUrl.trim(),
+        ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
         protocolKind,
         ...(apiKey.length > 0 ? { apiKey } : {}),
         ...(parsedHeaders ? { defaultHeaders: parsedHeaders } : {}),
@@ -1031,8 +1037,27 @@ function ProviderFormDialog({
       toast.error("Укажите отображаемое имя");
       return null;
     }
-    if (!baseUrl.trim()) {
-      toast.error("Укажите прямой адрес API провайдера");
+    const storedBaseUrl =
+      baseUrl.trim() ||
+      (useProxy
+        ? (PROXY_ROUTE_PRESETS.find((p) => p.value === proxyPath.trim())
+            ?.upstream ??
+          (connectionMeta?.proxyBaseUrl
+            ? trimTrailingSlashes(
+                effectiveProxyBaseUrl(
+                  connectionMeta.proxyBaseUrl,
+                  proxyPath,
+                  protocolKind,
+                ),
+              )
+            : ""))
+        : "");
+    if (!storedBaseUrl) {
+      toast.error(
+        useProxy
+          ? "Не удалось определить адрес провайдера — выберите маршрут на прокси"
+          : "Укажите адрес API провайдера",
+      );
       return null;
     }
     let parsedHeaders: Record<string, string> | null | undefined;
@@ -1078,7 +1103,7 @@ function ProviderFormDialog({
     try {
       const commonFields = {
         displayName: displayName.trim(),
-        baseUrl: baseUrl.trim(),
+        baseUrl: storedBaseUrl,
         protocolKind,
         capability,
         isActive,
@@ -1341,58 +1366,57 @@ function ProviderFormDialog({
             </div>
             {useProxy && (
               <Field
-                label="К какому провайдеру идти на прокси"
-                hint="Один прокси обслуживает несколько провайдеров — выберите нужного. Итоговый адрес виден ниже в «Куда пойдёт запрос»."
-                tooltip="Технически это слаг пути на прокси (proxyPath): пусто — корневой /v1 (OpenAI), «anthropic» — api.anthropic.com, «grsai» — grsaiapi.com, «kie» — api.kie.ai. Если на прокси появился новый маршрут, впишите его слаг вручную."
+                label="Провайдер на прокси"
+                tooltip="Технически это слаг пути на прокси (proxyPath): пусто — корневой /v1 (OpenAI), «anthropic» — api.anthropic.com, «grsai» — grsaiapi.com, «kie» — api.kie.ai. Итоговый адрес виден ниже в «Куда пойдёт запрос»."
               >
-                <div className="space-y-1.5">
-                  <div className="flex flex-wrap gap-1.5">
-                    {PROXY_ROUTE_PRESETS.map((p) => {
-                      const active = proxyPath.trim() === p.value;
-                      return (
-                        <button
-                          key={p.label}
-                          type="button"
-                          onClick={() => setProxyPath(p.value)}
-                          className={
-                            active
-                              ? "rounded-full border border-border-strong bg-bg-card px-2.5 py-0.5 text-[11px] font-medium text-fg-primary"
-                              : "rounded-full border border-border-subtle px-2.5 py-0.5 text-[11px] text-fg-tertiary transition-colors hover:text-fg-primary"
-                          }
-                        >
-                          {p.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <Input
-                    value={proxyPath}
-                    onChange={(e) => setProxyPath(e.target.value)}
-                    placeholder="или впишите слаг маршрута вручную"
-                  />
-                </div>
+                <Select
+                  value={proxyPath.trim() === "" ? PROXY_ROOT_ROUTE : proxyPath.trim()}
+                  onValueChange={(v) => {
+                    const slug = v === PROXY_ROOT_ROUTE ? "" : v;
+                    setProxyPath(slug);
+                    const preset = PROXY_ROUTE_PRESETS.find(
+                      (p) => p.value === slug,
+                    );
+                    if (preset && !baseUrl.trim()) setBaseUrl(preset.upstream);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROXY_ROUTE_PRESETS.map((p) => (
+                      <SelectItem
+                        key={p.label}
+                        value={p.value === "" ? PROXY_ROOT_ROUTE : p.value}
+                      >
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                    {proxyPath.trim() !== "" &&
+                      !PROXY_ROUTE_PRESETS.some(
+                        (p) => p.value === proxyPath.trim(),
+                      ) && (
+                        <SelectItem value={proxyPath.trim()}>
+                          {proxyPath.trim()} (нестандартный маршрут)
+                        </SelectItem>
+                      )}
+                  </SelectContent>
+                </Select>
               </Field>
             )}
-            <Field
-              label={
-                useProxy
-                  ? "Прямой адрес API (при прокси не используется)"
-                  : "Адрес API (baseUrl)"
-              }
-              hint={
-                useProxy
-                  ? "Хранится на случай возврата к прямому подключению — запросы туда сейчас не идут."
-                  : guide.baseUrlHint
-              }
-              tooltip="Базовый адрес API провайдера. Итоговый путь запроса зависит от протокола — см. предпросмотр ниже."
-            >
-              <Input
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder={guide.baseUrlPlaceholder}
-                className={useProxy ? "opacity-60" : undefined}
-              />
-            </Field>
+            {!useProxy && (
+              <Field
+                label="Адрес API (baseUrl)"
+                hint={guide.baseUrlHint}
+                tooltip="Базовый адрес API провайдера. Итоговый путь запроса зависит от протокола — см. предпросмотр ниже."
+              >
+                <Input
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={guide.baseUrlPlaceholder}
+                />
+              </Field>
+            )}
             <div className="space-y-1 rounded-md bg-bg-subtle px-3 py-2">
               <span className="text-[11px] text-fg-tertiary">
                 Куда пойдёт запрос:
@@ -1597,7 +1621,7 @@ function ProviderFormDialog({
                   disabled={
                     previewLoading ||
                     protocolKind === "anthropic-messages" ||
-                    baseUrl.trim().length === 0
+                    (!useProxy && baseUrl.trim().length === 0)
                   }
                   onClick={() => void handlePreviewDiscover()}
                 >

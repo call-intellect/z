@@ -225,9 +225,25 @@ export class AdminLlmProvidersService {
       ?.getDynamic<DefaultChainEntry[]>(DEFAULT_CHAIN_SETTING_KEY, undefined, [])
       .catch(() => []);
     const current = Array.isArray(chain) ? chain : [];
-    if (current.length > 0 && current[0]?.provider === providerName) return;
-
-    const rest = current.filter((e) => e?.provider !== providerName);
+    const knownRows = await this.prisma.llmProvider.findMany({
+      where: { deletedAt: null },
+      select: { name: true },
+    });
+    const knownNames = new Set(knownRows.map((r) => r.name));
+    const rest = current.filter(
+      (e) =>
+        e?.provider !== providerName &&
+        typeof e?.provider === 'string' &&
+        knownNames.has(e.provider),
+    );
+    if (
+      current.length > 0 &&
+      current[0]?.provider === providerName &&
+      current[0]?.model === modelKey &&
+      rest.length === current.length - 1
+    ) {
+      return;
+    }
     const next: DefaultChainEntry[] = [
       { provider: providerName, model: modelKey },
       ...rest,

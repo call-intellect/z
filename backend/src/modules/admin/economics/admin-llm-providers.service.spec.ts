@@ -129,6 +129,7 @@ describe('AdminLlmProvidersService', () => {
       return Promise.all(arg as Promise<unknown>[]);
     });
     getDynamic.mockResolvedValue([]);
+    findMany.mockResolvedValue([]);
     svc = new AdminLlmProvidersService(prisma, crypto, providerInfo);
   });
 
@@ -569,6 +570,7 @@ describe('AdminLlmProvidersService', () => {
       getDynamic.mockResolvedValueOnce([
         { provider: 'anthropic', model: 'claude-x' },
       ]);
+      findMany.mockResolvedValueOnce([{ name: 'deepseek' }, { name: 'anthropic' }]);
 
       await svcFull.setDefaultProvider('pB', 'model-b', 'user-7');
 
@@ -613,10 +615,80 @@ describe('AdminLlmProvidersService', () => {
         { provider: 'deepseek', model: 'model-b' },
         { provider: 'anthropic', model: 'claude-x' },
       ]);
+      findMany.mockResolvedValueOnce([{ name: 'deepseek' }, { name: 'anthropic' }]);
 
       await svcFull.setDefaultProvider('pB', 'model-b', 'user-7');
 
       expect(adminSettingsSet).not.toHaveBeenCalled();
+    });
+
+    it('(e) выкидывает из цепочки записи на несуществующих провайдеров (битый сид deepseek)', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pC', name: 'my-openai' }));
+      llmModelFindFirst.mockResolvedValueOnce({
+        id: 'm3',
+        providerId: 'pC',
+        modelKey: 'gpt-5-mini',
+        isActive: true,
+        deletedAt: null,
+      });
+      updateMany.mockResolvedValueOnce({ count: 0 });
+      update.mockResolvedValueOnce(
+        fakeProvider({ id: 'pC', name: 'my-openai', isDefaultProvider: true }),
+      );
+      getDynamic.mockResolvedValueOnce([{ provider: 'deepseek', model: 'deepseek-chat' }]);
+      findMany.mockResolvedValueOnce([{ name: 'my-openai' }]);
+
+      await svcFull.setDefaultProvider('pC', 'gpt-5-mini', 'user-7');
+
+      expect(adminSettingsSet).toHaveBeenCalledWith(
+        'llm.router.defaultChain',
+        [{ provider: 'my-openai', model: 'gpt-5-mini' }],
+        { userId: 'user-7', reason: 'default_provider_set' },
+      );
+    });
+
+    it('(f) провайдер уже primary, но в хвосте битая запись → цепочка перезаписывается без неё', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pB', name: 'deepseek' }));
+      llmModelFindFirst.mockResolvedValueOnce({
+        id: 'm2',
+        providerId: 'pB',
+        modelKey: 'model-b',
+        isActive: true,
+        deletedAt: null,
+      });
+      updateMany.mockResolvedValueOnce({ count: 1 });
+      update.mockResolvedValueOnce(
+        fakeProvider({ id: 'pB', name: 'deepseek', isDefaultProvider: true }),
+      );
+      getDynamic.mockResolvedValueOnce([
+        { provider: 'deepseek', model: 'model-b' },
+        { provider: 'ghost-provider', model: 'x' },
+      ]);
+      findMany.mockResolvedValueOnce([{ name: 'deepseek' }]);
+
+      await svcFull.setDefaultProvider('pB', 'model-b', 'user-7');
+
+      expect(adminSettingsSet).toHaveBeenCalledWith(
+        'llm.router.defaultChain',
+        [{ provider: 'deepseek', model: 'model-b' }],
+        { userId: 'user-7', reason: 'default_provider_set' },
+      );
     });
   });
 

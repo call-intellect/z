@@ -158,6 +158,13 @@ const PROTOCOLS_APPENDING_OWN_PATH = new Set<LlmProtocolKind>([
   "kie-native",
 ]);
 
+const PROXY_ROUTE_PRESETS: Array<{ label: string; value: string }> = [
+  { label: "OpenAI — корень", value: "" },
+  { label: "anthropic", value: "anthropic" },
+  { label: "grsai", value: "grsai" },
+  { label: "kie", value: "kie" },
+];
+
 function trimTrailingSlashes(url: string): string {
   return url.replace(/\/+$/, "");
 }
@@ -800,9 +807,9 @@ function ProviderFormDialog({
     ? proxyRootFromBase(connectionMeta.proxyBaseUrl)
     : "адрес-прокси";
   const apiKeyHint = useProxy
-    ? `${isEdit ? "Пусто — оставить текущий ключ. " : ""}Вводите обычный ключ провайдера без префикса прокси — префикс${
+    ? `${isEdit ? "Пусто — оставить текущий ключ. " : ""}Сюда — только ключ самого провайдера (например sk-…). Префикс прокси${
         proxyKeyPrefixMask ? ` «${proxyKeyPrefixMask}»` : ""
-      } добавится автоматически при каждом запросе.`
+      } вписывать НЕ нужно — система добавит его сама (видно в «Куда пойдёт запрос»).`
     : isEdit
       ? "Оставьте пустым, чтобы не менять текущий ключ."
       : "Необязательно для self-hosted без авторизации (например, Ollama).";
@@ -1334,15 +1341,36 @@ function ProviderFormDialog({
             </div>
             {useProxy && (
               <Field
-                label="Маршрут на прокси (proxyPath)"
-                hint={`Пусто — корневой маршрут ${proxyRootLabel}/v1 (OpenAI). «grsai» → ${proxyRootLabel}/grsai/v1, «anthropic» → ${proxyRootLabel}/anthropic.`}
-                tooltip="Слаг после адреса прокси — выбирает upstream-провайдера на стороне прокси. Итоговый адрес виден в предпросмотре ниже."
+                label="К какому провайдеру идти на прокси"
+                hint="Один прокси обслуживает несколько провайдеров — выберите нужного. Итоговый адрес виден ниже в «Куда пойдёт запрос»."
+                tooltip="Технически это слаг пути на прокси (proxyPath): пусто — корневой /v1 (OpenAI), «anthropic» — api.anthropic.com, «grsai» — grsaiapi.com, «kie» — api.kie.ai. Если на прокси появился новый маршрут, впишите его слаг вручную."
               >
-                <Input
-                  value={proxyPath}
-                  onChange={(e) => setProxyPath(e.target.value)}
-                  placeholder="например, grsai"
-                />
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    {PROXY_ROUTE_PRESETS.map((p) => {
+                      const active = proxyPath.trim() === p.value;
+                      return (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={() => setProxyPath(p.value)}
+                          className={
+                            active
+                              ? "rounded-full border border-border-strong bg-bg-card px-2.5 py-0.5 text-[11px] font-medium text-fg-primary"
+                              : "rounded-full border border-border-subtle px-2.5 py-0.5 text-[11px] text-fg-tertiary transition-colors hover:text-fg-primary"
+                          }
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Input
+                    value={proxyPath}
+                    onChange={(e) => setProxyPath(e.target.value)}
+                    placeholder="или впишите слаг маршрута вручную"
+                  />
+                </div>
               </Field>
             )}
             <Field
@@ -1365,7 +1393,7 @@ function ProviderFormDialog({
                 className={useProxy ? "opacity-60" : undefined}
               />
             </Field>
-            <div className="rounded-md bg-bg-subtle px-3 py-2">
+            <div className="space-y-1 rounded-md bg-bg-subtle px-3 py-2">
               <span className="text-[11px] text-fg-tertiary">
                 Куда пойдёт запрос:
               </span>
@@ -1379,6 +1407,20 @@ function ProviderFormDialog({
                     ? "адрес прокси загружается…"
                     : "укажите адрес API — здесь появится итоговый URL"}
                 </div>
+              )}
+              {useProxy && (
+                <>
+                  <span className="text-[11px] text-fg-tertiary">
+                    С каким ключом (префикс прокси система добавит сама):
+                  </span>
+                  <div className="break-all font-mono text-xs text-fg-primary">
+                    {protocolKind === "anthropic-messages"
+                      ? "x-api-key:"
+                      : "Authorization: Bearer"}{" "}
+                    {proxyKeyPrefixMask ?? "префикс"}:
+                    {"<ключ из поля «API-ключ»>"}
+                  </div>
+                </>
               )}
             </div>
             {anthropicProxyPathMissing && (
@@ -1394,6 +1436,13 @@ function ProviderFormDialog({
                   должен быть развёрнут с поддержкой anthropic-маршрута.
                 </p>
               </div>
+            )}
+            {useProxy && (
+              <p className="text-[11px] text-fg-tertiary">
+                Адрес прокси и секретный префикс задаются на сервере бэкенда —
+                ENV PROXY_BASE_URL и PROXY_PREFIX. В этой форме они не хранятся
+                и не редактируются.
+              </p>
             )}
           </div>
           <Field

@@ -244,7 +244,7 @@ export class TypedConfigService {
         forceToolChoiceEnabled: this.resolveSync<boolean>(
           'ai.deepseek.forceToolChoiceEnabled',
           'LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED',
-          true,
+          false,
         ),
       },
       ollama: {

@@ -282,3 +282,85 @@ describe('OpenAiChatProtocolAdapter — thinking-models guard', () => {
     expect(userMsg?.content).not.toContain(JSON_MODE_USER_SUFFIX.trim());
   });
 });
+
+describe('OpenAiChatProtocolAdapter — max_completion_tokens retry (новые модели OpenAI)', () => {
+  beforeEach(() => {
+    nextCreateImpl = null;
+    lastCallArgs = null;
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function maxTokensUnsupportedError(): Error & { status?: number } {
+    const e = new Error(
+      "400 Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.",
+    ) as Error & { status?: number };
+    e.status = 400;
+    return e;
+  }
+
+  it('400 «use max_completion_tokens» → повтор с заменой параметра, ответ отдан', async () => {
+    let calls = 0;
+    nextCreateImpl = async () => {
+      calls += 1;
+      if (calls === 1) throw maxTokensUnsupportedError();
+      return okResponse({ content: 'proxy works' });
+    };
+    const adapter = new OpenAiChatProtocolAdapter(makeCfg(), makeMetricsMock().metrics);
+
+    const out = await adapter.complete({
+      provider: {
+        ...makeProvider(),
+        name: 'openai-via-proxy',
+      } as unknown as ProtocolAdapterProviderInfo,
+      input: {
+        system: { text: 's' },
+        user: 'u',
+        model: 'gpt-5-mini',
+        maxTokens: 128,
+      },
+    });
+
+    expect(calls).toBe(2);
+    expect(out.text).toBe('proxy works');
+    expect(lastCallArgs?.['max_completion_tokens']).toBe(128);
+    expect(lastCallArgs?.['max_tokens']).toBeUndefined();
+  });
+
+  it('обычная 400 → без повтора, LlmError наружу', async () => {
+    let calls = 0;
+    nextCreateImpl = async () => {
+      calls += 1;
+      const e = new Error('400 invalid request') as Error & { status?: number };
+      e.status = 400;
+      throw e;
+    };
+    const adapter = new OpenAiChatProtocolAdapter(makeCfg(), makeMetricsMock().metrics);
+
+    await expect(
+      adapter.complete({
+        provider: makeProvider(),
+        input: { system: { text: 's' }, user: 'u', model: 'gpt-4o-mini', maxTokens: 64 },
+      }),
+    ).rejects.toThrow('openai-chat deepseek: 400 invalid request');
+    expect(calls).toBe(1);
+  });
+
+  it('без maxTokens во входе → повтора нет даже при этой ошибке', async () => {
+    let calls = 0;
+    nextCreateImpl = async () => {
+      calls += 1;
+      throw maxTokensUnsupportedError();
+    };
+    const adapter = new OpenAiChatProtocolAdapter(makeCfg(), makeMetricsMock().metrics);
+
+    await expect(
+      adapter.complete({
+        provider: makeProvider(),
+        input: { system: { text: 's' }, user: 'u', model: 'gpt-5-mini' },
+      }),
+    ).rejects.toThrow('max_completion_tokens');
+    expect(calls).toBe(1);
+  });
+});

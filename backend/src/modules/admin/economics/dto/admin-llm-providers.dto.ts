@@ -36,11 +36,13 @@ export const UpdateLlmProviderSchema = CreateLlmProviderSchema.partial()
 export type UpdateLlmProviderDto = z.infer<typeof UpdateLlmProviderSchema>;
 
 export const DiscoverModelsPreviewSchema = z.object({
-  baseUrl: z.string().url().max(500),
+  baseUrl: z.string().url().max(500).optional(),
   protocolKind: ProtocolKindSchema,
   apiKey: z.string().max(500).optional(),
   defaultHeaders: z.record(z.string(), z.string()).optional(),
   timeoutMs: z.number().int().positive().max(120_000).optional(),
+  useProxy: z.boolean().optional(),
+  proxyPath: z.string().max(120).nullable().optional(),
 });
 export type DiscoverModelsPreviewDto = z.infer<typeof DiscoverModelsPreviewSchema>;
 

@@ -129,6 +129,7 @@ describe('AdminLlmProvidersService', () => {
       return Promise.all(arg as Promise<unknown>[]);
     });
     getDynamic.mockResolvedValue([]);
+    findMany.mockResolvedValue([]);
     svc = new AdminLlmProvidersService(prisma, crypto, providerInfo);
   });
 
@@ -359,6 +360,139 @@ describe('AdminLlmProvidersService', () => {
     });
   });
 
+  describe('connectionMeta', () => {
+    const cfgWithProxy = {
+      getDynamic,
+      ai: { proxy: { baseUrl: 'https://proxy.agent-lia.ru/v1', prefix: 'myFeedproxy3128' } },
+    } as unknown as ConstructorParameters<typeof AdminLlmProvidersService>[3];
+
+    it('(a) отдаёт адрес прокси и маску префикса (первые 4 символа + …)', () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+
+      expect(withCfg.connectionMeta()).toEqual({
+        proxyBaseUrl: 'https://proxy.agent-lia.ru/v1',
+        proxyKeyPrefixMask: 'myFe…',
+      });
+    });
+
+    it('(b) без cfg → оба поля null', () => {
+      expect(svc.connectionMeta()).toEqual({ proxyBaseUrl: null, proxyKeyPrefixMask: null });
+    });
+  });
+
+  describe('discoverModelsPreview через прокси', () => {
+    const cfgWithProxy = {
+      getDynamic,
+      ai: { proxy: { baseUrl: 'https://proxy.agent-lia.ru/v1', prefix: 'myFeedproxy3128' } },
+    } as unknown as ConstructorParameters<typeof AdminLlmProvidersService>[3];
+
+    it('(a) useProxy=true, proxyPath=null → GET на адрес прокси с ключом с префиксом', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+      vi.mocked(discoverProviderModels).mockResolvedValueOnce([{ id: 'gpt-5-mini' }]);
+
+      const res = await withCfg.discoverModelsPreview({
+        baseUrl: 'https://api.openai.com/v1',
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+        useProxy: true,
+        proxyPath: null,
+      });
+
+      expect(discoverProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://proxy.agent-lia.ru/v1',
+          apiKey: 'myFeedproxy3128:sk-x',
+        }),
+      );
+      expect(res).toEqual({ ok: true, models: [{ id: 'gpt-5-mini' }] });
+    });
+
+    it('(b) useProxy=true, proxyPath="grsai" → корень прокси + слаг + /v1', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+      vi.mocked(discoverProviderModels).mockResolvedValueOnce([]);
+
+      await withCfg.discoverModelsPreview({
+        baseUrl: 'https://grsaiapi.com',
+        protocolKind: 'grsai-native',
+        apiKey: 'sk-x',
+        useProxy: true,
+        proxyPath: 'grsai',
+      });
+
+      expect(discoverProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://proxy.agent-lia.ru/grsai/v1',
+          apiKey: 'myFeedproxy3128:sk-x',
+        }),
+      );
+    });
+
+    it('(c) useProxy=false → baseUrl/apiKey из формы без изменений', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+      vi.mocked(discoverProviderModels).mockResolvedValueOnce([]);
+
+      await withCfg.discoverModelsPreview({
+        baseUrl: 'https://api.deepseek.com/v1',
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+      });
+
+      expect(discoverProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({ baseUrl: 'https://api.deepseek.com/v1', apiKey: 'sk-x' }),
+      );
+    });
+
+    it('(d) useProxy=true без cfg → {ok:false} с понятной ошибкой, без сетевого вызова', async () => {
+      const res = await svc.discoverModelsPreview({
+        baseUrl: 'https://api.openai.com/v1',
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+        useProxy: true,
+      });
+
+      expect(res).toEqual({
+        ok: false,
+        error: 'Прокси не сконфигурирован на сервере (PROXY_BASE_URL / PROXY_PREFIX)',
+      });
+      expect(discoverProviderModels).not.toHaveBeenCalled();
+    });
+
+    it('(e) useProxy=true БЕЗ baseUrl → работает (адрес строится от прокси)', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+      vi.mocked(discoverProviderModels).mockResolvedValueOnce([{ id: 'gpt-5-mini' }]);
+
+      const res = await withCfg.discoverModelsPreview({
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+        useProxy: true,
+        proxyPath: null,
+      });
+
+      expect(discoverProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://proxy.agent-lia.ru/v1',
+          apiKey: 'myFeedproxy3128:sk-x',
+        }),
+      );
+      expect(res).toEqual({ ok: true, models: [{ id: 'gpt-5-mini' }] });
+    });
+
+    it('(f) useProxy=false БЕЗ baseUrl → {ok:false} с просьбой указать адрес', async () => {
+      const withCfg = new AdminLlmProvidersService(prisma, crypto, providerInfo, cfgWithProxy);
+
+      const res = await withCfg.discoverModelsPreview({
+        protocolKind: 'openai-chat',
+        apiKey: 'sk-x',
+      });
+
+      expect(res).toEqual({
+        ok: false,
+        error: 'Укажите адрес API (baseUrl) — без прокси он обязателен',
+      });
+      expect(discoverProviderModels).not.toHaveBeenCalled();
+    });
+  });
+
   describe('setDefaultProvider (Ф2026-07-06 llm-provider-default-fallback, Фаза 1)', () => {
     it('(a) назначить А дефолтом, потом Б → транзакция каждый раз сбрасывает старый флаг и ставит новый + модель', async () => {
       findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pA', name: 'anthropic' }));
@@ -471,6 +605,7 @@ describe('AdminLlmProvidersService', () => {
       getDynamic.mockResolvedValueOnce([
         { provider: 'anthropic', model: 'claude-x' },
       ]);
+      findMany.mockResolvedValueOnce([{ name: 'deepseek' }, { name: 'anthropic' }]);
 
       await svcFull.setDefaultProvider('pB', 'model-b', 'user-7');
 
@@ -515,10 +650,80 @@ describe('AdminLlmProvidersService', () => {
         { provider: 'deepseek', model: 'model-b' },
         { provider: 'anthropic', model: 'claude-x' },
       ]);
+      findMany.mockResolvedValueOnce([{ name: 'deepseek' }, { name: 'anthropic' }]);
 
       await svcFull.setDefaultProvider('pB', 'model-b', 'user-7');
 
       expect(adminSettingsSet).not.toHaveBeenCalled();
+    });
+
+    it('(e) выкидывает из цепочки записи на несуществующих провайдеров (битый сид deepseek)', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pC', name: 'my-openai' }));
+      llmModelFindFirst.mockResolvedValueOnce({
+        id: 'm3',
+        providerId: 'pC',
+        modelKey: 'gpt-5-mini',
+        isActive: true,
+        deletedAt: null,
+      });
+      updateMany.mockResolvedValueOnce({ count: 0 });
+      update.mockResolvedValueOnce(
+        fakeProvider({ id: 'pC', name: 'my-openai', isDefaultProvider: true }),
+      );
+      getDynamic.mockResolvedValueOnce([{ provider: 'deepseek', model: 'deepseek-chat' }]);
+      findMany.mockResolvedValueOnce([{ name: 'my-openai' }]);
+
+      await svcFull.setDefaultProvider('pC', 'gpt-5-mini', 'user-7');
+
+      expect(adminSettingsSet).toHaveBeenCalledWith(
+        'llm.router.defaultChain',
+        [{ provider: 'my-openai', model: 'gpt-5-mini' }],
+        { userId: 'user-7', reason: 'default_provider_set' },
+      );
+    });
+
+    it('(f) провайдер уже primary, но в хвосте битая запись → цепочка перезаписывается без неё', async () => {
+      const svcFull = new AdminLlmProvidersService(
+        prisma,
+        crypto,
+        providerInfo,
+        cfg,
+        router,
+        adminSettings,
+      );
+      findUnique.mockResolvedValueOnce(fakeProvider({ id: 'pB', name: 'deepseek' }));
+      llmModelFindFirst.mockResolvedValueOnce({
+        id: 'm2',
+        providerId: 'pB',
+        modelKey: 'model-b',
+        isActive: true,
+        deletedAt: null,
+      });
+      updateMany.mockResolvedValueOnce({ count: 1 });
+      update.mockResolvedValueOnce(
+        fakeProvider({ id: 'pB', name: 'deepseek', isDefaultProvider: true }),
+      );
+      getDynamic.mockResolvedValueOnce([
+        { provider: 'deepseek', model: 'model-b' },
+        { provider: 'ghost-provider', model: 'x' },
+      ]);
+      findMany.mockResolvedValueOnce([{ name: 'deepseek' }]);
+
+      await svcFull.setDefaultProvider('pB', 'model-b', 'user-7');
+
+      expect(adminSettingsSet).toHaveBeenCalledWith(
+        'llm.router.defaultChain',
+        [{ provider: 'deepseek', model: 'model-b' }],
+        { userId: 'user-7', reason: 'default_provider_set' },
+      );
     });
   });
 

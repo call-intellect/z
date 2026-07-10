@@ -7,6 +7,7 @@ import type {
   DiscoverModelsPreviewRequest,
   DiscoverModelsPreviewResultApi,
   DiscoverModelsResultApi,
+  ProviderConnectionMetaApi,
   RemovalImpactApi,
   SmokeTestResultApi,
   UpdateLlmProviderRequest,
@@ -20,6 +21,11 @@ export const adminLlmProvidersApi = {
 
   getById: (id: string) =>
     apiClient.get<AdminLlmProviderApi>(`/api/v1/admin/llm-providers/${id}`),
+
+  connectionMeta: () =>
+    apiClient.get<ProviderConnectionMetaApi>(
+      "/api/v1/admin/llm-providers/connection-meta",
+    ),
 
   create: (body: CreateLlmProviderRequest) =>
     apiClient.post<AdminLlmProviderApi>("/api/v1/admin/llm-providers", body),

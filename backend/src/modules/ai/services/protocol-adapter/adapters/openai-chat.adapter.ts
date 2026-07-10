@@ -15,6 +15,31 @@ import type {
   ProtocolKind,
 } from '../protocol-adapter.types';
 
+type ChatCompletionsResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+      tool_calls?: Array<{
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
+};
+
+function requiresMaxCompletionTokens(err: unknown): boolean {
+  const status = (err as { status?: number } | undefined)?.status;
+  const message = err instanceof Error ? err.message : String(err);
+  return (
+    status === 400 && message.includes('max_completion_tokens') && message.includes('max_tokens')
+  );
+}
+
 @Injectable()
 export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
   readonly protocolKind: ProtocolKind = 'openai-chat';
@@ -129,46 +154,35 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
       body['tool_choice'] = 'auto';
     }
 
-    try {
-      const resp = (await (
+    const createCompletion = (payload: Record<string, unknown>) =>
+      (
         client as unknown as {
           chat: {
             completions: {
-              create: (p: Record<string, unknown>) => Promise<{
-                choices?: Array<{
-                  message?: {
-                    content?: string | null;
-                    reasoning_content?: string | null;
-                    tool_calls?: Array<{
-                      function?: { name?: string; arguments?: string };
-                    }>;
-                  };
-                }>;
-                usage?: {
-                  prompt_tokens?: number;
-                  completion_tokens?: number;
-                  prompt_tokens_details?: { cached_tokens?: number };
-                };
-              }>;
+              create: (p: Record<string, unknown>) => Promise<ChatCompletionsResponse>;
             };
           };
         }
-      ).chat.completions.create(body)) as {
-        choices?: Array<{
-          message?: {
-            content?: string | null;
-            reasoning_content?: string | null;
-            tool_calls?: Array<{
-              function?: { name?: string; arguments?: string };
-            }>;
-          };
-        }>;
-        usage?: {
-          prompt_tokens?: number;
-          completion_tokens?: number;
-          prompt_tokens_details?: { cached_tokens?: number };
+      ).chat.completions.create(payload);
+
+    try {
+      let resp: ChatCompletionsResponse;
+      try {
+        resp = await createCompletion(body);
+      } catch (err) {
+        if (body['max_tokens'] === undefined || !requiresMaxCompletionTokens(err)) {
+          throw err;
+        }
+        const retryBody: Record<string, unknown> = {
+          ...body,
+          max_completion_tokens: body['max_tokens'],
         };
-      };
+        delete retryBody['max_tokens'];
+        this.logger.debug(
+          `openai-chat: модель ${model} принимает только max_completion_tokens — повтор с заменой параметра`,
+        );
+        resp = await createCompletion(retryBody);
+      }
       const choice = resp.choices?.[0];
       const rawContent = choice?.message?.content ?? '';
       const reasoning = choice?.message?.reasoning_content ?? '';

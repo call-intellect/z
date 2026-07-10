@@ -563,9 +563,10 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | POST | `/admin/llm-providers` | создать (ключ шифруется AES-256-GCM) |
 | PATCH | `/admin/llm-providers/:id` | редактировать (`apiKey`: отсутствует/пусто=не менять, `null`=очистить, строка=заменить); 409 `provider_in_use_by_routes` при деактивации провайдера в активном маршруте/дефолт-цепочке |
 | DELETE | `/admin/llm-providers/:id` | soft-delete; тот же гард `provider_in_use_by_routes` |
-| POST | `/admin/llm-providers/:id/smoke-test` | пробный вызов через `ProviderSmokeTestCron.testProvider` |
-| **POST** | **`/admin/llm-providers/:id/models/discover`** | **(2026-07-02)** `GET {effectiveBaseUrl}/models` (OpenAI-формат) → `{ok,models:[{id,alreadyInCatalog}]}`; `anthropic-messages` → 400 `discovery_not_supported` (нет `/models` в Anthropic API) |
-| **POST** | **`/admin/llm-providers/models/discover-preview`** | **(2026-07-09)** discovery по сырым `{baseUrl, protocolKind, apiKey?, defaultHeaders?, timeoutMs?}` БЕЗ сохранённого провайдера → `{ok,models:[{id}]}` / `{ok:false,error}`; используется формой создания провайдера («одно окно»: проверка подключения → модели → цены); `anthropic-messages` → `{ok:false}` |
+| POST | `/admin/llm-providers/:id/smoke-test` | пробный вызов через `ProviderSmokeTestCron.testProvider`; с 2026-07-10 дергается также кнопкой «Сохранить и проверить» в форме провайдера |
+| **GET** | **`/admin/llm-providers/connection-meta`** | **(2026-07-10)** `{proxyBaseUrl, proxyKeyPrefixMask}` из ENV `PROXY_BASE_URL`/`PROXY_PREFIX` (маска — первые 4 символа + `…`); нужен форме провайдера для живого предпросмотра «Куда пойдёт запрос» при `useProxy` |
+| **POST** | **`/admin/llm-providers/:id/models/discover`** | **(2026-07-02)** `GET {effectiveBaseUrl}/models` (OpenAI-формат) → `{ok,models:[{id,alreadyInCatalog}]}`; `anthropic-messages` → 400 `discovery_not_supported` |
+| **POST** | **`/admin/llm-providers/models/discover-preview`** | **(2026-07-09)** discovery по сырым `{baseUrl, protocolKind, apiKey?, defaultHeaders?, timeoutMs?, useProxy?, proxyPath?}` БЕЗ сохранённого провайдера → `{ok,models:[{id}]}` / `{ok:false,error}`; с 2026-07-10 умеет через прокси (`useProxy`/`proxyPath` → эффективный URL/ключ через `resolveEffectiveConnection`); используется формой создания провайдера («одно окно»: проверка подключения → модели → цены); `anthropic-messages` → `{ok:false}` |
 | GET/POST/PATCH/DELETE | `/admin/llm-models*` | CRUD моделей (`providerId`+`modelKey`) |
 | GET | `/admin/llm-models/:id/price-history` | история цен модели |
 

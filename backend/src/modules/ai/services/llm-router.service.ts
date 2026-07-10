@@ -1686,16 +1686,22 @@ export class LlmRouterService implements OnModuleInit {
             ),
           ),
         ]);
-        // ТЗ-3 Ф2 (router-validate-callback): caller-валидатор вывода. HTTP 200
-        // с битым телом (не JSON-вердикт) раньше считался успехом и secondary
-        // не пробовался. Теперь — throw в существующий catch ниже → следующий
-        // провайдер (secondary с настоящим strict). Проверка ДО записи success.
         if (params.validate && !params.validate(out.text)) {
           this.metrics?.incLlmRouterDispatch({
             taskType: params.taskType,
             provider: entry.provider,
             status: 'invalid_output',
           });
+          this.logger.warn(
+            {
+              taskType: params.taskType,
+              provider: entry.provider,
+              model: entry.model ?? null,
+              textLen: out.text?.length ?? 0,
+              textHead: (out.text ?? '').slice(0, 300),
+            },
+            "LlmRouter: validate-fail — фактический вывод провайдера",
+          );
           throw new LlmInvalidOutputError(
             `${entry.provider}/${entry.model ?? ''}: ответ не прошёл validate caller'а`,
             out.text,

@@ -109,7 +109,7 @@ const DeepSeekSchema = z.object({
   DEEPSEEK_API_KEY: z.string().default(''),
   DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com/v1'),
   DEEPSEEK_DEFAULT_MODEL: z.string().min(1).default('deepseek-v4-flash'),
-  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(true),
+  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(false),
 });
 
 const OllamaSchema = z.object({

@@ -6,6 +6,8 @@ describe('isThinkingModel', () => {
   it('thinking-модели', () => {
     expect(isThinkingModel('deepseek-v4-pro')).toBe(true);
     expect(isThinkingModel('DeepSeek-V4-Pro')).toBe(true);
+    expect(isThinkingModel('deepseek-v4-flash')).toBe(true);
+    expect(isThinkingModel('DeepSeek-V4-Flash')).toBe(true);
     expect(isThinkingModel('deepseek-pro')).toBe(true);
     expect(isThinkingModel('some-pro-model')).toBe(true);
     expect(isThinkingModel('deepseek-v4-flash-thinking')).toBe(true);
@@ -13,7 +15,6 @@ describe('isThinkingModel', () => {
   });
 
   it('не thinking-модели', () => {
-    expect(isThinkingModel('deepseek-v4-flash')).toBe(false);
     expect(isThinkingModel('deepseek-chat')).toBe(false);
     expect(isThinkingModel('gpt-5.4-mini')).toBe(false);
     expect(isThinkingModel('gpt-4o-mini')).toBe(false);

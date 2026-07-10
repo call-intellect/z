@@ -207,6 +207,7 @@ export class DeepSeekService {
   ): LlmCompleteOutput {
     const r = response as {
       choices?: Array<{
+        finish_reason?: string | null;
         message?: {
           content?: string | null;
           tool_calls?: Array<{
@@ -225,6 +226,7 @@ export class DeepSeekService {
     const choice = r.choices?.[0];
     let text = stripThinkTags(choice?.message?.content ?? '');
     const toolCalls: LlmToolCall[] = [];
+    let badToolJson = false;
     for (const tc of choice?.message?.tool_calls ?? []) {
       const name = tc.function?.name ?? '';
       const argsRaw = tc.function?.arguments ?? '';
@@ -233,8 +235,23 @@ export class DeepSeekService {
         parsed = JSON.parse(argsRaw);
       } catch {
         parsed = { raw: argsRaw };
+        badToolJson = true;
       }
       if (name) toolCalls.push({ name, input: parsed });
+    }
+
+    if (choice?.finish_reason === 'length' || badToolJson) {
+      this.logger.warn(
+        {
+          model,
+          finishReason: choice?.finish_reason ?? null,
+          badToolJson,
+          outputTokens: r.usage?.completion_tokens ?? 0,
+          toolCallCount: toolCalls.length,
+          textLen: text.length,
+        },
+        'DeepSeek: вывод обрезан или tool-call JSON битый — возможен validate-fail',
+      );
     }
 
     if (autoConvertedToolName && !text) {

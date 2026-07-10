@@ -396,13 +396,13 @@ describe('DeepSeekService.buildParams — forced tool_choice (ТЗ-3 Фаза 3)
       }),
     );
 
-    await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-v4-flash' });
+    await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-chat' });
 
     const callArgs = lastSdkInstance.chat.completions.create.mock.calls[0]![0];
     expect(callArgs.tool_choice).toBe('auto');
   });
 
-  it('флаг ON + non-thinking + json_schema → tool_choice форсится на synthetic-tool', async () => {
+  it('флаг ON + deepseek-v4-flash (thinking) + json_schema → tool_choice="auto" (v4 не форсим)', async () => {
     const { metrics } = makeMetricsMock();
     const svc = new DeepSeekService(makeCfg({ forceToolChoiceEnabled: true }), metrics);
     if (!lastSdkInstance) throw new Error('sdk not constructed');
@@ -413,6 +413,22 @@ describe('DeepSeekService.buildParams — forced tool_choice (ТЗ-3 Фаза 3)
     );
 
     await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-v4-flash' });
+
+    const callArgs = lastSdkInstance.chat.completions.create.mock.calls[0]![0];
+    expect(callArgs.tool_choice).toBe('auto');
+  });
+
+  it('флаг ON + non-thinking (deepseek-chat) + json_schema → tool_choice форсится на synthetic-tool', async () => {
+    const { metrics } = makeMetricsMock();
+    const svc = new DeepSeekService(makeCfg({ forceToolChoiceEnabled: true }), metrics);
+    if (!lastSdkInstance) throw new Error('sdk not constructed');
+    lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
+      okResponse({
+        toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["a"]}' }],
+      }),
+    );
+
+    await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-chat' });
 
     const callArgs = lastSdkInstance.chat.completions.create.mock.calls[0]![0];
     expect(callArgs.tool_choice).toEqual(
@@ -454,7 +470,7 @@ describe('DeepSeekService.buildParams — forced tool_choice (ТЗ-3 Фаза 3)
 
     const out = await svc.complete({
       ...JSON_SCHEMA_INPUT,
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-chat',
     });
 
     expect(out.text).toBe('{"facts":["a"]}');
@@ -466,7 +482,7 @@ describe('DeepSeekService.buildParams — forced tool_choice (ТЗ-3 Фаза 3)
     expect(guard).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'tool-choice-relaxed',
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-chat',
       }),
     );
 
@@ -476,7 +492,7 @@ describe('DeepSeekService.buildParams — forced tool_choice (ТЗ-3 Фаза 3)
         toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["b"]}' }],
       }),
     );
-    await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-v4-flash' });
+    await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-chat' });
     expect(create).toHaveBeenCalledTimes(1);
     expect(create.mock.calls[0]![0].tool_choice).toBe('auto');
   });
